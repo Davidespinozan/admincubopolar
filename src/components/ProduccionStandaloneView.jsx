@@ -32,9 +32,12 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const registrarMerma = () => {
     if (!mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMerma) return;
     const cant = n(mForm.cantidad);
-    // Deduct from product stock
-    const prod = data.productos.find(x => s(x.sku) === mForm.sku);
-    if (prod) actions.updateProducto(prod.id, { stock: Math.max(0, n(prod.stock) - cant) });
+    // 1. Persist merma to Supabase
+    actions.registrarMerma(mForm.sku, cant, mForm.causa, s(user?.nombre), fotoMerma);
+    // 2. Deduct from cuarto frío stock (updateProducto doesn't touch stock — wrong action)
+    if (mForm.congelador && actions.sacarDeCuartoFrio) {
+      actions.sacarDeCuartoFrio(mForm.congelador, mForm.sku, cant, `Merma: ${mForm.causa}`);
+    }
     setMermas(prev => [...prev, { id: Date.now(), sku: mForm.sku, cantidad: cant, causa: mForm.causa, congelador: mForm.congelador, foto: fotoMerma, hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) }]);
     showToast("Merma: " + cant + "× " + mForm.sku + " registrada");
     setMermaModal(false);
@@ -124,11 +127,11 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           </div>
           <div className="bg-white/10 rounded-xl p-2.5 text-center">
             <p className="text-xs text-blue-200">En congeladores</p>
-          </div>
-          <div className="bg-white/10 rounded-xl p-3 text-center">
-            <p className="text-2xl font-extrabold">{mermaHoy}</p>
-            <p className="text-xs text-blue-200">Merma hoy</p>
             <p className="text-xl font-extrabold">{totalEnCuartos.toLocaleString()}</p>
+          </div>
+          <div className="bg-white/10 rounded-xl col-span-2 p-2.5 text-center">
+            <p className="text-xs text-blue-200">Merma hoy</p>
+            <p className="text-xl font-extrabold">{mermaHoy}</p>
           </div>
         </div>
       </div>

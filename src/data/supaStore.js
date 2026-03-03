@@ -327,17 +327,18 @@ export function useSupaStore(userId, userName) {
 
       // ── CLIENTES ──
       addCliente: async (c) => {
-        const { error } = await supabase.from('clientes').insert({
+        const { data: newCli, error } = await supabase.from('clientes').insert({
           nombre: c.nombre, rfc: c.rfc, regimen: c.regimen,
           uso_cfdi: c.usoCfdi || 'G03', cp: c.cp, correo: c.correo,
           tipo: c.tipo, contacto: c.contacto,
-        });
+        }).select('id').single();
         if (error) {
           console.error('[addCliente]', error.message, error.code);
           t()?.error('Error al crear cliente: ' + error.message);
           return error;
         }
         rf();
+        return newCli; // { id } returned so callers can use real Supabase ID
       },
 
       updateCliente: async (id, c) => {
@@ -425,7 +426,8 @@ export function useSupaStore(userId, userName) {
         for (const item of items) {
           const p = (prods || []).find(x => x.sku === item.sku);
           if (!p) return { message: `SKU ${item.sku} no existe` };
-          if (Number(p.stock) < item.qty) return { message: `Stock insuficiente: ${item.sku}` };
+          // Note: productos.stock is not kept in sync for finished goods — stock lives
+          // in cuartos_frios.stock. Do not block here; UI already shows a warning.
         }
 
         let total = 0;
@@ -442,23 +444,18 @@ export function useSupaStore(userId, userName) {
         const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
         const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
 
-        const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert({
+        // Build insert payload — include user association columns only if provided
+        // (they may not exist in all Supabase environments; ignored silently if missing)
+        const ordenInsert = {
           folio, cliente_id: o.clienteId,
           fecha: o.fecha || new Date().toISOString().slice(0, 10),
           total, estatus: 'Creada',
-        }).select('id').single();
-        if (e1) { t()?.error('Error al crear orden'); return e1; }
+        };
+        if (o.usuarioId != null) { ordenInsert.usuario_id = o.usuarioId; ordenInsert.vendedor_id = o.usuarioId; }
+        if (o.authId)            { ordenInsert.auth_id = o.authId; ordenInsert.usuario_auth_id = o.authId; }
 
-        if (newOrd?.id) {
-          if (o.usuarioId !== undefined && o.usuarioId !== null) {
-            await supabase.from('ordenes').update({ usuario_id: o.usuarioId }).eq('id', newOrd.id);
-            await supabase.from('ordenes').update({ vendedor_id: o.usuarioId }).eq('id', newOrd.id);
-          }
-          if (o.authId) {
-            await supabase.from('ordenes').update({ auth_id: o.authId }).eq('id', newOrd.id);
-            await supabase.from('ordenes').update({ usuario_auth_id: o.authId }).eq('id', newOrd.id);
-          }
-        }
+        const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id').single();
+        if (e1) { t()?.error('Error al crear orden'); return e1; }
 
         const { error: e2 } = await supabase.from('orden_lineas').insert(
           lineas.map(l => ({ ...l, orden_id: newOrd.id }))

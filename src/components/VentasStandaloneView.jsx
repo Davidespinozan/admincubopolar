@@ -76,10 +76,9 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const totalCalc = subtotal + iva;
   const productosStr = useMemo(() => lines.filter(l => l.sku && l.qty > 0).map(l => `${l.qty}×${l.sku}`).join(", "), [lines]);
 
-  // Register new client and select it
-  const registrarCliente = () => {
+  // Register new client and select it using the real Supabase-assigned ID
+  const registrarCliente = async () => {
     if (!cliForm.nombre.trim()) return;
-    const nuevoId = ((data.clientes || []).length > 0 ? Math.max(...data.clientes.map(c => Number(c.id) || 0)) + 1 : 1);
     const nuevo = {
       nombre: cliForm.nombre.trim(),
       contacto: cliForm.contacto,
@@ -90,12 +89,13 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       usoCfdi: cliForm.requiereFactura ? cliForm.usoCfdi : "S01",
       cp: cliForm.cp || "34000",
     };
-    actions.addCliente(nuevo);
-    // Select the new client
-    setTimeout(() => {
-      setForm(f => ({ ...f, clienteId: String(nuevoId), requiereFactura: cliForm.requiereFactura }));
-      setLines(prev => prev.map(l => ({ ...l, precio: getPrice(String(nuevoId), l.sku) })));
-    }, 100);
+    const result = await actions.addCliente(nuevo);
+    // result is { id } on success or an error object
+    const realId = result?.id ? String(result.id) : null;
+    if (realId) {
+      setForm(f => ({ ...f, clienteId: realId, requiereFactura: cliForm.requiereFactura }));
+      setLines(prev => prev.map(l => ({ ...l, precio: getPrice(realId, l.sku) })));
+    }
     setNuevoCliente(false);
     showToast("Cliente " + cliForm.nombre + " registrado ✓");
     setCliForm({ nombre: "", contacto: "", tipo: "Tienda", requiereFactura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
