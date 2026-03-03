@@ -340,7 +340,28 @@ export function InventarioView({ data, actions }) {
   const [cfForm, setCfForm] = useState({nombre:"",temp:"-10",capacidad:"0"});
 
   const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
-  const paginatedProd = useMemo(() => prodTerminados.slice(pageExist * PAGE_SIZE, (pageExist + 1) * PAGE_SIZE), [prodTerminados, pageExist]);
+  
+    // Compute stock por producto sumando de todos los cuartos fríos + ubicaciones
+    const prodConStock = useMemo(() => {
+      return prodTerminados.map(p => {
+        let totalStock = 0;
+        const ubicaciones = [];
+        for (const cf of data.cuartosFrios) {
+          const qty = cf.stock ? cf.stock[s(p.sku)] : 0;
+          if (qty && qty > 0) {
+            totalStock += qty;
+            ubicaciones.push(`${s(cf.nombre)} (${qty})`);
+          }
+        }
+        return {
+          ...p,
+          stock: totalStock,
+          ubicacion: ubicaciones.length > 0 ? ubicaciones.join(', ') : 'Sin stock'
+        };
+      });
+    }, [prodTerminados, data.cuartosFrios]);
+  
+    const paginatedProd = useMemo(() => prodConStock.slice(pageExist * PAGE_SIZE, (pageExist + 1) * PAGE_SIZE), [prodConStock, pageExist]);
   const paginatedMov = useMemo(() => data.inventarioMov.slice(pageKardex * PAGE_SIZE, (pageKardex + 1) * PAGE_SIZE), [data.inventarioMov, pageKardex]);
 
   const cfOptions = useMemo(() => data.cuartosFrios.map(cf => ({value: s(cf.id), label: s(cf.nombre)})), [data.cuartosFrios]);

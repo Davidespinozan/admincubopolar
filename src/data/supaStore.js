@@ -178,7 +178,7 @@ export function useSupaStore(userId, userName) {
         }
         return {
           ...q,
-          temp: Number(q.temp),
+            temp: q.temp !== null && q.temp !== undefined ? Number(q.temp) : -10,
           capacidad: Number(q.capacidad),
           stock: stockFiltered,
           productos: Object.entries(stockFiltered)
