@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 
-const SnowIcon = () => <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" opacity=".5"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07" opacity=".5"/></svg>;
-
 export default function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
@@ -72,9 +70,7 @@ export default function LoginScreen({ onLogin }) {
       </div>
       <div className="relative w-full max-w-sm">
         <div className="text-center mb-6 sm:mb-8">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center mx-auto mb-4 shadow-lg shadow-blue-500/30">
-            <SnowIcon />
-          </div>
+          <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559989/icon-512_ijp1nl.png" alt="CuboPolar" className="w-16 h-16 mx-auto mb-4" />
           <h1 className="text-2xl font-extrabold text-white tracking-tight">CUBOPOLAR</h1>
           <p className="text-sm text-blue-300/60 mt-1">Sistema ERP</p>
         </div>

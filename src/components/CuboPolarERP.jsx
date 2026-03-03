@@ -94,7 +94,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       {/* ═══ SIDEBAR — desktop ═══ */}
       <aside className="hidden md:flex fixed top-0 left-0 h-full w-[240px] bg-white border-r border-slate-100 z-40 flex-col">
         <div className="h-16 flex items-center gap-2.5 px-5 border-b border-slate-100 flex-shrink-0">
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white"><Icons.Snowflake /></div>
+          <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559988/icon-192_lknzb5.png" alt="CuboPolar" className="w-8 h-8" />
           <div><span className="text-sm font-extrabold text-slate-800 tracking-tight">CUBOPOLAR</span><span className="text-[10px] text-slate-400 block -mt-0.5">ERP v2.0</span></div>
         </div>
 
@@ -142,7 +142,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 md:ml-[240px]" style={{paddingTop: "env(safe-area-inset-top, 0px)"}}>
         <div className="flex items-center justify-between h-14 md:h-16 px-4 md:px-6">
           <div className="flex items-center gap-3">
-            <div className="md:hidden w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white flex-shrink-0"><Icons.Snowflake /></div>
+            <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559988/icon-192_lknzb5.png" alt="CuboPolar" className="md:hidden w-8 h-8 flex-shrink-0" />
             <div className="md:hidden"><p className="text-sm font-bold text-slate-800">{current?.label || "Resumen"}</p></div>
             <div className="hidden md:flex relative">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span>
