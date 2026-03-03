@@ -18,25 +18,176 @@ const DIAS = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábad
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 
 export default function DashboardView({ data }) {
-  const totalProd = useMemo(() => data.produccion.reduce((sum, p) => sum + n(p.cantidad), 0), [data.produccion]);
-  const ordPend = useMemo(() => data.ordenes.filter(o => o.estatus === "Creada" || o.estatus === "Asignada").length, [data.ordenes]);
-  const rutasAct = useMemo(() => (data.rutas || []).filter(r => r.estatus === "En progreso").length, [data.rutas]);
-  const totalInv = useMemo(() => data.productos.filter(p => p.tipo === "Producto Terminado").reduce((sum, p) => sum + n(p.stock), 0), [data.productos]);
+  const hoy = new Date();
+  const y = hoy.getFullYear();
+  const m = hoy.getMonth();
+  const d = hoy.getDate();
+
+  const inicioDia = useMemo(() => new Date(y, m, d), [y, m, d]);
+  const inicioSemana = useMemo(() => {
+    const base = new Date(y, m, d);
+    const dow = base.getDay();
+    const diff = (dow + 6) % 7;
+    base.setDate(base.getDate() - diff);
+    base.setHours(0, 0, 0, 0);
+    return base;
+  }, [y, m, d]);
+  const inicioMes = useMemo(() => new Date(y, m, 1), [y, m]);
+
+  const productosHielo = useMemo(
+    () => (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado"),
+    [data.productos]
+  );
+
+  const parseFecha = (val) => {
+    if (!val) return null;
+    const dt = new Date(val);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  };
+
+  const estatusPendientes = useMemo(() => new Set(["creada", "asignada", "pendiente", "en proceso", "en_proceso", "enprogreso"]), []);
+  const estatusVenta = useMemo(() => new Set(["entregada", "facturada"]), []);
+
+  const pedidosPendPorSku = useMemo(() => {
+    const acc = {};
+    for (const p of productosHielo) acc[s(p.sku)] = 0;
+
+    for (const ord of (data.ordenes || [])) {
+      const est = s(ord.estatus).toLowerCase();
+      if (!estatusPendientes.has(est)) continue;
+
+      if (Array.isArray(ord.preciosSnapshot) && ord.preciosSnapshot.length > 0) {
+        for (const ln of ord.preciosSnapshot) {
+          const sku = s(ln.sku);
+          if (!sku) continue;
+          acc[sku] = (acc[sku] || 0) + n(ln.qty || ln.cantidad);
+        }
+        continue;
+      }
+
+      const raw = s(ord.productos);
+      if (!raw) continue;
+      raw.split(',').forEach(part => {
+        const mt = part.trim().match(/(\d+)\s*[×x]\s*(\S+)/);
+        if (!mt) return;
+        const qty = Number(mt[1] || 0);
+        const sku = s(mt[2]);
+        if (!sku) return;
+        acc[sku] = (acc[sku] || 0) + qty;
+      });
+    }
+    return acc;
+  }, [data.ordenes, productosHielo, estatusPendientes]);
+
+  const stockCuartosPorSku = useMemo(() => {
+    const acc = {};
+    for (const p of productosHielo) acc[s(p.sku)] = 0;
+    for (const cf of (data.cuartosFrios || [])) {
+      const st = (cf?.stock && typeof cf.stock === 'object') ? cf.stock : {};
+      for (const [sku, qty] of Object.entries(st)) {
+        acc[s(sku)] = (acc[s(sku)] || 0) + n(qty);
+      }
+    }
+    return acc;
+  }, [data.cuartosFrios, productosHielo]);
+
+  const producidoHoyPorSku = useMemo(() => {
+    const acc = {};
+    for (const p of productosHielo) acc[s(p.sku)] = 0;
+    for (const pr of (data.produccion || [])) {
+      const dt = parseFecha(pr.fecha);
+      if (!dt) continue;
+      if (dt < inicioDia) continue;
+      const sku = s(pr.sku);
+      acc[sku] = (acc[sku] || 0) + n(pr.cantidad);
+    }
+    return acc;
+  }, [data.produccion, productosHielo, inicioDia]);
+
+  const tableroDemanda = useMemo(() => {
+    return productosHielo.map(p => {
+      const sku = s(p.sku);
+      const pendientes = n(pedidosPendPorSku[sku]);
+      const stock = n(stockCuartosPorSku[sku]);
+      const faltante = Math.max(0, pendientes - stock);
+      const producidoHoy = n(producidoHoyPorSku[sku]);
+      return {
+        id: sku,
+        sku,
+        producto: s(p.nombre),
+        pendientes,
+        stock,
+        faltante,
+        producidoHoy,
+      };
+    });
+  }, [productosHielo, pedidosPendPorSku, stockCuartosPorSku, producidoHoyPorSku]);
+
+  const ventasResumen = useMemo(() => {
+    let dia = 0, semana = 0, mes = 0;
+    for (const ord of (data.ordenes || [])) {
+      const est = s(ord.estatus).toLowerCase();
+      if (!estatusVenta.has(est)) continue;
+      const dt = parseFecha(ord.fecha);
+      if (!dt) continue;
+      const tot = n(ord.total);
+      if (dt >= inicioDia) dia += tot;
+      if (dt >= inicioSemana) semana += tot;
+      if (dt >= inicioMes) mes += tot;
+    }
+    return { dia, semana, mes };
+  }, [data.ordenes, estatusVenta, inicioDia, inicioSemana, inicioMes]);
+
+  const clientesActivos = useMemo(
+    () => (data.clientes || []).filter(c => s(c.estatus || 'Activo') === 'Activo').length,
+    [data.clientes]
+  );
+
+  const rutasAct = useMemo(
+    () => (data.rutas || []).filter(r => s(r.estatus).toLowerCase() === "en progreso").length,
+    [data.rutas]
+  );
+
+  const alertasActivas = useMemo(
+    () => (data.alertas || []).filter(a => !!s(a.msg || a.mensaje || a.detalle)),
+    [data.alertas]
+  );
+
+  const totalProdHoy = useMemo(
+    () => tableroDemanda.reduce((sum, row) => sum + n(row.producidoHoy), 0),
+    [tableroDemanda]
+  );
+  const ordPend = useMemo(
+    () => tableroDemanda.reduce((sum, row) => sum + n(row.pendientes), 0),
+    [tableroDemanda]
+  );
+  const totalInv = useMemo(
+    () => tableroDemanda.reduce((sum, row) => sum + n(row.stock), 0),
+    [tableroDemanda]
+  );
 
   // ── FIX P7: .slice() inside JSX creates new array ref every render ──
   const recentMov = useMemo(() => data.inventarioMov.slice(0, 5), [data.inventarioMov]);
 
-  const hoy = new Date();
   const fechaStr = `${DIAS[hoy.getDay()]}, ${hoy.getDate()} de ${MESES[hoy.getMonth()]} ${hoy.getFullYear()}`;
   const turno = hoy.getHours() < 14 ? "Turno matutino" : "Turno vespertino";
 
   // ── FIX P8: stat card config was recreated every render as inline array literal ──
   const stats = useMemo(() => [
-    { label: "Producido hoy", val: totalProd.toLocaleString(), unit: "bolsas", bg: "bg-blue-50", txt: "text-blue-500", icon: Icons.Factory },
+    { label: "Producido hoy", val: totalProdHoy.toLocaleString(), unit: "bolsas", bg: "bg-blue-50", txt: "text-blue-500", icon: Icons.Factory },
     { label: "Por entregar", val: ordPend, unit: "órdenes", bg: "bg-amber-50", txt: "text-amber-500", icon: Icons.ShoppingCart },
     { label: "Rutas activas", val: rutasAct, unit: "en calle", bg: "bg-emerald-50", txt: "text-emerald-500", icon: Icons.Truck },
     { label: "Hielo disponible", val: totalInv.toLocaleString(), unit: "bolsas", bg: "bg-cyan-50", txt: "text-cyan-500", icon: Icons.Package },
-  ], [totalProd, ordPend, rutasAct, totalInv]);
+  ], [totalProdHoy, ordPend, rutasAct, totalInv]);
+
+  const resumenGeneral = useMemo(() => [
+    { label: "Ventas hoy", val: `$${n(ventasResumen.dia).toLocaleString()}`, sub: "pesos", bg: "bg-emerald-50", txt: "text-emerald-600", icon: Icons.DollarSign },
+    { label: "Ventas semana", val: `$${n(ventasResumen.semana).toLocaleString()}`, sub: "pesos", bg: "bg-blue-50", txt: "text-blue-600", icon: Icons.Calculator },
+    { label: "Ventas mes", val: `$${n(ventasResumen.mes).toLocaleString()}`, sub: "pesos", bg: "bg-indigo-50", txt: "text-indigo-600", icon: Icons.Wallet },
+    { label: "Clientes activos", val: n(clientesActivos).toLocaleString(), sub: "clientes", bg: "bg-cyan-50", txt: "text-cyan-600", icon: Icons.Users },
+    { label: "Rutas en progreso", val: n(rutasAct).toLocaleString(), sub: "rutas", bg: "bg-amber-50", txt: "text-amber-600", icon: Icons.Truck },
+    { label: "Alertas", val: n(alertasActivas.length).toLocaleString(), sub: "activas", bg: "bg-red-50", txt: "text-red-600", icon: Icons.AlertTriangle },
+  ], [ventasResumen, clientesActivos, rutasAct, alertasActivas.length]);
 
   return (
     <div>
@@ -61,6 +212,42 @@ export default function DashboardView({ data }) {
         ))}
       </div>
 
+      {/* Resumen general */}
+      <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5 mb-4 md:mb-6">
+        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.Dashboard /> Resumen general</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          {resumenGeneral.map((item, i) => (
+            <div key={i} className="rounded-xl border border-slate-100 p-3">
+              <div className="flex items-start justify-between mb-1.5">
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{item.label}</p>
+                <span className={`w-7 h-7 rounded-lg ${item.bg} ${item.txt} flex items-center justify-center`}><item.icon /></span>
+              </div>
+              <p className="text-lg font-extrabold text-slate-800 leading-tight">{item.val}</p>
+              <p className="text-[11px] text-slate-400">{item.sub}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Demanda vs Producción */}
+      <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5 mb-4 md:mb-6">
+        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.Factory /> Demanda vs producción</h3>
+        {tableroDemanda.length === 0 ? <EmptyState message="Sin productos de hielo" /> :
+          <DataTable
+            columns={[
+              { key: "sku", label: "SKU", render: v => <span className="font-mono text-xs font-bold text-blue-600">{s(v)}</span> },
+              { key: "producto", label: "Producto", bold: true },
+              { key: "pendientes", label: "Pedidos pendientes", render: v => n(v).toLocaleString() },
+              { key: "stock", label: "Stock disponible", render: v => n(v).toLocaleString() },
+              { key: "faltante", label: "Faltante por producir", render: v => <span className={`font-bold ${n(v) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{n(v).toLocaleString()}</span> },
+              { key: "producidoHoy", label: "Producido hoy", render: v => n(v).toLocaleString() },
+            ]}
+            data={tableroDemanda}
+            cardTitle={r => `${s(r.sku)} · ${s(r.producto)}`}
+            cardSubtitle={r => <span className="text-xs text-slate-500">Pend: {n(r.pendientes)} · Stock: {n(r.stock)} · Faltante: {n(r.faltante)} · Hoy: {n(r.producidoHoy)}</span>}
+          />}
+      </div>
+
       {/* Cuartos + Alertas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-4 md:mb-6">
         <div className="md:col-span-2 bg-white border border-slate-100 rounded-2xl p-4 md:p-5">
@@ -82,12 +269,12 @@ export default function DashboardView({ data }) {
         </div>
         <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5">
           <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.AlertTriangle /> Alertas</h3>
-          {(data.alertas || []).length === 0 ? <EmptyState message="Sin alertas activas" /> :
+          {alertasActivas.length === 0 ? <EmptyState message="Sin alertas activas" /> :
           <div className="space-y-2 md:space-y-3">
-            {(data.alertas || []).map((a, i) => (
+            {alertasActivas.map((a, i) => (
               <div key={a.id ?? i} className="flex items-start gap-2.5 md:gap-3 p-2.5 md:p-3 bg-slate-50 rounded-xl border border-slate-100">
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${s(a.tipo)==="critica"?"bg-red-500":s(a.tipo)==="accionable"?"bg-amber-500":"bg-blue-400"}`} />
-                <div><p className="text-xs font-medium text-slate-700">{s(a.msg)}</p><p className="text-xs text-slate-400 mt-0.5">{fmtDateTime(a.created_at)}</p></div>
+                <div><p className="text-xs font-medium text-slate-700">{s(a.msg || a.mensaje || a.detalle)}</p><p className="text-xs text-slate-400 mt-0.5">{fmtDateTime(a.created_at)}</p></div>
               </div>
             ))}
           </div>}

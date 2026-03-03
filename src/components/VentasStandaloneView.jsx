@@ -51,6 +51,12 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
     return prod ? n(prod.precio) : 0;
   }, [data.preciosEsp, data.productos]);
 
+  const getStock = useCallback((sku) => {
+    if (!sku) return 0;
+    const prod = data.productos.find(p => s(p.sku) === s(sku));
+    return prod ? n(prod.stock) : 0;
+  }, [data.productos]);
+
   const handleClientChange = (cId) => {
     setForm(f => ({ ...f, clienteId: cId }));
     setLines(prev => prev.map(l => ({ ...l, precio: getPrice(cId, l.sku) })));
@@ -66,7 +72,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const removeLine = (idx) => setLines(prev => prev.filter((_, i) => i !== idx));
 
   const subtotal = useMemo(() => lines.reduce((s, l) => s + (n(l.qty) * n(l.precio)), 0), [lines]);
-  const iva = useMemo(() => form.requiereFactura ? Math.round(subtotal * 16) / 100 : 0, [subtotal, form.requiereFactura]);
+  const iva = useMemo(() => Math.round(subtotal * 16) / 100, [subtotal]);
   const totalCalc = subtotal + iva;
   const productosStr = useMemo(() => lines.filter(l => l.sku && l.qty > 0).map(l => `${l.qty}×${l.sku}`).join(", "), [lines]);
 
@@ -326,16 +332,19 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Productos</label>
                 {lines.map((l, i) => (
-                  <div key={i} className="flex items-center gap-2 mb-2">
-                    <select value={l.sku} onChange={e => updateLine(i, "sku", e.target.value)}
-                      className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
-                      <option value="">Producto...</option>
-                      {prodTerminados.map(p => <option key={p.sku} value={s(p.sku)}>{s(p.nombre)} · ${n(p.precio)}</option>)}
-                    </select>
-                    <input type="number" min="1" value={l.qty} onChange={e => updateLine(i, "qty", parseInt(e.target.value) || 1)}
-                      className="w-14 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center" />
-                    <span className="text-sm font-bold text-slate-600 w-16 text-right">${(n(l.qty) * n(l.precio)).toLocaleString()}</span>
-                    {lines.length > 1 && <button onClick={() => removeLine(i)} className="text-red-400 text-lg w-6">×</button>}
+                  <div key={i} className="mb-2">
+                    <div className="flex items-center gap-2">
+                      <select value={l.sku} onChange={e => updateLine(i, "sku", e.target.value)}
+                        className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
+                        <option value="">Producto...</option>
+                        {prodTerminados.map(p => <option key={p.sku} value={s(p.sku)}>{s(p.nombre)} · ${n(p.precio)}</option>)}
+                      </select>
+                      <input type="number" min="1" value={l.qty} onChange={e => updateLine(i, "qty", parseInt(e.target.value) || 1)}
+                        className="w-14 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center" />
+                      <span className="text-sm font-bold text-slate-600 w-16 text-right">${(n(l.qty) * n(l.precio)).toLocaleString()}</span>
+                      {lines.length > 1 && <button onClick={() => removeLine(i)} className="text-red-400 text-lg w-6">×</button>}
+                    </div>
+                    {l.sku && <p className="text-[11px] text-slate-500 mt-1 ml-1">Stock: {getStock(l.sku).toLocaleString()} bolsas</p>}
                   </div>
                 ))}
                 <button onClick={addLine} className="text-xs text-blue-600 font-semibold">+ Agregar producto</button>

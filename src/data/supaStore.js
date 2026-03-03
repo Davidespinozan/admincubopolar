@@ -128,7 +128,7 @@ export function useSupaStore(userId, userName) {
       // ── Map rutas ──
       const rutasMapped = rutas.map(r => {
         const linked = (ord || []).filter(o => o.ruta_id === r.id);
-        const u = usuarios.find(x => x.id === r.chofer_id);
+        const u = usuarios.find(x => String(x.id) === String(r.chofer_id));
         const choferRaw = u?.nombre || r.chofer_nombre || r.chofer || '—';
         const choferLabel = (choferRaw && typeof choferRaw === 'object') ? (choferRaw.nombre || '—') : String(choferRaw);
         const cargaRaw = r.carga;

@@ -16,7 +16,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [mermaModal, setMermaModal] = useState(false);
   const [cobroMetodo, setCobroMetodo] = useState("Efectivo");
   const [cobroRef, setCobroRef] = useState("");
-  const [vForm, setVForm] = useState({ cliente: "", sku: "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
+  const [vForm, setVForm] = useState({ clienteId: "", cliente: "", sku: "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
   const [mForm, setMForm] = useState({ sku: "", cant: "", causa: "Bolsa rota" });
   const [fotoMerma, setFotoMerma] = useState(null);
   const [fotoTransf, setFotoTransf] = useState(null);
@@ -26,6 +26,8 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
   // ── READ REAL DATA FROM STORE ──
   const productos = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
+  const clientesActivos = useMemo(() => (data.clientes || []).filter(c => s(c.estatus || 'Activo') === 'Activo'), [data.clientes]);
+  const clienteExpressSel = useMemo(() => (data.clientes || []).find(c => String(c.id) === String(vForm.clienteId)), [data.clientes, vForm.clienteId]);
 
   // Get price for a client+sku (special price or default)
   const getPrice = useCallback((clienteNombre, sku) => {
@@ -166,8 +168,10 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const crearVentaExpress = () => {
     if (!vForm.cant || n(vForm.cant) <= 0) return;
 
+    const clienteNombre = s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general";
+
     if (vForm.factura) {
-      if (!vForm.cliente.trim()) { showToast("Captura razón social para facturar"); return; }
+      if (!clienteNombre.trim()) { showToast("Captura razón social para facturar"); return; }
       if (!vForm.rfc.trim()) { showToast("RFC requerido para factura"); return; }
       if (vForm.rfc.trim().length < 12 || vForm.rfc.trim().length > 13) { showToast("RFC debe tener 12-13 caracteres"); return; }
       if (!vForm.correo.trim()) { showToast("Correo requerido para factura"); return; }
@@ -182,12 +186,16 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       showToast("No tienes suficiente — te quedan " + (restante[sku] || 0));
       return;
     }
-    const precio = getPrice(vForm.cliente || "Público en general", sku);
-    const total = n(vForm.cant) * precio;
+    const precio = getPrice(clienteNombre, sku);
+    const subtotal = n(vForm.cant) * precio;
+    const iva = Math.round(subtotal * 16) / 100;
+    const total = subtotal + iva;
     const venta = {
       id: Date.now(), folio: "EX-" + String(Date.now()).slice(-4),
-      cliente: vForm.cliente || "Público en general",
+      clienteId: vForm.clienteId || clienteExpressSel?.id || null,
+      cliente: clienteNombre,
       items: [{ sku, cant: n(vForm.cant), precio }],
+      subtotal, iva,
       total, pago: vForm.pago,
       hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
       express: true,
@@ -199,9 +207,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       cp: vForm.factura ? vForm.cp : "",
     };
     setEntregas(prev => [...prev, venta]);
-    showToast("Venta exprés: $" + total.toLocaleString() + (vForm.factura ? " (factura)" : ""));
+    showToast("Venta exprés: $" + total.toLocaleString() + " (incluye IVA)" + (vForm.factura ? " (factura)" : ""));
     setVentaModal(false);
-    setVForm({ cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
+    setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
   };
 
   const registrarMerma = () => {
@@ -338,7 +346,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
       {/* Bottom bar */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 flex gap-2" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
-        <button onClick={() => { setVentaModal(true); setVForm({ cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" }); }} className="flex-1 py-3 bg-emerald-600 text-white text-xs font-bold rounded-xl">+ Venta exprés</button>
+        <button onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" }); }} className="flex-1 py-3 bg-emerald-600 text-white text-xs font-bold rounded-xl">+ Venta exprés</button>
         <button onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="py-3 px-4 bg-amber-100 text-amber-700 text-xs font-bold rounded-xl">Merma</button>
         <button onClick={() => setStep("cierre")} className="py-3 px-4 bg-slate-700 text-white text-xs font-bold rounded-xl">Cerrar</button>
       </div>
@@ -379,6 +387,17 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <h3 className="font-bold text-lg text-slate-800 mb-4">Venta exprés</h3>
             <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cliente de lista</label>
+                <select value={vForm.clienteId} onChange={e => {
+                  const id = e.target.value;
+                  const cli = clientesActivos.find(c => String(c.id) === String(id));
+                  setVForm(f => ({ ...f, clienteId: id, cliente: id ? s(cli?.nombre) : f.cliente }));
+                }} className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white">
+                  <option value="">Seleccionar cliente...</option>
+                  {clientesActivos.map(c => <option key={c.id} value={c.id}>{s(c.nombre)}</option>)}
+                </select>
+              </div>
               <input value={vForm.cliente} onChange={e => setVForm(f=>({...f,cliente:e.target.value}))} className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Nombre del cliente" />
               {/* Factura toggle */}
               <div className="flex items-center justify-between bg-slate-50 rounded-xl p-3 border border-slate-200">
@@ -424,7 +443,11 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 {vForm.cant && n(vForm.cant) > (restante[vForm.sku] || 0) && <p className="text-xs text-red-600 font-semibold mt-1">⚠ Solo te quedan {restante[vForm.sku] || 0}</p>}
               </div>
               {vForm.cant && n(vForm.cant) > 0 && n(vForm.cant) <= (restante[vForm.sku] || 0) && (
-                <div className="bg-blue-50 rounded-xl p-3 text-center"><p className="text-2xl font-extrabold text-slate-800">${(n(vForm.cant) * getPrice(vForm.cliente || "Público en general", vForm.sku)).toLocaleString()}</p></div>
+                <div className="bg-blue-50 rounded-xl p-3 text-center space-y-0.5">
+                  <p className="text-xs text-slate-500">Subtotal: ${(n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)).toLocaleString()}</p>
+                  <p className="text-xs text-slate-500">IVA 16%: ${((Math.round((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) * 16) / 100)).toLocaleString()}</p>
+                  <p className="text-2xl font-extrabold text-slate-800">${((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) + (Math.round((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) * 16) / 100)).toLocaleString()}</p>
+                </div>
               )}
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pago</label>
                 <div className="grid grid-cols-4 gap-1.5">{PAGOS.map(m => <button key={m} onClick={() => setVForm(f=>({...f,pago:m}))} className={`py-2 rounded-lg text-[11px] font-bold border-2 ${vForm.pago===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-500"}`}>{m}</button>)}</div>

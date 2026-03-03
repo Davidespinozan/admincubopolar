@@ -586,6 +586,11 @@ export function OrdenesView({ data, actions }) {
     return u;
   }));
   const removeLine = (idx) => setLines(prev=>prev.filter((_,i)=>i!==idx));
+  const getStock = useCallback((sku) => {
+    if (!sku) return 0;
+    const p = data.productos.find(x => s(x.sku) === s(sku));
+    return p ? n(p.stock) : 0;
+  }, [data.productos]);
 
   const subtotal = useMemo(()=>lines.reduce((s,l)=>s+(n(l.qty)*n(l.precio)),0),[lines]);
   const iva = useMemo(()=>Math.round(subtotal*16)/100,[subtotal]);
@@ -596,7 +601,6 @@ export function OrdenesView({ data, actions }) {
     const e = {};
     if (!form.clienteId) e.clienteId = "Requerido";
     if (lines.length===0||!lines.some(l=>l.sku&&l.qty>0)) e.productos = "Agrega al menos un producto";
-    for(const l of lines){if(l.sku){const p=data.productos.find(x=>x.sku===l.sku);if(p&&l.qty>p.stock){e.productos=`Stock insuficiente: ${l.sku} (${p.stock} disp.)`;break;}}}
     if (Object.keys(e).length) { setErrors(e); return; }
     const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
     actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc});
@@ -661,13 +665,16 @@ export function OrdenesView({ data, actions }) {
         <div>
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Productos *</label>
           {lines.map((l,i)=>(
-            <div key={i} className="flex items-center gap-2 mb-2">
-              <select value={l.sku} onChange={e=>updateLine(i,"sku",e.target.value)} className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white min-h-[44px]">
-                {prodOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              <input type="number" min="1" value={l.qty} onChange={e=>updateLine(i,"qty",parseInt(e.target.value)||1)} className="w-16 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center min-h-[44px]" />
-              <span className="text-sm font-semibold text-slate-600 w-20 text-right">${(n(l.qty)*n(l.precio)).toLocaleString()}</span>
-              {lines.length>1&&<button onClick={()=>removeLine(i)} className="text-red-400 hover:text-red-600 text-lg min-w-[28px]">×</button>}
+            <div key={i} className="mb-2">
+              <div className="flex items-center gap-2">
+                <select value={l.sku} onChange={e=>updateLine(i,"sku",e.target.value)} className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white min-h-[44px]">
+                  {prodOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <input type="number" min="1" value={l.qty} onChange={e=>updateLine(i,"qty",parseInt(e.target.value)||1)} className="w-16 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center min-h-[44px]" />
+                <span className="text-sm font-semibold text-slate-600 w-20 text-right">${(n(l.qty)*n(l.precio)).toLocaleString()}</span>
+                {lines.length>1&&<button onClick={()=>removeLine(i)} className="text-red-400 hover:text-red-600 text-lg min-w-[28px]">×</button>}
+              </div>
+              {l.sku && <p className="text-[11px] text-slate-500 mt-1 ml-1">Stock: {getStock(l.sku).toLocaleString()} bolsas</p>}
             </div>
           ))}
           <button onClick={addLine} className="text-xs text-blue-600 font-semibold mt-1">+ Agregar producto</button>
@@ -726,8 +733,9 @@ export function OrdenesView({ data, actions }) {
 export function RutasView({ data, actions }) {
   const toast = useToast();
   const [modal, setModal] = useState(false);
+  const [editingRuta, setEditingRuta] = useState(null);
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({nombre:"",choferId:""});
+  const [form, setForm] = useState({nombre:"",choferId:"",estatus:"Programada",carga:""});
   const [asignarModal, setAsignarModal] = useState(null);
   const [cierreModal, setCierreModal] = useState(null);
   const [detalleModal, setDetalleModal] = useState(null);
@@ -744,18 +752,43 @@ export function RutasView({ data, actions }) {
     if (!form.nombre.trim()) e.nombre = "Requerido";
     if (!form.choferId) e.choferId = "Requerido";
     if (Object.keys(e).length) { setErrors(e); return; }
-    const err = await actions.addRuta({
-      nombre: form.nombre,
-      choferId: Number(form.choferId),
-      ordenes: 0,
-      carga: "0 bolsas",
-    });
+    let err;
+    if (editingRuta) {
+      err = await actions.updateRuta(editingRuta.id, {
+        nombre: form.nombre,
+        choferId: Number(form.choferId),
+        estatus: form.estatus,
+        carga: form.carga,
+      });
+    } else {
+      err = await actions.addRuta({
+        nombre: form.nombre,
+        choferId: Number(form.choferId),
+        ordenes: 0,
+        carga: form.carga || "0 bolsas",
+      });
+    }
     if (err) {
-      toast?.error("No se pudo crear la ruta");
+      toast?.error(editingRuta ? "No se pudo actualizar la ruta" : "No se pudo crear la ruta");
       return;
     }
-    toast?.success("Ruta creada");
-    setModal(false); setForm({nombre:"",choferId:""}); setErrors({});
+    toast?.success(editingRuta ? "Ruta actualizada" : "Ruta creada");
+    setModal(false);
+    setEditingRuta(null);
+    setForm({nombre:"",choferId:"",estatus:"Programada",carga:""});
+    setErrors({});
+  };
+
+  const abrirEdicion = (ruta) => {
+    setEditingRuta(ruta);
+    setForm({
+      nombre: s(ruta.nombre),
+      choferId: String(ruta.choferId || ruta.chofer_id || ""),
+      estatus: s(ruta.estatus) || "Programada",
+      carga: s(ruta.carga) || s(ruta.cargaTxt) || "",
+    });
+    setErrors({});
+    setModal(true);
   };
 
   const asignarOrdenes = (ruta) => { setAsignarModal(ruta); };
@@ -793,8 +826,13 @@ export function RutasView({ data, actions }) {
 
   const choferLabel = (r) => {
     const raw = r?.chofer;
-    if (raw && typeof raw === 'object') return s(raw.nombre) || s(r?.choferNombre) || '—';
-    return s(raw) || s(r?.choferNombre) || '—';
+    const fromRaw = raw && typeof raw === 'object' ? s(raw.nombre) : s(raw);
+    const fromField = s(r?.choferNombre) || s(r?.chofer_nombre);
+    const rid = r?.choferId || r?.chofer_id;
+    const fromUsuario = rid
+      ? s((data.usuarios || []).find(u => String(u.id) === String(rid))?.nombre)
+      : '';
+    return fromRaw || fromField || fromUsuario || '—';
   };
 
   const cargaLabel = (r) => {
@@ -809,7 +847,7 @@ export function RutasView({ data, actions }) {
   };
 
   return (<div>
-    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setModal(true);setErrors({})}} actionLabel="Crear ruta" />
+    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",carga:""});setModal(true);setErrors({})}} actionLabel="Crear ruta" />
     
     {ordenesSinRuta.length > 0 && (
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center justify-between">
@@ -829,7 +867,13 @@ export function RutasView({ data, actions }) {
         const entregadas = rutaOrdenes.filter(o => o.estatus === "Entregada").length;
         return (
         <div key={r.id} className="bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 hover:shadow-md hover:border-blue-200 transition-all">
-          <div className="flex items-center justify-between mb-2"><span className="font-mono text-xs text-slate-400">{s(r.folio)}</span><StatusBadge status={r.estatus}/></div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="font-mono text-xs text-slate-400">{s(r.folio)}</span>
+            <div className="flex items-center gap-2">
+              <button onClick={()=>abrirEdicion(r)} className="px-2.5 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 rounded-lg border border-blue-200">Editar</button>
+              <StatusBadge status={r.estatus}/>
+            </div>
+          </div>
           <h3 className="text-base font-bold text-slate-800 mb-1">{s(r.nombre)}</h3>
           <p className="text-xs text-slate-500 mb-3">{choferLabel(r)} · {rutaOrdenes.length} órdenes · {cargaLabel(r)}</p>
           <div className="flex items-center justify-between text-xs mb-1"><span className="text-slate-400">Entregas</span><span className="font-semibold">{entregadas}/{rutaOrdenes.length}</span></div>
@@ -857,13 +901,15 @@ export function RutasView({ data, actions }) {
       })}
     </div>}
 
-    {/* Modal crear ruta */}
-    <Modal open={modal} onClose={()=>setModal(false)} title="Crear ruta">
+    {/* Modal crear/editar ruta */}
+    <Modal open={modal} onClose={()=>{setModal(false);setEditingRuta(null)}} title={editingRuta ? "Editar ruta" : "Crear ruta"}>
       <div className="space-y-3">
         <FormInput label="Nombre *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Ej: Ruta Norte" error={errors.nombre} />
         <FormSelect label="Chofer *" options={[{value:"",label:"Seleccionar..."}, ...choferes]} value={form.choferId} onChange={e=>setForm({...form,choferId:e.target.value})} error={errors.choferId} />
+        <FormSelect label="Estatus" options={["Programada","En progreso","Completada","Cerrada","Cancelada"]} value={form.estatus} onChange={e=>setForm({...form,estatus:e.target.value})} />
+        <FormInput label="Carga" value={form.carga} onChange={e=>setForm({...form,carga:e.target.value})} placeholder="Ej: 120 bolsas" />
       </div>
-      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Crear ruta</FormBtn></div>
+      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>{setModal(false);setEditingRuta(null)}}>Cancelar</FormBtn><FormBtn primary onClick={save}>{editingRuta ? "Guardar cambios" : "Crear ruta"}</FormBtn></div>
     </Modal>
 
     {/* Modal asignar órdenes */}
@@ -1098,10 +1144,18 @@ export function AlmacenBolsasView({ data }) {
       const tipo = s(m.tipo);
       const origen = s(m.origen).toLowerCase();
       const qty = Math.abs(n(m.cantidad));
+      const esConsumoProduccion =
+        tipo === "Consumo" ||
+        (tipo === "Salida" && (
+          origen.startsWith("consumo") ||
+          origen.includes("producción") ||
+          origen.includes("produccion") ||
+          origen.startsWith("prod")
+        ));
 
       if (tipo === "Entrada") {
         result[sku].entradas += qty;
-      } else if (tipo === "Consumo" || (tipo === "Salida" && origen.startsWith("consumo"))) {
+      } else if (esConsumoProduccion) {
         result[sku].consumo += qty;
       } else if (tipo === "Salida") {
         result[sku].salidas += qty;
