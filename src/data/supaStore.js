@@ -38,6 +38,7 @@ const EMPTY = {
   auditoria: [], usuarios: [], umbrales: [], pagos: [],
   comodatos: [], leads: [], empleados: [], nominaPeriodos: [],
   nominaRecibos: [], movContables: [], mermas: [], cuentasPorCobrar: [],
+  cuentasPorPagar: [], pagosProveedores: [],
   costosFijos: [], costosHistorial: [],
   contabilidad: { ingresos: [], egresos: [] },
 };
@@ -76,7 +77,7 @@ export function useSupaStore(userId, userName) {
       ]);
 
       // Tablas opcionales
-      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH] = await Promise.all([
+      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv] = await Promise.all([
         safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('empleados').select('*').order('id')),
@@ -87,6 +88,8 @@ export function useSupaStore(userId, userName) {
         safeRows(supabase.from('cuentas_por_cobrar').select('*').order('id', { ascending: false }).limit(500)),
         safeRows(supabase.from('costos_fijos').select('*').order('id')),
         safeRows(supabase.from('costos_historial').select('*').order('id', { ascending: false }).limit(200)),
+        safeRows(supabase.from('cuentas_por_pagar').select('*').order('id', { ascending: false }).limit(500)),
+        safeRows(supabase.from('pagos_proveedores').select('*').order('id', { ascending: false }).limit(200)),
       ]);
       const clientes  = cli;
       const productos = prod;
@@ -276,6 +279,16 @@ export function useSupaStore(userId, userName) {
           ...toCamel(c),
           monto: Number(c.monto),
         })),
+        cuentasPorPagar: (cxp || []).map(c => ({
+          ...toCamel(c),
+          montoOriginal: Number(c.monto_original),
+          montoPagado: Number(c.monto_pagado),
+          saldoPendiente: Number(c.saldo_pendiente),
+        })),
+        pagosProveedores: (pagProv || []).map(p => ({
+          ...toCamel(p),
+          monto: Number(p.monto),
+        })),
         contabilidad: contabilidadObj,
       });
 
@@ -331,6 +344,7 @@ export function useSupaStore(userId, userName) {
       'produccion', 'inventario_mov', 'pagos', 'auditoria',
       'cuartos_frios', 'comodatos', 'leads', 'empleados',
       'movimientos_contables', 'mermas', 'nomina_periodos', 'cuentas_por_cobrar',
+      'cuentas_por_pagar', 'costos_fijos',
     ];
     const channels = tables.map(table =>
       supabase.channel(`rt_${table}`)
@@ -1167,6 +1181,99 @@ export function useSupaStore(userId, userName) {
         });
 
         log('Registrar', 'Costos', `Variable: ${concepto} — $${monto}`);
+        rf();
+      },
+
+      // ── CUENTAS POR PAGAR (Proveedores) ──
+      addCuentaPorPagar: async (cxp) => {
+        const montoOriginal = centavos(n(cxp.montoOriginal || cxp.monto));
+        const { error } = await supabase.from('cuentas_por_pagar').insert({
+          proveedor: cxp.proveedor,
+          concepto: cxp.concepto,
+          monto_original: montoOriginal,
+          monto_pagado: 0,
+          saldo_pendiente: montoOriginal,
+          fecha_emision: cxp.fechaEmision || new Date().toISOString().slice(0, 10),
+          fecha_vencimiento: cxp.fechaVencimiento || null,
+          categoria: cxp.categoria || 'Proveedores',
+          referencia: cxp.referencia || '',
+          notas: cxp.notas || '',
+          estatus: 'Pendiente',
+        });
+        if (error) { t()?.error('Error al crear cuenta por pagar'); return error; }
+        log('Crear', 'Cuentas por Pagar', `${cxp.proveedor} — $${montoOriginal}`);
+        rf();
+      },
+
+      updateCuentaPorPagar: async (id, cxp) => {
+        const update = {};
+        if (cxp.proveedor !== undefined) update.proveedor = cxp.proveedor;
+        if (cxp.concepto !== undefined) update.concepto = cxp.concepto;
+        if (cxp.categoria !== undefined) update.categoria = cxp.categoria;
+        if (cxp.referencia !== undefined) update.referencia = cxp.referencia;
+        if (cxp.notas !== undefined) update.notas = cxp.notas;
+        if (cxp.fechaVencimiento !== undefined) update.fecha_vencimiento = cxp.fechaVencimiento;
+        const { error } = await supabase.from('cuentas_por_pagar').update(update).eq('id', id);
+        if (error) { t()?.error('Error al actualizar cuenta'); return error; }
+        log('Editar', 'Cuentas por Pagar', `ID ${id}`);
+        rf();
+      },
+
+      deleteCuentaPorPagar: async (id) => {
+        const { error } = await supabase.from('cuentas_por_pagar').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar cuenta'); return error; }
+        log('Eliminar', 'Cuentas por Pagar', `ID ${id}`);
+        rf();
+      },
+
+      // Abonar a cuenta por pagar (pago a proveedor)
+      pagarCuentaPorPagar: async (cxpId, monto, metodoPago, referencia) => {
+        const hoy = new Date().toISOString().slice(0, 10);
+        const montoNum = centavos(n(monto));
+
+        // Obtener la CxP actual
+        const { data: cxp, error: e1 } = await supabase
+          .from('cuentas_por_pagar')
+          .select('*')
+          .eq('id', cxpId)
+          .single();
+        if (e1 || !cxp) { t()?.error('Cuenta por pagar no encontrada'); return e1; }
+
+        const nuevoMontoPagado = centavos(Number(cxp.monto_pagado) + montoNum);
+        const nuevoSaldo = centavos(Number(cxp.monto_original) - nuevoMontoPagado);
+        const nuevoEstatus = nuevoSaldo <= 0 ? 'Pagada' : (nuevoMontoPagado > 0 ? 'Parcial' : 'Pendiente');
+
+        // Actualizar CxP
+        const { error: e2 } = await supabase
+          .from('cuentas_por_pagar')
+          .update({
+            monto_pagado: nuevoMontoPagado,
+            saldo_pendiente: Math.max(0, nuevoSaldo),
+            estatus: nuevoEstatus,
+          })
+          .eq('id', cxpId);
+        if (e2) { t()?.error('Error al actualizar cuenta'); return e2; }
+
+        // Registrar pago a proveedor
+        const { data: movimiento, error: e3 } = await supabase.from('movimientos_contables').insert({
+          fecha: hoy, tipo: 'Egreso', categoria: 'Proveedores',
+          concepto: `Pago a ${s(cxp.proveedor)} — ${s(cxp.concepto)}`,
+          monto: montoNum,
+          referencia: referencia || '',
+        }).select('id').single();
+        if (e3) { t()?.error('Error al registrar egreso'); return e3; }
+
+        await supabase.from('pagos_proveedores').insert({
+          cxp_id: cxpId,
+          monto: montoNum,
+          fecha: hoy,
+          metodo_pago: metodoPago || 'Transferencia',
+          referencia: referencia || '',
+          movimiento_id: movimiento?.id,
+        });
+
+        t()?.success(`Pago registrado: $${monto}`);
+        log('Pagar', 'Cuentas por Pagar', `CxP #${cxpId} — $${monto} — ${nuevoEstatus}`);
         rf();
       },
 

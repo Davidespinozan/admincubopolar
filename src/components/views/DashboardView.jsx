@@ -245,11 +245,13 @@ export default function DashboardView({ data }) {
     const cxcTotal = (data.cuentasPorCobrar || [])
       .filter(c => c.estatus !== 'Pagada')
       .reduce((s, c) => s + n(c.saldoPendiente), 0);
-    // Cuentas por pagar (placeholder - no table yet)
-    const cxpTotal = 0;
+    // Cuentas por pagar
+    const cxpTotal = (data.cuentasPorPagar || [])
+      .filter(c => c.estatus !== 'Pagada')
+      .reduce((s, c) => s + n(c.saldoPendiente), 0);
     const posicion = efectivoHoy + cxcTotal - cxpTotal;
     return { efectivoHoy, cxcTotal, cxpTotal, posicion };
-  }, [data.pagos, data.cuentasPorCobrar]);
+  }, [data.pagos, data.cuentasPorCobrar, data.cuentasPorPagar]);
 
   return (
     <div>
