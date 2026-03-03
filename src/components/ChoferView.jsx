@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { s, n } from '../utils/safe';
 
 const PAGOS = ["Efectivo", "Transferencia", "Tarjeta", "Crédito"];
