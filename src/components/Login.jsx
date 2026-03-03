@@ -70,7 +70,7 @@ export default function LoginScreen({ onLogin }) {
       </div>
       <div className="relative w-full max-w-sm">
         <div className="text-center mb-6 sm:mb-8">
-          <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559989/icon-512_ijp1nl.png" alt="CuboPolar" className="w-16 h-16 mx-auto mb-4" />
+          <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559989/icon-512_ijp1nl.png" alt="CuboPolar" className="w-16 h-16 mx-auto mb-4 rounded-2xl shadow-xl shadow-blue-500/30" />
           <h1 className="text-2xl font-extrabold text-white tracking-tight">CUBOPOLAR</h1>
           <p className="text-sm text-blue-300/60 mt-1">Sistema ERP</p>
         </div>
