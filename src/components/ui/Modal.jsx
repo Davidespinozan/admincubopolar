@@ -7,7 +7,7 @@ export default function Modal({ open, onClose, title, wide, children }) {
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
       <div
-        className={`relative bg-white w-full max-h-[92vh] md:max-h-[85vh] overflow-y-auto rounded-t-2xl md:rounded-2xl shadow-2xl ${wide ? "md:max-w-2xl" : "md:max-w-md"} md:mx-4`}
+        className={`relative bg-white w-full max-h-[92vh] md:max-h-[85vh] overflow-y-auto rounded-t-2xl md:rounded-2xl shadow-2xl mx-3 md:mx-4 mb-0 md:mb-0 ${wide ? "md:max-w-2xl" : "md:max-w-md"} max-w-lg`}
         onClick={e => e.stopPropagation()}
       >
         <div className="md:hidden w-10 h-1 bg-slate-200 rounded-full mx-auto mt-3" />
@@ -17,7 +17,7 @@ export default function Modal({ open, onClose, title, wide, children }) {
             <Icons.X />
           </button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="p-4 md:p-5">{children}</div>
       </div>
     </div>
   );

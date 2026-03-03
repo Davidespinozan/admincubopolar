@@ -144,9 +144,9 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
           <div className="flex items-center gap-3">
             <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559988/icon-192_lknzb5.png" alt="CuboPolar" className="md:hidden w-8 h-8 flex-shrink-0" />
             <div className="md:hidden"><p className="text-sm font-bold text-slate-800">{current?.label || "Resumen"}</p></div>
-            <div className="hidden md:flex relative">
+            <div className="hidden md:flex relative flex-1">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span>
-              <input type="text" placeholder="Buscar..." className="pl-10 pr-4 py-2 w-64 bg-slate-50 border border-slate-100 rounded-xl text-sm focus:outline-none focus:border-blue-300 focus:bg-white transition-all" />
+              <input type="text" placeholder="Buscar..." className="pl-10 pr-4 py-2.5 w-full max-w-md bg-slate-50 border border-slate-100 rounded-xl text-sm focus:outline-none focus:border-blue-300 focus:bg-white transition-all" />
             </div>
           </div>
           <div className="flex items-center gap-2 relative">
@@ -154,7 +154,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
               <Icons.Bell />{(data.alertas || []).length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />}
             </button>
             {alertasOpen && (
-              <div className="absolute top-12 right-0 bg-white border border-slate-100 rounded-xl shadow-lg w-80 max-h-96 overflow-y-auto z-50">
+              <div className="absolute top-12 right-0 bg-white border border-slate-100 rounded-xl shadow-lg w-[calc(100vw-32px)] sm:w-96 md:w-80 max-h-96 overflow-y-auto z-50">
                 <div className="p-3 border-b border-slate-100">
                   <p className="text-sm font-bold text-slate-800">Alertas</p>
                 </div>
@@ -182,12 +182,12 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       </header>
 
       {/* ═══ MAIN ═══ */}
-      <main className="md:ml-[240px] px-4 py-4 md:px-6 md:py-6 pb-24 md:pb-6">
+      <main className="md:ml-[240px] px-3 py-4 sm:px-4 md:px-6 md:py-6 pb-24 md:pb-6">
         {renderView()}
       </main>
 
       {/* ═══ BOTTOM NAV — mobile ═══ */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-100 safe-bottom">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-100" style={{paddingBottom: "env(safe-area-inset-bottom, 0px)"}}>
         <div className="flex items-stretch">
           {BOTTOM_PRIMARY.map(id => {
             const item = ALL_ITEMS.find(n => n.id === id);
