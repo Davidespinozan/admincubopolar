@@ -373,12 +373,14 @@ export function useSupaStore(userId, userName) {
       deactivateCliente: async (id) => {
         const { error } = await supabase.from('clientes').update({ estatus: 'Inactivo' }).eq('id', id);
         if (error) { t()?.error('Error al desactivar cliente'); return error; }
+        log('Desactivar', 'Clientes', `ID ${id}`);
         rf();
       },
 
       deleteCliente: async (id) => {
         const { error } = await supabase.from('clientes').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar cliente'); return error; }
+        log('Eliminar', 'Clientes', `ID ${id}`);
         rf();
       },
 
@@ -400,6 +402,7 @@ export function useSupaStore(userId, userName) {
           precio: Number(p.precio),
         }).eq('id', id);
         if (error) { t()?.error('Error al actualizar producto'); return error; }
+        log('Editar', 'Productos', `ID ${id} — ${p.nombre}`);
         rf();
       },
 
@@ -424,12 +427,14 @@ export function useSupaStore(userId, userName) {
           cliente_id: p.clienteId, sku: p.sku, precio: Number(p.precio),
         });
         if (error) { t()?.error('Error al guardar precio especial'); return error; }
+        log('Crear', 'Precios Especiales', `${p.sku} — $${p.precio}`);
         rf();
       },
 
       deletePrecioEsp: async (id) => {
         const { error } = await supabase.from('precios_esp').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar precio especial'); return error; }
+        log('Eliminar', 'Precios Especiales', `ID ${id}`);
         rf();
       },
 
@@ -530,6 +535,7 @@ export function useSupaStore(userId, userName) {
       deleteOrden: async (id) => {
         const { error } = await supabase.from('ordenes').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar orden'); return error; }
+        log('Eliminar', 'Órdenes', `ID ${id}`);
         rf();
       },
 
@@ -591,12 +597,14 @@ export function useSupaStore(userId, userName) {
       confirmarProduccion: async (id) => {
         const { error } = await supabase.rpc('confirmar_produccion', { p_id: id, p_uid: uid() });
         if (error) { t()?.error('Error al confirmar producción'); return error; }
+        log('Confirmar', 'Producción', `ID ${id}`);
         rf();
       },
 
       deleteProduccion: async (id) => {
         const { error } = await supabase.from('produccion').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar registro de producción'); return error; }
+        log('Eliminar', 'Producción', `ID ${id}`);
         rf();
       },
 
@@ -611,6 +619,7 @@ export function useSupaStore(userId, userName) {
           nombre: cf.nombre, temp: cf.temp, capacidad: cf.capacidad, stock: {},
         });
         if (error) { t()?.error('Error al crear cuarto frío'); return error; }
+        log('Crear', 'Cuartos Fríos', `${cf.nombre}`);
         rf();
       },
 
@@ -621,12 +630,14 @@ export function useSupaStore(userId, userName) {
         if (cf.capacidad !== undefined) update.capacidad = cf.capacidad;
         const { error } = await supabase.from('cuartos_frios').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar cuarto frío'); return error; }
+        log('Editar', 'Cuartos Fríos', `ID ${id}`);
         rf();
       },
 
       deleteCuartoFrio: async (id) => {
         const { error } = await supabase.from('cuartos_frios').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar cuarto frío'); return error; }
+        log('Eliminar', 'Cuartos Fríos', `ID ${id}`);
         rf();
       },
 
@@ -639,8 +650,9 @@ export function useSupaStore(userId, userName) {
         await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
         await supabase.from('inventario_mov').insert({
           tipo: 'Entrada', producto: sku, cantidad: Number(cantidad),
-          origen: 'Producción', usuario: uname(),
+          origen: `Entrada a ${cfId}`, usuario: uname(),
         });
+        log('Entrada CF', 'Cuartos Fríos', `${cantidad}×${sku} → ${cfId}`);
         rf();
       },
 
@@ -657,6 +669,7 @@ export function useSupaStore(userId, userName) {
           tipo: 'Salida', producto: sku, cantidad: Number(cantidad),
           origen: motivo || String(cfId), usuario: uname(),
         });
+        log('Salida CF', 'Cuartos Fríos', `${cantidad}×${sku} de ${cfId} — ${motivo || 'Sin motivo'}`);
         rf();
       },
 
@@ -683,8 +696,9 @@ export function useSupaStore(userId, userName) {
 
         await supabase.from('inventario_mov').insert({
           tipo: 'Traspaso', producto: sku, cantidad: qty,
-          origen: String(origen), usuario: uname(),
+          origen: `${origen} → ${destino}`, usuario: uname(),
         });
+        log('Traspaso', 'Cuartos Fríos', `${qty}×${sku} de ${origen} → ${destino}`);
         rf();
       },
 
@@ -785,6 +799,7 @@ export function useSupaStore(userId, userName) {
       updateRutaEstatus: async (id, est) => {
         const { error } = await supabase.from('rutas').update({ estatus: est }).eq('id', id);
         if (error) { t()?.error('Error al actualizar ruta'); return error; }
+        log('Cambiar estatus', 'Rutas', `Ruta #${id} → ${est}`);
         rf();
       },
 
@@ -797,6 +812,7 @@ export function useSupaStore(userId, userName) {
         if (r.carga     !== undefined) update.carga     = r.carga;
         const { error } = await supabase.from('rutas').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar ruta'); return error; }
+        log('Editar', 'Rutas', `Ruta #${id}`);
         rf();
       },
 
@@ -820,11 +836,13 @@ export function useSupaStore(userId, userName) {
         }
         const cargaTxt = Object.entries(desglose).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || `${totalBolsas} bolsas`;
         await supabase.from('rutas').update({ carga: cargaTxt }).eq('id', rutaId);
+        log('Asignar órdenes', 'Rutas', `Ruta #${rutaId} — ${ordenIds.length} órdenes — ${cargaTxt}`);
         rf();
       },
 
       cerrarRuta: async (rutaId, devuelto) => {
         await supabase.from('rutas').update({ estatus: 'Cerrada', devuelto: devuelto || 0 }).eq('id', rutaId);
+        log('Cerrar', 'Rutas', `Ruta #${rutaId} — devuelto: ${devuelto || 0}`);
         rf();
       },
 
@@ -832,6 +850,7 @@ export function useSupaStore(userId, userName) {
       timbrar: async (folio) => {
         const { error } = await supabase.rpc('timbrar_orden', { p_folio: folio, p_uid: uid() });
         if (error) { t()?.error('Error al timbrar orden'); return error; }
+        log('Timbrar', 'Facturación', `${folio}`);
         rf();
       },
 
@@ -842,6 +861,7 @@ export function useSupaStore(userId, userName) {
           p_ref: referencia, p_uid: uid(),
         });
         if (error) { t()?.error('Error al registrar pago'); return error; }
+        log('Registrar', 'Pagos', `Cliente #${clienteId} — $${monto} — ${referencia || 'Sin ref'}`);
         rf();
       },
 
@@ -862,12 +882,14 @@ export function useSupaStore(userId, userName) {
           concepto: m.concepto, monto: centavos(m.monto),
         }).eq('id', id);
         if (error) { t()?.error('Error al actualizar movimiento'); return error; }
+        log('Editar', 'Contabilidad', `ID ${id} — ${m.concepto}`);
         rf();
       },
 
       deleteMovContable: async (id) => {
         const { error } = await supabase.from('movimientos_contables').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar movimiento'); return error; }
+        log('Eliminar', 'Contabilidad', `ID ${id}`);
         rf();
       },
 
@@ -877,12 +899,14 @@ export function useSupaStore(userId, userName) {
           sku, cantidad: Number(cantidad), causa, origen, foto_url: fotoUrl || '',
         });
         if (error) { t()?.error('Error al registrar merma'); return error; }
+        log('Registrar', 'Mermas', `${cantidad}×${sku} — ${causa}`);
         rf();
       },
 
       deleteMerma: async (id) => {
         const { error } = await supabase.from('mermas').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar merma'); return error; }
+        log('Eliminar', 'Mermas', `ID ${id}`);
         rf();
       },
 
@@ -896,6 +920,7 @@ export function useSupaStore(userId, userName) {
           frecuencia: c.frecuencia, estatus: 'Activo',
         });
         if (error) { t()?.error('Error al guardar comodato'); return error; }
+        log('Crear', 'Comodatos', `${c.negocio}`);
         rf();
       },
 
@@ -917,12 +942,14 @@ export function useSupaStore(userId, userName) {
         if (c.frecuencia  !== undefined) update.frecuencia   = c.frecuencia;
         const { error } = await supabase.from('comodatos').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar comodato'); return error; }
+        log('Editar', 'Comodatos', `ID ${id}`);
         rf();
       },
 
       deleteComodato: async (id) => {
         const { error } = await supabase.from('comodatos').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar comodato'); return error; }
+        log('Eliminar', 'Comodatos', `ID ${id}`);
         rf();
       },
 
@@ -934,18 +961,21 @@ export function useSupaStore(userId, userName) {
           fecha: new Date().toISOString().slice(0, 10),
         });
         if (error) { t()?.error('Error al guardar lead'); return error; }
+        log('Crear', 'Leads', `${l.nombre}`);
         rf();
       },
 
       updateLead: async (id, changes) => {
         const { error } = await supabase.from('leads').update(changes).eq('id', id);
         if (error) { t()?.error('Error al actualizar lead'); return error; }
+        log('Editar', 'Leads', `ID ${id}`);
         rf();
       },
 
       deleteLead: async (id) => {
         const { error } = await supabase.from('leads').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar lead'); return error; }
+        log('Eliminar', 'Leads', `ID ${id}`);
         rf();
       },
 
@@ -957,6 +987,7 @@ export function useSupaStore(userId, userName) {
           banco: e.banco, cuenta: e.cuenta, estatus: 'Activo',
         });
         if (error) { t()?.error('Error al guardar empleado'); return error; }
+        log('Crear', 'Empleados', `${e.nombre} — ${e.puesto}`);
         rf();
       },
 
@@ -972,12 +1003,14 @@ export function useSupaStore(userId, userName) {
         if (e.estatus      !== undefined) update.estatus      = e.estatus;
         const { error } = await supabase.from('empleados').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar empleado'); return error; }
+        log('Editar', 'Empleados', `ID ${id}`);
         rf();
       },
 
       deleteEmpleado: async (id) => {
         const { error } = await supabase.from('empleados').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar empleado'); return error; }
+        log('Eliminar', 'Empleados', `ID ${id}`);
         rf();
       },
 
@@ -985,6 +1018,7 @@ export function useSupaStore(userId, userName) {
       addNominaPeriodo: async (p) => {
         const { data: row, error } = await supabase.from('nomina_periodos').insert(p).select().single();
         if (error) { t()?.error('Error al crear período de nómina'); return error; }
+        log('Crear', 'Nómina', `Período ${p.inicio || ''} — ${p.fin || ''}`);
         rf();
         return row;
       },
@@ -992,6 +1026,7 @@ export function useSupaStore(userId, userName) {
       addNominaRecibo: async (r) => {
         const { error } = await supabase.from('nomina_recibos').insert(r);
         if (error) { t()?.error('Error al guardar recibo de nómina'); return error; }
+        log('Crear', 'Nómina Recibo', `Empleado ${r.empleado_id}`);
         rf();
       },
 
@@ -1009,17 +1044,19 @@ export function useSupaStore(userId, userName) {
       updateUsuario: async (id, u) => {
         const { error } = await supabase.from('usuarios').update(u).eq('id', id);
         if (error) { t()?.error('Error al actualizar usuario'); return error; }
+        log('Editar', 'Usuarios', `ID ${id}`);
         rf();
       },
 
       deleteUsuario: async (id) => {
         const { error } = await supabase.from('usuarios').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar usuario'); return error; }
+        log('Eliminar', 'Usuarios', `ID ${id}`);
         rf();
       },
 
       // ── ALMACÉN BOLSAS ──
-      movimientoBolsa: async (sku, cantidad, tipo, motivo) => {
+      movimientoBolsa: async (sku, cantidad, tipo, motivo, costo) => {
         const { data: prod } = await supabase.from('productos').select('id, stock').eq('sku', sku).single();
         if (!prod) return;
         const newStock = tipo === 'Entrada'
@@ -1030,37 +1067,110 @@ export function useSupaStore(userId, userName) {
           tipo, producto: sku, cantidad: Number(cantidad),
           origen: motivo, usuario: uname(),
         });
+
+        // Auto-registrar egreso contable cuando es compra de empaques (Entrada)
+        if (tipo === 'Entrada' && Number(costo) > 0) {
+          await supabase.from('movimientos_contables').insert({
+            fecha: new Date().toISOString().slice(0, 10),
+            tipo: 'Egreso', categoria: 'Proveedores',
+            concepto: `Compra empaques: ${cantidad}×${sku}`,
+            monto: centavos(Number(costo)),
+          });
+        }
+
         log(tipo, 'Almacén Bolsas', `${sku} x${cantidad} — ${motivo}`);
         rf();
       },
 
       // ── CERRAR RUTA COMPLETA (chofer) ──
       cerrarRutaCompleta: async (reporte) => {
-        const { choferNombre, entregas, mermas: mermasArr, cobros } = reporte;
+        const { choferNombre, entregas, mermas: mermasArr, cobros, carga } = reporte;
+        const hoy = new Date().toISOString().slice(0, 10);
+
+        // 1. Crear órdenes + líneas + ingreso contable por cada entrega
         for (const e of (entregas || [])) {
           const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
           const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
           const { data: newOrd } = await supabase.from('ordenes').insert({
             folio, cliente_id: e.clienteId || null,
-            fecha: new Date().toISOString().slice(0, 10),
-            total: centavos(n(e.total)), estatus: 'Entregada',
+            fecha: hoy, total: centavos(n(e.total)), estatus: 'Entregada',
           }).select('id').single();
+
+          // Insertar líneas de la orden
+          if (newOrd && e.items && e.items.length > 0) {
+            await supabase.from('orden_lineas').insert(
+              e.items.map(it => ({
+                orden_id: newOrd.id, sku: it.sku,
+                cantidad: Number(it.cant || it.qty || 0),
+                precio_unit: centavos(Number(it.precio || 0)),
+                subtotal: centavos(Number(it.cant || it.qty || 0) * Number(it.precio || 0)),
+              }))
+            );
+          }
+
+          // Auto-ingreso contable
           if (newOrd && n(e.total) > 0) {
             await supabase.from('movimientos_contables').insert({
-              fecha: new Date().toISOString().slice(0, 10),
-              tipo: 'Ingreso', categoria: 'Ventas',
+              fecha: hoy, tipo: 'Ingreso', categoria: 'Ventas',
               concepto: `Entrega ${folio} — ${e.cliente || 'Exprés'}`,
               monto: centavos(n(e.total)),
             });
           }
         }
+
+        // 2. Registrar mermas
         for (const m of (mermasArr || [])) {
           await supabase.from('mermas').insert({
             sku: m.sku, cantidad: Number(m.cant), causa: m.causa,
             origen: 'Ruta ' + choferNombre, foto_url: m.foto || '',
           });
         }
-        await log('Cierre Ruta', 'Rutas', `Entregas: ${(entregas || []).length}, Efectivo: $${cobros?.Efectivo || 0}`);
+
+        // 3. Conciliar devuelto → regresar stock sobrante al primer cuarto frío
+        if (carga && typeof carga === 'object') {
+          // Calcular entregado por SKU
+          const entregadoPorSku = {};
+          for (const e of (entregas || [])) {
+            for (const it of (e.items || [])) {
+              entregadoPorSku[it.sku] = (entregadoPorSku[it.sku] || 0) + Number(it.cant || it.qty || 0);
+            }
+          }
+          // Calcular merma por SKU
+          const mermaPorSku = {};
+          for (const m of (mermasArr || [])) {
+            mermaPorSku[m.sku] = (mermaPorSku[m.sku] || 0) + Number(m.cant || 0);
+          }
+
+          // Devuelto = cargado - entregado - merma
+          const devueltoPorSku = {};
+          for (const [sku, cargado] of Object.entries(carga)) {
+            const entregado = entregadoPorSku[sku] || 0;
+            const merma = mermaPorSku[sku] || 0;
+            const devuelto = Number(cargado) - entregado - merma;
+            if (devuelto > 0) devueltoPorSku[sku] = devuelto;
+          }
+
+          // Regresar al primer cuarto frío disponible
+          if (Object.keys(devueltoPorSku).length > 0) {
+            const { data: cfs } = await supabase.from('cuartos_frios').select('id, stock').limit(1);
+            const cf = cfs?.[0];
+            if (cf) {
+              const stockObj = (cf.stock && typeof cf.stock === 'object') ? { ...cf.stock } : {};
+              for (const [sku, qty] of Object.entries(devueltoPorSku)) {
+                stockObj[sku] = (Number(stockObj[sku] || 0)) + qty;
+                await supabase.from('inventario_mov').insert({
+                  tipo: 'Entrada', producto: sku, cantidad: qty,
+                  origen: `Devolución ruta ${choferNombre}`, usuario: choferNombre || uname(),
+                });
+              }
+              await supabase.from('cuartos_frios').update({ stock: stockObj }).eq('id', cf.id);
+            }
+            const devTxt = Object.entries(devueltoPorSku).map(([sku, qty]) => `${qty}×${sku}`).join(', ');
+            log('Devolución', 'Rutas', `${choferNombre} devolvió: ${devTxt}`);
+          }
+        }
+
+        await log('Cierre Ruta', 'Rutas', `Chofer: ${choferNombre}, Entregas: ${(entregas || []).length}, Mermas: ${(mermasArr || []).length}, Efectivo: $${cobros?.Efectivo || 0}`);
         rf();
       },
 

@@ -3,7 +3,7 @@ import { s, n } from '../utils/safe';
 
 export default function BolsasView({ user, data, actions, onLogout }) {
   const [modal, setModal] = useState(null); // "entrada" | "salida"
-  const [form, setForm] = useState({ sku: "EMP-25", cantidad: "", destino: "Producción" });
+  const [form, setForm] = useState({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "" });
   const [historial, setHistorial] = useState([]);
   const [toast, setToast] = useState("");
 
@@ -26,7 +26,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
     const esEntrada = modal === "entrada";
     const motivo = esEntrada ? "Recepción de compra" : (form.destino || "Producción");
 
-    actions.movimientoBolsa(form.sku, n(form.cantidad), esEntrada ? "Entrada" : "Salida", motivo, s(user?.nombre));
+    actions.movimientoBolsa(form.sku, n(form.cantidad), esEntrada ? "Entrada" : "Salida", motivo, esEntrada ? n(form.costo) : 0);
 
     setHistorial(prev => [{
       id: Date.now(), tipo: esEntrada ? "entrada" : "salida", sku: form.sku,
@@ -36,7 +36,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
 
     showToast((esEntrada ? "+" : "-") + form.cantidad + " " + form.sku);
     setModal(null);
-    setForm({ sku: "EMP-25", cantidad: "", destino: "Producción" });
+    setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "" });
   };
 
   const stockActual = (sku) => n(empaques.find(p => s(p.sku) === sku)?.stock || 0);
@@ -85,11 +85,11 @@ export default function BolsasView({ user, data, actions, onLogout }) {
         })}
 
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => { setModal("entrada"); setForm({ sku: "EMP-25", cantidad: "", destino: "" }); }}
+          <button onClick={() => { setModal("entrada"); setForm({ sku: "EMP-25", cantidad: "", destino: "", costo: "" }); }}
             className="py-5 bg-emerald-600 text-white font-extrabold rounded-2xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform">
             + Llegaron
           </button>
-          <button onClick={() => { setModal("salida"); setForm({ sku: "EMP-25", cantidad: "", destino: "Producción" }); }}
+          <button onClick={() => { setModal("salida"); setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "" }); }}
             className="py-5 bg-red-500 text-white font-extrabold rounded-2xl text-base shadow-lg shadow-red-200 active:scale-[0.98] transition-transform">
             − Entregué a prod.
           </button>
@@ -140,6 +140,15 @@ export default function BolsasView({ user, data, actions, onLogout }) {
                 <input type="number" inputMode="numeric" value={form.cantidad} onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
                   className="w-full px-4 py-4 border border-slate-200 rounded-xl text-2xl font-bold text-center" placeholder="0" autoFocus />
               </div>
+
+              {modal === "entrada" && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Costo total (opcional)</label>
+                  <input type="number" inputMode="decimal" value={form.costo} onChange={e => setForm(f => ({ ...f, costo: e.target.value }))}
+                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base text-center" placeholder="$0.00 — se registra como gasto" />
+                  <p className="text-[10px] text-slate-400 mt-1 text-center">Si lo llenas, se registra automáticamente como egreso en Contabilidad</p>
+                </div>
+              )}
 
               {modal === "salida" && form.cantidad && n(form.cantidad) > stockActual(form.sku) && (
                 <div className="bg-red-50 rounded-xl p-3">

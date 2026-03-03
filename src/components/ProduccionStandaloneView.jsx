@@ -73,15 +73,11 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     if (!form.cantidad || n(form.cantidad) <= 0) return;
     if (bolsaSku && n(form.cantidad) > stockBolsa) return;
 
-    // 1. Create production record (En proceso)
-    actions.addProduccion({ turno: form.turno, maquina: form.maquina, sku: form.sku, cantidad: form.cantidad });
-
-    // Stock already handled by addProduccion in store
-
-    // 3. Add to cuarto frío
-    if (actions.meterACuartoFrio) {
-      actions.meterACuartoFrio(form.destino, form.sku, n(form.cantidad));
-    }
+    // Atomic: producción + descontar empaques + meter a cuarto frío
+    actions.producirYCongelar({
+      turno: form.turno, maquina: form.maquina, sku: form.sku,
+      cantidad: form.cantidad, destino: form.destino,
+    });
 
     const cfNombre = cuartos.find(cf => s(cf.id) === form.destino)?.nombre || form.destino;
     showToast(form.cantidad + " " + form.sku + " → " + cfNombre);
