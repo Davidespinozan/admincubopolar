@@ -151,7 +151,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
           </div>
           <div className="flex items-center gap-2 relative">
             <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative p-2.5 rounded-xl hover:bg-slate-100 transition-colors text-slate-500 min-w-[44px] min-h-[44px] flex items-center justify-center">
-              <Icons.Bell /><span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />
+              <Icons.Bell />{(data.alertas || []).length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />}
             </button>
             {alertasOpen && (
               <div className="absolute top-12 right-0 bg-white border border-slate-100 rounded-xl shadow-lg w-80 max-h-96 overflow-y-auto z-50">
