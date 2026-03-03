@@ -31,14 +31,32 @@ WHERE NOT EXISTS (
 );
 
 -- ── PRODUCTOS DEMO (sin tocar SKU productivos existentes) ─────
-INSERT INTO productos (sku, nombre, tipo, stock, ubicacion, precio, empaque_sku)
-SELECT * FROM (VALUES
-  ('DEMO-HC-10K', 'DEMO Hielo Cubo 10 kg', 'Producto Terminado', 180, 'CF-2', 42.00, 'EMP-5'),
-  ('DEMO-HT-10K', 'DEMO Hielo Triturado 10 kg', 'Producto Terminado', 120, 'CF-3', 39.00, 'EMP-5')
-) AS v(sku, nombre, tipo, stock, ubicacion, precio, empaque_sku)
-WHERE NOT EXISTS (
-  SELECT 1 FROM productos p WHERE p.sku = v.sku
-);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'productos' AND column_name = 'empaque_sku'
+  ) THEN
+    INSERT INTO productos (sku, nombre, tipo, stock, ubicacion, precio, empaque_sku)
+    SELECT * FROM (VALUES
+      ('DEMO-HC-10K', 'DEMO Hielo Cubo 10 kg', 'Producto Terminado', 180, 'CF-2', 42.00, 'EMP-5'),
+      ('DEMO-HT-10K', 'DEMO Hielo Triturado 10 kg', 'Producto Terminado', 120, 'CF-3', 39.00, 'EMP-5')
+    ) AS v(sku, nombre, tipo, stock, ubicacion, precio, empaque_sku)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM productos p WHERE p.sku = v.sku
+    );
+  ELSE
+    INSERT INTO productos (sku, nombre, tipo, stock, ubicacion, precio)
+    SELECT * FROM (VALUES
+      ('DEMO-HC-10K', 'DEMO Hielo Cubo 10 kg', 'Producto Terminado', 180, 'CF-2', 42.00),
+      ('DEMO-HT-10K', 'DEMO Hielo Triturado 10 kg', 'Producto Terminado', 120, 'CF-3', 39.00)
+    ) AS v(sku, nombre, tipo, stock, ubicacion, precio)
+    WHERE NOT EXISTS (
+      SELECT 1 FROM productos p WHERE p.sku = v.sku
+    );
+  END IF;
+END $$;
 
 -- ── PRECIOS ESPECIALES DEMO ───────────────────────────────────
 INSERT INTO precios_esp (cliente_id, sku, precio)
@@ -50,30 +68,54 @@ WHERE c.rfc = 'MES901010AA1'
   );
 
 -- ── RUTA DEMO ──────────────────────────────────────────────────
-INSERT INTO rutas (folio, nombre, chofer_id, estatus, carga)
-SELECT 'DEMO-R-001', 'DEMO Ruta Centro', u.id, 'Programada', '80 bolsas'
-FROM usuarios u
-WHERE u.email = 'demo.chofer1@cubopolar.test'
-  AND NOT EXISTS (
-    SELECT 1 FROM rutas r WHERE r.folio = 'DEMO-R-001'
-  );
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='rutas' AND column_name='carga' AND data_type='jsonb'
+  ) THEN
+    INSERT INTO rutas (folio, nombre, chofer_id, chofer_nombre, estatus, carga)
+    SELECT 'DEMO-R-001', 'DEMO Ruta Centro', u.id, u.nombre, 'Programada', '{"bolsas":80}'::jsonb
+    FROM usuarios u
+    WHERE u.email = 'demo.chofer1@cubopolar.test'
+      AND NOT EXISTS (SELECT 1 FROM rutas r WHERE r.folio = 'DEMO-R-001');
+  ELSE
+    INSERT INTO rutas (folio, nombre, chofer_id, estatus, carga)
+    SELECT 'DEMO-R-001', 'DEMO Ruta Centro', u.id, 'Programada', '80 bolsas'
+    FROM usuarios u
+    WHERE u.email = 'demo.chofer1@cubopolar.test'
+      AND NOT EXISTS (SELECT 1 FROM rutas r WHERE r.folio = 'DEMO-R-001');
+  END IF;
+END $$;
 
 -- ── ORDEN + LÍNEA DEMO ────────────────────────────────────────
-INSERT INTO ordenes (folio, cliente_id, fecha, total, estatus, ruta_id)
-SELECT 'DEMO-OV-001', c.id, CURRENT_DATE, 760.00, 'Creada', NULL
-FROM clientes c
-WHERE c.rfc = 'MES901010AA1'
-  AND NOT EXISTS (
-    SELECT 1 FROM ordenes o WHERE o.folio = 'DEMO-OV-001'
-  );
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema='public' AND table_name='orden_lineas'
+  ) THEN
+    INSERT INTO ordenes (folio, cliente_id, fecha, total, estatus, ruta_id)
+    SELECT 'DEMO-OV-001', c.id, CURRENT_DATE, 760.00, 'Creada', NULL
+    FROM clientes c
+    WHERE c.rfc = 'MES901010AA1'
+      AND NOT EXISTS (SELECT 1 FROM ordenes o WHERE o.folio = 'DEMO-OV-001');
 
-INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal)
-SELECT o.id, 'DEMO-HC-10K', 20, 38.00, 760.00
-FROM ordenes o
-WHERE o.folio = 'DEMO-OV-001'
-  AND NOT EXISTS (
-    SELECT 1 FROM orden_lineas ol WHERE ol.orden_id = o.id AND ol.sku = 'DEMO-HC-10K'
-  );
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal)
+    SELECT o.id, 'DEMO-HC-10K', 20, 38.00, 760.00
+    FROM ordenes o
+    WHERE o.folio = 'DEMO-OV-001'
+      AND NOT EXISTS (
+        SELECT 1 FROM orden_lineas ol WHERE ol.orden_id = o.id AND ol.sku = 'DEMO-HC-10K'
+      );
+  ELSE
+    INSERT INTO ordenes (folio, cliente_id, cliente_nombre, fecha, productos, total, estatus, ruta_id)
+    SELECT 'DEMO-OV-001', c.id, c.nombre, CURRENT_DATE, '20×DEMO-HC-10K', 760.00, 'Creada', NULL
+    FROM clientes c
+    WHERE c.rfc = 'MES901010AA1'
+      AND NOT EXISTS (SELECT 1 FROM ordenes o WHERE o.folio = 'DEMO-OV-001');
+  END IF;
+END $$;
 
 -- ── PRODUCCIÓN DEMO ───────────────────────────────────────────
 INSERT INTO produccion (folio, fecha, turno, maquina, sku, cantidad, estatus)
@@ -83,18 +125,37 @@ WHERE NOT EXISTS (
 );
 
 -- ── INVENTARIO MOV DEMO (para visualizar partida doble y kardex)
--- Nota: usa columnas que consume la app actual: producto y usuario (texto).
-INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario)
-SELECT 'Entrada', 'EMP-5', 300, 'Compra DEMO', 'Sistema DEMO'
-WHERE NOT EXISTS (
-  SELECT 1 FROM inventario_mov m WHERE m.tipo = 'Entrada' AND m.producto = 'EMP-5' AND m.origen = 'Compra DEMO'
-);
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='inventario_mov' AND column_name='producto'
+  ) THEN
+    INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario)
+    SELECT 'Entrada', 'EMP-5', 300, 'Compra DEMO', 'Sistema DEMO'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM inventario_mov m WHERE m.tipo = 'Entrada' AND m.producto = 'EMP-5' AND m.origen = 'Compra DEMO'
+    );
 
-INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario)
-SELECT 'Salida', 'EMP-5', 120, 'Consumo DEMO-OP-001', 'Sistema DEMO'
-WHERE NOT EXISTS (
-  SELECT 1 FROM inventario_mov m WHERE m.tipo = 'Salida' AND m.producto = 'EMP-5' AND m.origen = 'Consumo DEMO-OP-001'
-);
+    INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario)
+    SELECT 'Salida', 'EMP-5', 120, 'Consumo DEMO-OP-001', 'Sistema DEMO'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM inventario_mov m WHERE m.tipo = 'Salida' AND m.producto = 'EMP-5' AND m.origen = 'Consumo DEMO-OP-001'
+    );
+  ELSE
+    INSERT INTO inventario_mov (tipo, sku, cantidad, origen, usuario_id)
+    SELECT 'Entrada', 'EMP-5', 300, 'Compra DEMO', NULL
+    WHERE NOT EXISTS (
+      SELECT 1 FROM inventario_mov m WHERE m.tipo = 'Entrada' AND m.sku = 'EMP-5' AND m.origen = 'Compra DEMO'
+    );
+
+    INSERT INTO inventario_mov (tipo, sku, cantidad, origen, usuario_id)
+    SELECT 'Salida', 'EMP-5', 120, 'Consumo DEMO-OP-001', NULL
+    WHERE NOT EXISTS (
+      SELECT 1 FROM inventario_mov m WHERE m.tipo = 'Salida' AND m.sku = 'EMP-5' AND m.origen = 'Consumo DEMO-OP-001'
+    );
+  END IF;
+END $$;
 
 -- ── CUARTOS FRÍOS (JSONB stock) DEMO ──────────────────────────
 -- Si existe Cuarto Frío 1/2/3, suma stock demo en JSONB para ver datos en Congeladores.
