@@ -1051,8 +1051,20 @@ export function ConfiguracionView({ data, actions }) {
         return;
       }
 
-      // Then create profile in usuarios table
-      await actions.addUsuario({ nombre: form.nombre, email: form.email.trim().toLowerCase(), rol: form.rol, estatus: "Activo" });
+      // Then create profile in usuarios table with auth_id
+      const insertError = await actions.addUsuario({ 
+        nombre: form.nombre, 
+        email: form.email.trim().toLowerCase(), 
+        rol: form.rol, 
+        auth_id: authData.user.id,
+        estatus: "Activo" 
+      });
+      
+      if (insertError) {
+        setErrors({ email: `Error al guardar en base de datos: ${insertError.message}` });
+        return;
+      }
+      
       toast?.success("Usuario creado — ya puede iniciar sesión");
     } else {
       // Edit — only update profile (nombre, rol), not auth

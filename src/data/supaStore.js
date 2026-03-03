@@ -797,9 +797,9 @@ export function useSupaStore(userId, userName) {
       // ── USUARIOS ──
       addUsuario: async (u) => {
         const { data: row, error } = await supabase.from('usuarios').insert({
-          nombre: u.nombre, rol: u.rol, correo: u.correo, estatus: 'Activo',
+          nombre: u.nombre, email: u.email, rol: u.rol, auth_id: u.auth_id, estatus: u.estatus || 'Activo',
         }).select().single();
-        if (error) { t()?.error('Error al crear usuario'); return error; }
+        if (error) { t()?.error(`Error al crear usuario: ${error.message}`); return error; }
         rf();
         return row;
       },
