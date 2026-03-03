@@ -1,62 +1,99 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { n, s, centavos } from '../utils/safe';
+import { useToast } from '../components/ui/Toast';
 
 // ═══════════════════════════════════════════════════════════════
-// useSupaStore — Drop-in replacement for useStore
-// Same API: { data, actions }
-// Components don't need ANY changes.
+// useSupaStore — fuente única de verdad para toda la app
+// API: { data, actions, loading, error }
+//
+// Estructura real de Supabase:
+//   cuartos_frios  → id: TEXT, stock: JSONB  (no hay cuarto_frio_stock)
+//   inventario_mov → columna "producto" (no "sku"), "usuario" (no "usuario_id")
+//   auditoria      → columna "usuario" texto (no "usuario_id")
 // ═══════════════════════════════════════════════════════════════
+
+// Fetch helper — returns [] on error, never throws
+const safeRows = async (query) => {
+  const { data, error } = await query;
+  if (error) console.warn('[supaStore] ❌', error.message, '| code:', error.code);
+  return data || [];
+};
+
+// snake_case → camelCase
+const toCamel = (obj) => {
+  if (Array.isArray(obj)) return obj.map(toCamel);
+  if (obj === null || typeof obj !== 'object') return obj;
+  const o = {};
+  for (const [k, v] of Object.entries(obj)) {
+    o[k.replace(/_([a-z])/g, (_, c) => c.toUpperCase())] = v;
+  }
+  return o;
+};
 
 const EMPTY = {
   clientes: [], productos: [], preciosEsp: [], ordenes: [],
   rutas: [], produccion: [], inventarioMov: [], cuartosFrios: [],
   alertas: [], facturacionPendiente: [], conciliacion: [],
   auditoria: [], usuarios: [], umbrales: [], pagos: [],
+  comodatos: [], leads: [], empleados: [], nominaPeriodos: [],
+  nominaRecibos: [], movContables: [], mermas: [],
+  contabilidad: { ingresos: [], egresos: [] },
 };
 
-export function useSupaStore(userId) {
+export function useSupaStore(userId, userName) {
   const [data, setData] = useState(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const uidRef = useRef(userId);
   uidRef.current = userId;
+  const userNameRef = useRef(userName || 'Sistema');
+  userNameRef.current = userName || 'Sistema';
+
+  const toast = useToast();
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
 
   // ── Fetch all data ──────────────────────────────────────────
   const fetchAll = useCallback(async () => {
+    console.log('[fetchAll] iniciando — supabase:', supabase ? '✅' : '❌ null', '| userId:', uidRef.current);
     try {
-      const [
-        { data: cli }, { data: prod }, { data: pe },
-        { data: ord }, { data: ol }, { data: rut },
-        { data: pro }, { data: mov }, { data: cf },
-        { data: cfs }, { data: aud }, { data: usr },
-        { data: umb }, { data: pag },
-      ] = await Promise.all([
-        supabase.from('clientes').select('*').order('id'),
-        supabase.from('productos').select('*').order('id'),
-        supabase.from('precios_esp').select('*').order('id'),
-        supabase.from('ordenes').select('*').order('id', { ascending: false }),
-        supabase.from('orden_lineas').select('*').order('orden_id'),
-        supabase.from('rutas').select('*').order('id', { ascending: false }),
-        supabase.from('produccion').select('*').order('id', { ascending: false }),
-        supabase.from('inventario_mov').select('*').order('id', { ascending: false }).limit(200),
-        supabase.from('cuartos_frios').select('*'),
-        supabase.from('cuarto_frio_stock').select('*'),
-        supabase.from('auditoria').select('*').order('id', { ascending: false }).limit(500),
-        supabase.from('usuarios').select('*').order('id'),
-        supabase.from('umbrales').select('*'),
-        supabase.from('pagos').select('*').order('id', { ascending: false }).limit(200),
+      // Tablas core
+      const [cli, prod, pe, ord, ol, rut, pro, mov, cf, aud, usr, umb, pag] = await Promise.all([
+        safeRows(supabase.from('clientes').select('*').order('id')),
+        safeRows(supabase.from('productos').select('*').order('id')),
+        safeRows(supabase.from('precios_esp').select('*').order('id')),
+        safeRows(supabase.from('ordenes').select('*').order('id', { ascending: false })),
+        safeRows(supabase.from('orden_lineas').select('*').order('orden_id')),
+        safeRows(supabase.from('rutas').select('*').order('id', { ascending: false })),
+        safeRows(supabase.from('produccion').select('*').order('id', { ascending: false })),
+        safeRows(supabase.from('inventario_mov').select('*').order('id', { ascending: false }).limit(200)),
+        safeRows(supabase.from('cuartos_frios').select('*')),
+        safeRows(supabase.from('auditoria').select('*').order('id', { ascending: false }).limit(500)),
+        safeRows(supabase.from('usuarios').select('*').order('id')),
+        safeRows(supabase.from('umbrales').select('*')),
+        safeRows(supabase.from('pagos').select('*').order('id', { ascending: false }).limit(200)),
       ]);
 
-      const clientes = cli || [];
-      const productos = prod || [];
-      const ordenLineas = ol || [];
-      const rutas = rut || [];
-      const usuarios = usr || [];
-      const umbrales = umb || [];
-      const cuartoFrioStock = cfs || [];
+      // Tablas opcionales
+      const [com, lea, emp, nomP, nomR, movC, mer] = await Promise.all([
+        safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
+        safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
+        safeRows(supabase.from('empleados').select('*').order('id')),
+        safeRows(supabase.from('nomina_periodos').select('*').order('id', { ascending: false })),
+        safeRows(supabase.from('nomina_recibos').select('*').order('id', { ascending: false })),
+        safeRows(supabase.from('movimientos_contables').select('*').order('id', { ascending: false }).limit(500)),
+        safeRows(supabase.from('mermas').select('*').order('id', { ascending: false }).limit(200)),
+      ]);
 
-      // ── Map ordenes: snake_case → camelCase + denormalized fields ──
+      const clientes  = cli;
+      const productos = prod;
+      const ordenLineas = ol;
+      const rutas     = rut;
+      const usuarios  = usr;
+      const umbrales  = umb;
+
+      // ── Map ordenes ──
       const ordenes = (ord || []).map(o => {
         const c = clientes.find(x => x.id === o.cliente_id);
         const r = rutas.find(x => x.id === o.ruta_id);
@@ -69,12 +106,13 @@ export function useSupaStore(userId) {
           ruta: r?.nombre || '—',
           usoCfdi: c?.uso_cfdi || 'G03',
           preciosSnapshot: lines.map(l => ({
-            sku: l.sku, qty: l.cantidad, unitPrice: Number(l.precio_unit), lineTotal: Number(l.subtotal),
+            sku: l.sku, qty: l.cantidad,
+            unitPrice: Number(l.precio_unit), lineTotal: Number(l.subtotal),
           })),
         };
       });
 
-      // ── Map clientes: uso_cfdi → usoCfdi for form compatibility ──
+      // ── Map clientes ──
       const clientesMapped = clientes.map(c => ({
         ...c,
         usoCfdi: c.uso_cfdi,
@@ -87,24 +125,26 @@ export function useSupaStore(userId) {
         return { ...p, clienteId: p.cliente_id, clienteNom: c?.nombre || '', precio: Number(p.precio) };
       });
 
-      // ── Map rutas: compute ordenes/entregadas dynamically ──
+      // ── Map rutas ──
       const rutasMapped = rutas.map(r => {
         const linked = (ord || []).filter(o => o.ruta_id === r.id);
         const u = usuarios.find(x => x.id === r.chofer_id);
         return {
           ...r,
           chofer: u?.nombre || '—',
+          choferId: r.chofer_id,
           ordenes: linked.length,
           entregadas: linked.filter(o => o.estatus === 'Entregada' || o.estatus === 'Facturada').length,
         };
       });
 
-      // ── Map inventario movimientos ──
+      // ── Map inventario_mov (usa "producto" y "usuario" como texto) ──
       const inventarioMov = (mov || []).map(m => ({
         ...m,
-        producto: m.sku,
+        producto: m.producto || m.sku || '',   // columna real: "producto"
+        sku:      m.producto || m.sku || '',   // alias para compatibilidad
         cantidad: Number(m.cantidad),
-        usuario: usuarios.find(u => u.id === m.usuario_id)?.nombre || 'Sistema',
+        usuario:  m.usuario || 'Sistema',      // columna real: "usuario" texto
       }));
 
       // ── Map produccion ──
@@ -113,34 +153,45 @@ export function useSupaStore(userId) {
         cantidad: Number(p.cantidad),
       }));
 
-      // ── Build facturacionPendiente from Entregada ordenes ──
+      // ── Build facturacionPendiente ──
       const facturacionPendiente = ordenes
         .filter(o => o.estatus === 'Entregada')
         .map(o => {
           const c = clientes.find(x => x.id === o.cliente_id);
-          return { id: o.id, folio: o.folio, cliente: c?.nombre || '', rfc: c?.rfc || '', fecha: o.fecha, total: Number(o.total) };
+          return {
+            id: o.id, folio: o.folio, cliente: c?.nombre || '',
+            rfc: c?.rfc || '', fecha: o.fecha, total: Number(o.total),
+          };
         });
 
-      // ── Build cuartos fríos with products string ──
+      // ── Map cuartos_frios (id: TEXT, stock: JSONB) ──
       const cuartosFrios = (cf || []).map(q => {
-        const stocks = cuartoFrioStock.filter(s => s.cuarto_frio_id === q.id);
-        return { ...q, productos: stocks.map(s => `${s.sku}: ${s.cantidad}`).join(' · ') };
+        const stockObj = (q.stock && typeof q.stock === 'object') ? q.stock : {};
+        return {
+          ...q,
+          stock: stockObj,
+          productos: Object.entries(stockObj)
+            .map(([sku, qty]) => `${sku}: ${qty}`)
+            .join(' · '),
+        };
       });
 
-      // ── Build live alerts from stock vs umbrales ──
+      // ── Build live alerts ──
       const alertas = umbrales.map(u => {
         const p = productos.find(x => x.sku === u.sku);
         if (!p) return null;
         const stock = Number(p.stock);
-        if (stock <= u.critica) return { id: u.id, tipo: 'critica', msg: `${p.nombre} bajo mínimo — ${stock} unidades`, created_at: new Date().toISOString() };
-        if (stock <= u.accionable) return { id: u.id, tipo: 'accionable', msg: `${p.nombre} nivel bajo — ${stock} unidades`, created_at: new Date().toISOString() };
+        if (stock <= u.critica)
+          return { id: u.id, tipo: 'critica',    msg: `${p.nombre} bajo mínimo — ${stock} unidades`,  created_at: new Date().toISOString() };
+        if (stock <= u.accionable)
+          return { id: u.id, tipo: 'accionable', msg: `${p.nombre} nivel bajo — ${stock} unidades`,   created_at: new Date().toISOString() };
         return null;
       }).filter(Boolean);
 
-      // ── Map auditoria ──
+      // ── Map auditoria (usa "usuario" como texto directo) ──
       const auditoria = (aud || []).map(a => ({
         ...a,
-        usuario: usuarios.find(u => u.id === a.usuario_id)?.nombre || 'Sistema',
+        usuario: a.usuario || 'Sistema',   // columna real: "usuario" texto
       }));
 
       // ── Map umbrales ──
@@ -148,6 +199,12 @@ export function useSupaStore(userId) {
         const p = productos.find(x => x.sku === u.sku);
         return { ...u, producto: p ? `${p.sku} (${p.nombre})` : u.sku };
       });
+
+      // ── Map movimientos contables ──
+      const movContables = (movC || []).map(m => ({
+        ...toCamel(m),
+        monto: Number(m.monto),
+      }));
 
       setData({
         clientes: clientesMapped,
@@ -160,27 +217,78 @@ export function useSupaStore(userId) {
         cuartosFrios,
         alertas,
         facturacionPendiente,
-        conciliacion: [], // Generated per-ruta in ConciliacionView
+        conciliacion: [],
         auditoria,
         usuarios,
         umbrales: umbralesMapped,
         pagos: (pag || []).map(p => ({ ...p, monto: Number(p.monto) })),
+        comodatos: (com || []).map(toCamel),
+        leads: (lea || []).map(toCamel),
+        empleados: (emp || []).map(toCamel),
+        nominaPeriodos: (nomP || []).map(toCamel),
+        nominaRecibos:  (nomR || []).map(toCamel),
+        movContables,
+        mermas: (mer || []).map(m => ({ ...toCamel(m), cantidad: Number(m.cantidad) })),
+        contabilidad: {
+          ingresos: movContables.filter(m => m.tipo === 'Ingreso'),
+          egresos:  movContables.filter(m => m.tipo === 'Egreso'),
+        },
       });
 
+      console.log('[fetchAll] ✅ completado — clientes:', cli.length, '| productos:', prod.length, '| cuartos:', cf.length);
       setLoading(false);
       setError(null);
     } catch (err) {
-      console.error('Supabase fetch error:', err);
+      console.error('[fetchAll] ❌ catch error:', err?.message || err);
       setError(err.message);
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  // Re-fetch on mount y cuando cambia el userId (ej. después del login)
+  // Wait for Supabase auth session to be ready when there is a userId to avoid
+  // races where an initial fetch runs unauthenticated and returns empty results.
+  useEffect(() => {
+    let sub = null;
+    let cancelled = false;
+
+    const run = async () => {
+      if (userId) {
+        try {
+          // v2: getSession() returns { data: { session } }
+          const sessionRes = await supabase.auth.getSession();
+          const session = sessionRes?.data?.session;
+          if (!session) {
+            // subscribe once to auth changes and fetch when session becomes available
+            const { data } = supabase.auth.onAuthStateChange((event, s) => {
+              if (s?.access_token && !cancelled) {
+                fetchAll();
+                try { data.subscription.unsubscribe(); } catch (e) {}
+              }
+            });
+            sub = data && data.subscription;
+            return;
+          }
+        } catch (e) {
+          // ignore and continue to fetch
+        }
+      }
+      if (!cancelled) fetchAll();
+    };
+
+    run();
+
+    return () => { cancelled = true; if (sub && sub.unsubscribe) try { sub.unsubscribe(); } catch (e) {} };
+  }, [fetchAll, userId]);
 
   // ── Realtime subscriptions ──────────────────────────────────
   useEffect(() => {
-    const tables = ['clientes','productos','ordenes','orden_lineas','rutas','produccion','inventario_mov','pagos','auditoria','precios_esp'];
+    const tables = [
+      'clientes', 'productos', 'ordenes', 'rutas',
+      'produccion', 'inventario_mov', 'pagos', 'auditoria',
+      'cuartos_frios', 'comodatos', 'leads', 'empleados',
+      'movimientos_contables', 'mermas', 'nomina_periodos',
+    ];
     const channels = tables.map(table =>
       supabase.channel(`rt_${table}`)
         .on('postgres_changes', { event: '*', schema: 'public', table }, () => fetchAll())
@@ -190,218 +298,568 @@ export function useSupaStore(userId) {
   }, [fetchAll]);
 
   // ── Actions ─────────────────────────────────────────────────
-  // Uses ref pattern so actions are stable (never recreated)
-  // but always access current userId via uidRef
-
   const actionsRef = useRef(null);
   if (!actionsRef.current) {
-    const uid = () => uidRef.current;
-    const rf = () => fetchAll();
+    const uid   = () => uidRef.current;
+    const uname = () => userNameRef.current;
+    const rf    = () => fetchAll();
+    const t     = () => toastRef.current;
 
-    actionsRef.current = {
+    const a = actionsRef.current = {
 
-    // ── CLIENTES ──
-    addCliente: async (c) => {
-      const { error } = await supabase.from('clientes').insert({
-        nombre: c.nombre, rfc: c.rfc, regimen: c.regimen,
-        uso_cfdi: c.usoCfdi || 'G03', cp: c.cp, correo: c.correo,
-        tipo: c.tipo, contacto: c.contacto,
-      });
-      if (!error) rf();
-      return error;
-    },
+      // ── CLIENTES ──
+      addCliente: async (c) => {
+        const { error } = await supabase.from('clientes').insert({
+          nombre: c.nombre, rfc: c.rfc, regimen: c.regimen,
+          uso_cfdi: c.usoCfdi || 'G03', cp: c.cp, correo: c.correo,
+          tipo: c.tipo, contacto: c.contacto,
+        });
+        if (error) {
+          console.error('[addCliente]', error.message, error.code);
+          t()?.error('Error al crear cliente: ' + error.message);
+          return error;
+        }
+        rf();
+      },
 
-    updateCliente: async (id, c) => {
-      const update = {};
-      if (c.nombre !== undefined) update.nombre = c.nombre;
-      if (c.rfc !== undefined) update.rfc = c.rfc;
-      if (c.regimen !== undefined) update.regimen = c.regimen;
-      if (c.usoCfdi !== undefined) update.uso_cfdi = c.usoCfdi;
-      if (c.cp !== undefined) update.cp = c.cp;
-      if (c.correo !== undefined) update.correo = c.correo;
-      if (c.tipo !== undefined) update.tipo = c.tipo;
-      if (c.contacto !== undefined) update.contacto = c.contacto;
-      // saldo NOT updated — only via timbrar/registrarPago
-      const { error } = await supabase.from('clientes').update(update).eq('id', id);
-      if (!error) rf();
-      return error;
-    },
+      updateCliente: async (id, c) => {
+        const update = {};
+        if (c.nombre   !== undefined) update.nombre   = c.nombre;
+        if (c.rfc      !== undefined) update.rfc      = c.rfc;
+        if (c.regimen  !== undefined) update.regimen  = c.regimen;
+        if (c.usoCfdi  !== undefined) update.uso_cfdi = c.usoCfdi;
+        if (c.cp       !== undefined) update.cp       = c.cp;
+        if (c.correo   !== undefined) update.correo   = c.correo;
+        if (c.tipo     !== undefined) update.tipo     = c.tipo;
+        if (c.contacto !== undefined) update.contacto = c.contacto;
+        const { error } = await supabase.from('clientes').update(update).eq('id', id);
+        if (error) { t()?.error('Error al actualizar cliente'); return error; }
+        rf();
+      },
 
-    deactivateCliente: async (id) => {
-      const { error } = await supabase.from('clientes').update({ estatus: 'Inactivo' }).eq('id', id);
-      if (!error) rf();
-      return error;
-    },
+      deactivateCliente: async (id) => {
+        const { error } = await supabase.from('clientes').update({ estatus: 'Inactivo' }).eq('id', id);
+        if (error) { t()?.error('Error al desactivar cliente'); return error; }
+        rf();
+      },
 
-    // ── PRODUCTOS ──
-    addProducto: async (p) => {
-      const { error } = await supabase.from('productos').insert({
-        sku: p.sku, nombre: p.nombre, tipo: p.tipo,
-        stock: Number(p.stock) || 0, ubicacion: p.ubicacion, precio: Number(p.precio) || 0,
-      });
-      if (!error) rf();
-      return error;
-    },
+      deleteCliente: async (id) => {
+        const { error } = await supabase.from('clientes').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar cliente'); return error; }
+        rf();
+      },
 
-    updateProducto: async (id, p) => {
-      const { error } = await supabase.from('productos').update({
-        nombre: p.nombre, tipo: p.tipo, ubicacion: p.ubicacion, precio: Number(p.precio),
-        // stock NOT touched — only via move_stock()
-      }).eq('id', id);
-      if (!error) rf();
-      return error;
-    },
+      // ── PRODUCTOS ──
+      addProducto: async (p) => {
+        const { error } = await supabase.from('productos').insert({
+          sku: p.sku, nombre: p.nombre, tipo: p.tipo,
+          stock: Number(p.stock) || 0, ubicacion: p.ubicacion,
+          precio: Number(p.precio) || 0,
+        });
+        if (error) { t()?.error('Error al crear producto'); return error; }
+        rf();
+      },
 
-    // ── PRECIOS ESPECIALES ──
-    addPrecioEsp: async (p) => {
-      const { error } = await supabase.from('precios_esp').insert({
-        cliente_id: p.clienteId, sku: p.sku, precio: Number(p.precio),
-      });
-      if (!error) rf();
-      return error;
-    },
+      updateProducto: async (id, p) => {
+        const { error } = await supabase.from('productos').update({
+          nombre: p.nombre, tipo: p.tipo, ubicacion: p.ubicacion,
+          precio: Number(p.precio),
+        }).eq('id', id);
+        if (error) { t()?.error('Error al actualizar producto'); return error; }
+        rf();
+      },
 
-    deletePrecioEsp: async (id) => {
-      const { error } = await supabase.from('precios_esp').delete().eq('id', id);
-      if (!error) rf();
-      return error;
-    },
+      deleteProducto: async (id) => {
+        const { error } = await supabase.from('productos').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar producto'); return error; }
+        rf();
+      },
 
-    // ── ÓRDENES ──
-    addOrden: async (o) => {
-      // 1. Parse products string
-      const items = s(o.productos).split(',').map(x => x.trim()).filter(Boolean).map(item => {
-        const m = item.match(/^(\d+)\s*[×x]\s*(.+)$/i);
-        return m ? { qty: parseInt(m[1], 10), sku: m[2].trim() } : null;
-      }).filter(Boolean);
-      if (items.length === 0) return { message: 'Productos inválidos' };
+      // ── PRECIOS ESPECIALES ──
+      addPrecioEsp: async (p) => {
+        const { error } = await supabase.from('precios_esp').insert({
+          cliente_id: p.clienteId, sku: p.sku, precio: Number(p.precio),
+        });
+        if (error) { t()?.error('Error al guardar precio especial'); return error; }
+        rf();
+      },
 
-      // 2. Get prices from DB (always fresh, not from local state)
-      const [{ data: prods }, { data: pes }] = await Promise.all([
-        supabase.from('productos').select('sku, precio, stock'),
-        supabase.from('precios_esp').select('sku, precio').eq('cliente_id', o.clienteId),
-      ]);
+      deletePrecioEsp: async (id) => {
+        const { error } = await supabase.from('precios_esp').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar precio especial'); return error; }
+        rf();
+      },
 
-      // 3. Validate stock
-      for (const item of items) {
-        const p = (prods || []).find(x => x.sku === item.sku);
-        if (!p) return { message: `SKU ${item.sku} no existe` };
-        if (Number(p.stock) < item.qty) return { message: `Stock insuficiente: ${item.sku}` };
-      }
+      // ── ÓRDENES ──
+      addOrden: async (o) => {
+        const items = s(o.productos).split(',').map(x => x.trim()).filter(Boolean).map(item => {
+          const m = item.match(/^(\d+)\s*[×x]\s*(.+)$/i);
+          return m ? { qty: parseInt(m[1], 10), sku: m[2].trim() } : null;
+        }).filter(Boolean);
+        if (items.length === 0) return { message: 'Productos inválidos' };
 
-      // 4. Calculate total with centavo precision
-      let total = 0;
-      const lineas = items.map(item => {
-        const p = (prods || []).find(x => x.sku === item.sku);
-        const pe = (pes || []).find(x => x.sku === item.sku);
-        const unitPrice = centavos(pe ? Number(pe.precio) : Number(p?.precio || 0));
-        const subtotal = centavos(item.qty * unitPrice);
-        total += subtotal;
-        return { sku: item.sku, cantidad: item.qty, precio_unit: unitPrice, subtotal };
-      });
-      total = centavos(total);
+        const [{ data: prods }, { data: pes }] = await Promise.all([
+          supabase.from('productos').select('sku, precio, stock'),
+          supabase.from('precios_esp').select('sku, precio').eq('cliente_id', o.clienteId),
+        ]);
 
-      // 5. Get next folio
-      const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
-      const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
+        for (const item of items) {
+          const p = (prods || []).find(x => x.sku === item.sku);
+          if (!p) return { message: `SKU ${item.sku} no existe` };
+          if (Number(p.stock) < item.qty) return { message: `Stock insuficiente: ${item.sku}` };
+        }
 
-      // 6. Insert orden
-      const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert({
-        folio, cliente_id: o.clienteId,
-        fecha: o.fecha || new Date().toISOString().slice(0, 10),
-        total, estatus: 'Creada',
-      }).select('id').single();
-      if (e1) return e1;
+        let total = 0;
+        const lineas = items.map(item => {
+          const p  = (prods || []).find(x => x.sku === item.sku);
+          const pe = (pes   || []).find(x => x.sku === item.sku);
+          const unitPrice = centavos(pe ? Number(pe.precio) : Number(p?.precio || 0));
+          const subtotal  = centavos(item.qty * unitPrice);
+          total += subtotal;
+          return { sku: item.sku, cantidad: item.qty, precio_unit: unitPrice, subtotal };
+        });
+        total = centavos(total);
 
-      // 7. Insert line items with price snapshots
-      const { error: e2 } = await supabase.from('orden_lineas').insert(
-        lineas.map(l => ({ ...l, orden_id: newOrd.id }))
-      );
+        const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
+        const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
 
-      // 8. Audit
-      await supabase.from('auditoria').insert({
-        usuario_id: uid(), accion: 'Crear', modulo: 'Órdenes',
-        detalle: `${folio} — $${total}`,
-      });
+        const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert({
+          folio, cliente_id: o.clienteId,
+          fecha: o.fecha || new Date().toISOString().slice(0, 10),
+          total, estatus: 'Creada',
+        }).select('id').single();
+        if (e1) { t()?.error('Error al crear orden'); return e1; }
 
-      if (!e2) rf();
-      return e2;
-    },
+        const { error: e2 } = await supabase.from('orden_lineas').insert(
+          lineas.map(l => ({ ...l, orden_id: newOrd.id }))
+        );
 
-    updateOrdenEstatus: async (id, nuevoEst) => {
-      let error;
+        await supabase.from('auditoria').insert({
+          usuario: uname(), accion: 'Crear', modulo: 'Órdenes',
+          detalle: `${folio} — $${total}`,
+        });
 
-      if (nuevoEst === 'Asignada') {
-        ({ error } = await supabase.rpc('asignar_orden', {
-          p_id: id, p_ruta: null, p_uid: uid(),
-        }));
-      } else if (nuevoEst === 'Cancelada') {
-        // Check current status first
-        const { data: ord } = await supabase.from('ordenes').select('estatus').eq('id', id).single();
-        if (ord?.estatus === 'Asignada') {
-          ({ error } = await supabase.rpc('cancelar_orden_asignada', { p_id: id, p_uid: uid() }));
+        if (!e2) rf();
+        return e2;
+      },
+
+      updateOrdenEstatus: async (id, nuevoEst) => {
+        let error;
+        if (nuevoEst === 'Asignada') {
+          ({ error } = await supabase.rpc('asignar_orden', { p_id: id, p_ruta: null, p_uid: uid() }));
+        } else if (nuevoEst === 'Cancelada') {
+          const { data: ord } = await supabase.from('ordenes').select('estatus').eq('id', id).single();
+          if (ord?.estatus === 'Asignada') {
+            ({ error } = await supabase.rpc('cancelar_orden_asignada', { p_id: id, p_uid: uid() }));
+          } else {
+            ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id));
+          }
         } else {
           ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id));
         }
-      } else {
-        ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id));
-      }
+        if (error) { t()?.error('Error al actualizar orden'); return error; }
+        rf();
+      },
 
-      if (!error) rf();
-      return error;
-    },
+      deleteOrden: async (id) => {
+        const { error } = await supabase.from('ordenes').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar orden'); return error; }
+        rf();
+      },
 
-    // ── PRODUCCIÓN ──
-    addProduccion: async (p) => {
-      const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_op_seq' });
-      const folio = `OP-${String(seq || 89).padStart(3, '0')}`;
-      const { error } = await supabase.from('produccion').insert({
-        folio, turno: p.turno, maquina: p.maquina, sku: p.sku, cantidad: Number(p.cantidad),
-      });
-      if (!error) rf();
-      return error;
-    },
+      // ── PRODUCCIÓN ──
+      addProduccion: async (p) => {
+        const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_op_seq' });
+        const folio = `OP-${String(seq || 89).padStart(3, '0')}`;
+        const { error } = await supabase.from('produccion').insert({
+          folio, turno: p.turno, maquina: p.maquina,
+          sku: p.sku, cantidad: Number(p.cantidad),
+        });
+        if (error) { t()?.error('Error al registrar producción'); return error; }
+        rf();
+      },
 
-    confirmarProduccion: async (id) => {
-      const { error } = await supabase.rpc('confirmar_produccion', { p_id: id, p_uid: uid() });
-      if (!error) rf();
-      return error;
-    },
+      confirmarProduccion: async (id) => {
+        const { error } = await supabase.rpc('confirmar_produccion', { p_id: id, p_uid: uid() });
+        if (error) { t()?.error('Error al confirmar producción'); return error; }
+        rf();
+      },
 
-    // ── RUTAS ──
-    addRuta: async (r) => {
-      const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_r_seq' });
-      const folio = `R-${String(seq || 13).padStart(3, '0')}`;
-      const { error } = await supabase.from('rutas').insert({
-        folio, nombre: r.nombre, chofer_id: r.choferId || null,
-        estatus: 'Programada', carga: r.carga,
-      });
-      if (!error) rf();
-      return error;
-    },
+      deleteProduccion: async (id) => {
+        const { error } = await supabase.from('produccion').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar registro de producción'); return error; }
+        rf();
+      },
 
-    updateRutaEstatus: async (id, est) => {
-      const { error } = await supabase.from('rutas').update({ estatus: est }).eq('id', id);
-      if (!error) rf();
-      return error;
-    },
+      producirYCongelar: async (p) => {
+        const err = await a.addProduccion(p);
+        if (!err && p.destino) await a.meterACuartoFrio(p.destino, p.sku, Number(p.cantidad));
+      },
 
-    // ── FACTURACIÓN ──
-    timbrar: async (folio) => {
-      const { error } = await supabase.rpc('timbrar_orden', { p_folio: folio, p_uid: uid() });
-      if (!error) rf();
-      return error;
-    },
+      // ── CUARTOS FRÍOS — CRUD ──
+      addCuartoFrio: async (cf) => {
+        const { error } = await supabase.from('cuartos_frios').insert({
+          nombre: cf.nombre, temp: cf.temp, capacidad: cf.capacidad, stock: {},
+        });
+        if (error) { t()?.error('Error al crear cuarto frío'); return error; }
+        rf();
+      },
 
-    // ── PAGOS ──
-    registrarPago: async (clienteId, monto, referencia) => {
-      const { error } = await supabase.rpc('registrar_pago', {
-        p_cli: clienteId, p_monto: centavos(monto), p_ref: referencia, p_uid: uid(),
-      });
-      if (!error) rf();
-      return error;
-    },
-  };
+      updateCuartoFrio: async (id, cf) => {
+        const update = {};
+        if (cf.nombre    !== undefined) update.nombre    = cf.nombre;
+        if (cf.temp      !== undefined) update.temp      = cf.temp;
+        if (cf.capacidad !== undefined) update.capacidad = cf.capacidad;
+        const { error } = await supabase.from('cuartos_frios').update(update).eq('id', id);
+        if (error) { t()?.error('Error al actualizar cuarto frío'); return error; }
+        rf();
+      },
+
+      deleteCuartoFrio: async (id) => {
+        const { error } = await supabase.from('cuartos_frios').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar cuarto frío'); return error; }
+        rf();
+      },
+
+      // ── CUARTOS FRÍOS — STOCK (JSONB) ──
+      meterACuartoFrio: async (cfId, sku, cantidad) => {
+        const { data: row } = await supabase
+          .from('cuartos_frios').select('stock').eq('id', cfId).single();
+        const current = (row?.stock && typeof row.stock === 'object') ? row.stock : {};
+        const updated = { ...current, [sku]: (Number(current[sku] || 0) + Number(cantidad)) };
+        await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
+        await supabase.from('inventario_mov').insert({
+          tipo: 'Entrada', producto: sku, cantidad: Number(cantidad),
+          origen: 'Producción', usuario: uname(),
+        });
+        rf();
+      },
+
+      sacarDeCuartoFrio: async (cfId, sku, cantidad, motivo) => {
+        const { data: row } = await supabase
+          .from('cuartos_frios').select('stock').eq('id', cfId).single();
+        const current = (row?.stock && typeof row.stock === 'object') ? row.stock : {};
+        const updated = {
+          ...current,
+          [sku]: Math.max(0, Number(current[sku] || 0) - Number(cantidad)),
+        };
+        await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
+        await supabase.from('inventario_mov').insert({
+          tipo: 'Salida', producto: sku, cantidad: Number(cantidad),
+          origen: motivo || String(cfId), usuario: uname(),
+        });
+        rf();
+      },
+
+      traspasoEntreUbicaciones: async ({ origen, destino, sku, cantidad }) => {
+        const qty = Number(cantidad);
+        if (qty <= 0) return;
+
+        const [{ data: rowOrig }, { data: rowDest }] = await Promise.all([
+          supabase.from('cuartos_frios').select('stock').eq('id', origen).single(),
+          supabase.from('cuartos_frios').select('stock').eq('id', destino).single(),
+        ]);
+
+        const stockOrig = (rowOrig?.stock && typeof rowOrig.stock === 'object') ? rowOrig.stock : {};
+        const stockDest = (rowDest?.stock && typeof rowDest.stock === 'object') ? rowDest.stock : {};
+
+        await Promise.all([
+          supabase.from('cuartos_frios').update({
+            stock: { ...stockOrig, [sku]: Math.max(0, Number(stockOrig[sku] || 0) - qty) },
+          }).eq('id', origen),
+          supabase.from('cuartos_frios').update({
+            stock: { ...stockDest, [sku]: Number(stockDest[sku] || 0) + qty },
+          }).eq('id', destino),
+        ]);
+
+        await supabase.from('inventario_mov').insert({
+          tipo: 'Traspaso', producto: sku, cantidad: qty,
+          origen: String(origen), usuario: uname(),
+        });
+        rf();
+      },
+
+      // ── RUTAS ──
+      addRuta: async (r) => {
+        const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_r_seq' });
+        const folio = `R-${String(seq || 13).padStart(3, '0')}`;
+        const { error } = await supabase.from('rutas').insert({
+          folio, nombre: r.nombre, chofer_id: r.choferId || null,
+          estatus: 'Programada', carga: r.carga,
+        });
+        if (error) { t()?.error('Error al crear ruta'); return error; }
+        rf();
+      },
+
+      updateRutaEstatus: async (id, est) => {
+        const { error } = await supabase.from('rutas').update({ estatus: est }).eq('id', id);
+        if (error) { t()?.error('Error al actualizar ruta'); return error; }
+        rf();
+      },
+
+      updateRuta: async (id, r) => {
+        const update = {};
+        if (r.nombre    !== undefined) update.nombre    = r.nombre;
+        if (r.choferId  !== undefined) update.chofer_id = r.choferId;
+        if (r.chofer_id !== undefined) update.chofer_id = r.chofer_id;
+        if (r.estatus   !== undefined) update.estatus   = r.estatus;
+        if (r.carga     !== undefined) update.carga     = r.carga;
+        const { error } = await supabase.from('rutas').update(update).eq('id', id);
+        if (error) { t()?.error('Error al actualizar ruta'); return error; }
+        rf();
+      },
+
+      deleteRuta: async (id) => {
+        const { error } = await supabase.from('rutas').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar ruta'); return error; }
+        rf();
+      },
+
+      asignarOrdenesARuta: async (rutaId, ordenIds, totalBolsas) => {
+        await Promise.all(ordenIds.map(oid =>
+          supabase.from('ordenes').update({ ruta_id: rutaId }).eq('id', oid)
+        ));
+        await supabase.from('rutas').update({ carga: totalBolsas + ' bolsas' }).eq('id', rutaId);
+        rf();
+      },
+
+      cerrarRuta: async (rutaId, devuelto) => {
+        await supabase.from('rutas').update({ estatus: 'Cerrada', devuelto: devuelto || 0 }).eq('id', rutaId);
+        rf();
+      },
+
+      // ── FACTURACIÓN ──
+      timbrar: async (folio) => {
+        const { error } = await supabase.rpc('timbrar_orden', { p_folio: folio, p_uid: uid() });
+        if (error) { t()?.error('Error al timbrar orden'); return error; }
+        rf();
+      },
+
+      // ── PAGOS ──
+      registrarPago: async (clienteId, monto, referencia) => {
+        const { error } = await supabase.rpc('registrar_pago', {
+          p_cli: clienteId, p_monto: centavos(monto),
+          p_ref: referencia, p_uid: uid(),
+        });
+        if (error) { t()?.error('Error al registrar pago'); return error; }
+        rf();
+      },
+
+      // ── MOVIMIENTOS CONTABLES ──
+      addMovContable: async (m) => {
+        const { error } = await supabase.from('movimientos_contables').insert({
+          fecha: m.fecha, tipo: m.tipo, categoria: m.categoria,
+          concepto: m.concepto, monto: centavos(m.monto),
+        });
+        if (error) { t()?.error('Error al guardar movimiento contable'); return error; }
+        rf();
+      },
+
+      updateMovContable: async (id, m) => {
+        const { error } = await supabase.from('movimientos_contables').update({
+          fecha: m.fecha, tipo: m.tipo, categoria: m.categoria,
+          concepto: m.concepto, monto: centavos(m.monto),
+        }).eq('id', id);
+        if (error) { t()?.error('Error al actualizar movimiento'); return error; }
+        rf();
+      },
+
+      deleteMovContable: async (id) => {
+        const { error } = await supabase.from('movimientos_contables').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar movimiento'); return error; }
+        rf();
+      },
+
+      // ── MERMAS ──
+      registrarMerma: async (sku, cantidad, causa, origen, fotoUrl) => {
+        const { error } = await supabase.from('mermas').insert({
+          sku, cantidad: Number(cantidad), causa, origen, foto_url: fotoUrl || '',
+        });
+        if (error) { t()?.error('Error al registrar merma'); return error; }
+        rf();
+      },
+
+      deleteMerma: async (id) => {
+        const { error } = await supabase.from('mermas').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar merma'); return error; }
+        rf();
+      },
+
+      // ── COMODATOS ──
+      addComodato: async (c) => {
+        const { error } = await supabase.from('comodatos').insert({
+          negocio: c.negocio, direccion: c.direccion, contacto: c.contacto,
+          congelador_modelo: c.congeladorModelo, capacidad: Number(c.capacidad) || 0,
+          stock_maximo: Number(c.stockMaximo) || 0, stock_actual: Number(c.stockActual) || 0,
+          frecuencia: c.frecuencia, estatus: 'Activo',
+        });
+        if (error) { t()?.error('Error al guardar comodato'); return error; }
+        rf();
+      },
+
+      updateComodato: async (id, c) => {
+        const update = {};
+        if (c.negocio     !== undefined) update.negocio      = c.negocio;
+        if (c.estatus     !== undefined) update.estatus      = c.estatus;
+        if (c.stockActual !== undefined) update.stock_actual = Number(c.stockActual);
+        if (c.stock_actual !== undefined) update.stock_actual = Number(c.stock_actual);
+        const { error } = await supabase.from('comodatos').update(update).eq('id', id);
+        if (error) { t()?.error('Error al actualizar comodato'); return error; }
+        rf();
+      },
+
+      deleteComodato: async (id) => {
+        const { error } = await supabase.from('comodatos').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar comodato'); return error; }
+        rf();
+      },
+
+      // ── LEADS ──
+      addLead: async (l) => {
+        const { error } = await supabase.from('leads').insert({
+          nombre: l.nombre, telefono: l.telefono, correo: l.correo,
+          mensaje: l.mensaje, origen: l.origen, estatus: 'Nuevo',
+          fecha: new Date().toISOString().slice(0, 10),
+        });
+        if (error) { t()?.error('Error al guardar lead'); return error; }
+        rf();
+      },
+
+      updateLead: async (id, changes) => {
+        const { error } = await supabase.from('leads').update(changes).eq('id', id);
+        if (error) { t()?.error('Error al actualizar lead'); return error; }
+        rf();
+      },
+
+      deleteLead: async (id) => {
+        const { error } = await supabase.from('leads').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar lead'); return error; }
+        rf();
+      },
+
+      // ── EMPLEADOS ──
+      addEmpleado: async (e) => {
+        const { error } = await supabase.from('empleados').insert({
+          nombre: e.nombre, puesto: e.puesto, telefono: e.telefono,
+          salario_base: Number(e.salarioBase || e.salario_base || 0),
+          banco: e.banco, cuenta: e.cuenta, estatus: 'Activo',
+        });
+        if (error) { t()?.error('Error al guardar empleado'); return error; }
+        rf();
+      },
+
+      updateEmpleado: async (id, e) => {
+        const update = {};
+        if (e.nombre       !== undefined) update.nombre       = e.nombre;
+        if (e.puesto       !== undefined) update.puesto       = e.puesto;
+        if (e.telefono     !== undefined) update.telefono     = e.telefono;
+        if (e.salarioBase  !== undefined) update.salario_base = Number(e.salarioBase);
+        if (e.salario_base !== undefined) update.salario_base = Number(e.salario_base);
+        if (e.banco        !== undefined) update.banco        = e.banco;
+        if (e.cuenta       !== undefined) update.cuenta       = e.cuenta;
+        if (e.estatus      !== undefined) update.estatus      = e.estatus;
+        const { error } = await supabase.from('empleados').update(update).eq('id', id);
+        if (error) { t()?.error('Error al actualizar empleado'); return error; }
+        rf();
+      },
+
+      deleteEmpleado: async (id) => {
+        const { error } = await supabase.from('empleados').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar empleado'); return error; }
+        rf();
+      },
+
+      // ── NÓMINA ──
+      addNominaPeriodo: async (p) => {
+        const { data: row, error } = await supabase.from('nomina_periodos').insert(p).select().single();
+        if (error) { t()?.error('Error al crear período de nómina'); return error; }
+        rf();
+        return row;
+      },
+
+      addNominaRecibo: async (r) => {
+        const { error } = await supabase.from('nomina_recibos').insert(r);
+        if (error) { t()?.error('Error al guardar recibo de nómina'); return error; }
+        rf();
+      },
+
+      // ── USUARIOS ──
+      addUsuario: async (u) => {
+        const { data: row, error } = await supabase.from('usuarios').insert({
+          nombre: u.nombre, rol: u.rol, correo: u.correo, estatus: 'Activo',
+        }).select().single();
+        if (error) { t()?.error('Error al crear usuario'); return error; }
+        rf();
+        return row;
+      },
+
+      updateUsuario: async (id, u) => {
+        const { error } = await supabase.from('usuarios').update(u).eq('id', id);
+        if (error) { t()?.error('Error al actualizar usuario'); return error; }
+        rf();
+      },
+
+      deleteUsuario: async (id) => {
+        const { error } = await supabase.from('usuarios').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar usuario'); return error; }
+        rf();
+      },
+
+      // ── ALMACÉN BOLSAS ──
+      movimientoBolsa: async (sku, cantidad, tipo, motivo) => {
+        const { data: prod } = await supabase.from('productos').select('id, stock').eq('sku', sku).single();
+        if (!prod) return;
+        const newStock = tipo === 'Entrada'
+          ? Number(prod.stock) + Number(cantidad)
+          : Math.max(0, Number(prod.stock) - Number(cantidad));
+        await supabase.from('productos').update({ stock: newStock }).eq('id', prod.id);
+        await supabase.from('inventario_mov').insert({
+          tipo, producto: sku, cantidad: Number(cantidad),
+          origen: motivo, usuario: uname(),
+        });
+        rf();
+      },
+
+      // ── CERRAR RUTA COMPLETA (chofer) ──
+      cerrarRutaCompleta: async (reporte) => {
+        const { choferNombre, entregas, mermas: mermasArr, cobros } = reporte;
+        for (const e of (entregas || [])) {
+          const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
+          const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
+          const { data: newOrd } = await supabase.from('ordenes').insert({
+            folio, cliente_id: e.clienteId || null,
+            fecha: new Date().toISOString().slice(0, 10),
+            total: centavos(n(e.total)), estatus: 'Entregada',
+          }).select('id').single();
+          if (newOrd && n(e.total) > 0) {
+            await supabase.from('movimientos_contables').insert({
+              fecha: new Date().toISOString().slice(0, 10),
+              tipo: 'Ingreso', categoria: 'Ventas',
+              concepto: `Entrega ${folio} — ${e.cliente || 'Exprés'}`,
+              monto: centavos(n(e.total)),
+            });
+          }
+        }
+        for (const m of (mermasArr || [])) {
+          await supabase.from('mermas').insert({
+            sku: m.sku, cantidad: Number(m.cant), causa: m.causa,
+            origen: 'Ruta ' + choferNombre, foto_url: m.foto || '',
+          });
+        }
+        await supabase.from('auditoria').insert({
+          usuario: choferNombre || uname(), accion: 'Cierre Ruta', modulo: 'Rutas',
+          detalle: `Entregas: ${(entregas || []).length}, Efectivo: $${cobros?.Efectivo || 0}`,
+        });
+        rf();
+      },
+
+      // ── AUDITORÍA ──
+      logAudit: async (accion, modulo, detalle) => {
+        await supabase.from('auditoria').insert({
+          usuario: uname(), accion, modulo, detalle,
+        });
+      },
+    };
   }
 
   return { data, actions: actionsRef.current, loading, error };
