@@ -666,23 +666,34 @@ export function RutasView({ data, actions }) {
   const toast = useToast();
   const [modal, setModal] = useState(false);
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({nombre:"",chofer:""});
+  const [form, setForm] = useState({nombre:"",choferId:""});
   const [asignarModal, setAsignarModal] = useState(null);
   const [cierreModal, setCierreModal] = useState(null);
   const [cierreForm, setCierreForm] = useState({devuelto:""});
 
   // Órdenes sin asignar a ruta
   const ordenesSinRuta = useMemo(() => data.ordenes.filter(o => o.estatus === "Asignada" && !o.rutaId), [data.ordenes]);
-  const choferes = useMemo(() => (data.usuarios || []).filter(u => s(u.rol) === "Chofer").map(u => s(u.nombre)), [data.usuarios]);
+  const choferes = useMemo(() => (data.usuarios || [])
+    .filter(u => s(u.rol) === "Chofer")
+    .map(u => ({ value: String(u.id), label: s(u.nombre) })), [data.usuarios]);
 
-  const save = () => {
+  const save = async () => {
     const e = {};
     if (!form.nombre.trim()) e.nombre = "Requerido";
-    if (!form.chofer) e.chofer = "Requerido";
+    if (!form.choferId) e.choferId = "Requerido";
     if (Object.keys(e).length) { setErrors(e); return; }
-    actions.addRuta({...form, ordenes: 0, carga: "0 bolsas"});
+    const err = await actions.addRuta({
+      nombre: form.nombre,
+      choferId: Number(form.choferId),
+      ordenes: 0,
+      carga: "0 bolsas",
+    });
+    if (err) {
+      toast?.error("No se pudo crear la ruta");
+      return;
+    }
     toast?.success("Ruta creada");
-    setModal(false); setForm({nombre:"",chofer:""}); setErrors({});
+    setModal(false); setForm({nombre:"",choferId:""}); setErrors({});
   };
 
   const asignarOrdenes = (ruta) => { setAsignarModal(ruta); };
@@ -759,7 +770,7 @@ export function RutasView({ data, actions }) {
     <Modal open={modal} onClose={()=>setModal(false)} title="Crear ruta">
       <div className="space-y-3">
         <FormInput label="Nombre *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Ej: Ruta Norte" error={errors.nombre} />
-        <FormSelect label="Chofer *" options={["", ...choferes]} value={form.chofer} onChange={e=>setForm({...form,chofer:e.target.value})} error={errors.chofer} />
+        <FormSelect label="Chofer *" options={[{value:"",label:"Seleccionar..."}, ...choferes]} value={form.choferId} onChange={e=>setForm({...form,choferId:e.target.value})} error={errors.choferId} />
       </div>
       <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Crear ruta</FormBtn></div>
     </Modal>
