@@ -342,6 +342,9 @@ export function InventarioView({ data, actions }) {
   const [traspasoErrors, setTraspasoErrors] = useState({});
   const [cfModal, setCfModal] = useState(null);
   const [cfForm, setCfForm] = useState({nombre:"",temp:"-10",capacidad:"0"});
+  const [ajusteModal, setAjusteModal] = useState(null);
+  const [ajusteForm, setAjusteForm] = useState({ existencia: "", motivo: "" });
+  const [ajusteErrors, setAjusteErrors] = useState({});
 
   const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
   
@@ -393,6 +396,35 @@ export function InventarioView({ data, actions }) {
     });
   }, [data.cuartosFrios]);
 
+  const abrirAjuste = (prod) => {
+    setAjusteModal(prod);
+    setAjusteForm({ existencia: String(n(prod.stock)), motivo: "" });
+    setAjusteErrors({});
+  };
+
+  const confirmarAjuste = async () => {
+    if (!ajusteModal) return;
+    const e = {};
+    const nueva = n(ajusteForm.existencia, -1);
+    if (nueva < 0) e.existencia = "Debe ser 0 o mayor";
+    if (!s(ajusteForm.motivo).trim()) e.motivo = "Motivo requerido";
+    if (Object.keys(e).length) { setAjusteErrors(e); return; }
+
+    const err = await actions.ajustarExistenciaManual?.({
+      sku: s(ajusteModal.sku),
+      nuevaExistencia: nueva,
+      motivo: s(ajusteForm.motivo).trim(),
+    });
+
+    if (err) {
+      toast?.error("No se pudo ajustar la existencia");
+      return;
+    }
+
+    toast?.success("Existencia ajustada");
+    setAjusteModal(null);
+  };
+
   return (<div>
     <div className="flex items-center justify-between mb-4">
       <div><h2 className="text-lg font-bold text-slate-800">Inventario</h2><p className="text-xs text-slate-400">Cuartos fríos, existencias y movimientos</p></div>
@@ -442,8 +474,9 @@ export function InventarioView({ data, actions }) {
         {key:"nombre",label:"Producto",bold:true},{key:"tipo",label:"Tipo",badge:true,render:v=><StatusBadge status={v}/>},
         {key:"stock",label:"Existencia",render:(v,r)=><span className={`font-bold ${s(r.tipo)==="Empaque"&&n(v)<200?"text-red-600":"text-slate-800"}`}>{n(v).toLocaleString()}</span>},
         {key:"ubicacion",label:"Ubicación"},
+        {key:"acciones",label:"Acciones",render:(_,r)=><button onClick={(e)=>{e.stopPropagation();abrirAjuste(r);}} className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 min-h-[36px]">Ajustar</button>},
       ]} data={paginatedProd} />
-      <Paginator page={pageExist} total={data.productos.length} onPage={setPageExist} />
+      <Paginator page={pageExist} total={prodConStock.length} onPage={setPageExist} />
     </div>
     <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
       <h3 className="text-sm font-bold text-slate-700 mb-4">Kardex</h3>
@@ -486,6 +519,34 @@ export function InventarioView({ data, actions }) {
             setCfModal(null);
           }}>Guardar</FormBtn>
         </div>
+      </div>
+    </Modal>
+
+    {/* Modal: Ajuste manual de existencia */}
+    <Modal open={!!ajusteModal} onClose={()=>setAjusteModal(null)} title={"Ajustar existencia — " + s(ajusteModal?.sku)}>
+      <div className="space-y-3">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+          <p className="text-xs text-amber-700">Este ajuste corrige inventario cuando hay una diferencia operativa.</p>
+          <p className="text-xs text-amber-700 mt-1">Stock actual: <span className="font-bold">{n(ajusteModal?.stock).toLocaleString()}</span></p>
+        </div>
+        <FormInput
+          label="Nueva existencia total *"
+          type="number"
+          value={ajusteForm.existencia}
+          onChange={e=>setAjusteForm({...ajusteForm, existencia:e.target.value})}
+          error={ajusteErrors.existencia}
+        />
+        <FormInput
+          label="Motivo del ajuste *"
+          value={ajusteForm.motivo}
+          onChange={e=>setAjusteForm({...ajusteForm, motivo:e.target.value})}
+          error={ajusteErrors.motivo}
+          placeholder="Ej: Error de conteo de chofer en ruta norte"
+        />
+      </div>
+      <div className="flex justify-end gap-2 mt-5">
+        <FormBtn onClick={()=>setAjusteModal(null)}>Cancelar</FormBtn>
+        <FormBtn primary onClick={confirmarAjuste}>Guardar ajuste</FormBtn>
       </div>
     </Modal>
   </div>);

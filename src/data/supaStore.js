@@ -591,6 +591,93 @@ export function useSupaStore(userId, userName) {
         rf();
       },
 
+      ajustarExistenciaManual: async ({ sku, nuevaExistencia, motivo }) => {
+        const target = Number(nuevaExistencia);
+        if (!sku || Number.isNaN(target) || target < 0) {
+          const err = { message: 'Datos de ajuste inválidos' };
+          t()?.error(err.message);
+          return err;
+        }
+
+        const { data: cuartos, error: cfErr } = await supabase
+          .from('cuartos_frios')
+          .select('id,nombre,stock');
+
+        if (cfErr) {
+          t()?.error('Error al leer cuartos fríos');
+          return cfErr;
+        }
+
+        const rooms = (cuartos || []).map(cf => ({
+          ...cf,
+          stockObj: (cf.stock && typeof cf.stock === 'object') ? { ...cf.stock } : {},
+          currentQty: Number((cf.stock && typeof cf.stock === 'object') ? (cf.stock[sku] || 0) : 0),
+        }));
+
+        const actual = rooms.reduce((acc, cf) => acc + cf.currentQty, 0);
+        const delta = target - actual;
+
+        if (delta !== 0) {
+          if (delta > 0) {
+            const targetRoom = rooms.find(cf => cf.currentQty > 0) || rooms[0];
+            if (!targetRoom) {
+              const err = { message: 'No hay cuartos fríos para aplicar ajuste' };
+              t()?.error(err.message);
+              return err;
+            }
+            targetRoom.stockObj[sku] = Number(targetRoom.currentQty) + delta;
+          } else {
+            let remaining = Math.abs(delta);
+            for (const room of rooms) {
+              if (remaining <= 0) break;
+              const qty = Number(room.stockObj[sku] || 0);
+              if (qty <= 0) continue;
+              const take = Math.min(qty, remaining);
+              room.stockObj[sku] = qty - take;
+              remaining -= take;
+            }
+            if (remaining > 0) {
+              const err = { message: 'No se pudo descontar ajuste completo' };
+              t()?.error(err.message);
+              return err;
+            }
+          }
+
+          const updates = rooms
+            .filter(room => Number(room.stockObj[sku] || 0) !== Number(room.currentQty || 0))
+            .map(room => supabase.from('cuartos_frios').update({ stock: room.stockObj }).eq('id', room.id));
+
+          if (updates.length > 0) {
+            const results = await Promise.all(updates);
+            const failed = results.find(r => r.error);
+            if (failed?.error) {
+              t()?.error('Error al actualizar stock en cuartos fríos');
+              return failed.error;
+            }
+          }
+        }
+
+        await supabase.from('productos').update({ stock: target }).eq('sku', sku);
+
+        await supabase.from('inventario_mov').insert({
+          tipo: delta >= 0 ? 'Entrada' : 'Salida',
+          producto: sku,
+          cantidad: Math.abs(delta),
+          origen: 'Ajuste manual',
+          usuario: uname(),
+          referencia: motivo || '',
+        });
+
+        await supabase.from('auditoria').insert({
+          usuario: uname(),
+          accion: 'Ajustar',
+          modulo: 'Inventario',
+          detalle: `${sku}: ${actual} → ${target}. Motivo: ${motivo || 'Sin motivo'}`,
+        });
+
+        rf();
+      },
+
       // ── RUTAS ──
       addRuta: async (r) => {
         const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_r_seq' });
