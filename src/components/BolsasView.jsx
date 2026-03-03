@@ -3,7 +3,7 @@ import { s, n } from '../utils/safe';
 
 export default function BolsasView({ user, data, actions, onLogout }) {
   const [modal, setModal] = useState(null); // "entrada" | "salida"
-  const [form, setForm] = useState({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "" });
+  const [form, setForm] = useState({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
   const [historial, setHistorial] = useState([]);
   const [toast, setToast] = useState("");
 
@@ -26,7 +26,15 @@ export default function BolsasView({ user, data, actions, onLogout }) {
     const esEntrada = modal === "entrada";
     const motivo = esEntrada ? "Recepción de compra" : (form.destino || "Producción");
 
-    actions.movimientoBolsa(form.sku, n(form.cantidad), esEntrada ? "Entrada" : "Salida", motivo, esEntrada ? n(form.costo) : 0);
+    actions.movimientoBolsa(
+      form.sku, 
+      n(form.cantidad), 
+      esEntrada ? "Entrada" : "Salida", 
+      motivo, 
+      esEntrada ? n(form.costo) : 0,
+      form.proveedor || null,
+      form.esCredito
+    );
 
     setHistorial(prev => [{
       id: Date.now(), tipo: esEntrada ? "entrada" : "salida", sku: form.sku,
@@ -34,9 +42,9 @@ export default function BolsasView({ user, data, actions, onLogout }) {
       hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })
     }, ...prev]);
 
-    showToast((esEntrada ? "+" : "-") + form.cantidad + " " + form.sku);
+    showToast((esEntrada ? "+" : "-") + form.cantidad + " " + form.sku + (form.esCredito ? " (crédito)" : ""));
     setModal(null);
-    setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "" });
+    setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
   };
 
   const stockActual = (sku) => n(empaques.find(p => s(p.sku) === sku)?.stock || 0);
@@ -85,11 +93,11 @@ export default function BolsasView({ user, data, actions, onLogout }) {
         })}
 
         <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => { setModal("entrada"); setForm({ sku: "EMP-25", cantidad: "", destino: "", costo: "" }); }}
+          <button onClick={() => { setModal("entrada"); setForm({ sku: "EMP-25", cantidad: "", destino: "", costo: "", proveedor: "", esCredito: false }); }}
             className="py-5 bg-emerald-600 text-white font-extrabold rounded-2xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform">
             + Llegaron
           </button>
-          <button onClick={() => { setModal("salida"); setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "" }); }}
+          <button onClick={() => { setModal("salida"); setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false }); }}
             className="py-5 bg-red-500 text-white font-extrabold rounded-2xl text-base shadow-lg shadow-red-200 active:scale-[0.98] transition-transform">
             − Entregué a prod.
           </button>
@@ -142,12 +150,36 @@ export default function BolsasView({ user, data, actions, onLogout }) {
               </div>
 
               {modal === "entrada" && (
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Costo total (opcional)</label>
-                  <input type="number" inputMode="decimal" value={form.costo} onChange={e => setForm(f => ({ ...f, costo: e.target.value }))}
-                    className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base text-center" placeholder="$0.00 — se registra como gasto" />
-                  <p className="text-[10px] text-slate-400 mt-1 text-center">Si lo llenas, se registra automáticamente como egreso en Contabilidad</p>
-                </div>
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Proveedor</label>
+                    <input type="text" value={form.proveedor} onChange={e => setForm(f => ({ ...f, proveedor: e.target.value }))}
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base" placeholder="Ej: Bolsas del Norte" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Costo total (opcional)</label>
+                    <input type="number" inputMode="decimal" value={form.costo} onChange={e => setForm(f => ({ ...f, costo: e.target.value }))}
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base text-center" placeholder="$0.00" />
+                  </div>
+                  {n(form.costo) > 0 && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Forma de pago</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button onClick={() => setForm(f => ({ ...f, esCredito: false }))}
+                          className={`py-3 rounded-xl text-sm font-semibold border-2 ${!form.esCredito ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
+                          💵 Contado
+                        </button>
+                        <button onClick={() => setForm(f => ({ ...f, esCredito: true }))}
+                          className={`py-3 rounded-xl text-sm font-semibold border-2 ${form.esCredito ? "border-amber-500 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-600"}`}>
+                          📅 Crédito
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1 text-center">
+                        {form.esCredito ? "Se creará cuenta por pagar (deuda)" : "Se registra egreso en contabilidad"}
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
 
               {modal === "salida" && form.cantidad && n(form.cantidad) > stockActual(form.sku) && (

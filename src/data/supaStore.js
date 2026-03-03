@@ -1489,7 +1489,7 @@ export function useSupaStore(userId, userName) {
       },
 
       // ── ALMACÉN BOLSAS ──
-      movimientoBolsa: async (sku, cantidad, tipo, motivo, costo) => {
+      movimientoBolsa: async (sku, cantidad, tipo, motivo, costo, proveedor, esCredito) => {
         const { data: prod } = await supabase.from('productos').select('id, stock').eq('sku', sku).single();
         if (!prod) return;
         const newStock = tipo === 'Entrada'
@@ -1501,14 +1501,35 @@ export function useSupaStore(userId, userName) {
           origen: motivo, usuario: uname(),
         });
 
-        // Auto-registrar egreso contable cuando es compra de empaques (Entrada)
+        // Auto-registrar movimiento contable cuando es compra de empaques (Entrada)
         if (tipo === 'Entrada' && Number(costo) > 0) {
-          await supabase.from('movimientos_contables').insert({
-            fecha: new Date().toISOString().slice(0, 10),
-            tipo: 'Egreso', categoria: 'Proveedores',
-            concepto: `Compra empaques: ${cantidad}×${sku}`,
-            monto: centavos(Number(costo)),
-          });
+          const hoy = new Date().toISOString().slice(0, 10);
+          const montoTotal = centavos(Number(costo));
+          
+          if (esCredito && proveedor) {
+            // Compra a crédito: crear cuenta por pagar (no egreso aún)
+            const fechaVenc = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+            await supabase.from('cuentas_por_pagar').insert({
+              proveedor: proveedor,
+              concepto: `Compra empaques: ${cantidad}×${sku}`,
+              monto_original: montoTotal,
+              monto_pagado: 0,
+              saldo_pendiente: montoTotal,
+              fecha_emision: hoy,
+              fecha_vencimiento: fechaVenc,
+              categoria: 'Proveedores',
+              estatus: 'Pendiente',
+            });
+            log('Compra crédito', 'Almacén Bolsas', `${cantidad}×${sku} → CxP: $${Number(costo)} — ${proveedor}`);
+          } else {
+            // Compra de contado: egreso directo
+            await supabase.from('movimientos_contables').insert({
+              fecha: hoy,
+              tipo: 'Egreso', categoria: 'Proveedores',
+              concepto: `Compra empaques: ${cantidad}×${sku}${proveedor ? ' — ' + proveedor : ''}`,
+              monto: montoTotal,
+            });
+          }
         }
 
         log(tipo, 'Almacén Bolsas', `${sku} x${cantidad} — ${motivo}`);
