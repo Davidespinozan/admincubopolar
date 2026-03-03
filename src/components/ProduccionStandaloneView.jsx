@@ -107,7 +107,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full">
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-4 pb-4" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-1">

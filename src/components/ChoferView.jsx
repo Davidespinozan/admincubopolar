@@ -245,7 +245,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
   // ═══ STEP 1: CARGAR ═══
   if (step === "cargar") return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full">
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-4 pb-6" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-4">
           <div><h1 className="text-lg font-extrabold">CUBOPOLAR</h1><p className="text-xs text-blue-200">{s(user?.nombre)}</p></div>
@@ -296,7 +296,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
   // ═══ STEP 2: RUTA ═══
   if (step === "ruta") return (
-    <div className="min-h-screen bg-slate-50" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
+    <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-4 pb-4" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-2">
           <div><h1 className="text-base font-extrabold">En ruta</h1><p className="text-xs text-blue-200">{s(user?.nombre)}</p></div>
@@ -345,7 +345,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       </div>
 
       {/* Bottom bar */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-3 flex gap-2" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
+      <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[640px] bg-white border-t border-slate-200 px-4 py-3 flex gap-2" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
         <button onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" }); }} className="flex-1 py-3 bg-emerald-600 text-white text-xs font-bold rounded-xl">+ Venta exprés</button>
         <button onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="py-3 px-4 bg-amber-100 text-amber-700 text-xs font-bold rounded-xl">Merma</button>
         <button onClick={() => setStep("cierre")} className="py-3 px-4 bg-slate-700 text-white text-xs font-bold rounded-xl">Cerrar</button>
@@ -496,7 +496,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     for (const e of entregas) cobrosPorMetodo[e.pago] = (cobrosPorMetodo[e.pago]||0) + n(e.total);
 
     return (
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full">
         <div className="bg-gradient-to-r from-slate-700 to-slate-900 text-white px-4 pb-4" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
           <div className="flex items-center justify-between">
             <div><h1 className="text-lg font-extrabold">Cierre de ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)} · {new Date().toLocaleDateString("es-MX")}</p></div>

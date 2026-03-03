@@ -133,7 +133,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const ventasHoy = useMemo(() => ordenesHoy.filter(o => o.estatus === "Entregada").reduce((s, o) => s + n(o.total), 0), [ordenesHoy]);
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full">
       <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 pb-4" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-1">
           <div><h1 className="text-lg font-extrabold">Ventas</h1><p className="text-xs text-emerald-100">{s(user?.nombre)}</p></div>

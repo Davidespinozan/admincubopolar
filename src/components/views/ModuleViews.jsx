@@ -1156,7 +1156,9 @@ export function AlmacenBolsasView({ data }) {
       if (tipo === "Entrada") {
         result[sku].entradas += qty;
       } else if (esConsumoProduccion) {
+        // Todo consumo de producción también es salida real de almacén
         result[sku].consumo += qty;
+        result[sku].salidas += qty;
       } else if (tipo === "Salida") {
         result[sku].salidas += qty;
       }

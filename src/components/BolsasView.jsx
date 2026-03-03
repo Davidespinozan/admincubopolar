@@ -42,7 +42,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
   const stockActual = (sku) => n(empaques.find(p => s(p.sku) === sku)?.stock || 0);
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full">
       <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white px-4 pb-4" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-3">
           <div>
