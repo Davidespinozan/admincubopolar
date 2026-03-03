@@ -189,6 +189,48 @@ export default function DashboardView({ data }) {
     { label: "Alertas", val: n(alertasActivas.length).toLocaleString(), sub: "activas", bg: "bg-red-50", txt: "text-red-600", icon: Icons.AlertTriangle },
   ], [ventasResumen, clientesActivos, rutasAct, alertasActivas.length]);
 
+  // ── ESTADO DE RESULTADOS ──
+  const estadoResultados = useMemo(() => {
+    const movs = data.contabilidad || { ingresos: [], egresos: [] };
+    const calcPeriodo = (filtro) => {
+      const ingresos = (movs.ingresos || []).filter(filtro);
+      const egresos = (movs.egresos || []).filter(filtro);
+      const ventasTot = ingresos.filter(i => s(i.categoria) === 'Ventas' || s(i.categoria) === 'Cobranza').reduce((s, i) => s + n(i.monto), 0);
+      const costoInsumos = egresos.filter(e => s(e.categoria) === 'Proveedores').reduce((s, e) => s + n(e.monto), 0);
+      const gastosOp = egresos.filter(e => s(e.categoria) !== 'Proveedores').reduce((s, e) => s + n(e.monto), 0);
+      const utilidad = ventasTot - costoInsumos - gastosOp;
+      return { ventasTot, costoInsumos, gastosOp, utilidad };
+    };
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    const sem = new Date(); sem.setDate(sem.getDate() - 7);
+    const semStr = sem.toISOString().slice(0, 10);
+    const mes = new Date(); mes.setDate(1);
+    const mesStr = mes.toISOString().slice(0, 10);
+    
+    return {
+      dia: calcPeriodo(m => s(m.fecha) === hoyStr),
+      semana: calcPeriodo(m => s(m.fecha) >= semStr),
+      mes: calcPeriodo(m => s(m.fecha) >= mesStr),
+    };
+  }, [data.contabilidad]);
+
+  // ── BALANCE SIMPLIFICADO ──
+  const balance = useMemo(() => {
+    // Efectivo cobrado hoy
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    const efectivoHoy = (data.pagos || [])
+      .filter(p => s(p.fecha) === hoyStr && (s(p.metodoPago) === 'Efectivo' || s(p.metodo_pago) === 'Efectivo'))
+      .reduce((s, p) => s + n(p.monto), 0);
+    // Cuentas por cobrar
+    const cxcTotal = (data.cuentasPorCobrar || [])
+      .filter(c => c.estatus !== 'Pagada')
+      .reduce((s, c) => s + n(c.saldoPendiente), 0);
+    // Cuentas por pagar (placeholder - no table yet)
+    const cxpTotal = 0;
+    const posicion = efectivoHoy + cxcTotal - cxpTotal;
+    return { efectivoHoy, cxcTotal, cxpTotal, posicion };
+  }, [data.pagos, data.cuentasPorCobrar]);
+
   return (
     <div>
       <div className="mb-4 md:mb-5">
@@ -226,6 +268,62 @@ export default function DashboardView({ data }) {
               <p className="text-[11px] text-slate-400">{item.sub}</p>
             </div>
           ))}
+        </div>
+      </div>
+
+      {/* Estado de Resultados y Balance */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 md:mb-6">
+        {/* Estado de Resultados */}
+        <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5">
+          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Calculator /> Estado de Resultados</h3>
+          <div className="flex gap-2 mb-3">
+            <button className="px-2 py-1 text-xs font-semibold bg-blue-100 text-blue-700 rounded-lg">Mes</button>
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between py-1.5 border-b border-slate-100">
+              <span className="text-sm text-slate-600">Ventas</span>
+              <span className="text-sm font-bold text-emerald-600">+${estadoResultados.mes.ventasTot.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between py-1.5 border-b border-slate-100">
+              <span className="text-sm text-slate-600">Costo insumos</span>
+              <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.costoInsumos.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between py-1.5 border-b border-slate-100">
+              <span className="text-sm text-slate-600">Gastos operativos</span>
+              <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.gastosOp.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between py-2 bg-slate-50 rounded-lg px-2 -mx-2">
+              <span className="text-sm font-bold text-slate-700">Utilidad</span>
+              <span className={`text-sm font-extrabold ${estadoResultados.mes.utilidad >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                ${estadoResultados.mes.utilidad.toLocaleString()}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Balance Simplificado */}
+        <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5">
+          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Wallet /> Balance Financiero</h3>
+          <div className="space-y-2">
+            <div className="flex justify-between py-1.5 border-b border-slate-100">
+              <span className="text-sm text-slate-600">Efectivo cobrado hoy</span>
+              <span className="text-sm font-bold text-emerald-600">${balance.efectivoHoy.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between py-1.5 border-b border-slate-100">
+              <span className="text-sm text-slate-600">Cuentas por cobrar</span>
+              <span className="text-sm font-bold text-amber-600">${balance.cxcTotal.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between py-1.5 border-b border-slate-100">
+              <span className="text-sm text-slate-600">Cuentas por pagar</span>
+              <span className="text-sm font-bold text-red-500">${balance.cxpTotal.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between py-2 bg-blue-50 rounded-lg px-2 -mx-2">
+              <span className="text-sm font-bold text-slate-700">Posición financiera</span>
+              <span className={`text-sm font-extrabold ${balance.posicion >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                ${balance.posicion.toLocaleString()}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 

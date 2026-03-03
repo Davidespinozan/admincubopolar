@@ -37,7 +37,7 @@ const EMPTY = {
   alertas: [], facturacionPendiente: [], conciliacion: [],
   auditoria: [], usuarios: [], umbrales: [], pagos: [],
   comodatos: [], leads: [], empleados: [], nominaPeriodos: [],
-  nominaRecibos: [], movContables: [], mermas: [],
+  nominaRecibos: [], movContables: [], mermas: [], cuentasPorCobrar: [],
   contabilidad: { ingresos: [], egresos: [] },
 };
 
@@ -75,7 +75,7 @@ export function useSupaStore(userId, userName) {
       ]);
 
       // Tablas opcionales
-      const [com, lea, emp, nomP, nomR, movC, mer] = await Promise.all([
+      const [com, lea, emp, nomP, nomR, movC, mer, cxc] = await Promise.all([
         safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('empleados').select('*').order('id')),
@@ -83,6 +83,7 @@ export function useSupaStore(userId, userName) {
         safeRows(supabase.from('nomina_recibos').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('movimientos_contables').select('*').order('id', { ascending: false }).limit(500)),
         safeRows(supabase.from('mermas').select('*').order('id', { ascending: false }).limit(200)),
+        safeRows(supabase.from('cuentas_por_cobrar').select('*').order('id', { ascending: false }).limit(500)),
       ]);
       const clientes  = cli;
       const productos = prod;
@@ -250,7 +251,7 @@ export function useSupaStore(userId, userName) {
         auditoria,
         usuarios,
         umbrales: umbralesMapped,
-        pagos: (pag || []).map(p => ({ ...p, monto: Number(p.monto) })),
+        pagos: (pag || []).map(p => ({ ...toCamel(p), monto: Number(p.monto) })),
         comodatos: (com || []).map(toCamel),
         leads: (lea || []).map(toCamel),
         empleados: (emp || []).map(toCamel),
@@ -258,6 +259,12 @@ export function useSupaStore(userId, userName) {
         nominaRecibos:  (nomR || []).map(toCamel),
         movContables,
         mermas: (mer || []).map(m => ({ ...toCamel(m), cantidad: Number(m.cantidad) })),
+        cuentasPorCobrar: (cxc || []).map(c => ({
+          ...toCamel(c),
+          montoOriginal: Number(c.monto_original),
+          montoPagado: Number(c.monto_pagado),
+          saldoPendiente: Number(c.saldo_pendiente),
+        })),
         contabilidad: contabilidadObj,
       });
 
@@ -312,7 +319,7 @@ export function useSupaStore(userId, userName) {
       'clientes', 'productos', 'ordenes', 'rutas',
       'produccion', 'inventario_mov', 'pagos', 'auditoria',
       'cuartos_frios', 'comodatos', 'leads', 'empleados',
-      'movimientos_contables', 'mermas', 'nomina_periodos',
+      'movimientos_contables', 'mermas', 'nomina_periodos', 'cuentas_por_cobrar',
     ];
     const channels = tables.map(table =>
       supabase.channel(`rt_${table}`)
@@ -876,6 +883,65 @@ export function useSupaStore(userId, userName) {
         rf();
       },
 
+      // Cobrar contra una cuenta por cobrar específica
+      cobrarCxC: async (cxcId, monto, metodoPago, referencia) => {
+        const hoy = new Date().toISOString().slice(0, 10);
+        const montoNum = centavos(n(monto));
+
+        // Obtener la CxC actual
+        const { data: cxc, error: e1 } = await supabase
+          .from('cuentas_por_cobrar')
+          .select('*')
+          .eq('id', cxcId)
+          .single();
+        if (e1 || !cxc) { t()?.error('Cuenta por cobrar no encontrada'); return e1; }
+
+        const nuevoMontoPagado = centavos(Number(cxc.monto_pagado) + montoNum);
+        const nuevoSaldo = centavos(Number(cxc.monto_original) - nuevoMontoPagado);
+        const nuevoEstatus = nuevoSaldo <= 0 ? 'Pagada' : (nuevoMontoPagado > 0 ? 'Parcial' : 'Pendiente');
+
+        // Actualizar CxC
+        const { error: e2 } = await supabase
+          .from('cuentas_por_cobrar')
+          .update({
+            monto_pagado: nuevoMontoPagado,
+            saldo_pendiente: Math.max(0, nuevoSaldo),
+            estatus: nuevoEstatus,
+          })
+          .eq('id', cxcId);
+        if (e2) { t()?.error('Error al actualizar cuenta'); return e2; }
+
+        // Registrar pago
+        await supabase.from('pagos').insert({
+          cliente_id: cxc.cliente_id,
+          orden_id: cxc.orden_id,
+          cxc_id: cxcId,
+          monto: montoNum,
+          metodo_pago: metodoPago || 'Efectivo',
+          fecha: hoy,
+          referencia: referencia || `Abono CxC #${cxcId}`,
+          saldo_antes: cxc.saldo_pendiente,
+          saldo_despues: Math.max(0, nuevoSaldo),
+          usuario_id: uid(),
+        });
+
+        // Registrar ingreso contable
+        await supabase.from('movimientos_contables').insert({
+          fecha: hoy, tipo: 'Ingreso', categoria: 'Cobranza',
+          concepto: `Cobro CxC #${cxcId} — ${s(cxc.concepto) || 'Cliente'}`,
+          monto: montoNum,
+          orden_id: cxc.orden_id,
+        });
+
+        // Reducir saldo del cliente
+        if (cxc.cliente_id) {
+          await supabase.rpc('increment_saldo', { p_cli: cxc.cliente_id, p_delta: -montoNum });
+        }
+
+        log('Cobrar', 'Cuentas por Cobrar', `CxC #${cxcId} — $${monto} — ${nuevoEstatus}`);
+        rf();
+      },
+
       // ── MOVIMIENTOS CONTABLES ──
       addMovContable: async (m) => {
         const { error } = await supabase.from('movimientos_contables').insert({
@@ -1097,19 +1163,26 @@ export function useSupaStore(userId, userName) {
       cerrarRutaCompleta: async (reporte) => {
         const { choferNombre, entregas, mermas: mermasArr, cobros, carga } = reporte;
         const hoy = new Date().toISOString().slice(0, 10);
+        // Default vencimiento: 15 días para crédito
+        const fechaVenc = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-        // 1. Crear órdenes + líneas + ingreso contable por cada entrega
+        // 1. Crear órdenes + líneas + ingreso/pago/CxC por cada entrega
         for (const e of (entregas || [])) {
           const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
           const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
           // Build productos string from items
           const itemsStr = (e.items || []).map(it => `${it.cant || it.qty || 0}×${it.sku}`).join(', ');
           const clienteNombre = s(e.cliente) || 'Público en general';
+          const total = centavos(n(e.total));
+          const metodoPago = s(e.pago) || 'Efectivo';
+          const esCredito = metodoPago === 'Crédito';
+
           const { data: newOrd, error: ordErr } = await supabase.from('ordenes').insert({
             folio, cliente_id: e.clienteId || null,
             cliente_nombre: clienteNombre,
             productos: itemsStr || 'Varios',
-            fecha: hoy, total: centavos(n(e.total)), estatus: 'Entregada',
+            fecha: hoy, total, estatus: 'Entregada',
+            metodo_pago: metodoPago,
           }).select('id').single();
           if (ordErr) console.warn('[cerrarRutaCompleta] orden insert error:', ordErr.message);
 
@@ -1125,13 +1198,43 @@ export function useSupaStore(userId, userName) {
             );
           }
 
-          // Auto-ingreso contable
-          if (newOrd && n(e.total) > 0) {
-            await supabase.from('movimientos_contables').insert({
-              fecha: hoy, tipo: 'Ingreso', categoria: 'Ventas',
-              concepto: `Entrega ${folio} — ${e.cliente || 'Exprés'}`,
-              monto: centavos(n(e.total)),
-            });
+          if (newOrd && total > 0) {
+            if (esCredito) {
+              // Crédito: crear cuenta por cobrar (NO ingreso contable aún)
+              if (e.clienteId) {
+                await supabase.from('cuentas_por_cobrar').insert({
+                  cliente_id: e.clienteId,
+                  orden_id: newOrd.id,
+                  fecha_venta: hoy,
+                  fecha_vencimiento: fechaVenc,
+                  monto_original: total,
+                  monto_pagado: 0,
+                  saldo_pendiente: total,
+                  concepto: `${folio} — ${clienteNombre}`,
+                  estatus: 'Pendiente',
+                });
+                // Incrementar saldo del cliente
+                await supabase.rpc('increment_saldo', { p_cli: e.clienteId, p_delta: total });
+              }
+            } else {
+              // Cobrado: registrar pago + ingreso contable
+              await supabase.from('pagos').insert({
+                cliente_id: e.clienteId || 0,
+                orden_id: newOrd.id,
+                monto: total,
+                metodo_pago: metodoPago,
+                fecha: hoy,
+                referencia: s(e.referencia) || folio,
+                saldo_antes: 0, saldo_despues: 0,
+                usuario_id: uid(),
+              });
+              await supabase.from('movimientos_contables').insert({
+                fecha: hoy, tipo: 'Ingreso', categoria: 'Ventas',
+                concepto: `Cobro ${folio} — ${clienteNombre} (${metodoPago})`,
+                monto: total,
+                orden_id: newOrd.id,
+              });
+            }
           }
         }
 

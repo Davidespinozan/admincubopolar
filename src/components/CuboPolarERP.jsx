@@ -5,7 +5,7 @@ import {
   ClientesView, ProductosView, PreciosView, ProduccionView,
   InventarioView, OrdenesView, RutasView, FacturacionView,
   ConciliacionView, AuditoriaView, ConfiguracionView, AlmacenBolsasView,
-  EmpleadosView, NominaView, ContabilidadView
+  EmpleadosView, NominaView, ContabilidadView, CobrosView
 } from './views/ModuleViews';
 
 /*
@@ -37,6 +37,7 @@ const AREAS = [
   { id: "finanzas", label: "Finanzas", icon: "Wallet", color: "amber",
     items: [
       { id: "contabilidad", label: "Ingresos / Egresos", icon: "Calculator" },
+      { id: "cobros", label: "Cuentas por Cobrar", icon: "DollarSign" },
       { id: "facturacion", label: "Facturación", icon: "FileText" },
       { id: "conciliacion", label: "Cortes de caja", icon: "ClipboardCheck" },
       { id: "nomina", label: "Nómina", icon: "Wallet" },
@@ -84,6 +85,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       case 'auditoria': return <AuditoriaView data={data} />;
       case 'nomina': return <NominaView data={data} />;
       case 'contabilidad': return <ContabilidadView {...vp} />;
+      case 'cobros': return <CobrosView {...vp} />;
       case 'empleados': return <EmpleadosView {...vp} />;
       case 'configuracion': return <ConfiguracionView {...vp} />;
       case 'comodatos': return <ComodatosView {...vp} />;

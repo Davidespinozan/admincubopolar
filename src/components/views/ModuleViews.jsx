@@ -1650,3 +1650,167 @@ export function ContabilidadView({ data, actions }) {
     </Modal>
   </div>);
 }
+// ══════════════════════════════════════════════════════════════
+// COBROS / CUENTAS POR COBRAR VIEW
+// ══════════════════════════════════════════════════════════════
+export function CobrosView({ data, actions }) {
+  const toast = useToast();
+  const [tab, setTab] = useState('pendientes'); // pendientes | pagos
+  const [cobroModal, setCobroModal] = useState(null);
+  const [form, setForm] = useState({ monto: '', metodo: 'Efectivo', referencia: '' });
+  const [errors, setErrors] = useState({});
+
+  const cxcPendientes = useMemo(() => 
+    (data.cuentasPorCobrar || []).filter(c => c.estatus !== 'Pagada'),
+    [data.cuentasPorCobrar]
+  );
+  const cxcPagadas = useMemo(() => 
+    (data.cuentasPorCobrar || []).filter(c => c.estatus === 'Pagada'),
+    [data.cuentasPorCobrar]
+  );
+  const pagosRecientes = useMemo(() => 
+    (data.pagos || []).slice(0, 50),
+    [data.pagos]
+  );
+
+  const totalPendiente = useMemo(() => 
+    cxcPendientes.reduce((s, c) => s + n(c.saldoPendiente), 0),
+    [cxcPendientes]
+  );
+  const totalCobradoHoy = useMemo(() => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    return (data.pagos || []).filter(p => s(p.fecha) === hoy).reduce((s, p) => s + n(p.monto), 0);
+  }, [data.pagos]);
+
+  const clientes = useMemo(() => {
+    const map = {};
+    for (const c of (data.clientes || [])) map[c.id] = c;
+    return map;
+  }, [data.clientes]);
+
+  const openCobro = (cxc) => {
+    setCobroModal(cxc);
+    setForm({ monto: String(cxc.saldoPendiente), metodo: 'Efectivo', referencia: '' });
+    setErrors({});
+  };
+
+  const cobrar = async () => {
+    const e = {};
+    if (!form.monto || parseFloat(form.monto) <= 0) e.monto = 'Monto inválido';
+    if (parseFloat(form.monto) > cobroModal.saldoPendiente) e.monto = 'Excede el saldo pendiente';
+    if (Object.keys(e).length) { setErrors(e); return; }
+    try {
+      await actions.cobrarCxC(cobroModal.id, parseFloat(form.monto), form.metodo, form.referencia);
+      toast?.success('Cobro registrado');
+      setCobroModal(null);
+    } catch (ex) { toast?.error('Error: ' + (ex?.message || '')); }
+  };
+
+  const METODOS = ['Efectivo', 'Transferencia', 'Tarjeta'];
+
+  return (<div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <h2 className="text-lg font-bold text-slate-800">Cobros y Cuentas por Cobrar</h2>
+    </div>
+
+    <div className="grid grid-cols-2 gap-3">
+      <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+        <p className="text-[10px] text-amber-500 uppercase font-bold">Por cobrar</p>
+        <p className="text-xl font-extrabold text-amber-700">${totalPendiente.toLocaleString()}</p>
+        <p className="text-xs text-amber-600 mt-1">{cxcPendientes.length} cuentas pendientes</p>
+      </div>
+      <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
+        <p className="text-[10px] text-emerald-500 uppercase font-bold">Cobrado hoy</p>
+        <p className="text-xl font-extrabold text-emerald-700">${totalCobradoHoy.toLocaleString()}</p>
+      </div>
+    </div>
+
+    <div className="flex gap-2 border-b border-slate-200">
+      <button onClick={() => setTab('pendientes')} className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] ${tab === 'pendientes' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>
+        Pendientes ({cxcPendientes.length})
+      </button>
+      <button onClick={() => setTab('pagos')} className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] ${tab === 'pagos' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>
+        Pagos recientes
+      </button>
+    </div>
+
+    {tab === 'pendientes' && (
+      <div className="space-y-2">
+        {cxcPendientes.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin cuentas pendientes de cobro</p>}
+        {cxcPendientes.map(cxc => {
+          const cli = clientes[cxc.clienteId];
+          const pctPagado = (n(cxc.montoPagado) / n(cxc.montoOriginal)) * 100;
+          return (
+            <div key={cxc.id} className="bg-white rounded-xl p-4 border border-slate-100">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <p className="font-semibold text-slate-800">{s(cli?.nombre) || 'Cliente'}</p>
+                  <p className="text-xs text-slate-400">{s(cxc.concepto)}</p>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded-full font-semibold ${cxc.estatus === 'Parcial' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
+                  {cxc.estatus}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm mb-2">
+                <span className="text-slate-500">Total: ${n(cxc.montoOriginal).toLocaleString()}</span>
+                <span className="font-bold text-amber-700">Saldo: ${n(cxc.saldoPendiente).toLocaleString()}</span>
+              </div>
+              {n(cxc.montoPagado) > 0 && (
+                <div className="mb-2">
+                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, pctPagado)}%` }} />
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Pagado: ${n(cxc.montoPagado).toLocaleString()} ({Math.round(pctPagado)}%)</p>
+                </div>
+              )}
+              <div className="flex justify-between items-center">
+                <span className="text-xs text-slate-400">Vence: {s(cxc.fechaVencimiento)}</span>
+                <button onClick={() => openCobro(cxc)} className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg min-h-[36px]">Cobrar</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+
+    {tab === 'pagos' && (
+      <div className="space-y-1.5">
+        {pagosRecientes.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin pagos registrados</p>}
+        {pagosRecientes.map(p => {
+          const cli = clientes[p.clienteId];
+          return (
+            <div key={p.id} className="bg-emerald-50 rounded-lg p-3 border border-emerald-100">
+              <div className="flex justify-between">
+                <span className="text-sm font-semibold text-slate-700">{s(cli?.nombre) || 'Cliente'}</span>
+                <span className="text-sm font-bold text-emerald-700">+${n(p.monto).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between mt-0.5">
+                <span className="text-xs text-slate-400">{s(p.fecha)} • {s(p.metodoPago) || 'Efectivo'}</span>
+                <span className="text-xs text-emerald-600">{s(p.referencia)}</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    )}
+
+    <Modal open={!!cobroModal} onClose={() => setCobroModal(null)} title="Registrar cobro">
+      {cobroModal && (
+        <div className="space-y-4">
+          <div className="bg-slate-50 rounded-lg p-3">
+            <p className="text-sm font-semibold">{s(clientes[cobroModal.clienteId]?.nombre) || 'Cliente'}</p>
+            <p className="text-xs text-slate-500">{s(cobroModal.concepto)}</p>
+            <p className="text-lg font-bold text-amber-700 mt-1">Saldo: ${n(cobroModal.saldoPendiente).toLocaleString()}</p>
+          </div>
+          <FormInput label="Monto a cobrar *" type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} error={errors.monto} />
+          <FormSelect label="Método de pago" options={METODOS} value={form.metodo} onChange={e => setForm({ ...form, metodo: e.target.value })} />
+          <FormInput label="Referencia" value={form.referencia} onChange={e => setForm({ ...form, referencia: e.target.value })} placeholder="No. transferencia, voucher, etc." />
+          <div className="flex justify-end gap-2">
+            <FormBtn onClick={() => setCobroModal(null)}>Cancelar</FormBtn>
+            <FormBtn primary onClick={cobrar}>Registrar cobro</FormBtn>
+          </div>
+        </div>
+      )}
+    </Modal>
+  </div>);
+}
