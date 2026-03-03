@@ -1023,24 +1023,15 @@ export function ConfiguracionView({ data, actions }) {
     if (Object.keys(e).length) { setErrors(e); return; }
 
     if (modal === "new") {
-      // Create in Supabase Auth first
-      // use supabase imported at the top of the file
-      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+      // Create in Supabase Auth using signUp (no service_role key needed)
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: form.email.trim().toLowerCase(),
         password: form.password,
-        email_confirm: true,
       });
 
-      if (authError) {
-        // Try signUp instead (admin.createUser needs service_role key)
-        const { error: signUpError } = await supabase.auth.signUp({
-          email: form.email.trim().toLowerCase(),
-          password: form.password,
-        });
-        if (signUpError) {
-          setErrors({ email: signUpError.message });
-          return;
-        }
+      if (signUpError) {
+        setErrors({ email: signUpError.message });
+        return;
       }
 
       // Then create profile in usuarios table
