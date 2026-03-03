@@ -47,10 +47,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     return data.ordenes.filter(o => {
       const est = s(o.estatus);
       if (est !== "Asignada" && est !== "Creada") return false;
-      // If has routeId, must be one of my routes
-      if (o.rutaId) return misRutas.includes(o.rutaId) || misRutas.map(String).includes(String(o.rutaId));
-
-      return est === "Creada" || est === "Asignada";
+      const rid = o.rutaId || o.ruta_id;
+      if (!rid) return false;
+      return misRutas.includes(rid) || misRutas.map(String).includes(String(rid));
     });
   }, [data.ordenes, data.rutas, user]);
 

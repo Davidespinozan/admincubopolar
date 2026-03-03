@@ -60,6 +60,13 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   const [alertasOpen, setAlertasOpen] = useState(false);
 
   const vp = useMemo(() => ({ data, actions }), [data, actions]);
+  const alertasActivas = useMemo(() => {
+    return (data.alertas || []).filter(a => {
+      const msg = (a?.msg || a?.mensaje || a?.detalle || a?.titulo || '').toString().trim();
+      const est = (a?.estatus || '').toString().toLowerCase();
+      return !!msg && est !== 'resuelta' && est !== 'cerrada';
+    });
+  }, [data.alertas]);
 
   const renderView = () => {
     switch (view) {
@@ -151,21 +158,21 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
           </div>
           <div className="flex items-center gap-2 relative">
             <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative p-2.5 rounded-xl hover:bg-slate-100 transition-colors text-slate-500 min-w-[44px] min-h-[44px] flex items-center justify-center">
-              <Icons.Bell />{(data.alertas || []).length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />}
+              <Icons.Bell />{alertasActivas.length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />}
             </button>
             {alertasOpen && (
               <div className="absolute top-12 right-0 bg-white border border-slate-100 rounded-xl shadow-lg w-[calc(100vw-32px)] sm:w-96 md:w-80 max-h-96 overflow-y-auto z-50">
                 <div className="p-3 border-b border-slate-100">
                   <p className="text-sm font-bold text-slate-800">Alertas</p>
                 </div>
-                {(data.alertas || []).length === 0 ? (
+                {alertasActivas.length === 0 ? (
                   <div className="p-4 text-center text-sm text-slate-400">Sin alertas activas</div>
                 ) : (
                   <div className="space-y-1">
-                    {(data.alertas || []).map((a, i) => (
+                    {alertasActivas.map((a, i) => (
                       <div key={i} className="px-4 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
                         <p className="text-sm font-semibold text-slate-800">{a.titulo || 'Alerta'}</p>
-                        <p className="text-xs text-slate-500 mt-1">{a.mensaje || a.detalle}</p>
+                        <p className="text-xs text-slate-500 mt-1">{a.msg || a.mensaje || a.detalle}</p>
                       </div>
                     ))}
                   </div>
@@ -266,54 +273,118 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
 // ═══ PLACEHOLDER VIEWS for new modules ═══
 
 function ComodatosView({ data, actions }) {
-  const [modal, setModal] = useState(false);
-  const empty = { negocio: "", direccion: "", contacto: "", congeladorModelo: "", capacidad: "60", stockMaximo: "60", frecuencia: "Diario" };
+  const [modal, setModal] = useState(null);
+  const empty = { clienteId: "", negocio: "", direccion: "", contacto: "", congeladorModelo: "", capacidad: "60", stockMaximo: "60", frecuencia: "Diario" };
   const [form, setForm] = useState(empty);
   const comodatos = data.comodatos || [];
+  const clientesActivos = (data.clientes || []).filter(c => c.estatus === 'Activo');
 
   const save = async () => {
-    if (!form.negocio.trim()) return;
-    await actions.addComodato({ ...form, capacidad: parseInt(form.capacidad), stockMaximo: parseInt(form.stockMaximo), stockActual: 0 });
-    setModal(false); setForm(empty);
+    if (!form.clienteId || !form.negocio.trim()) return;
+    if (modal === 'new') {
+      await actions.addComodato({ ...form, clienteId: Number(form.clienteId), capacidad: parseInt(form.capacidad), stockMaximo: parseInt(form.stockMaximo), stockActual: 0 });
+    } else {
+      await actions.updateComodato(modal.id, { ...form, clienteId: Number(form.clienteId), capacidad: parseInt(form.capacidad), stockMaximo: parseInt(form.stockMaximo) });
+    }
+    setModal(null); setForm(empty);
+  };
+
+  const openEdit = (c) => {
+    setForm({
+      clienteId: String(c.clienteId || c.cliente_id || ''),
+      negocio: c.negocio || '',
+      direccion: c.direccion || '',
+      contacto: c.contacto || '',
+      congeladorModelo: c.congeladorModelo || c.congelador_modelo || '',
+      capacidad: String(c.capacidad || 60),
+      stockMaximo: String(c.stockMaximo || c.stock_maximo || 60),
+      frecuencia: c.frecuencia || 'Diario',
+    });
+    setModal(c);
   };
 
   return (<div className="space-y-4">
     <div className="flex items-center justify-between">
       <div><h2 className="text-lg font-bold text-slate-800">Comodatos</h2><p className="text-xs text-slate-400">Congeladores en negocios. El chofer repone y cobra.</p></div>
-      <button onClick={() => { setForm(empty); setModal(true); }} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo</button>
+      <button onClick={() => { setForm(empty); setModal('new'); }} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo</button>
     </div>
     {comodatos.length > 0 ? comodatos.map(c => (
       <div key={c.id} className="bg-white rounded-xl p-4 border border-slate-100">
+        {(() => {
+          const cliente = (data.clientes || []).find(cli => String(cli.id) === String(c.clienteId || c.cliente_id));
+          return (
         <div className="flex justify-between items-start">
           <div>
             <p className="text-sm font-bold text-slate-800">{c.negocio}</p>
+            <p className="text-xs text-slate-500 font-semibold">Cliente: {cliente?.nombre || 'Sin cliente'}</p>
             <p className="text-xs text-slate-400">{c.direccion} · {c.contacto}</p>
           </div>
           <span className={`text-xs font-bold px-2 py-1 rounded-full ${c.estatus === "Activo" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{c.estatus}</span>
         </div>
+          );
+        })()}
         <div className="flex gap-2 mt-2 flex-wrap">
           {c.congeladorModelo && <span className="text-xs bg-slate-100 text-slate-600 font-semibold px-2 py-1 rounded-lg">{c.congeladorModelo}</span>}
           <span className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">Cap: {c.capacidad}</span>
           <span className="text-xs bg-amber-50 text-amber-700 font-semibold px-2 py-1 rounded-lg">Stock: {c.stockActual || 0}</span>
           <span className="text-xs bg-purple-50 text-purple-700 font-semibold px-2 py-1 rounded-lg">{c.frecuencia}</span>
         </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
+          <button onClick={() => openEdit(c)} className="px-3 py-2 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl border border-blue-200">✏️ Editar</button>
+          <button onClick={async () => {
+            if (window.confirm(`¿${c.estatus === 'Activo' ? 'Desactivar' : 'Activar'} comodato "${c.negocio}"?`)) {
+              await actions.updateComodato(c.id, { estatus: c.estatus === 'Activo' ? 'Inactivo' : 'Activo' });
+            }
+          }} className="px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-200">
+            {c.estatus === 'Activo' ? '🗑 Desactivar' : '✅ Activar'}
+          </button>
+          <button onClick={async () => {
+            if (window.confirm(`¿Eliminar comodato "${c.negocio}"?`)) {
+              await actions.deleteComodato(c.id);
+            }
+          }} className="px-3 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200">Eliminar</button>
+        </div>
       </div>
     )) : <p className="text-sm text-slate-400 text-center py-8">Sin comodatos. Usa + Nuevo para registrar.</p>}
     {modal && (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={() => setModal(false)}>
+      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={() => setModal(null)}>
         <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-          <h3 className="font-bold text-lg text-slate-800 mb-4">Nuevo comodato</h3>
+          <h3 className="font-bold text-lg text-slate-800 mb-4">{modal === 'new' ? 'Nuevo comodato' : 'Editar comodato'}</h3>
           <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cliente *</label>
+              <select value={form.clienteId} onChange={e => setForm({...form, clienteId: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm bg-white">
+                <option value="">Seleccionar cliente activo...</option>
+                {clientesActivos.map(cli => <option key={cli.id} value={cli.id}>{cli.nombre}</option>)}
+              </select>
+            </div>
             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Negocio *</label><input value={form.negocio} onChange={e => setForm({...form, negocio: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" placeholder="OXXO Centro" /></div>
             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dirección</label><input value={form.direccion} onChange={e => setForm({...form, direccion: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Teléfono contacto</label><input value={form.contacto} onChange={e => setForm({...form, contacto: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Modelo congelador</label><input value={form.congeladorModelo} onChange={e => setForm({...form, congeladorModelo: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" placeholder="Imbera VR-17" /></div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Capacidad</label><input type="number" value={form.capacidad} onChange={e => setForm({...form, capacidad: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
+              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Stock máximo</label><input type="number" value={form.stockMaximo} onChange={e => setForm({...form, stockMaximo: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Frecuencia</label><select value={form.frecuencia} onChange={e => setForm({...form, frecuencia: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm"><option>Diario</option><option>Cada 2 días</option><option>Cada 3 días</option><option>Semanal</option></select></div>
             </div>
           </div>
-          <button onClick={save} disabled={!form.negocio.trim()} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">Guardar comodato</button>
+          {modal !== 'new' && (
+            <div className="space-y-2 mt-4">
+              <button onClick={async () => {
+                if (window.confirm(`¿Desactivar comodato "${form.negocio}"?`)) {
+                  await actions.updateComodato(modal.id, { estatus: 'Inactivo' });
+                  setModal(null);
+                }
+              }} className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200">🗑 Desactivar comodato</button>
+              <button onClick={async () => {
+                if (window.confirm(`¿Eliminar comodato "${form.negocio}"?`)) {
+                  await actions.deleteComodato(modal.id);
+                  setModal(null);
+                }
+              }} className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl border border-slate-200">Eliminar comodato</button>
+            </div>
+          )}
+          <button onClick={save} disabled={!form.clienteId || !form.negocio.trim()} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">Guardar comodato</button>
         </div>
       </div>
     )}

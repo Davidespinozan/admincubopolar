@@ -29,7 +29,11 @@ export default function LoginScreen({ onLogin }) {
       
       if (perfiles && perfiles.length > 0) {
         // Has profile with rol assigned
-        onLogin(perfiles[0]);
+        onLogin({
+          ...perfiles[0],
+          auth_id: perfiles[0]?.auth_id || authData.user.id,
+          authUserId: authData.user.id,
+        });
       } else {
         // First login or no profile yet — check if first user ever
         const { data: allUsers } = await supabase.from('usuarios').select('id').limit(1);
@@ -46,11 +50,15 @@ export default function LoginScreen({ onLogin }) {
         const { data: created, error: createErr } = await supabase.from('usuarios').insert(profile).select().single();
         
         if (created) {
-          onLogin(created);
+          onLogin({
+            ...created,
+            auth_id: created?.auth_id || authData.user.id,
+            authUserId: authData.user.id,
+          });
         } else {
           // Table might not exist — still let them in
           console.warn("Could not create profile:", createErr?.message);
-          onLogin({ id: authData.user.id, ...profile });
+          onLogin({ id: authData.user.id, ...profile, auth_id: authData.user.id, authUserId: authData.user.id });
         }
       }
 

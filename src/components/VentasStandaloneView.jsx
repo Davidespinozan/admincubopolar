@@ -26,7 +26,23 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
-  const clientes = useMemo(() => (data.clientes || []).filter(c => c.estatus === "Activo"), [data.clientes]);
+  const isOwnedBy = useCallback((row) => {
+    if (!row) return false;
+    const ownerId = user?.id;
+    const authId = user?.auth_id;
+    const ownerName = s(user?.nombre);
+    const ownerKeys = ['usuario_id', 'vendedor_id', 'owner_id', 'created_by'];
+    if (ownerKeys.some(k => row[k] !== undefined && row[k] !== null && String(row[k]) === String(ownerId))) return true;
+    const authKeys = ['auth_id', 'usuario_auth_id', 'vendedor_auth_id'];
+    if (authId && authKeys.some(k => row[k] !== undefined && row[k] !== null && String(row[k]) === String(authId))) return true;
+    const nameKeys = ['usuario', 'vendedor'];
+    if (ownerName && nameKeys.some(k => row[k] !== undefined && row[k] !== null && s(row[k]) === ownerName)) return true;
+    return false;
+  }, [user]);
+
+  const ordenesUsuario = useMemo(() => (data.ordenes || []).filter(o => isOwnedBy(o)), [data.ordenes, isOwnedBy]);
+  const clienteIdsOrdenes = useMemo(() => new Set(ordenesUsuario.map(o => String(o.clienteId || o.cliente_id)).filter(Boolean)), [ordenesUsuario]);
+  const clientes = useMemo(() => (data.clientes || []).filter(c => c.estatus === "Activo" && (isOwnedBy(c) || clienteIdsOrdenes.has(String(c.id)))), [data.clientes, isOwnedBy, clienteIdsOrdenes]);
   const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
 
   const getPrice = useCallback((cId, sku) => {
@@ -88,6 +104,8 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       fecha: new Date().toISOString().slice(0, 10),
       productos: productosStr, total: totalCalc,
       requiereFactura: form.requiereFactura,
+      usuarioId: user?.id,
+      authId: user?.auth_id,
     });
     showToast("Orden creada — $" + totalCalc.toLocaleString() + (form.requiereFactura ? " (con factura)" : ""));
     setModal(false);
@@ -104,8 +122,8 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   };
 
   const hoy = new Date().toISOString().slice(0, 10);
-  const ordenesHoy = useMemo(() => data.ordenes.filter(o => o.fecha && o.fecha.slice(0, 10) === hoy), [data.ordenes, hoy]);
-  const pendientes = useMemo(() => data.ordenes.filter(o => o.estatus === "Creada"), [data.ordenes]);
+  const ordenesHoy = useMemo(() => ordenesUsuario.filter(o => o.fecha && o.fecha.slice(0, 10) === hoy), [ordenesUsuario, hoy]);
+  const pendientes = useMemo(() => ordenesUsuario.filter(o => o.estatus === "Creada"), [ordenesUsuario]);
   const ventasHoy = useMemo(() => ordenesHoy.filter(o => o.estatus === "Entregada").reduce((s, o) => s + n(o.total), 0), [ordenesHoy]);
 
   return (
@@ -137,7 +155,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
         </div>
 
         <div className="space-y-2">
-          {(tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : data.ordenes).map(o => (
+          {(tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : ordenesUsuario).map(o => (
             <div key={o.id} className="bg-white rounded-xl p-4 border border-slate-100">
               <div className="flex justify-between items-start">
                 <div>
@@ -170,7 +188,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
               )}
             </div>
           ))}
-          {(tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : data.ordenes).length === 0 && (
+          {(tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : ordenesUsuario).length === 0 && (
             <p className="text-center text-sm text-slate-400 py-8">Sin órdenes</p>
           )}
         </div>

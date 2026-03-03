@@ -129,9 +129,16 @@ export function useSupaStore(userId, userName) {
       const rutasMapped = rutas.map(r => {
         const linked = (ord || []).filter(o => o.ruta_id === r.id);
         const u = usuarios.find(x => x.id === r.chofer_id);
+        const choferRaw = u?.nombre || r.chofer_nombre || r.chofer || '—';
+        const choferLabel = (choferRaw && typeof choferRaw === 'object') ? (choferRaw.nombre || '—') : String(choferRaw);
+        const cargaRaw = r.carga;
+        const cargaTxt = (cargaRaw && typeof cargaRaw === 'object')
+          ? ((cargaRaw.bolsas !== undefined) ? `${Number(cargaRaw.bolsas || 0)} bolsas` : `${Object.values(cargaRaw).reduce((a, v) => a + Number(v || 0), 0)} bolsas`)
+          : (cargaRaw ?? '');
         return {
           ...r,
-          chofer: u?.nombre || '—',
+          chofer: choferLabel,
+          cargaTxt,
           choferId: r.chofer_id,
           ordenes: linked.length,
           entregadas: linked.filter(o => o.estatus === 'Entregada' || o.estatus === 'Facturada').length,
@@ -442,6 +449,17 @@ export function useSupaStore(userId, userName) {
         }).select('id').single();
         if (e1) { t()?.error('Error al crear orden'); return e1; }
 
+        if (newOrd?.id) {
+          if (o.usuarioId !== undefined && o.usuarioId !== null) {
+            await supabase.from('ordenes').update({ usuario_id: o.usuarioId }).eq('id', newOrd.id);
+            await supabase.from('ordenes').update({ vendedor_id: o.usuarioId }).eq('id', newOrd.id);
+          }
+          if (o.authId) {
+            await supabase.from('ordenes').update({ auth_id: o.authId }).eq('id', newOrd.id);
+            await supabase.from('ordenes').update({ usuario_auth_id: o.authId }).eq('id', newOrd.id);
+          }
+        }
+
         const { error: e2 } = await supabase.from('orden_lineas').insert(
           lineas.map(l => ({ ...l, orden_id: newOrd.id }))
         );
@@ -488,6 +506,58 @@ export function useSupaStore(userId, userName) {
           sku: p.sku, cantidad: Number(p.cantidad),
         });
         if (error) { t()?.error('Error al registrar producción'); return error; }
+
+        const qty = Number(p.cantidad || 0);
+        if (qty > 0) {
+          const fallbackEmpaque = {
+            'HC-25K': 'EMP-25',
+            'HC-5K': 'EMP-5',
+            'HT-25K': 'EMP-25',
+            'BH-50K': null,
+          };
+
+          let empaqueSku = fallbackEmpaque[p.sku] || null;
+          try {
+            const { data: prodRow, error: prodErr } = await supabase
+              .from('productos')
+              .select('empaque_sku')
+              .eq('sku', p.sku)
+              .single();
+            if (!prodErr && prodRow?.empaque_sku) empaqueSku = prodRow.empaque_sku;
+          } catch (e) {
+          }
+
+          if (empaqueSku) {
+            const { data: empaqueProd, error: empaqueErr } = await supabase
+              .from('productos')
+              .select('id,stock')
+              .eq('sku', empaqueSku)
+              .single();
+
+            if (!empaqueErr && empaqueProd) {
+              const newStock = Math.max(0, Number(empaqueProd.stock || 0) - qty);
+              await supabase.from('productos').update({ stock: newStock }).eq('id', empaqueProd.id);
+
+              const movA = await supabase.from('inventario_mov').insert({
+                tipo: 'Salida',
+                producto: empaqueSku,
+                cantidad: qty,
+                origen: `Producción ${folio}`,
+                usuario: uname(),
+                referencia: p.sku,
+              });
+              if (movA?.error) {
+                await supabase.from('inventario_mov').insert({
+                  tipo: 'Salida',
+                  sku: empaqueSku,
+                  cantidad: qty,
+                  origen: `Producción ${folio}`,
+                  usuario_id: uid(),
+                });
+              }
+            }
+          }
+        }
         rf();
       },
 
@@ -787,6 +857,7 @@ export function useSupaStore(userId, userName) {
       // ── COMODATOS ──
       addComodato: async (c) => {
         const { error } = await supabase.from('comodatos').insert({
+          cliente_id: c.clienteId || c.cliente_id || null,
           negocio: c.negocio, direccion: c.direccion, contacto: c.contacto,
           congelador_modelo: c.congeladorModelo, capacidad: Number(c.capacidad) || 0,
           stock_maximo: Number(c.stockMaximo) || 0, stock_actual: Number(c.stockActual) || 0,
@@ -798,10 +869,20 @@ export function useSupaStore(userId, userName) {
 
       updateComodato: async (id, c) => {
         const update = {};
+        if (c.clienteId !== undefined) update.cliente_id = c.clienteId;
+        if (c.cliente_id !== undefined) update.cliente_id = c.cliente_id;
         if (c.negocio     !== undefined) update.negocio      = c.negocio;
+        if (c.direccion   !== undefined) update.direccion    = c.direccion;
+        if (c.contacto    !== undefined) update.contacto     = c.contacto;
+        if (c.congeladorModelo !== undefined) update.congelador_modelo = c.congeladorModelo;
+        if (c.congelador_modelo !== undefined) update.congelador_modelo = c.congelador_modelo;
+        if (c.capacidad   !== undefined) update.capacidad    = Number(c.capacidad);
+        if (c.stockMaximo !== undefined) update.stock_maximo = Number(c.stockMaximo);
+        if (c.stock_maximo !== undefined) update.stock_maximo = Number(c.stock_maximo);
         if (c.estatus     !== undefined) update.estatus      = c.estatus;
         if (c.stockActual !== undefined) update.stock_actual = Number(c.stockActual);
         if (c.stock_actual !== undefined) update.stock_actual = Number(c.stock_actual);
+        if (c.frecuencia  !== undefined) update.frecuencia   = c.frecuencia;
         const { error } = await supabase.from('comodatos').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar comodato'); return error; }
         rf();

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import LoginScreen from './components/Login'
 import CuboPolarERP from './components/CuboPolarERP'
 import ChoferView from './components/ChoferView'
@@ -11,6 +11,86 @@ function App() {
   const [user, setUser] = useState(null)
   const [adminViewAs, setAdminViewAs] = useState(null)
   const { data, actions, loading } = useSupaStore(user?.id, user?.nombre)
+
+  const authUserId = user?.authUserId || user?.auth_id || null
+
+  const usuarioActual = useMemo(() => {
+    const usuarios = data?.usuarios || []
+    if (!usuarios.length) return null
+    if (authUserId) {
+      const byAuth = usuarios.find(u => u?.auth_id && String(u.auth_id) === String(authUserId))
+      if (byAuth) return byAuth
+    }
+    if (user?.id !== undefined && user?.id !== null) {
+      const byId = usuarios.find(u => String(u?.id) === String(user.id))
+      if (byId) return byId
+    }
+    if (user?.email) {
+      const byEmail = usuarios.find(u => (u?.email || '').toLowerCase() === String(user.email).toLowerCase())
+      if (byEmail) return byEmail
+    }
+    return null
+  }, [data?.usuarios, authUserId, user?.id, user?.email])
+
+  const usuarioActualId = usuarioActual?.id || user?.id || null
+
+  const matchOwner = (row, ownerId, ownerAuthId, ownerName) => {
+    if (!row || ownerId == null) return false
+    const ownerKeys = ['usuario_id', 'vendedor_id', 'chofer_id', 'asignado_a', 'owner_id', 'created_by']
+    const directMatch = ownerKeys.some(k => row[k] !== undefined && row[k] !== null && String(row[k]) === String(ownerId))
+    if (directMatch) return true
+    if (ownerAuthId) {
+      const authKeys = ['auth_id', 'usuario_auth_id', 'vendedor_auth_id', 'chofer_auth_id']
+      if (authKeys.some(k => row[k] !== undefined && row[k] !== null && String(row[k]) === String(ownerAuthId))) return true
+    }
+    if (ownerName) {
+      const nameKeys = ['usuario', 'vendedor', 'chofer_nombre', 'chofer']
+      if (nameKeys.some(k => row[k] !== undefined && row[k] !== null && String(row[k]) === String(ownerName))) return true
+    }
+    return false
+  }
+
+  const scopedData = useMemo(() => {
+    if (!data) return data
+    if (user?.rol === 'Admin' || adminViewAs) return data
+    if (!usuarioActualId) return data
+
+    if (user?.rol === 'Chofer') {
+      const rutasPropias = (data.rutas || []).filter(r => matchOwner(r, usuarioActualId, authUserId, usuarioActual?.nombre))
+      const rutaIds = new Set(rutasPropias.map(r => String(r.id)))
+      const ordenesPropias = (data.ordenes || []).filter(o => o?.ruta_id != null && rutaIds.has(String(o.ruta_id)))
+      const pagosPropios = (data.pagos || []).filter(p => matchOwner(p, usuarioActualId, authUserId, usuarioActual?.nombre))
+      const mermasPropias = (data.mermas || []).filter(m => matchOwner(m, usuarioActualId, authUserId, usuarioActual?.nombre))
+      const invMovPropios = (data.inventarioMov || []).filter(m => matchOwner(m, usuarioActualId, authUserId, usuarioActual?.nombre))
+
+      return {
+        ...data,
+        rutas: rutasPropias,
+        ordenes: ordenesPropias,
+        pagos: pagosPropios,
+        mermas: mermasPropias,
+        inventarioMov: invMovPropios,
+      }
+    }
+
+    if (user?.rol === 'Ventas') {
+      const ordenesPropias = (data.ordenes || []).filter(o => matchOwner(o, usuarioActualId, authUserId, usuarioActual?.nombre))
+      const clienteIds = new Set(ordenesPropias.map(o => String(o.clienteId || o.cliente_id)).filter(Boolean))
+      const clientesPropios = (data.clientes || []).filter(c => {
+        if (matchOwner(c, usuarioActualId, authUserId, usuarioActual?.nombre)) return true
+        return clienteIds.has(String(c.id))
+      })
+      const pagosPropios = (data.pagos || []).filter(p => matchOwner(p, usuarioActualId, authUserId, usuarioActual?.nombre))
+      return {
+        ...data,
+        ordenes: ordenesPropias,
+        clientes: clientesPropios,
+        pagos: pagosPropios,
+      }
+    }
+
+    return data
+  }, [data, user?.rol, usuarioActualId, authUserId, usuarioActual?.nombre, adminViewAs])
 
   if (!user) return <LoginScreen onLogin={setUser} />
 
@@ -43,16 +123,16 @@ function App() {
     : view
 
   if (effectiveRole === 'Chofer')
-    return withAdminBar(<ChoferView user={user} data={data} actions={actions} onLogout={handleLogout} />)
+    return withAdminBar(<ChoferView user={{ ...user, id: usuarioActualId || user?.id, auth_id: authUserId || user?.auth_id }} data={scopedData} actions={actions} onLogout={handleLogout} />)
 
   if (effectiveRole === 'Almacén Bolsas')
-    return withAdminBar(<BolsasView user={user} data={data} actions={actions} onLogout={handleLogout} />)
+    return withAdminBar(<BolsasView user={{ ...user, id: usuarioActualId || user?.id, auth_id: authUserId || user?.auth_id }} data={scopedData} actions={actions} onLogout={handleLogout} />)
 
   if (effectiveRole === 'Producción')
-    return withAdminBar(<ProduccionStandaloneView user={user} data={data} actions={actions} onLogout={handleLogout} />)
+    return withAdminBar(<ProduccionStandaloneView user={{ ...user, id: usuarioActualId || user?.id, auth_id: authUserId || user?.auth_id }} data={scopedData} actions={actions} onLogout={handleLogout} />)
 
   if (effectiveRole === 'Ventas')
-    return withAdminBar(<VentasStandaloneView user={user} data={data} actions={actions} onLogout={handleLogout} />)
+    return withAdminBar(<VentasStandaloneView user={{ ...user, id: usuarioActualId || user?.id, auth_id: authUserId || user?.auth_id }} data={scopedData} actions={actions} onLogout={handleLogout} />)
 
   return (
     <CuboPolarERP

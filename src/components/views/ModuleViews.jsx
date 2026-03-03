@@ -730,6 +730,7 @@ export function RutasView({ data, actions }) {
   const [form, setForm] = useState({nombre:"",choferId:""});
   const [asignarModal, setAsignarModal] = useState(null);
   const [cierreModal, setCierreModal] = useState(null);
+  const [detalleModal, setDetalleModal] = useState(null);
   const [cierreForm, setCierreForm] = useState({devuelto:""});
 
   // Órdenes sin asignar a ruta
@@ -790,6 +791,23 @@ export function RutasView({ data, actions }) {
     setCierreModal(null);
   };
 
+  const choferLabel = (r) => {
+    const raw = r?.chofer;
+    if (raw && typeof raw === 'object') return s(raw.nombre) || s(r?.choferNombre) || '—';
+    return s(raw) || s(r?.choferNombre) || '—';
+  };
+
+  const cargaLabel = (r) => {
+    const raw = r?.carga;
+    if (raw && typeof raw === 'object') {
+      if (raw.bolsas !== undefined) return `${n(raw.bolsas)} bolsas`;
+      const vals = Object.values(raw).map(v => n(v));
+      const total = vals.reduce((a, b) => a + b, 0);
+      return `${total} bolsas`;
+    }
+    return s(raw);
+  };
+
   return (<div>
     <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setModal(true);setErrors({})}} actionLabel="Crear ruta" />
     
@@ -803,25 +821,37 @@ export function RutasView({ data, actions }) {
       ? <EmptyState message="Sin rutas programadas" />
       : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
       {data.rutas.map(r => {
+        const est = s(r.estatus).trim().toLowerCase();
+        const isProgramada = est === "programada" || est === "pendiente";
+        const isEnProgreso = est === "en progreso" || est === "en_progreso" || est === "enprogreso";
+        const isCompletada = est === "completada";
         const rutaOrdenes = data.ordenes.filter(o => o.rutaId === r.id || eqId(o.rutaId, r.id));
         const entregadas = rutaOrdenes.filter(o => o.estatus === "Entregada").length;
         return (
         <div key={r.id} className="bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 hover:shadow-md hover:border-blue-200 transition-all">
           <div className="flex items-center justify-between mb-2"><span className="font-mono text-xs text-slate-400">{s(r.folio)}</span><StatusBadge status={r.estatus}/></div>
           <h3 className="text-base font-bold text-slate-800 mb-1">{s(r.nombre)}</h3>
-          <p className="text-xs text-slate-500 mb-3">{s(r.chofer)} · {rutaOrdenes.length} órdenes · {s(r.carga)}</p>
+          <p className="text-xs text-slate-500 mb-3">{choferLabel(r)} · {rutaOrdenes.length} órdenes · {cargaLabel(r)}</p>
           <div className="flex items-center justify-between text-xs mb-1"><span className="text-slate-400">Entregas</span><span className="font-semibold">{entregadas}/{rutaOrdenes.length}</span></div>
           <CapacityBar pct={rutaOrdenes.length>0?(entregadas/rutaOrdenes.length)*100:0}/>
           
-          {r.estatus==="Programada"&&<div className="space-y-2 mt-3">
+          {isProgramada&&<div className="space-y-2 mt-3">
             <div className="flex gap-2">
               <button onClick={()=>asignarOrdenes(r)} className="flex-1 py-2.5 bg-blue-50 text-blue-600 text-xs font-semibold rounded-xl min-h-[44px]">+ Asignar órdenes</button>
               <button onClick={()=>actions.updateRutaEstatus(r.id,"En progreso")} className="flex-1 py-2.5 bg-blue-600 text-white text-xs font-semibold rounded-xl min-h-[44px]">Iniciar</button>
             </div>
             <button onClick={() => { if(confirm("¿Eliminar ruta " + s(r.nombre) + "?")) actions.deleteRuta(r.id); }} className="w-full py-2 text-red-500 text-xs font-semibold hover:bg-red-50 rounded-xl">Eliminar ruta</button>
           </div>}
-          {r.estatus==="En progreso"&&<p className="mt-3 text-xs text-blue-600 text-center font-semibold">🚛 En camino — el chofer cierra desde su app</p>}
-          {r.estatus==="Completada"&&<p className="mt-3 text-xs text-emerald-600 text-center font-semibold">✓ Completada por el chofer</p>}
+          {isEnProgreso&&<div className="space-y-2 mt-3">
+            <div className="flex gap-2">
+              <button onClick={()=>abrirCierre(r)} className="flex-1 py-2.5 bg-emerald-600 text-white text-xs font-semibold rounded-xl min-h-[44px]">Cerrar ruta</button>
+              <button onClick={() => { if(confirm("¿Eliminar ruta " + s(r.nombre) + "?")) actions.deleteRuta(r.id); }} className="flex-1 py-2.5 bg-red-50 text-red-600 text-xs font-semibold rounded-xl min-h-[44px]">Eliminar</button>
+            </div>
+          </div>}
+          {isCompletada&&<div className="space-y-2 mt-3">
+            <button onClick={()=>setDetalleModal(r)} className="w-full py-2.5 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-xl min-h-[44px]">Ver resumen</button>
+            <button onClick={() => { if(confirm("¿Eliminar ruta " + s(r.nombre) + "?")) actions.deleteRuta(r.id); }} className="w-full py-2 text-red-500 text-xs font-semibold hover:bg-red-50 rounded-xl">Eliminar</button>
+          </div>}
           {r.estatus==="Cerrada"&&<p className="mt-3 text-xs text-slate-400 text-center">Ruta cerrada ✓</p>}
         </div>);
       })}
@@ -860,6 +890,26 @@ export function RutasView({ data, actions }) {
           )}
         </div>
         <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setCierreModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={confirmarCierre}>Cerrar ruta</FormBtn></div>
+      </Modal>
+    )}
+
+    {/* Modal detalle / resumen */}
+    {detalleModal && (
+      <Modal open={true} onClose={()=>setDetalleModal(null)} title={"Detalle " + s(detalleModal.nombre)} wide>
+        <div className="space-y-4">
+          <div className="bg-slate-50 rounded-xl p-4">
+            <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Resumen de ruta</h4>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div><span className="text-slate-400">Chofer:</span> <span className="font-semibold">{choferLabel(detalleModal)}</span></div>
+              <div><span className="text-slate-400">Carga:</span> <span className="font-semibold">{cargaLabel(detalleModal)}</span></div>
+              <div><span className="text-slate-400">Órdenes:</span> <span className="font-semibold">{n(detalleModal.ordenes)}</span></div>
+              <div><span className="text-slate-400">Entregadas:</span> <span className="font-semibold">{n(detalleModal.entregadas)}</span></div>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <FormBtn onClick={()=>setDetalleModal(null)}>Cerrar</FormBtn>
+          </div>
+        </div>
       </Modal>
     )}
   </div>);
