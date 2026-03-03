@@ -228,7 +228,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     </div>
                     <div>
                       <p className="text-base font-bold text-slate-800">{s(cf.nombre)}</p>
-                      <p className="text-xs text-slate-400">{n(cf.temp)}°C · {n(cf.capacidad)}%</p>
+                      <p className="text-xs text-slate-400">{n(cf.temp, -50, 10)}°C · {n(cf.capacidad)}%</p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -322,7 +322,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     <button key={cf.id} onClick={() => setForm(f => ({ ...f, destino: s(cf.id) }))}
                       className={`py-3 rounded-xl text-xs font-bold border-2 ${form.destino === s(cf.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
                       {s(cf.nombre).replace("Cuarto Frío ", "CF-")}
-                      <p className="text-[10px] text-slate-400 mt-0.5">{n(cf.temp)}°C</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{n(cf.temp, -50, 10)}°C</p>
                     </button>
                   ))}
                 </div>

@@ -164,13 +164,24 @@ export function useSupaStore(userId, userName) {
           };
         });
 
-      // ── Map cuartos_frios (id: TEXT, stock: JSONB) ──
+      // ── Map cuartos_frios (id: TEXT, stock: JSONB)
+      // Normalize: coerce temp/capacidad to numbers and keep only "Producto Terminado" in stock
       const cuartosFrios = (cf || []).map(q => {
         const stockObj = (q.stock && typeof q.stock === 'object') ? q.stock : {};
+        // Build a filtered stock object containing only Producto Terminado SKUs
+        const stockFiltered = {};
+        for (const [sku, qty] of Object.entries(stockObj)) {
+          const p = productos.find(x => x.sku === sku);
+          if (!p || s(p.tipo) === "Producto Terminado") {
+            stockFiltered[sku] = Number(qty);
+          }
+        }
         return {
           ...q,
-          stock: stockObj,
-          productos: Object.entries(stockObj)
+          temp: Number(q.temp),
+          capacidad: Number(q.capacidad),
+          stock: stockFiltered,
+          productos: Object.entries(stockFiltered)
             .map(([sku, qty]) => `${sku}: ${qty}`)
             .join(' · '),
         };

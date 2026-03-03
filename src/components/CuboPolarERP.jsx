@@ -1,7 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Icons } from './ui/Icons';
-import { s } from '../utils/safe';
-import { useStore } from '../data/store';
 import DashboardView from './views/DashboardView';
 import {
   ClientesView, ProductosView, PreciosView, ProduccionView,
@@ -56,10 +54,9 @@ const AREAS = [
 const ALL_ITEMS = AREAS.flatMap(a => a.items);
 const BOTTOM_PRIMARY = ["dashboard", "ordenes", "produccion", "contabilidad"];
 
-export default function CuboPolarERP({ user, onLogout, onViewAs }) {
+export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }) {
   const [view, setView] = useState('dashboard');
   const [moreOpen, setMoreOpen] = useState(false);
-  const { data, actions } = useStore();
 
   const vp = useMemo(() => ({ data, actions }), [data, actions]);
 
