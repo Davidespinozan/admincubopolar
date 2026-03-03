@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+DROP TRIGGER IF EXISTS trg_usuarios_upd ON usuarios;
 CREATE TRIGGER trg_usuarios_upd BEFORE UPDATE ON usuarios FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ── CLIENTES ───────────────────────────────────────────────────
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS clientes (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+DROP TRIGGER IF EXISTS trg_clientes_upd ON clientes;
 CREATE TRIGGER trg_clientes_upd BEFORE UPDATE ON clientes FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ── PRODUCTOS ──────────────────────────────────────────────────
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS productos (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+DROP TRIGGER IF EXISTS trg_productos_upd ON productos;
 CREATE TRIGGER trg_productos_upd BEFORE UPDATE ON productos FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ── PRECIOS ESPECIALES ─────────────────────────────────────────
@@ -80,6 +83,7 @@ CREATE TABLE IF NOT EXISTS ordenes (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+DROP TRIGGER IF EXISTS trg_ordenes_upd ON ordenes;
 CREATE TRIGGER trg_ordenes_upd BEFORE UPDATE ON ordenes FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 CREATE INDEX idx_ordenes_fecha ON ordenes(fecha);
 CREATE INDEX idx_ordenes_estatus ON ordenes(estatus);
@@ -97,6 +101,7 @@ CREATE TABLE IF NOT EXISTS rutas (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+DROP TRIGGER IF EXISTS trg_rutas_upd ON rutas;
 CREATE TRIGGER trg_rutas_upd BEFORE UPDATE ON rutas FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ── PRODUCCIÓN ─────────────────────────────────────────────────
@@ -138,6 +143,7 @@ CREATE TABLE IF NOT EXISTS cuartos_frios (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+DROP TRIGGER IF EXISTS trg_cf_upd ON cuartos_frios;
 CREATE TRIGGER trg_cf_upd BEFORE UPDATE ON cuartos_frios FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ── COMODATOS ──────────────────────────────────────────────────
@@ -158,6 +164,7 @@ CREATE TABLE IF NOT EXISTS comodatos (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+DROP TRIGGER IF EXISTS trg_comodatos_upd ON comodatos;
 CREATE TRIGGER trg_comodatos_upd BEFORE UPDATE ON comodatos FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ── LEADS ──────────────────────────────────────────────────────
@@ -174,6 +181,7 @@ CREATE TABLE IF NOT EXISTS leads (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+DROP TRIGGER IF EXISTS trg_leads_upd ON leads;
 CREATE TRIGGER trg_leads_upd BEFORE UPDATE ON leads FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ── EMPLEADOS ──────────────────────────────────────────────────
@@ -193,6 +201,7 @@ CREATE TABLE IF NOT EXISTS empleados (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+DROP TRIGGER IF EXISTS trg_empleados_upd ON empleados;
 CREATE TRIGGER trg_empleados_upd BEFORE UPDATE ON empleados FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ── NÓMINA PERIODOS ────────────────────────────────────────────
