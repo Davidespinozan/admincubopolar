@@ -94,7 +94,13 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     for (const p of productos) c[s(p.sku)] = "";
     return c;
   }, [productos]);
-  if (Object.keys(carga).length === 0 && productos.length > 0) setCarga(cargaInicial);
+
+  // initialize carga once productos are loaded
+  useEffect(() => {
+    if (productos.length > 0 && Object.keys(carga).length === 0) {
+      setCarga(cargaInicial);
+    }
+  }, [productos, carga, cargaInicial]);
 
   const cargaTotal = useMemo(() => {
     const t = {};
