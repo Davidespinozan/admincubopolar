@@ -1,0 +1,130 @@
+import { useMemo } from 'react';
+import { Icons } from '../ui/Icons';
+import { StatusBadge, DataTable, CapacityBar } from '../ui/Components';
+import { EmptyState } from '../ui/Skeleton';
+import { s, n, fmtDate, fmtDateTime } from '../../utils/safe';
+
+// ── FIX P3: ALL DERIVED STATE NOW MEMOIZED ──
+// BEFORE: 4 reduce/filter calls ran on every render — even when user
+// just opened a modal or typed in a search field on another view.
+// With 1000 ordenes + 500 produccion: ~3000 iterations per render, ~60fps drop on mobile.
+//
+// AFTER: Each computation is memoized against its specific data dependency.
+// Also: inventarioMov.slice(0,5) created a new array ref every render,
+// causing DataTable to re-render even though the data was identical.
+
+// Static — no need to recreate on every render
+const DIAS = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+
+export default function DashboardView({ data }) {
+  const totalProd = useMemo(() => data.produccion.reduce((sum, p) => sum + n(p.cantidad), 0), [data.produccion]);
+  const ordPend = useMemo(() => data.ordenes.filter(o => o.estatus === "Creada" || o.estatus === "Asignada").length, [data.ordenes]);
+  const rutasAct = useMemo(() => (data.rutas || []).filter(r => r.estatus === "En progreso").length, [data.rutas]);
+  const totalInv = useMemo(() => data.productos.filter(p => p.tipo === "Producto Terminado").reduce((sum, p) => sum + n(p.stock), 0), [data.productos]);
+
+  // ── FIX P7: .slice() inside JSX creates new array ref every render ──
+  const recentMov = useMemo(() => data.inventarioMov.slice(0, 5), [data.inventarioMov]);
+
+  const hoy = new Date();
+  const fechaStr = `${DIAS[hoy.getDay()]}, ${hoy.getDate()} de ${MESES[hoy.getMonth()]} ${hoy.getFullYear()}`;
+  const turno = hoy.getHours() < 14 ? "Turno matutino" : "Turno vespertino";
+
+  // ── FIX P8: stat card config was recreated every render as inline array literal ──
+  const stats = useMemo(() => [
+    { label: "Producido hoy", val: totalProd.toLocaleString(), unit: "bolsas", bg: "bg-blue-50", txt: "text-blue-500", icon: Icons.Factory },
+    { label: "Por entregar", val: ordPend, unit: "órdenes", bg: "bg-amber-50", txt: "text-amber-500", icon: Icons.ShoppingCart },
+    { label: "Rutas activas", val: rutasAct, unit: "en calle", bg: "bg-emerald-50", txt: "text-emerald-500", icon: Icons.Truck },
+    { label: "Hielo disponible", val: totalInv.toLocaleString(), unit: "bolsas", bg: "bg-cyan-50", txt: "text-cyan-500", icon: Icons.Package },
+  ], [totalProd, ordPend, rutasAct, totalInv]);
+
+  return (
+    <div>
+      <div className="mb-4 md:mb-5">
+        <h1 className="text-lg md:text-xl font-bold text-slate-800 tracking-tight">Buen día</h1>
+        <p className="text-xs md:text-sm text-slate-400 mt-0.5">{fechaStr} — {turno}</p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
+        {stats.map((item, i) => (
+          <div key={i} className="bg-white border border-slate-100 rounded-2xl p-3.5 lg:p-5">
+            <div className="flex items-start justify-between mb-2 lg:mb-3">
+              <span className="text-[10px] lg:text-xs font-semibold text-slate-400 uppercase tracking-wider leading-tight">{item.label}</span>
+              <div className={`w-7 h-7 lg:w-9 lg:h-9 rounded-lg lg:rounded-xl ${item.bg} flex items-center justify-center ${item.txt} flex-shrink-0 ml-1`}><item.icon /></div>
+            </div>
+            <div className="flex items-baseline gap-1 lg:gap-2">
+              <span className="text-xl lg:text-2xl font-extrabold text-slate-800">{item.val}</span>
+              <span className="text-[10px] lg:text-xs text-slate-400">{item.unit}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Cuartos + Alertas */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 md:gap-4 mb-4 md:mb-6">
+        <div className="md:col-span-2 bg-white border border-slate-100 rounded-2xl p-4 md:p-5">
+          <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.Thermometer /> Cuartos Fríos</h3>
+          {(data.cuartosFrios || []).length === 0 ? <EmptyState message="Sin cuartos fríos" /> :
+          <div className="flex sm:grid sm:grid-cols-3 gap-3 overflow-x-auto sm:overflow-x-visible pb-1 sm:pb-0 snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0">
+            {(data.cuartosFrios || []).map(cf => (
+              <div key={cf.id} className="min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink bg-slate-50 rounded-xl p-3.5 md:p-4 border border-slate-100 snap-start">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-bold text-slate-700">{s(cf.nombre)}</span>
+                  <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg">{n(cf.temp, -50, 10)}°C</span>
+                </div>
+                <CapacityBar pct={n(cf.capacidad)} />
+                <p className="text-xs text-slate-400 mt-1.5">{n(cf.capacidad)}%</p>
+                <div className="mt-1.5 space-y-0.5">{cf.stock ? Object.entries(cf.stock).map(([sku,qty])=><div key={sku} className="flex justify-between text-xs"><span className="text-slate-500">{sku}</span><span className="font-bold text-slate-700">{qty}</span></div>) : <p className="text-xs text-slate-500">{s(cf.productos)}</p>}</div>
+              </div>
+            ))}
+          </div>}
+        </div>
+        <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5">
+          <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.AlertTriangle /> Alertas</h3>
+          {(data.alertas || []).length === 0 ? <EmptyState message="Sin alertas activas" /> :
+          <div className="space-y-2 md:space-y-3">
+            {(data.alertas || []).map((a, i) => (
+              <div key={a.id ?? i} className="flex items-start gap-2.5 md:gap-3 p-2.5 md:p-3 bg-slate-50 rounded-xl border border-slate-100">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${s(a.tipo)==="critica"?"bg-red-500":s(a.tipo)==="accionable"?"bg-amber-500":"bg-blue-400"}`} />
+                <div><p className="text-xs font-medium text-slate-700">{s(a.msg)}</p><p className="text-xs text-slate-400 mt-0.5">{fmtDateTime(a.created_at)}</p></div>
+              </div>
+            ))}
+          </div>}
+        </div>
+      </div>
+
+      {/* Rutas */}
+      <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5 mb-4 md:mb-6">
+        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.Truck /> Rutas del día</h3>
+        {(data.rutas || []).length === 0 ? <EmptyState message="Sin rutas programadas" /> :
+        <div className="flex md:grid md:grid-cols-4 gap-3 overflow-x-auto md:overflow-x-visible pb-1 md:pb-0 snap-x snap-mandatory -mx-4 px-4 md:mx-0 md:px-0">
+          {(data.rutas || []).map(r => (
+            <div key={r.id} className="min-w-[200px] md:min-w-0 snap-start border border-slate-100 rounded-xl p-3.5 md:p-4 hover:border-blue-200 transition-colors flex-shrink-0 md:flex-shrink">
+              <div className="flex items-center justify-between mb-2"><span className="text-sm font-bold text-slate-700">{s(r.nombre)}</span><StatusBadge status={r.estatus}/></div>
+              <p className="text-xs text-slate-500 mb-2.5">{s(r.chofer)}</p>
+              <div className="flex items-center justify-between text-xs mb-1"><span className="text-slate-400">{n(r.entregadas)}/{n(r.ordenes)}</span></div>
+              <CapacityBar pct={n(r.ordenes)>0?(n(r.entregadas)/n(r.ordenes))*100:0}/>
+            </div>
+          ))}
+        </div>}
+      </div>
+
+      {/* Últimos movimientos */}
+      <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5">
+        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.ClipboardCheck /> Últimos movimientos</h3>
+        <DataTable columns={[
+          { key: "fecha", label: "Fecha", hideOnMobile: true, render: v => fmtDateTime(v) },
+          { key: "tipo", label: "Tipo", badge: true, render: v => <StatusBadge status={v} /> },
+          { key: "producto", label: "Producto", bold: true, primary: true },
+          { key: "cantidad", label: "Cant.", render: v => {const num=n(v,-999999);return<span className={`font-mono font-semibold ${num>0?"text-emerald-600":num<0?"text-red-500":"text-slate-600"}`}>{num>0?`+${num}`:num}</span>} },
+          { key: "origen", label: "Ref.", hideOnMobile: true },
+          { key: "usuario", label: "Usuario", hideOnMobile: true },
+        ]} data={recentMov}
+        cardTitle={r => {const num=n(r.cantidad,-999999);return `${num>0?'+'+num:num} ${s(r.producto)}`}}
+        cardSubtitle={r => <span className="text-xs text-slate-400">{fmtDateTime(r.fecha)} · {s(r.origen)}</span>}
+        />
+      </div>
+    </div>
+  );
+}

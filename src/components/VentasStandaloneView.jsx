@@ -1,0 +1,381 @@
+import { useState, useMemo, useCallback } from 'react';
+import { s, n, eqId } from '../utils/safe';
+
+const PAGOS = ["Efectivo", "Transferencia SPEI", "Tarjeta (terminal)", "QR / Link de pago", "Crédito (fiado)"];
+const TIPOS_CLIENTE = ["Tienda", "Restaurante", "Nevería", "Hotel", "Cadena", "Particular", "Otro"];
+const USOS_CFDI = [
+  { val: "G01", label: "G01 — Adquisición de mercancías" },
+  { val: "G03", label: "G03 — Gastos en general" },
+  { val: "S01", label: "S01 — Sin efectos fiscales" },
+];
+
+export default function VentasStandaloneView({ user, data, actions, onLogout }) {
+  const [tab, setTab] = useState("ventas");
+  const [modal, setModal] = useState(false);
+  const [pagoModal, setPagoModal] = useState(null);
+  const [pagoForm, setPagoForm] = useState({ metodo: "Efectivo", referencia: "" });
+  const [toast, setToast] = useState("");
+
+  // Order form
+  const [form, setForm] = useState({ clienteId: "", requiereFactura: false });
+  const [lines, setLines] = useState([{ sku: "", qty: 1, precio: 0 }]);
+
+  // New client inline form
+  const [nuevoCliente, setNuevoCliente] = useState(false);
+  const [cliForm, setCliForm] = useState({ nombre: "", contacto: "", tipo: "Tienda", requiereFactura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
+
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
+
+  const clientes = useMemo(() => (data.clientes || []).filter(c => c.estatus === "Activo"), [data.clientes]);
+  const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
+
+  const getPrice = useCallback((cId, sku) => {
+    if (cId) { const esp = data.preciosEsp.find(p => eqId(p.clienteId, cId) && p.sku === sku); if (esp) return n(esp.precio); }
+    const prod = data.productos.find(p => p.sku === sku);
+    return prod ? n(prod.precio) : 0;
+  }, [data.preciosEsp, data.productos]);
+
+  const handleClientChange = (cId) => {
+    setForm(f => ({ ...f, clienteId: cId }));
+    setLines(prev => prev.map(l => ({ ...l, precio: getPrice(cId, l.sku) })));
+    setNuevoCliente(false);
+  };
+  const addLine = () => setLines(prev => [...prev, { sku: "", qty: 1, precio: 0 }]);
+  const updateLine = (idx, field, val) => setLines(prev => prev.map((l, i) => {
+    if (i !== idx) return l;
+    const u = { ...l, [field]: val };
+    if (field === "sku") u.precio = getPrice(form.clienteId, val);
+    return u;
+  }));
+  const removeLine = (idx) => setLines(prev => prev.filter((_, i) => i !== idx));
+
+  const subtotal = useMemo(() => lines.reduce((s, l) => s + (n(l.qty) * n(l.precio)), 0), [lines]);
+  const iva = useMemo(() => form.requiereFactura ? Math.round(subtotal * 16) / 100 : 0, [subtotal, form.requiereFactura]);
+  const totalCalc = subtotal + iva;
+  const productosStr = useMemo(() => lines.filter(l => l.sku && l.qty > 0).map(l => `${l.qty}×${l.sku}`).join(", "), [lines]);
+
+  // Register new client and select it
+  const registrarCliente = () => {
+    if (!cliForm.nombre.trim()) return;
+    const nuevoId = ((data.clientes || []).length > 0 ? Math.max(...data.clientes.map(c => Number(c.id) || 0)) + 1 : 1);
+    const nuevo = {
+      nombre: cliForm.nombre.trim(),
+      contacto: cliForm.contacto,
+      tipo: cliForm.tipo,
+      rfc: cliForm.requiereFactura ? cliForm.rfc : "XAXX010101000",
+      correo: cliForm.requiereFactura ? cliForm.correo : "",
+      regimen: cliForm.requiereFactura ? cliForm.regimen : "Sin obligaciones",
+      usoCfdi: cliForm.requiereFactura ? cliForm.usoCfdi : "S01",
+      cp: cliForm.cp || "34000",
+    };
+    actions.addCliente(nuevo);
+    // Select the new client
+    setTimeout(() => {
+      setForm(f => ({ ...f, clienteId: String(nuevoId), requiereFactura: cliForm.requiereFactura }));
+      setLines(prev => prev.map(l => ({ ...l, precio: getPrice(String(nuevoId), l.sku) })));
+    }, 100);
+    setNuevoCliente(false);
+    showToast("Cliente " + cliForm.nombre + " registrado ✓");
+    setCliForm({ nombre: "", contacto: "", tipo: "Tienda", requiereFactura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
+  };
+
+  const crearOrden = () => {
+    if (!form.clienteId) return;
+    if (!lines.some(l => l.sku && l.qty > 0)) return;
+    const cli = (data.clientes || []).find(c => eqId(c.id, form.clienteId));
+    actions.addOrden({
+      cliente: s(cli?.nombre), clienteId: form.clienteId,
+      fecha: new Date().toISOString().slice(0, 10),
+      productos: productosStr, total: totalCalc,
+      requiereFactura: form.requiereFactura,
+    });
+    showToast("Orden creada — $" + totalCalc.toLocaleString() + (form.requiereFactura ? " (con factura)" : ""));
+    setModal(false);
+    setForm({ clienteId: "", requiereFactura: false });
+    setLines([{ sku: "", qty: 1, precio: 0 }]);
+  };
+
+  const cobrar = (ord) => { setPagoModal(ord); setPagoForm({ metodo: "Efectivo", referencia: "" }); };
+  const confirmarCobro = () => {
+    if (!pagoModal) return;
+    actions.updateOrdenEstatus(pagoModal.id, "Entregada");
+    showToast("Cobrado — " + pagoForm.metodo);
+    setPagoModal(null);
+  };
+
+  const hoy = new Date().toISOString().slice(0, 10);
+  const ordenesHoy = useMemo(() => data.ordenes.filter(o => o.fecha && o.fecha.slice(0, 10) === hoy), [data.ordenes, hoy]);
+  const pendientes = useMemo(() => data.ordenes.filter(o => o.estatus === "Creada"), [data.ordenes]);
+  const ventasHoy = useMemo(() => ordenesHoy.filter(o => o.estatus === "Entregada").reduce((s, o) => s + n(o.total), 0), [ordenesHoy]);
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 pb-4" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
+        <div className="flex items-center justify-between mb-1">
+          <div><h1 className="text-lg font-extrabold">Ventas</h1><p className="text-xs text-emerald-100">{s(user?.nombre)}</p></div>
+          <button onClick={onLogout} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg">Salir</button>
+        </div>
+        <div className="grid grid-cols-2 gap-2 mt-3">
+          <div className="bg-white/10 rounded-xl p-3"><p className="text-xs text-emerald-200">Vendido hoy</p><p className="text-2xl font-extrabold">${ventasHoy.toLocaleString()}</p></div>
+          <div className="bg-white/10 rounded-xl p-3"><p className="text-xs text-emerald-200">Por cobrar</p><p className="text-2xl font-extrabold">{pendientes.length}</p><p className="text-xs text-emerald-200">órdenes</p></div>
+        </div>
+      </div>
+
+      <div className="px-4 pt-4 space-y-4">
+        <button onClick={() => { setModal(true); setLines([{ sku: "", qty: 1, precio: 0 }]); setForm({ clienteId: "", requiereFactura: false }); setNuevoCliente(false); }}
+          className="w-full py-5 bg-emerald-600 text-white font-extrabold rounded-2xl text-lg shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform">
+          + Nueva venta
+        </button>
+
+        <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+          {[{ k: "ventas", l: "Por cobrar" }, { k: "hoy", l: "Hoy" }, { k: "todas", l: "Todas" }].map(t => (
+            <button key={t.k} onClick={() => setTab(t.k)}
+              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${tab === t.k ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>
+              {t.l}
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-2">
+          {(tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : data.ordenes).map(o => (
+            <div key={o.id} className="bg-white rounded-xl p-4 border border-slate-100">
+              <div className="flex justify-between items-start">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-bold text-blue-600">{s(o.folio)}</span>
+                    {o.requiereFactura && <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded">FACTURA</span>}
+                  </div>
+                  <p className="text-sm font-bold text-slate-800 mt-0.5">{s(o.cliente)}</p>
+                  <p className="text-xs text-slate-400 mt-0.5">{s(o.productos)}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-extrabold text-slate-800">${n(o.total).toLocaleString()}</p>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                    o.estatus === "Creada" ? "bg-blue-100 text-blue-700" :
+                    o.estatus === "Asignada" ? "bg-amber-100 text-amber-700" :
+                    o.estatus === "Entregada" ? "bg-emerald-100 text-emerald-700" :
+                    "bg-slate-100 text-slate-600"
+                  }`}>{s(o.estatus)}</span>
+                </div>
+              </div>
+              {o.estatus === "Creada" && (
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => cobrar(o)} className="flex-1 py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl active:scale-[0.98] transition-transform">💵 Cobrar</button>
+                  <button onClick={() => { actions.updateOrdenEstatus(o.id, "Asignada"); showToast("Asignada a ruta"); }}
+                    className="flex-1 py-2.5 bg-blue-50 text-blue-600 text-xs font-bold rounded-xl border border-blue-200">🚚 A ruta</button>
+                </div>
+              )}
+              {o.estatus === "Asignada" && (
+                <button onClick={() => cobrar(o)} className="w-full mt-3 py-2.5 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-xl border border-emerald-200">Cobrar entrega</button>
+              )}
+            </div>
+          ))}
+          {(tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : data.ordenes).length === 0 && (
+            <p className="text-center text-sm text-slate-400 py-8">Sin órdenes</p>
+          )}
+        </div>
+        <div className="h-8" />
+      </div>
+
+      {/* ═══ MODAL NUEVA VENTA ═══ */}
+      {modal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setModal(false)}>
+          <div className="bg-white w-full max-w-lg rounded-t-2xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
+            <h3 className="font-bold text-lg text-slate-800 mb-4">Nueva venta</h3>
+            <div className="space-y-4">
+
+              {/* ── CLIENTE ── */}
+              {!nuevoCliente ? (
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Cliente</label>
+                  <select value={form.clienteId} onChange={e => handleClientChange(e.target.value)}
+                    className="w-full px-3 py-3 border border-slate-200 rounded-xl text-sm bg-white">
+                    <option value="">Seleccionar cliente...</option>
+                    {clientes.map(c => <option key={c.id} value={c.id}>{s(c.nombre)}{c.rfc && c.rfc !== "XAXX010101000" ? " · " + s(c.rfc) : ""}</option>)}
+                  </select>
+                  <button onClick={() => setNuevoCliente(true)} className="text-xs text-blue-600 font-bold mt-2">
+                    + Registrar cliente nuevo
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-blue-50 rounded-2xl p-4 border border-blue-200">
+                  <div className="flex justify-between items-center mb-3">
+                    <h4 className="text-sm font-bold text-blue-800">Nuevo cliente</h4>
+                    <button onClick={() => setNuevoCliente(false)} className="text-xs text-blue-500">Cancelar</button>
+                  </div>
+                  <div className="space-y-2.5">
+                    <div>
+                      <label className="block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Nombre *</label>
+                      <input value={cliForm.nombre} onChange={e => setCliForm(f => ({ ...f, nombre: e.target.value }))}
+                        className="w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm bg-white" placeholder="Nombre o razón social" autoFocus />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Teléfono</label>
+                        <input value={cliForm.contacto} onChange={e => setCliForm(f => ({ ...f, contacto: e.target.value }))}
+                          className="w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm bg-white" placeholder="618 123 4567" type="tel" />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Tipo</label>
+                        <select value={cliForm.tipo} onChange={e => setCliForm(f => ({ ...f, tipo: e.target.value }))}
+                          className="w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm bg-white">
+                          {TIPOS_CLIENTE.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Factura toggle */}
+                    <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-blue-200">
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">¿Requiere factura?</p>
+                        <p className="text-[10px] text-slate-400">Se pedirán datos fiscales</p>
+                      </div>
+                      <button onClick={() => setCliForm(f => ({ ...f, requiereFactura: !f.requiereFactura }))}
+                        className={`w-12 h-7 rounded-full transition-all relative ${cliForm.requiereFactura ? "bg-blue-600" : "bg-slate-300"}`}>
+                        <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-all ${cliForm.requiereFactura ? "left-[22px]" : "left-0.5"}`} />
+                      </button>
+                    </div>
+
+                    {/* Datos fiscales (solo si requiere factura) */}
+                    {cliForm.requiereFactura && (
+                      <div className="bg-white rounded-xl p-3 border border-blue-200 space-y-2">
+                        <p className="text-[10px] font-bold text-purple-600 uppercase">Datos fiscales</p>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">RFC *</label>
+                          <input value={cliForm.rfc} onChange={e => setCliForm(f => ({ ...f, rfc: e.target.value.toUpperCase() }))}
+                            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-mono" placeholder="XAXX010101000" maxLength={13} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Correo para factura</label>
+                          <input value={cliForm.correo} onChange={e => setCliForm(f => ({ ...f, correo: e.target.value }))}
+                            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="correo@empresa.com" type="email" />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Uso CFDI</label>
+                            <select value={cliForm.usoCfdi} onChange={e => setCliForm(f => ({ ...f, usoCfdi: e.target.value }))}
+                              className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white">
+                              {USOS_CFDI.map(u => <option key={u.val} value={u.val}>{u.label}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">C.P.</label>
+                            <input value={cliForm.cp} onChange={e => setCliForm(f => ({ ...f, cp: e.target.value }))}
+                              className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="34000" maxLength={5} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <button onClick={registrarCliente} disabled={!cliForm.nombre.trim() || (cliForm.requiereFactura && !cliForm.rfc.trim())}
+                      className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm disabled:opacity-40">
+                      Registrar cliente y continuar
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Show selected client info */}
+              {form.clienteId && !nuevoCliente && (() => {
+                const cli = (data.clientes || []).find(c => eqId(c.id, form.clienteId));
+                if (!cli) return null;
+                const tieneRfc = cli.rfc && cli.rfc !== "XAXX010101000";
+                return (
+                  <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-200">
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">{s(cli.nombre)}</p>
+                        <p className="text-xs text-slate-500">{tieneRfc ? s(cli.rfc) : "Sin RFC"} {cli.contacto && cli.contacto !== "—" ? " · " + s(cli.contacto) : ""}</p>
+                      </div>
+                      {n(cli.saldo) > 0 && <span className="text-xs bg-amber-100 text-amber-700 font-bold px-2 py-1 rounded-lg">Debe ${n(cli.saldo).toLocaleString()}</span>}
+                    </div>
+                    {/* Factura toggle for this order */}
+                    {tieneRfc && (
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-emerald-200">
+                        <span className="text-xs text-slate-600 font-semibold">Facturar esta venta</span>
+                        <button onClick={() => setForm(f => ({ ...f, requiereFactura: !f.requiereFactura }))}
+                          className={`w-10 h-6 rounded-full transition-all relative ${form.requiereFactura ? "bg-purple-600" : "bg-slate-300"}`}>
+                          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${form.requiereFactura ? "left-[18px]" : "left-0.5"}`} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ── PRODUCTOS ── */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Productos</label>
+                {lines.map((l, i) => (
+                  <div key={i} className="flex items-center gap-2 mb-2">
+                    <select value={l.sku} onChange={e => updateLine(i, "sku", e.target.value)}
+                      className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
+                      <option value="">Producto...</option>
+                      {prodTerminados.map(p => <option key={p.sku} value={s(p.sku)}>{s(p.nombre)} · ${n(p.precio)}</option>)}
+                    </select>
+                    <input type="number" min="1" value={l.qty} onChange={e => updateLine(i, "qty", parseInt(e.target.value) || 1)}
+                      className="w-14 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center" />
+                    <span className="text-sm font-bold text-slate-600 w-16 text-right">${(n(l.qty) * n(l.precio)).toLocaleString()}</span>
+                    {lines.length > 1 && <button onClick={() => removeLine(i)} className="text-red-400 text-lg w-6">×</button>}
+                  </div>
+                ))}
+                <button onClick={addLine} className="text-xs text-blue-600 font-semibold">+ Agregar producto</button>
+              </div>
+
+              {/* ── TOTALES ── */}
+              <div className="bg-slate-50 rounded-xl p-3 space-y-1">
+                <div className="flex justify-between text-sm text-slate-500"><span>Subtotal</span><span>${subtotal.toLocaleString()}</span></div>
+                {form.requiereFactura && <div className="flex justify-between text-sm text-slate-500"><span>IVA 16%</span><span>${iva.toLocaleString()}</span></div>}
+                {!form.requiereFactura && <div className="flex justify-between text-xs text-slate-400"><span>Sin factura — sin IVA</span></div>}
+                <div className="flex justify-between text-base font-bold text-slate-800 border-t border-slate-200 pt-1"><span>Total</span><span>${totalCalc.toLocaleString()}</span></div>
+              </div>
+            </div>
+
+            <button onClick={crearOrden} disabled={!form.clienteId || !lines.some(l => l.sku)}
+              className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">
+              {form.requiereFactura ? "Crear venta con factura" : "Crear venta"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODAL COBRO ═══ */}
+      {pagoModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setPagoModal(null)}>
+          <div className="bg-white w-full max-w-lg rounded-t-2xl p-5" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
+            <h3 className="font-bold text-lg text-slate-800 mb-1">Cobrar {s(pagoModal.folio)}</h3>
+            <p className="text-sm text-slate-500 mb-4">{s(pagoModal.cliente)} — <span className="font-bold text-slate-800">${n(pagoModal.total).toLocaleString()}</span>
+              {pagoModal.requiereFactura && <span className="ml-2 text-xs bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded">FACTURA</span>}
+            </p>
+            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Método de pago</label>
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              {PAGOS.map(m => (
+                <button key={m} onClick={() => setPagoForm(f => ({ ...f, metodo: m }))}
+                  className={`py-3 px-3 rounded-xl text-xs font-semibold border-2 transition-all ${pagoForm.metodo === m ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
+                  {m}
+                </button>
+              ))}
+            </div>
+            {pagoForm.metodo === "Transferencia SPEI" && (
+              <div className="mb-4"><label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Referencia</label>
+                <input value={pagoForm.referencia} onChange={e => setPagoForm(f => ({ ...f, referencia: e.target.value }))}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Últimos 6 dígitos" /></div>
+            )}
+            {pagoForm.metodo === "Crédito (fiado)" && (
+              <div className="mb-4 p-3 bg-amber-50 rounded-xl"><p className="text-xs text-amber-700 font-semibold">Se agregará al saldo del cliente</p></div>
+            )}
+            <button onClick={confirmarCobro} className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-emerald-200">Confirmar cobro</button>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }}>
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
