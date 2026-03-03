@@ -973,9 +973,17 @@ export function AlmacenBolsasView({ data }) {
     for (const m of (data.inventarioMov || [])) {
       const sku = s(m.producto);
       if (!result[sku]) continue;
-      if (s(m.tipo) === "Entrada") result[sku].entradas += n(m.cantidad);
-      else if (s(m.tipo) === "Salida") result[sku].salidas += n(m.cantidad);
-      else if (s(m.tipo) === "Consumo") result[sku].consumo += n(m.cantidad);
+      const tipo = s(m.tipo);
+      const origen = s(m.origen).toLowerCase();
+      const qty = Math.abs(n(m.cantidad));
+
+      if (tipo === "Entrada") {
+        result[sku].entradas += qty;
+      } else if (tipo === "Consumo" || (tipo === "Salida" && origen.startsWith("consumo"))) {
+        result[sku].consumo += qty;
+      } else if (tipo === "Salida") {
+        result[sku].salidas += qty;
+      }
     }
     return result;
   }, [data.inventarioMov, bolsas]);
