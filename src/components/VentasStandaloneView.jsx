@@ -41,8 +41,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   }, [user]);
 
   const ordenesUsuario = useMemo(() => (data.ordenes || []).filter(o => isOwnedBy(o)), [data.ordenes, isOwnedBy]);
-  const clienteIdsOrdenes = useMemo(() => new Set(ordenesUsuario.map(o => String(o.clienteId || o.cliente_id)).filter(Boolean)), [ordenesUsuario]);
-  const clientes = useMemo(() => (data.clientes || []).filter(c => c.estatus === "Activo" && (isOwnedBy(c) || clienteIdsOrdenes.has(String(c.id)))), [data.clientes, isOwnedBy, clienteIdsOrdenes]);
+  const clientes = useMemo(() => (data.clientes || []).filter(c => c.estatus === "Activo"), [data.clientes]);
   const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
 
   const getPrice = useCallback((cId, sku) => {
@@ -337,7 +336,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                       <select value={l.sku} onChange={e => updateLine(i, "sku", e.target.value)}
                         className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
                         <option value="">Producto...</option>
-                        {prodTerminados.map(p => <option key={p.sku} value={s(p.sku)}>{s(p.nombre)} · ${n(p.precio)}</option>)}
+                        {prodTerminados.map(p => <option key={p.sku} value={s(p.sku)}>{s(p.nombre)} · ${getPrice(form.clienteId, s(p.sku))}</option>)}
                       </select>
                       <input type="number" min="1" value={l.qty} onChange={e => updateLine(i, "qty", parseInt(e.target.value) || 1)}
                         className="w-14 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center" />

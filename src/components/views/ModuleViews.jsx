@@ -150,8 +150,16 @@ export function ProductosView({ data, actions }) {
 
   const paginated = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
+  const hasDemoProducts = useMemo(() => data.productos.some(p => s(p.sku).startsWith('DEMO-')), [data.productos]);
+
   return (<div>
     <PageHeader title="Catálogo de Productos" subtitle="Empaque y producto terminado" action={openNew} actionLabel="Nuevo producto" />
+    {hasDemoProducts && (
+      <div className="mb-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+        <span className="text-amber-700 text-sm">Se detectaron productos de demostración (DEMO-*).</span>
+        <button onClick={() => { actions.deleteDemoProducts(); }} className="px-3 py-1 text-xs font-medium bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">Eliminar datos demo</button>
+      </div>
+    )}
     <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
         <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>{setSearch(e.target.value);setPage(0)}} placeholder="Buscar producto o SKU..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>

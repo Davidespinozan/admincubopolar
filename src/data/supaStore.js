@@ -47,8 +47,8 @@ export function useSupaStore(userId, userName) {
   const [error, setError] = useState(null);
   const uidRef = useRef(userId);
   uidRef.current = userId;
-  const userNameRef = useRef(userName || 'Sistema');
-  userNameRef.current = userName || 'Sistema';
+  const userNameRef = useRef(userName || '');
+  userNameRef.current = userName || '';
 
   const toast = useToast();
   const toastRef = useRef(toast);
@@ -133,7 +133,7 @@ export function useSupaStore(userId, userName) {
         const choferLabel = (choferRaw && typeof choferRaw === 'object') ? (choferRaw.nombre || '—') : String(choferRaw);
         const cargaRaw = r.carga;
         const cargaTxt = (cargaRaw && typeof cargaRaw === 'object')
-          ? ((cargaRaw.bolsas !== undefined) ? `${Number(cargaRaw.bolsas || 0)} bolsas` : `${Object.values(cargaRaw).reduce((a, v) => a + Number(v || 0), 0)} bolsas`)
+          ? Object.entries(cargaRaw).map(([sku, qty]) => `${qty}×${sku}`).join(', ')
           : (cargaRaw ?? '');
         return {
           ...r,
@@ -194,11 +194,20 @@ export function useSupaStore(userId, userName) {
         };
       });
 
+      // ── Build effective stock map (sum cuartos_frios stock for finished products) ──
+      const cfStockMap = {};
+      for (const q of cuartosFrios) {
+        for (const [sku, qty] of Object.entries(q.stock || {})) {
+          cfStockMap[sku] = (cfStockMap[sku] || 0) + qty;
+        }
+      }
+
       // ── Build live alerts ──
       const alertas = umbrales.map(u => {
         const p = productos.find(x => x.sku === u.sku);
         if (!p) return null;
-        const stock = Number(p.stock);
+        // Use cuartos_frios aggregate if available, otherwise fall back to productos.stock
+        const stock = cfStockMap[u.sku] !== undefined ? cfStockMap[u.sku] : Number(p.stock);
         if (stock <= u.critica)
           return { id: u.id, tipo: 'critica',    msg: `${p.nombre} bajo mínimo — ${stock} unidades`,  created_at: new Date().toISOString() };
         if (stock <= u.accionable)
@@ -319,9 +328,11 @@ export function useSupaStore(userId, userName) {
   const actionsRef = useRef(null);
   if (!actionsRef.current) {
     const uid   = () => uidRef.current;
-    const uname = () => userNameRef.current;
+    const uname = () => userNameRef.current || 'Usuario';
     const rf    = () => fetchAll();
     const t     = () => toastRef.current;
+    const log   = (accion, modulo, detalle) =>
+      supabase.from('auditoria').insert({ usuario: uname(), accion, modulo, detalle }).then(() => {});
 
     const a = actionsRef.current = {
 
@@ -338,6 +349,7 @@ export function useSupaStore(userId, userName) {
           return error;
         }
         rf();
+        log('Crear', 'Clientes', `${c.nombre}`);
         return newCli; // { id } returned so callers can use real Supabase ID
       },
 
@@ -354,6 +366,7 @@ export function useSupaStore(userId, userName) {
         if (c.estatus  !== undefined) update.estatus  = c.estatus;
         const { error } = await supabase.from('clientes').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar cliente'); return error; }
+        log('Editar', 'Clientes', `ID ${id}`);
         rf();
       },
 
@@ -377,6 +390,7 @@ export function useSupaStore(userId, userName) {
           precio: Number(p.precio) || 0,
         });
         if (error) { t()?.error('Error al crear producto'); return error; }
+        log('Crear', 'Productos', `${p.sku} — ${p.nombre}`);
         rf();
       },
 
@@ -392,9 +406,18 @@ export function useSupaStore(userId, userName) {
       deleteProducto: async (id) => {
         const { error } = await supabase.from('productos').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar producto'); return error; }
+        log('Eliminar', 'Productos', `ID ${id}`);
         rf();
       },
 
+      deleteDemoProducts: async () => {
+        const demoSkus = ['DEMO-HC-10K', 'DEMO-HT-10K'];
+        const { error } = await supabase.from('productos').delete().in('sku', demoSkus);
+        if (error) { t()?.error('Error al eliminar productos demo'); return error; }
+        log('Limpiar', 'Productos', `Eliminados SKUs demo: ${demoSkus.join(', ')}`);
+        t()?.success('Productos demo eliminados');
+        rf();
+      },
       // ── PRECIOS ESPECIALES ──
       addPrecioEsp: async (p) => {
         const { error } = await supabase.from('precios_esp').insert({
@@ -461,10 +484,7 @@ export function useSupaStore(userId, userName) {
           lineas.map(l => ({ ...l, orden_id: newOrd.id }))
         );
 
-        await supabase.from('auditoria').insert({
-          usuario: uname(), accion: 'Crear', modulo: 'Órdenes',
-          detalle: `${folio} — $${total}`,
-        });
+        await log('Crear', 'Órdenes', `${folio} — $${total}`);
 
         if (!e2) rf();
         return e2;
@@ -485,6 +505,25 @@ export function useSupaStore(userId, userName) {
           ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id));
         }
         if (error) { t()?.error('Error al actualizar orden'); return error; }
+
+        // Auto-registrar ingreso contable al cobrar (Entregada)
+        if (nuevoEst === 'Entregada') {
+          const { data: ord } = await supabase.from('ordenes').select('folio, total, cliente_id').eq('id', id).single();
+          if (ord && n(ord.total) > 0) {
+            const cli = ord.cliente_id
+              ? (await supabase.from('clientes').select('nombre').eq('id', ord.cliente_id).single())?.data
+              : null;
+            await supabase.from('movimientos_contables').insert({
+              fecha: new Date().toISOString().slice(0, 10),
+              tipo: 'Ingreso', categoria: 'Ventas',
+              concepto: `Cobro ${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
+              monto: centavos(n(ord.total)),
+            });
+          }
+        }
+
+        await log('Cambiar estatus', 'Órdenes', `Orden #${id} → ${nuevoEst}`);
+
         rf();
       },
 
@@ -503,6 +542,7 @@ export function useSupaStore(userId, userName) {
           sku: p.sku, cantidad: Number(p.cantidad),
         });
         if (error) { t()?.error('Error al registrar producción'); return error; }
+        log('Producir', 'Producción', `${folio} — ${p.sku} x${Number(p.cantidad)}`);
 
         const qty = Number(p.cantidad || 0);
         if (qty > 0) {
@@ -535,23 +575,13 @@ export function useSupaStore(userId, userName) {
               const newStock = Math.max(0, Number(empaqueProd.stock || 0) - qty);
               await supabase.from('productos').update({ stock: newStock }).eq('id', empaqueProd.id);
 
-              const movA = await supabase.from('inventario_mov').insert({
+              await supabase.from('inventario_mov').insert({
                 tipo: 'Salida',
                 producto: empaqueSku,
                 cantidad: qty,
                 origen: `Producción ${folio}`,
                 usuario: uname(),
-                referencia: p.sku,
               });
-              if (movA?.error) {
-                await supabase.from('inventario_mov').insert({
-                  tipo: 'Salida',
-                  sku: empaqueSku,
-                  cantidad: qty,
-                  origen: `Producción ${folio}`,
-                  usuario_id: uid(),
-                });
-              }
             }
           }
         }
@@ -730,17 +760,11 @@ export function useSupaStore(userId, userName) {
           tipo: delta >= 0 ? 'Entrada' : 'Salida',
           producto: sku,
           cantidad: Math.abs(delta),
-          origen: 'Ajuste manual',
+          origen: `Ajuste manual: ${motivo || 'Sin motivo'}`,
           usuario: uname(),
-          referencia: motivo || '',
         });
 
-        await supabase.from('auditoria').insert({
-          usuario: uname(),
-          accion: 'Ajustar',
-          modulo: 'Inventario',
-          detalle: `${sku}: ${actual} → ${target}. Motivo: ${motivo || 'Sin motivo'}`,
-        });
+        await log('Ajustar', 'Inventario', `${sku}: ${actual} → ${target}. Motivo: ${motivo || 'Sin motivo'}`);
 
         rf();
       },
@@ -754,6 +778,7 @@ export function useSupaStore(userId, userName) {
           estatus: 'Programada', carga: r.carga,
         });
         if (error) { t()?.error('Error al crear ruta'); return error; }
+        log('Crear', 'Rutas', `${folio} — ${r.nombre}`);
         rf();
       },
 
@@ -778,6 +803,7 @@ export function useSupaStore(userId, userName) {
       deleteRuta: async (id) => {
         const { error } = await supabase.from('rutas').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar ruta'); return error; }
+        log('Eliminar', 'Rutas', `ID ${id}`);
         rf();
       },
 
@@ -785,7 +811,15 @@ export function useSupaStore(userId, userName) {
         await Promise.all(ordenIds.map(oid =>
           supabase.from('ordenes').update({ ruta_id: rutaId }).eq('id', oid)
         ));
-        await supabase.from('rutas').update({ carga: totalBolsas + ' bolsas' }).eq('id', rutaId);
+        // Build desglose by SKU from orden_lineas
+        const { data: lineas } = await supabase.from('orden_lineas').select('sku, cantidad').in('orden_id', ordenIds);
+        const desglose = {};
+        for (const l of (lineas || [])) {
+          const sku = l.sku || '?';
+          desglose[sku] = (desglose[sku] || 0) + Number(l.cantidad || 0);
+        }
+        const cargaTxt = Object.entries(desglose).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || `${totalBolsas} bolsas`;
+        await supabase.from('rutas').update({ carga: cargaTxt }).eq('id', rutaId);
         rf();
       },
 
@@ -818,6 +852,7 @@ export function useSupaStore(userId, userName) {
           concepto: m.concepto, monto: centavos(m.monto),
         });
         if (error) { t()?.error('Error al guardar movimiento contable'); return error; }
+        log('Registrar', 'Contabilidad', `${m.tipo}: ${m.concepto} — $${m.monto}`);
         rf();
       },
 
@@ -966,6 +1001,7 @@ export function useSupaStore(userId, userName) {
           nombre: u.nombre, email: u.email, rol: u.rol, auth_id: u.auth_id, estatus: u.estatus || 'Activo',
         }).select().single();
         if (error) { t()?.error(`Error al crear usuario: ${error.message}`); return error; }
+        log('Crear', 'Usuarios', `${u.nombre} (${u.rol})`);
         rf();
         return row;
       },
@@ -994,6 +1030,7 @@ export function useSupaStore(userId, userName) {
           tipo, producto: sku, cantidad: Number(cantidad),
           origen: motivo, usuario: uname(),
         });
+        log(tipo, 'Almacén Bolsas', `${sku} x${cantidad} — ${motivo}`);
         rf();
       },
 
@@ -1023,18 +1060,13 @@ export function useSupaStore(userId, userName) {
             origen: 'Ruta ' + choferNombre, foto_url: m.foto || '',
           });
         }
-        await supabase.from('auditoria').insert({
-          usuario: choferNombre || uname(), accion: 'Cierre Ruta', modulo: 'Rutas',
-          detalle: `Entregas: ${(entregas || []).length}, Efectivo: $${cobros?.Efectivo || 0}`,
-        });
+        await log('Cierre Ruta', 'Rutas', `Entregas: ${(entregas || []).length}, Efectivo: $${cobros?.Efectivo || 0}`);
         rf();
       },
 
       // ── AUDITORÍA ──
       logAudit: async (accion, modulo, detalle) => {
-        await supabase.from('auditoria').insert({
-          usuario: uname(), accion, modulo, detalle,
-        });
+        await log(accion, modulo, detalle);
       },
     };
   }
