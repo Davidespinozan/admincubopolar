@@ -488,17 +488,17 @@ export function useSupaStore(userId, userName) {
         }
         if (!clienteNombre) clienteNombre = 'Público en general';
 
-        // Build insert payload — include user association columns only if provided
-        // (they may not exist in all Supabase environments; ignored silently if missing)
+        // Build insert payload — only include columns that exist in ordenes table
         const ordenInsert = {
-          folio, cliente_id: o.clienteId,
+          folio,
+          cliente_id: o.clienteId || null,
           cliente_nombre: clienteNombre,
           productos: productosStr,
           fecha: o.fecha || new Date().toISOString().slice(0, 10),
-          total, estatus: 'Creada',
+          total,
+          estatus: 'Creada',
+          metodo_pago: o.metodoPago || 'Efectivo',
         };
-        if (o.usuarioId != null) { ordenInsert.usuario_id = o.usuarioId; ordenInsert.vendedor_id = o.usuarioId; }
-        if (o.authId)            { ordenInsert.auth_id = o.authId; ordenInsert.usuario_auth_id = o.authId; }
 
         const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id').single();
         if (e1) { t()?.error('Error al crear orden'); return e1; }
@@ -805,12 +805,21 @@ export function useSupaStore(userId, userName) {
       addRuta: async (r) => {
         const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_r_seq' });
         const folio = `R-${String(seq || 13).padStart(3, '0')}`;
+        const hoy = new Date().toISOString();
         const { error } = await supabase.from('rutas').insert({
-          folio, nombre: r.nombre, chofer_id: r.choferId || null,
-          estatus: 'Programada', carga: r.carga,
+          folio, 
+          nombre: r.nombre, 
+          chofer_id: r.choferId || null,
+          estatus: 'Programada', 
+          carga: r.carga || {},                     // JSONB: {"HC-25K": 50, ...}
+          carga_autorizada: r.cargaAutorizada || r.carga || {},
+          extra_autorizado: r.extraAutorizado || {},
+          autorizado_at: hoy,
         });
         if (error) { t()?.error('Error al crear ruta'); return error; }
-        log('Crear', 'Rutas', `${folio} — ${r.nombre}`);
+        // Log con detalle de carga
+        const cargaTxt = Object.entries(r.carga || {}).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '—';
+        log('Autorizar', 'Rutas', `${folio} — ${r.nombre} — Carga: ${cargaTxt}`);
         rf();
       },
 
@@ -828,6 +837,8 @@ export function useSupaStore(userId, userName) {
         if (r.chofer_id !== undefined) update.chofer_id = r.chofer_id;
         if (r.estatus   !== undefined) update.estatus   = r.estatus;
         if (r.carga     !== undefined) update.carga     = r.carga;
+        if (r.cargaAutorizada !== undefined) update.carga_autorizada = r.cargaAutorizada;
+        if (r.extraAutorizado !== undefined) update.extra_autorizado = r.extraAutorizado;
         const { error } = await supabase.from('rutas').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar ruta'); return error; }
         log('Editar', 'Rutas', `Ruta #${id}`);
@@ -852,15 +863,36 @@ export function useSupaStore(userId, userName) {
           const sku = l.sku || '?';
           desglose[sku] = (desglose[sku] || 0) + Number(l.cantidad || 0);
         }
+        // Actualizar carga con desglose JSONB
+        await supabase.from('rutas').update({ carga: desglose }).eq('id', rutaId);
         const cargaTxt = Object.entries(desglose).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || `${totalBolsas} bolsas`;
-        await supabase.from('rutas').update({ carga: cargaTxt }).eq('id', rutaId);
         log('Asignar órdenes', 'Rutas', `Ruta #${rutaId} — ${ordenIds.length} órdenes — ${cargaTxt}`);
         rf();
       },
 
-      cerrarRuta: async (rutaId, devuelto) => {
-        await supabase.from('rutas').update({ estatus: 'Cerrada', devuelto: devuelto || 0 }).eq('id', rutaId);
-        log('Cerrar', 'Rutas', `Ruta #${rutaId} — devuelto: ${devuelto || 0}`);
+      cerrarRuta: async (rutaId, devolucion) => {
+        // devolucion ahora es un objeto: {"HC-25K": 5, "HC-5K": 3, ...}
+        const devolucionObj = (typeof devolucion === 'object') ? devolucion : { bolsas: devolucion || 0 };
+        await supabase.from('rutas').update({ 
+          estatus: 'Cerrada', 
+          devolucion: devolucionObj,
+        }).eq('id', rutaId);
+        
+        // Regresar devolución al primer cuarto frío
+        const { data: cuartos } = await supabase.from('cuartos_frios').select('id, stock').limit(1);
+        if (cuartos && cuartos.length > 0) {
+          const cf = cuartos[0];
+          const stockActual = cf.stock || {};
+          for (const [sku, qty] of Object.entries(devolucionObj)) {
+            if (qty > 0) {
+              stockActual[sku] = (stockActual[sku] || 0) + qty;
+            }
+          }
+          await supabase.from('cuartos_frios').update({ stock: stockActual }).eq('id', cf.id);
+        }
+        
+        const devTxt = Object.entries(devolucionObj).filter(([_,v]) => v > 0).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '0';
+        log('Cerrar', 'Rutas', `Ruta #${rutaId} — devuelto: ${devTxt}`);
         rf();
       },
 

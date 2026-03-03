@@ -745,14 +745,21 @@ export function RutasView({ data, actions }) {
   const [modal, setModal] = useState(false);
   const [editingRuta, setEditingRuta] = useState(null);
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({nombre:"",choferId:"",estatus:"Programada",carga:""});
+  // Carga por producto: objeto con SKU como key
+  const [form, setForm] = useState({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{}});
   const [asignarModal, setAsignarModal] = useState(null);
   const [cierreModal, setCierreModal] = useState(null);
   const [detalleModal, setDetalleModal] = useState(null);
-  const [cierreForm, setCierreForm] = useState({devuelto:""});
+  const [cierreForm, setCierreForm] = useState({devolucionPorProducto:{}});
   const [search, setSearch] = useState("");
   const [filterEst, setFilterEst] = useState("");
   const dSearch = useDebounce(search);
+
+  // Productos terminados para mostrar en formulario de carga
+  const prodTerminados = useMemo(() => 
+    (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado"), 
+    [data.productos]
+  );
 
   // Órdenes sin asignar a ruta
   const ordenesSinRuta = useMemo(() => data.ordenes.filter(o => o.estatus === "Asignada" && !o.rutaId), [data.ordenes]);
@@ -764,41 +771,69 @@ export function RutasView({ data, actions }) {
     const e = {};
     if (!form.nombre.trim()) e.nombre = "Requerido";
     if (!form.choferId) e.choferId = "Requerido";
+    // Validar que al menos un producto tenga carga
+    const totalCarga = Object.values(form.cargaPorProducto).reduce((s, v) => s + n(v), 0);
+    if (totalCarga === 0 && !editingRuta) e.carga = "Debe autorizar al menos 1 producto";
     if (Object.keys(e).length) { setErrors(e); return; }
+
+    // Convertir cargaPorProducto a JSONB limpio (sin valores 0)
+    const cargaAutorizada = {};
+    const extraAutorizado = {};
+    for (const [sku, qty] of Object.entries(form.cargaPorProducto)) {
+      if (n(qty) > 0) cargaAutorizada[sku] = n(qty);
+    }
+    for (const [sku, qty] of Object.entries(form.extraPorProducto)) {
+      if (n(qty) > 0) extraAutorizado[sku] = n(qty);
+    }
+    // Carga total = carga + extra
+    const cargaTotal = {};
+    for (const sku of Object.keys({...cargaAutorizada, ...extraAutorizado})) {
+      cargaTotal[sku] = (cargaAutorizada[sku] || 0) + (extraAutorizado[sku] || 0);
+    }
+
     let err;
     if (editingRuta) {
       err = await actions.updateRuta(editingRuta.id, {
         nombre: form.nombre,
         choferId: Number(form.choferId),
         estatus: form.estatus,
-        carga: form.carga,
+        carga: cargaTotal,
+        cargaAutorizada,
+        extraAutorizado,
       });
     } else {
       err = await actions.addRuta({
         nombre: form.nombre,
         choferId: Number(form.choferId),
         ordenes: 0,
-        carga: form.carga || "0 bolsas",
+        carga: cargaTotal,
+        cargaAutorizada,
+        extraAutorizado,
       });
     }
     if (err) {
       toast?.error(editingRuta ? "No se pudo actualizar la ruta" : "No se pudo crear la ruta");
       return;
     }
-    toast?.success(editingRuta ? "Ruta actualizada" : "Ruta creada");
+    toast?.success(editingRuta ? "Ruta actualizada" : "Ruta creada y carga autorizada");
     setModal(false);
     setEditingRuta(null);
-    setForm({nombre:"",choferId:"",estatus:"Programada",carga:""});
+    setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{}});
     setErrors({});
   };
 
   const abrirEdicion = (ruta) => {
     setEditingRuta(ruta);
+    // Parsear carga existente a objeto por producto
+    const cargaObj = (ruta.carga && typeof ruta.carga === 'object') ? ruta.carga : {};
+    const extraObj = (ruta.extraAutorizado && typeof ruta.extraAutorizado === 'object') ? ruta.extraAutorizado : {};
+    const cargaAutObj = (ruta.cargaAutorizada && typeof ruta.cargaAutorizada === 'object') ? ruta.cargaAutorizada : cargaObj;
     setForm({
       nombre: s(ruta.nombre),
       choferId: String(ruta.choferId || ruta.chofer_id || ""),
       estatus: s(ruta.estatus) || "Programada",
-      carga: s(ruta.carga) || s(ruta.cargaTxt) || "",
+      cargaPorProducto: cargaAutObj,
+      extraPorProducto: extraObj,
     });
     setErrors({});
     setModal(true);
@@ -826,12 +861,20 @@ export function RutasView({ data, actions }) {
 
   const abrirCierre = (ruta) => {
     setCierreModal(ruta);
-    setCierreForm({devuelto:""});
+    // Inicializar devolución por producto a 0
+    const devInit = {};
+    prodTerminados.forEach(p => devInit[p.sku] = 0);
+    setCierreForm({devolucionPorProducto: devInit});
   };
   const confirmarCierre = () => {
     if (!cierreModal) return;
+    // Filtrar solo productos con devolución > 0
+    const devolucion = {};
+    for (const [sku, qty] of Object.entries(cierreForm.devolucionPorProducto)) {
+      if (n(qty) > 0) devolucion[sku] = n(qty);
+    }
     if (actions.cerrarRuta) {
-      actions.cerrarRuta(cierreModal.id, n(cierreForm.devuelto));
+      actions.cerrarRuta(cierreModal.id, devolucion);
     }
     toast?.success("Ruta " + s(cierreModal.nombre) + " cerrada");
     setCierreModal(null);
@@ -870,7 +913,7 @@ export function RutasView({ data, actions }) {
 
   return (<div>
     {ConfirmEl}
-    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",carga:""});setModal(true);setErrors({})}} actionLabel="Crear ruta" />
+    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{}});setModal(true);setErrors({})}} actionLabel="Autorizar ruta" />
 
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
       <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar ruta, folio o chofer..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
@@ -930,14 +973,86 @@ export function RutasView({ data, actions }) {
     </div>}
 
     {/* Modal crear/editar ruta */}
-    <Modal open={modal} onClose={()=>{setModal(false);setEditingRuta(null)}} title={editingRuta ? "Editar ruta" : "Crear ruta"}>
-      <div className="space-y-3">
-        <FormInput label="Nombre *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Ej: Ruta Norte" error={errors.nombre} />
-        <FormSelect label="Chofer *" options={[{value:"",label:"Seleccionar..."}, ...choferes]} value={form.choferId} onChange={e=>setForm({...form,choferId:e.target.value})} error={errors.choferId} />
-        <FormSelect label="Estatus" options={["Programada","En progreso","Completada","Cerrada","Cancelada"]} value={form.estatus} onChange={e=>setForm({...form,estatus:e.target.value})} />
-        <FormInput label="Carga" value={form.carga} onChange={e=>setForm({...form,carga:e.target.value})} placeholder="Ej: 120 bolsas" />
+    <Modal open={modal} onClose={()=>{setModal(false);setEditingRuta(null)}} title={editingRuta ? "Editar ruta" : "Autorizar carga de ruta"} wide>
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <FormInput label="Nombre de ruta *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Ej: Ruta Norte" error={errors.nombre} />
+          <FormSelect label="Chofer *" options={[{value:"",label:"Seleccionar..."}, ...choferes]} value={form.choferId} onChange={e=>setForm({...form,choferId:e.target.value})} error={errors.choferId} />
+        </div>
+        {editingRuta && <FormSelect label="Estatus" options={["Programada","En progreso","Completada","Cerrada","Cancelada"]} value={form.estatus} onChange={e=>setForm({...form,estatus:e.target.value})} />}
+        
+        {/* Carga autorizada por producto */}
+        <div className="border-t pt-4">
+          <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+            <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs">1</span>
+            Carga base autorizada
+          </h4>
+          {errors.carga && <p className="text-xs text-red-500 mb-2">{errors.carga}</p>}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {prodTerminados.map(p => (
+              <div key={p.sku} className="bg-slate-50 rounded-xl p-3">
+                <label className="text-xs font-semibold text-slate-600 block mb-1">{p.nombre}</label>
+                <span className="text-[10px] text-slate-400 block mb-2">{p.sku}</span>
+                <input 
+                  type="number" 
+                  min="0"
+                  value={form.cargaPorProducto[p.sku] || ""} 
+                  onChange={e => setForm({...form, cargaPorProducto: {...form.cargaPorProducto, [p.sku]: e.target.value}})}
+                  placeholder="0"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-center focus:outline-none focus:border-blue-400"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Extra autorizado */}
+        <div className="border-t pt-4">
+          <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+            <span className="w-6 h-6 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center text-xs">2</span>
+            Extra autorizado <span className="text-xs font-normal text-slate-400">(adicional a carga base)</span>
+          </h4>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {prodTerminados.map(p => (
+              <div key={p.sku} className="bg-amber-50 rounded-xl p-3">
+                <label className="text-xs font-semibold text-amber-700 block mb-1">{p.nombre}</label>
+                <span className="text-[10px] text-amber-500 block mb-2">+ Extra</span>
+                <input 
+                  type="number" 
+                  min="0"
+                  value={form.extraPorProducto[p.sku] || ""} 
+                  onChange={e => setForm({...form, extraPorProducto: {...form.extraPorProducto, [p.sku]: e.target.value}})}
+                  placeholder="0"
+                  className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm text-center focus:outline-none focus:border-amber-400 bg-white"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Resumen de carga total */}
+        {Object.values(form.cargaPorProducto).some(v => n(v) > 0) && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+            <h4 className="text-xs font-bold text-emerald-700 uppercase mb-2">Carga total autorizada</h4>
+            <div className="flex flex-wrap gap-2">
+              {prodTerminados.filter(p => n(form.cargaPorProducto[p.sku]) > 0 || n(form.extraPorProducto[p.sku]) > 0).map(p => {
+                const base = n(form.cargaPorProducto[p.sku]);
+                const extra = n(form.extraPorProducto[p.sku]);
+                return (
+                  <span key={p.sku} className="px-3 py-1 bg-white border border-emerald-200 rounded-full text-xs font-semibold text-emerald-700">
+                    {base + extra}× {p.sku}
+                    {extra > 0 && <span className="text-amber-600 ml-1">(+{extra})</span>}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
-      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>{setModal(false);setEditingRuta(null)}}>Cancelar</FormBtn><FormBtn primary onClick={save}>{editingRuta ? "Guardar cambios" : "Crear ruta"}</FormBtn></div>
+      <div className="flex justify-end gap-2 mt-5">
+        <FormBtn onClick={()=>{setModal(false);setEditingRuta(null)}}>Cancelar</FormBtn>
+        <FormBtn primary onClick={save}>{editingRuta ? "Guardar cambios" : "Autorizar carga"}</FormBtn>
+      </div>
     </Modal>
 
     {/* Modal asignar órdenes */}
@@ -951,15 +1066,41 @@ export function RutasView({ data, actions }) {
             <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Resumen de ruta</h4>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div><span className="text-slate-400">Chofer:</span> <span className="font-semibold">{s(cierreModal.chofer)}</span></div>
-              <div><span className="text-slate-400">Carga:</span> <span className="font-semibold">{s(cierreModal.carga)}</span></div>
+              <div><span className="text-slate-400">Carga:</span> <span className="font-semibold">{cargaLabel(cierreModal)}</span></div>
               <div><span className="text-slate-400">Órdenes:</span> <span className="font-semibold">{n(cierreModal.ordenes)}</span></div>
               <div><span className="text-slate-400">Entregadas:</span> <span className="font-semibold">{n(cierreModal.entregadas)}</span></div>
             </div>
           </div>
-          <FormInput label="Bolsas devueltas (sobrante)" type="number" value={cierreForm.devuelto} onChange={e=>setCierreForm({devuelto:e.target.value})} placeholder="Ej: 15" />
-          {cierreForm.devuelto && (
+          
+          {/* Devolución por producto */}
+          <div className="border-t pt-4">
+            <h4 className="text-sm font-bold text-slate-700 mb-3">Devolución por producto (sobrante)</h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {prodTerminados.map(p => (
+                <div key={p.sku} className="bg-blue-50 rounded-xl p-3">
+                  <label className="text-xs font-semibold text-blue-700 block mb-1">{p.nombre}</label>
+                  <span className="text-[10px] text-blue-500 block mb-2">{p.sku}</span>
+                  <input 
+                    type="number" 
+                    min="0"
+                    value={cierreForm.devolucionPorProducto[p.sku] || ""} 
+                    onChange={e => setCierreForm({devolucionPorProducto: {...cierreForm.devolucionPorProducto, [p.sku]: e.target.value}})}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm text-center focus:outline-none focus:border-blue-400 bg-white"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {Object.values(cierreForm.devolucionPorProducto).some(v => n(v) > 0) && (
             <div className="bg-blue-50 rounded-xl p-3">
-              <p className="text-xs text-blue-700">{cierreForm.devuelto} bolsas regresan a cuarto frío</p>
+              <p className="text-xs text-blue-700 font-semibold">
+                Regresa a cuarto frío: {Object.entries(cierreForm.devolucionPorProducto)
+                  .filter(([_, v]) => n(v) > 0)
+                  .map(([sku, v]) => `${n(v)}× ${sku}`)
+                  .join(', ')}
+              </p>
             </div>
           )}
         </div>
