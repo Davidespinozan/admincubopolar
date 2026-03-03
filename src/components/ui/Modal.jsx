@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { Icons } from './Icons';
 import { BtnSpinner } from './Skeleton';
 
@@ -60,4 +61,51 @@ export function FormBtn({ children, primary, danger, onClick, disabled, loading,
       {loading ? <><BtnSpinner /> Guardando...</> : children}
     </button>
   );
+}
+
+// ─── CONFIRM DIALOG ───
+// Usage: <ConfirmDialog open={showConfirm} onClose={()=>set(false)} onConfirm={doDelete} title="..." message="..." danger />
+export function ConfirmDialog({ open, onClose, onConfirm, title, message, confirmLabel, danger }) {
+  const [loading, setLoading] = useState(false);
+  if (!open) return null;
+  const handleConfirm = async () => {
+    setLoading(true);
+    try { await onConfirm(); } finally { setLoading(false); onClose(); }
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
+        <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 ${danger ? 'bg-red-100' : 'bg-amber-100'}`}>
+          <span className="text-xl">{danger ? '🗑' : '⚠️'}</span>
+        </div>
+        <h3 className="text-base font-bold text-slate-800 text-center mb-1">{title || '¿Estás seguro?'}</h3>
+        {message && <p className="text-sm text-slate-500 text-center mb-4">{message}</p>}
+        <div className="flex gap-2 mt-4">
+          <button onClick={onClose} disabled={loading} className="flex-1 py-3 text-sm font-semibold rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 min-h-[44px]">Cancelar</button>
+          <button onClick={handleConfirm} disabled={loading}
+            className={`flex-1 py-3 text-sm font-semibold rounded-xl text-white min-h-[44px] ${danger ? 'bg-red-600 hover:bg-red-700' : 'bg-amber-600 hover:bg-amber-700'} ${loading ? 'opacity-50' : ''}`}>
+            {loading ? 'Procesando...' : (confirmLabel || 'Confirmar')}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── useConfirm HOOK ───
+// Usage: const [askConfirm, ConfirmEl] = useConfirm();
+//        askConfirm("Título", "Mensaje", async () => { ... }, true);
+//        return (<div>{ConfirmEl} ... </div>);
+export function useConfirm() {
+  const [state, setState] = useState(null);
+  const ask = useCallback((title, message, onConfirm, danger = false) => {
+    setState({ title, message, onConfirm, danger });
+  }, []);
+  const Dialog = state ? (
+    <ConfirmDialog open onClose={() => setState(null)}
+      onConfirm={state.onConfirm} title={state.title}
+      message={state.message} danger={state.danger} />
+  ) : null;
+  return [ask, Dialog];
 }

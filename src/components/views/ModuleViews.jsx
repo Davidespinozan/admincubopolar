@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Icons } from '../ui/Icons';
 import { StatusBadge, DataTable, PageHeader, CapacityBar } from '../ui/Components';
-import Modal, { FormInput, FormSelect, FormBtn } from '../ui/Modal';
+import Modal, { FormInput, FormSelect, FormBtn, useConfirm } from '../ui/Modal';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today } from '../../utils/safe';
 import { useToast } from '../ui/Toast';
@@ -31,6 +31,7 @@ function Paginator({ page, total, onPage }) {
 // ═══════════════════════════════════════════════
 export function ClientesView({ data, actions }) {
   const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(null);
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
@@ -67,6 +68,7 @@ export function ClientesView({ data, actions }) {
   const paginated = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   return (<div>
+    {ConfirmEl}
     <PageHeader title="Clientes" subtitle={`${(data.clientes || []).length} registrados`} action={openNew} actionLabel="Nuevo cliente" />
     <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5 md:p-5">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 mb-4">
@@ -95,17 +97,12 @@ export function ClientesView({ data, actions }) {
       </div>
       <div className="space-y-3 border-t border-slate-200 pt-4 mt-5">
         {modal !== "new" && (
-          <button onClick={async () => {
-            if (window.confirm(`¿Desactivar cliente "${s(modal.nombre)}"?`)) {
+          <button onClick={() => askConfirm("Desactivar cliente", `¿Desactivar "${s(modal.nombre)}"?`, async () => {
               const err = await actions.updateCliente(modal.id, { estatus: "Inactivo" });
-              if (err) {
-                toast?.error("No se pudo desactivar el cliente");
-                return;
-              }
+              if (err) { toast?.error("No se pudo desactivar el cliente"); return; }
               toast?.success("Cliente desactivado");
               setModal(null);
-            }
-          }} className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200 transition-colors">
+            }, true)} className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200 transition-colors">
             🗑 Desactivar cliente
           </button>
         )}
@@ -335,6 +332,7 @@ export function ProduccionView({ data, actions }) {
 // ═══════════════════════════════════════════════
 export function InventarioView({ data, actions }) {
   const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [pageExist, setPageExist] = useState(0);
   const [pageKardex, setPageKardex] = useState(0);
   const [traspasoModal, setTraspasoModal] = useState(false);
@@ -426,6 +424,7 @@ export function InventarioView({ data, actions }) {
   };
 
   return (<div>
+    {ConfirmEl}
     <div className="flex items-center justify-between mb-4">
       <div><h2 className="text-lg font-bold text-slate-800">Inventario</h2><p className="text-xs text-slate-400">Cuartos fríos, existencias y movimientos</p></div>
       <div className="flex gap-2">
@@ -445,7 +444,7 @@ export function InventarioView({ data, actions }) {
             <button onClick={e=>{e.stopPropagation();setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad:String(n(cf.capacidad))});setCfModal(cf);}} className="p-1 text-slate-500 hover:text-blue-600">
               <Icons.Edit />
             </button>
-            <button onClick={async e=>{e.stopPropagation();if(confirm('¿Eliminar ' + s(cf.nombre) + '?')){await actions.deleteCuartoFrio(cf.id); toast?.success('Cuarto frío eliminado');}}} className="p-1 text-red-500 hover:text-red-700">
+            <button onClick={e=>{e.stopPropagation();askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cf.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cf.id); toast?.success('Cuarto frío eliminado');}, true)}} className="p-1 text-red-500 hover:text-red-700">
               <Icons.X />
             </button>
           </div>
@@ -507,16 +506,18 @@ export function InventarioView({ data, actions }) {
         <FormInput label="Capacidad (%)" type="number" value={cfForm.capacidad} onChange={e=>setCfForm({...cfForm,capacidad:e.target.value})} />
       </div>
       <div className="flex justify-between mt-5">
-        {cfModal && cfModal !== "new" && cfModal.id && <button onClick={async ()=>{ if(confirm("¿Eliminar cuarto frío " + s(cfModal.nombre) + "?")) { await actions.deleteCuartoFrio(cfModal.id); toast?.success("Cuarto frío eliminado"); setCfModal(null); } }} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
+        {cfModal && cfModal !== "new" && cfModal.id && <button onClick={()=> askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cfModal.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cfModal.id); toast?.success('Cuarto frío eliminado'); setCfModal(null);}, true)} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
         <div className="flex gap-2 ml-auto">
           <FormBtn onClick={()=>setCfModal(null)}>Cancelar</FormBtn>
           <FormBtn primary onClick={async ()=>{
             const e = {};
             if (!cfForm.nombre || !cfForm.nombre.trim()) { toast?.error('Nombre requerido'); return; }
             const payload = { nombre: cfForm.nombre, temp: Number(cfForm.temp), capacidad: Number(cfForm.capacidad) };
-            if (cfModal === "new") { await actions.addCuartoFrio(payload); toast?.success('Cuarto frío creado'); }
-            else { await actions.updateCuartoFrio(cfModal.id, payload); toast?.success('Cuarto frío actualizado'); }
-            setCfModal(null);
+            try {
+              if (cfModal === "new") { await actions.addCuartoFrio(payload); toast?.success('Cuarto frío creado'); }
+              else { await actions.updateCuartoFrio(cfModal.id, payload); toast?.success('Cuarto frío actualizado'); }
+              setCfModal(null);
+            } catch(ex) { toast?.error('Error: ' + (ex?.message || 'No se pudo guardar')); }
           }}>Guardar</FormBtn>
         </div>
       </div>
@@ -732,6 +733,7 @@ export function OrdenesView({ data, actions }) {
 // ═══════════════════════════════════════════════
 export function RutasView({ data, actions }) {
   const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(false);
   const [editingRuta, setEditingRuta] = useState(null);
   const [errors, setErrors] = useState({});
@@ -740,6 +742,9 @@ export function RutasView({ data, actions }) {
   const [cierreModal, setCierreModal] = useState(null);
   const [detalleModal, setDetalleModal] = useState(null);
   const [cierreForm, setCierreForm] = useState({devuelto:""});
+  const [search, setSearch] = useState("");
+  const [filterEst, setFilterEst] = useState("");
+  const dSearch = useDebounce(search);
 
   // Órdenes sin asignar a ruta
   const ordenesSinRuta = useMemo(() => data.ordenes.filter(o => o.estatus === "Asignada" && !o.rutaId), [data.ordenes]);
@@ -846,19 +851,34 @@ export function RutasView({ data, actions }) {
     return s(raw);
   };
 
+  const filteredRutas = useMemo(() => {
+    const q = dSearch?.toLowerCase() || "";
+    return data.rutas.filter(r => {
+      const ms = !q || s(r.nombre).toLowerCase().includes(q) || s(r.folio).toLowerCase().includes(q) || choferLabel(r).toLowerCase().includes(q);
+      const me = !filterEst || s(r.estatus).toLowerCase() === filterEst.toLowerCase();
+      return ms && me;
+    });
+  }, [data.rutas, dSearch, filterEst]);
+
   return (<div>
+    {ConfirmEl}
     <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",carga:""});setModal(true);setErrors({})}} actionLabel="Crear ruta" />
-    
+
+    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
+      <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar ruta, folio o chofer..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
+      <select value={filterEst} onChange={e=>setFilterEst(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-3 md:py-2.5 text-sm text-slate-600 bg-white focus:outline-none focus:border-blue-400 min-h-[44px]"><option value="">Todos</option>{["Programada","En progreso","Completada","Cerrada"].map(st=><option key={st}>{st}</option>)}</select>
+    </div>
+
     {ordenesSinRuta.length > 0 && (
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center justify-between">
         <p className="text-xs text-amber-700 font-semibold">{ordenesSinRuta.length} órdenes sin asignar a ruta</p>
       </div>
     )}
 
-    {data.rutas.length === 0
-      ? <EmptyState message="Sin rutas programadas" />
+    {filteredRutas.length === 0
+      ? <EmptyState message="Sin rutas" />
       : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
-      {data.rutas.map(r => {
+      {filteredRutas.map(r => {
         const est = s(r.estatus).trim().toLowerCase();
         const isProgramada = est === "programada" || est === "pendiente";
         const isEnProgreso = est === "en progreso" || est === "en_progreso" || est === "enprogreso";
@@ -884,17 +904,17 @@ export function RutasView({ data, actions }) {
               <button onClick={()=>asignarOrdenes(r)} className="flex-1 py-2.5 bg-blue-50 text-blue-600 text-xs font-semibold rounded-xl min-h-[44px]">+ Asignar órdenes</button>
               <button onClick={()=>actions.updateRutaEstatus(r.id,"En progreso")} className="flex-1 py-2.5 bg-blue-600 text-white text-xs font-semibold rounded-xl min-h-[44px]">Iniciar</button>
             </div>
-            <button onClick={() => { if(confirm("¿Eliminar ruta " + s(r.nombre) + "?")) actions.deleteRuta(r.id); }} className="w-full py-2 text-red-500 text-xs font-semibold hover:bg-red-50 rounded-xl">Eliminar ruta</button>
+            <button onClick={() => askConfirm('Eliminar ruta','¿Eliminar ruta ' + s(r.nombre) + '?',()=>actions.deleteRuta(r.id),true)} className="w-full py-2 text-red-500 text-xs font-semibold hover:bg-red-50 rounded-xl">Eliminar ruta</button>
           </div>}
           {isEnProgreso&&<div className="space-y-2 mt-3">
             <div className="flex gap-2">
               <button onClick={()=>abrirCierre(r)} className="flex-1 py-2.5 bg-emerald-600 text-white text-xs font-semibold rounded-xl min-h-[44px]">Cerrar ruta</button>
-              <button onClick={() => { if(confirm("¿Eliminar ruta " + s(r.nombre) + "?")) actions.deleteRuta(r.id); }} className="flex-1 py-2.5 bg-red-50 text-red-600 text-xs font-semibold rounded-xl min-h-[44px]">Eliminar</button>
+              <button onClick={() => askConfirm('Eliminar ruta','¿Eliminar ruta ' + s(r.nombre) + '?',()=>actions.deleteRuta(r.id),true)} className="flex-1 py-2.5 bg-red-50 text-red-600 text-xs font-semibold rounded-xl min-h-[44px]">Eliminar</button>
             </div>
           </div>}
           {isCompletada&&<div className="space-y-2 mt-3">
             <button onClick={()=>setDetalleModal(r)} className="w-full py-2.5 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-xl min-h-[44px]">Ver resumen</button>
-            <button onClick={() => { if(confirm("¿Eliminar ruta " + s(r.nombre) + "?")) actions.deleteRuta(r.id); }} className="w-full py-2 text-red-500 text-xs font-semibold hover:bg-red-50 rounded-xl">Eliminar</button>
+            <button onClick={() => askConfirm('Eliminar ruta','¿Eliminar ruta ' + s(r.nombre) + '?',()=>actions.deleteRuta(r.id),true)} className="w-full py-2 text-red-500 text-xs font-semibold hover:bg-red-50 rounded-xl">Eliminar</button>
           </div>}
           {r.estatus==="Cerrada"&&<p className="mt-3 text-xs text-slate-400 text-center">Ruta cerrada ✓</p>}
         </div>);
@@ -1102,17 +1122,25 @@ export function ConciliacionView({ data }) {
 // ═══════════════════════════════════════════════
 export function AuditoriaView({ data }) {
   const [filterUsr, setFilterUsr] = useState("");
+  const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
+  const dSearch = useDebounce(search);
 
-  // FIX P6: filter + Set + map + filter(Boolean) ran every render.
-  // With 500 audit entries: 500 iterations for filter + 500 for Set + 500 for map = 1500 ops per render.
   const users = useMemo(() => [...new Set(data.auditoria.map(a => s(a.usuario)).filter(Boolean))], [data.auditoria]);
-  const filtered = useMemo(() => data.auditoria.filter(a => !filterUsr || s(a.usuario) === filterUsr), [data.auditoria, filterUsr]);
+  const filtered = useMemo(() => {
+    const q = dSearch?.toLowerCase() || "";
+    return data.auditoria.filter(a => {
+      const mu = !filterUsr || s(a.usuario) === filterUsr;
+      const ms = !q || s(a.accion).toLowerCase().includes(q) || s(a.modulo).toLowerCase().includes(q) || s(a.detalle).toLowerCase().includes(q);
+      return mu && ms;
+    });
+  }, [data.auditoria, filterUsr, dSearch]);
   const paginated = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   return (<div>
     <PageHeader title="Auditoría" subtitle="Historial de acciones" />
-    <div className="flex items-center gap-3 mb-4">
+    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
+      <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>{setSearch(e.target.value);setPage(0)}} placeholder="Buscar acción o módulo..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
       <select value={filterUsr} onChange={e=>{setFilterUsr(e.target.value);setPage(0)}} className="border border-slate-200 rounded-xl px-3 py-3 md:py-2.5 text-sm text-slate-600 bg-white focus:outline-none focus:border-blue-400 min-h-[44px]"><option value="">Todos los usuarios</option>{users.map(u=><option key={u}>{u}</option>)}</select>
     </div>
     <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
@@ -1230,6 +1258,7 @@ export function AlmacenBolsasView({ data }) {
 // ═══════════════════════════════════════════════
 export function ConfiguracionView({ data, actions }) {
   const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(null);
   const empty = { nombre: "", email: "", rol: "Ventas", password: "" };
   const [form, setForm] = useState(empty);
@@ -1288,6 +1317,7 @@ export function ConfiguracionView({ data, actions }) {
   const usuarios = data.usuarios || [];
 
   return (<div className="space-y-4">
+    {ConfirmEl}
     <div className="flex items-center justify-between">
       <div><h2 className="text-lg font-bold text-slate-800">Usuarios del sistema</h2><p className="text-xs text-slate-400">{usuarios.length} usuarios · Cada usuario entra con su correo y contraseña</p></div>
       <button onClick={openNew} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo usuario</button>
@@ -1347,7 +1377,7 @@ export function ConfiguracionView({ data, actions }) {
         </div>
       </div>
       <div className="flex justify-between mt-5">
-        {modal !== "new" && modal?.id && <button onClick={async () => { if(confirm("¿Eliminar usuario " + s(modal.nombre) + "?")) { await actions.deleteUsuario(modal.id); toast?.success("Usuario eliminado"); setModal(null); }}} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
+        {modal !== "new" && modal?.id && <button onClick={()=> askConfirm('Eliminar usuario','¿Eliminar ' + s(modal.nombre) + '?', async()=>{await actions.deleteUsuario(modal.id); toast?.success('Usuario eliminado'); setModal(null);}, true)} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
         <div className="flex gap-2 ml-auto"><FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save}>{modal === "new" ? "Crear usuario" : "Guardar"}</FormBtn></div>
       </div>
     </Modal>
@@ -1359,6 +1389,7 @@ export function ConfiguracionView({ data, actions }) {
 // ═══════════════════════════════════════════════════
 export function EmpleadosView({ data, actions }) {
   const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(null);
   const empty = { nombre: "", rfc: "", curp: "", nss: "", puesto: "", depto: "Ventas y Distribución", salarioDiario: "", fechaIngreso: today(), jornada: "Diurna" };
@@ -1378,11 +1409,13 @@ export function EmpleadosView({ data, actions }) {
     if (!form.puesto.trim()) e.puesto = "Requerido";
     if (!form.salarioDiario) e.salarioDiario = "Requerido";
     if (Object.keys(e).length) { setErrors(e); return; }
-    const payload = { ...form, salarioDiario: parseFloat(form.salarioDiario) };
-    if (modal === "new") await actions.addEmpleado(payload);
-    else await actions.updateEmpleado(modal.id, payload);
-    toast?.success(modal === "new" ? "Empleado registrado" : "Empleado actualizado");
-    setModal(null);
+    try {
+      const payload = { ...form, salarioDiario: parseFloat(form.salarioDiario) };
+      if (modal === "new") await actions.addEmpleado(payload);
+      else await actions.updateEmpleado(modal.id, payload);
+      toast?.success(modal === "new" ? "Empleado registrado" : "Empleado actualizado");
+      setModal(null);
+    } catch(ex) { toast?.error('Error: ' + (ex?.message || 'No se pudo guardar')); }
   };
 
   const filtered = emps.filter(e => {
@@ -1392,6 +1425,7 @@ export function EmpleadosView({ data, actions }) {
   const deptos = [...new Set(emps.map(e => s(e.depto)))];
 
   return (<div className="space-y-4">
+    {ConfirmEl}
     <div className="flex items-center justify-between">
       <div><h2 className="text-lg font-bold text-slate-800">Empleados ({emps.length})</h2></div>
       <button onClick={openNew} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo empleado</button>
@@ -1439,13 +1473,11 @@ export function EmpleadosView({ data, actions }) {
       </div>
       <div className="space-y-3 border-t border-slate-200 pt-4 mt-5">
         {modal !== "new" && (
-          <button onClick={() => {
-            if (window.confirm(`¿Desactivar empleado "${s(modal.nombre)}"?`)) {
-              actions.updateEmpleado(modal.id, { estatus: "Inactivo" });
+          <button onClick={() => askConfirm('Desactivar empleado', `¿Desactivar "${s(modal.nombre)}"?`, async()=>{
+              await actions.updateEmpleado(modal.id, { estatus: "Inactivo" });
               toast?.success("Empleado desactivado");
               setModal(null);
-            }
-          }} className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200 transition-colors">
+            }, true)} className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200 transition-colors">
             🗑 Desactivar empleado
           </button>
         )}
@@ -1504,6 +1536,7 @@ export function NominaView({ data }) {
 // ═══════════════════════════════════════════════════
 export function ContabilidadView({ data, actions }) {
   const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(null);
   const empty = { tipo: "Egreso", categoria: "Proveedores", concepto: "", monto: "", fecha: today() };
   const [form, setForm] = useState(empty);
@@ -1524,9 +1557,11 @@ export function ContabilidadView({ data, actions }) {
     if (!form.concepto.trim()) e.concepto = "Requerido";
     if (!form.monto || parseFloat(form.monto) <= 0) e.monto = "Mayor a 0";
     if (Object.keys(e).length) { setErrors(e); return; }
-    await actions.addMovContable({ ...form, monto: parseFloat(form.monto) });
-    toast?.success(form.tipo === "Ingreso" ? "Ingreso registrado" : "Gasto registrado");
-    setModal(null);
+    try {
+      await actions.addMovContable({ ...form, monto: parseFloat(form.monto) });
+      toast?.success(form.tipo === "Ingreso" ? "Ingreso registrado" : "Gasto registrado");
+      setModal(null);
+    } catch(ex) { toast?.error('Error: ' + (ex?.message || 'No se pudo guardar')); }
   };
 
   const egresosPorCat = {};
@@ -1538,6 +1573,7 @@ export function ContabilidadView({ data, actions }) {
   const todos = [...cont.ingresos.map(i => ({ ...i, _tipo: "Ingreso" })), ...cont.egresos.map(e => ({ ...e, _tipo: "Egreso" }))].sort((a, b) => (b.id || 0) - (a.id || 0));
 
   return (<div className="space-y-4">
+    {ConfirmEl}
     <div className="flex items-center justify-between">
       <h2 className="text-lg font-bold text-slate-800">Ingresos / Egresos</h2>
       <div className="flex gap-2">
@@ -1583,7 +1619,7 @@ export function ContabilidadView({ data, actions }) {
               <span className="text-sm font-semibold text-slate-700">{s(m.concepto)}</span>
               <div className="flex items-center gap-2">
                 <span className={`text-sm font-bold ${m._tipo === "Ingreso" ? "text-emerald-700" : "text-red-600"}`}>{m._tipo === "Ingreso" ? "+" : "-"}${n(m.monto).toLocaleString()}</span>
-                <button onClick={() => { if(confirm("¿Eliminar este movimiento?")) actions.deleteMovContable(m.id); }} className="text-red-400 hover:text-red-600 text-xs p-1">✕</button>
+                <button onClick={() => askConfirm('Eliminar movimiento','¿Eliminar este movimiento contable?',()=>actions.deleteMovContable(m.id),true)} className="text-red-400 hover:text-red-600 text-xs p-1">✕</button>
               </div>
             </div>
             <div className="flex justify-between mt-0.5">

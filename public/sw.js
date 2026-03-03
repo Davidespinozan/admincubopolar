@@ -1,4 +1,5 @@
-const CACHE_NAME = 'cubopolar-v1';
+const CACHE_VERSION = 2;
+const CACHE_NAME = `cubopolar-v${CACHE_VERSION}`;
 const SHELL_ASSETS = [
   '/',
   '/manifest.json',
@@ -24,38 +25,58 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: network-first for API calls, cache-first for assets
+// Fetch strategies
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Always go to network for Supabase API calls
+  // Always bypass for Supabase API & auth
   if (url.hostname.includes('supabase.co')) return;
 
-  // For navigation requests (HTML pages): network first, fall back to cache
+  // Skip non-GET requests
+  if (event.request.method !== 'GET') return;
+
+  // Vite hashed assets (e.g. /assets/index-abc123.js) — cache-first (immutable)
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
+          }
+          return response;
+        });
+      })
+    );
+    return;
+  }
+
+  // Navigation (HTML) — network-first, offline fallback to cached shell
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
           return response;
         })
-        .catch(() => caches.match(event.request) || caches.match('/'))
+        .catch(() => caches.match('/'))
     );
     return;
   }
 
-  // For static assets: cache first, then network
+  // Other static files — stale-while-revalidate
   event.respondWith(
     caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
+      const networked = fetch(event.request).then((response) => {
         if (response.ok) {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          caches.open(CACHE_NAME).then((c) => c.put(event.request, clone));
         }
         return response;
-      });
+      }).catch(() => cached);
+      return cached || networked;
     })
   );
 });
