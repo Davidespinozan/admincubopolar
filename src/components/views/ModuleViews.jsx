@@ -93,6 +93,19 @@ export function ClientesView({ data, actions }) {
         <FormSelect label="Tipo" options={["Tienda","Restaurante","Cadena","Hotel","Nevería","General","Otro"]} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} />
         <FormInput label="Teléfono" value={form.contacto} onChange={e=>setForm({...form,contacto:e.target.value})} />
       </div>
+      <div className="space-y-3 border-t border-slate-200 pt-4 mt-5">
+        {modal !== "new" && (
+          <button onClick={() => {
+            if (window.confirm(`¿Desactivar cliente "${s(modal.nombre)}"?`)) {
+              actions.updateCliente(modal.id, { estatus: "Inactivo" });
+              toast?.success("Cliente desactivado");
+              setModal(null);
+            }
+          }} className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200 transition-colors">
+            🗑 Desactivar cliente
+          </button>
+        )}
+      </div>
       <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Guardar</FormBtn></div>
     </Modal>
   </div>);
@@ -1030,7 +1043,11 @@ export function ConfiguracionView({ data, actions }) {
       });
 
       if (signUpError) {
-        setErrors({ email: signUpError.message });
+        if (signUpError.message && signUpError.message.includes('rate limit')) {
+          setErrors({ email: "⏳ Demasiados intentos. Espera unos minutos e intenta de nuevo" });
+        } else {
+          setErrors({ email: signUpError.message });
+        }
         return;
       }
 
@@ -1196,6 +1213,19 @@ export function EmpleadosView({ data, actions }) {
         <FormInput label="Salario diario *" type="number" value={form.salarioDiario} onChange={e => setForm({ ...form, salarioDiario: e.target.value })} error={errors.salarioDiario} />
         <FormInput label="Fecha ingreso" type="date" value={form.fechaIngreso} onChange={e => setForm({ ...form, fechaIngreso: e.target.value })} />
         <FormSelect label="Jornada" options={["Diurna", "Nocturna", "Mixta"]} value={form.jornada} onChange={e => setForm({ ...form, jornada: e.target.value })} />
+      </div>
+      <div className="space-y-3 border-t border-slate-200 pt-4 mt-5">
+        {modal !== "new" && (
+          <button onClick={() => {
+            if (window.confirm(`¿Desactivar empleado "${s(modal.nombre)}"?`)) {
+              actions.updateEmpleado(modal.id, { estatus: "Inactivo" });
+              toast?.success("Empleado desactivado");
+              setModal(null);
+            }
+          }} className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200 transition-colors">
+            🗑 Desactivar empleado
+          </button>
+        )}
       </div>
       <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Guardar</FormBtn></div>
     </Modal>

@@ -57,6 +57,7 @@ const BOTTOM_PRIMARY = ["dashboard", "ordenes", "produccion", "contabilidad"];
 export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }) {
   const [view, setView] = useState('dashboard');
   const [moreOpen, setMoreOpen] = useState(false);
+  const [alertasOpen, setAlertasOpen] = useState(false);
 
   const vp = useMemo(() => ({ data, actions }), [data, actions]);
 
@@ -148,10 +149,30 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
               <input type="text" placeholder="Buscar..." className="pl-10 pr-4 py-2 w-64 bg-slate-50 border border-slate-100 rounded-xl text-sm focus:outline-none focus:border-blue-300 focus:bg-white transition-all" />
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <button className="relative p-2.5 rounded-xl hover:bg-slate-100 transition-colors text-slate-500 min-w-[44px] min-h-[44px] flex items-center justify-center">
+          <div className="flex items-center gap-2 relative">
+            <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative p-2.5 rounded-xl hover:bg-slate-100 transition-colors text-slate-500 min-w-[44px] min-h-[44px] flex items-center justify-center">
               <Icons.Bell /><span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />
             </button>
+            {alertasOpen && (
+              <div className="absolute top-12 right-0 bg-white border border-slate-100 rounded-xl shadow-lg w-80 max-h-96 overflow-y-auto z-50">
+                <div className="p-3 border-b border-slate-100">
+                  <p className="text-sm font-bold text-slate-800">Alertas</p>
+                </div>
+                {(data.alertas || []).length === 0 ? (
+                  <div className="p-4 text-center text-sm text-slate-400">Sin alertas activas</div>
+                ) : (
+                  <div className="space-y-1">
+                    {(data.alertas || []).map((a, i) => (
+                      <div key={i} className="px-4 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                        <p className="text-sm font-semibold text-slate-800">{a.titulo || 'Alerta'}</p>
+                        <p className="text-xs text-slate-500 mt-1">{a.mensaje || a.detalle}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {alertasOpen && <div className="fixed inset-0 z-40" onClick={() => setAlertasOpen(false)} />}
             <div className="hidden md:flex items-center gap-2 ml-2 pl-3 border-l border-slate-100">
               <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600">{user?.nombre?.[0] || "A"}</div>
               <span className="text-sm font-semibold text-slate-700">{user?.nombre || "Admin"}</span>
