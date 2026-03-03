@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { supabase } from '../../lib/supabase';
 import { Icons } from '../ui/Icons';
 import { StatusBadge, DataTable, PageHeader, CapacityBar } from '../ui/Components';
 import Modal, { FormInput, FormSelect, FormBtn } from '../ui/Modal';
@@ -990,7 +991,7 @@ export function ConfiguracionView({ data, actions }) {
 
     if (modal === "new") {
       // Create in Supabase Auth first
-      const supabase = (await import('../../lib/supabase')).supabase;
+      // use supabase imported at the top of the file
       const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: form.email.trim().toLowerCase(),
         password: form.password,
