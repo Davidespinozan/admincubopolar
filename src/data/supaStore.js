@@ -56,7 +56,6 @@ export function useSupaStore(userId, userName) {
 
   // ── Fetch all data ──────────────────────────────────────────
   const fetchAll = useCallback(async () => {
-    console.log('[fetchAll] iniciando — supabase:', supabase ? '✅' : '❌ null', '| userId:', uidRef.current);
     try {
       // Tablas core
       const [cli, prod, pe, ord, ol, rut, pro, mov, cf, aud, usr, umb, pag] = await Promise.all([
@@ -85,7 +84,6 @@ export function useSupaStore(userId, userName) {
         safeRows(supabase.from('movimientos_contables').select('*').order('id', { ascending: false }).limit(500)),
         safeRows(supabase.from('mermas').select('*').order('id', { ascending: false }).limit(200)),
       ]);
-
       const clientes  = cli;
       const productos = prod;
       const ordenLineas = ol;
@@ -232,6 +230,10 @@ export function useSupaStore(userId, userName) {
         ...toCamel(m),
         monto: Number(m.monto),
       }));
+      const contabilidadObj = {
+        ingresos: movContables.filter(m => m.tipo === 'Ingreso'),
+        egresos:  movContables.filter(m => m.tipo === 'Egreso'),
+      };
 
       setData({
         clientes: clientesMapped,
@@ -256,13 +258,9 @@ export function useSupaStore(userId, userName) {
         nominaRecibos:  (nomR || []).map(toCamel),
         movContables,
         mermas: (mer || []).map(m => ({ ...toCamel(m), cantidad: Number(m.cantidad) })),
-        contabilidad: {
-          ingresos: movContables.filter(m => m.tipo === 'Ingreso'),
-          egresos:  movContables.filter(m => m.tipo === 'Egreso'),
-        },
+        contabilidad: contabilidadObj,
       });
 
-      console.log('[fetchAll] ✅ completado — clientes:', cli.length, '| productos:', prod.length, '| cuartos:', cf.length);
       setLoading(false);
       setError(null);
     } catch (err) {
@@ -472,10 +470,23 @@ export function useSupaStore(userId, userName) {
         const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
         const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
 
+        // Build productos string from parsed items
+        const productosStr = o.productos || items.map(i => `${i.qty}×${i.sku}`).join(', ');
+
+        // Resolve cliente name
+        let clienteNombre = s(o.cliente);
+        if (!clienteNombre && o.clienteId) {
+          const { data: cli } = await supabase.from('clientes').select('nombre').eq('id', o.clienteId).single();
+          clienteNombre = cli?.nombre || 'Público en general';
+        }
+        if (!clienteNombre) clienteNombre = 'Público en general';
+
         // Build insert payload — include user association columns only if provided
         // (they may not exist in all Supabase environments; ignored silently if missing)
         const ordenInsert = {
           folio, cliente_id: o.clienteId,
+          cliente_nombre: clienteNombre,
+          productos: productosStr,
           fecha: o.fecha || new Date().toISOString().slice(0, 10),
           total, estatus: 'Creada',
         };
@@ -1091,10 +1102,16 @@ export function useSupaStore(userId, userName) {
         for (const e of (entregas || [])) {
           const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
           const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
-          const { data: newOrd } = await supabase.from('ordenes').insert({
+          // Build productos string from items
+          const itemsStr = (e.items || []).map(it => `${it.cant || it.qty || 0}×${it.sku}`).join(', ');
+          const clienteNombre = s(e.cliente) || 'Público en general';
+          const { data: newOrd, error: ordErr } = await supabase.from('ordenes').insert({
             folio, cliente_id: e.clienteId || null,
+            cliente_nombre: clienteNombre,
+            productos: itemsStr || 'Varios',
             fecha: hoy, total: centavos(n(e.total)), estatus: 'Entregada',
           }).select('id').single();
+          if (ordErr) console.warn('[cerrarRutaCompleta] orden insert error:', ordErr.message);
 
           // Insertar líneas de la orden
           if (newOrd && e.items && e.items.length > 0) {
