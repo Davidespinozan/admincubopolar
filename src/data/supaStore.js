@@ -343,6 +343,7 @@ export function useSupaStore(userId, userName) {
         if (c.correo   !== undefined) update.correo   = c.correo;
         if (c.tipo     !== undefined) update.tipo     = c.tipo;
         if (c.contacto !== undefined) update.contacto = c.contacto;
+        if (c.estatus  !== undefined) update.estatus  = c.estatus;
         const { error } = await supabase.from('clientes').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar cliente'); return error; }
         rf();

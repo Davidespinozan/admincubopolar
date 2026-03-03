@@ -95,9 +95,13 @@ export function ClientesView({ data, actions }) {
       </div>
       <div className="space-y-3 border-t border-slate-200 pt-4 mt-5">
         {modal !== "new" && (
-          <button onClick={() => {
+          <button onClick={async () => {
             if (window.confirm(`¿Desactivar cliente "${s(modal.nombre)}"?`)) {
-              actions.updateCliente(modal.id, { estatus: "Inactivo" });
+              const err = await actions.updateCliente(modal.id, { estatus: "Inactivo" });
+              if (err) {
+                toast?.error("No se pudo desactivar el cliente");
+                return;
+              }
               toast?.success("Cliente desactivado");
               setModal(null);
             }
