@@ -92,15 +92,26 @@ END $$;
 DO $$
 BEGIN
   IF EXISTS (
-    SELECT 1 FROM information_schema.tables
-    WHERE table_schema='public' AND table_name='orden_lineas'
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='ordenes' AND column_name='cliente_nombre'
   ) THEN
+    INSERT INTO ordenes (folio, cliente_id, cliente_nombre, fecha, productos, total, estatus, ruta_id)
+    SELECT 'DEMO-OV-001', c.id, c.nombre, CURRENT_DATE, '20×DEMO-HC-10K', 760.00, 'Creada', NULL
+    FROM clientes c
+    WHERE c.rfc = 'MES901010AA1'
+      AND NOT EXISTS (SELECT 1 FROM ordenes o WHERE o.folio = 'DEMO-OV-001');
+  ELSE
     INSERT INTO ordenes (folio, cliente_id, fecha, total, estatus, ruta_id)
     SELECT 'DEMO-OV-001', c.id, CURRENT_DATE, 760.00, 'Creada', NULL
     FROM clientes c
     WHERE c.rfc = 'MES901010AA1'
       AND NOT EXISTS (SELECT 1 FROM ordenes o WHERE o.folio = 'DEMO-OV-001');
+  END IF;
 
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema='public' AND table_name='orden_lineas'
+  ) THEN
     INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal)
     SELECT o.id, 'DEMO-HC-10K', 20, 38.00, 760.00
     FROM ordenes o
@@ -108,12 +119,6 @@ BEGIN
       AND NOT EXISTS (
         SELECT 1 FROM orden_lineas ol WHERE ol.orden_id = o.id AND ol.sku = 'DEMO-HC-10K'
       );
-  ELSE
-    INSERT INTO ordenes (folio, cliente_id, cliente_nombre, fecha, productos, total, estatus, ruta_id)
-    SELECT 'DEMO-OV-001', c.id, c.nombre, CURRENT_DATE, '20×DEMO-HC-10K', 760.00, 'Creada', NULL
-    FROM clientes c
-    WHERE c.rfc = 'MES901010AA1'
-      AND NOT EXISTS (SELECT 1 FROM ordenes o WHERE o.folio = 'DEMO-OV-001');
   END IF;
 END $$;
 
