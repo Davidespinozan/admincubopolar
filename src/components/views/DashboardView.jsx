@@ -192,27 +192,47 @@ export default function DashboardView({ data }) {
   // ── ESTADO DE RESULTADOS ──
   const estadoResultados = useMemo(() => {
     const movs = data.contabilidad || { ingresos: [], egresos: [] };
-    const calcPeriodo = (filtro) => {
+    const historial = data.costosHistorial || [];
+    
+    const calcPeriodo = (filtro, filtroHist) => {
       const ingresos = (movs.ingresos || []).filter(filtro);
       const egresos = (movs.egresos || []).filter(filtro);
-      const ventasTot = ingresos.filter(i => s(i.categoria) === 'Ventas' || s(i.categoria) === 'Cobranza').reduce((s, i) => s + n(i.monto), 0);
-      const costoInsumos = egresos.filter(e => s(e.categoria) === 'Proveedores').reduce((s, e) => s + n(e.monto), 0);
-      const gastosOp = egresos.filter(e => s(e.categoria) !== 'Proveedores').reduce((s, e) => s + n(e.monto), 0);
-      const utilidad = ventasTot - costoInsumos - gastosOp;
-      return { ventasTot, costoInsumos, gastosOp, utilidad };
+      const costos = historial.filter(filtroHist);
+      
+      // Ingresos por ventas
+      const ventasTot = ingresos.filter(i => s(i.categoria) === 'Ventas' || s(i.categoria) === 'Cobranza').reduce((sum, i) => sum + n(i.monto), 0);
+      
+      // Costo de ventas: Empaque usado en producción
+      const costoDeVentas = costos.filter(c => s(c.tipo) === 'Producción' || s(c.categoria) === 'Empaque').reduce((sum, c) => sum + n(c.monto), 0);
+      
+      // Gastos operativos: Todo lo demás de costos_historial + egresos contables
+      const costosOp = costos.filter(c => s(c.tipo) !== 'Producción' && s(c.categoria) !== 'Empaque').reduce((sum, c) => sum + n(c.monto), 0);
+      // Para no duplicar, solo sumar egresos que NO vengan de costos_historial (sin movimiento_id vinculado)
+      const egresosSinVinculo = egresos.filter(e => !e.referencia?.includes('Costo fijo') && !e.referencia?.includes('costo_historial')).reduce((sum, e) => sum + n(e.monto), 0);
+      const gastosOp = costosOp + egresosSinVinculo;
+      
+      // Utilidad bruta y neta
+      const utilidadBruta = ventasTot - costoDeVentas;
+      const utilidad = utilidadBruta - gastosOp;
+      
+      return { ventasTot, costoDeVentas, gastosOp, utilidadBruta, utilidad };
     };
+    
     const hoyStr = new Date().toISOString().slice(0, 10);
     const sem = new Date(); sem.setDate(sem.getDate() - 7);
     const semStr = sem.toISOString().slice(0, 10);
     const mes = new Date(); mes.setDate(1);
     const mesStr = mes.toISOString().slice(0, 10);
     
+    const filtroFecha = (fecha) => (m) => s(m.fecha) >= fecha;
+    const filtroHistFecha = (fecha) => (c) => (s(c.fecha) || s(c.createdAt)) >= fecha;
+    
     return {
-      dia: calcPeriodo(m => s(m.fecha) === hoyStr),
-      semana: calcPeriodo(m => s(m.fecha) >= semStr),
-      mes: calcPeriodo(m => s(m.fecha) >= mesStr),
+      dia: calcPeriodo(m => s(m.fecha) === hoyStr, c => (s(c.fecha) || s(c.createdAt) || '').startsWith(hoyStr)),
+      semana: calcPeriodo(filtroFecha(semStr), filtroHistFecha(semStr)),
+      mes: calcPeriodo(filtroFecha(mesStr), filtroHistFecha(mesStr)),
     };
-  }, [data.contabilidad]);
+  }, [data.contabilidad, data.costosHistorial]);
 
   // ── BALANCE SIMPLIFICADO ──
   const balance = useMemo(() => {
@@ -285,14 +305,20 @@ export default function DashboardView({ data }) {
               <span className="text-sm font-bold text-emerald-600">+${estadoResultados.mes.ventasTot.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Costo insumos</span>
-              <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.costoInsumos.toLocaleString()}</span>
+              <span className="text-sm text-slate-600">Costo de ventas</span>
+              <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.costoDeVentas.toLocaleString()}</span>
+            </div>
+            <div className="flex justify-between py-1.5 border-b border-slate-100 bg-slate-50 rounded-lg px-2 -mx-2">
+              <span className="text-sm font-semibold text-slate-700">Utilidad bruta</span>
+              <span className={`text-sm font-bold ${estadoResultados.mes.utilidadBruta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                ${estadoResultados.mes.utilidadBruta.toLocaleString()}
+              </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-sm text-slate-600">Gastos operativos</span>
               <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.gastosOp.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between py-2 bg-slate-50 rounded-lg px-2 -mx-2">
+            <div className="flex justify-between py-2 bg-blue-50 rounded-lg px-2 -mx-2">
               <span className="text-sm font-bold text-slate-700">Utilidad</span>
               <span className={`text-sm font-extrabold ${estadoResultados.mes.utilidad >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                 ${estadoResultados.mes.utilidad.toLocaleString()}

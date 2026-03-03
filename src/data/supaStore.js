@@ -38,6 +38,7 @@ const EMPTY = {
   auditoria: [], usuarios: [], umbrales: [], pagos: [],
   comodatos: [], leads: [], empleados: [], nominaPeriodos: [],
   nominaRecibos: [], movContables: [], mermas: [], cuentasPorCobrar: [],
+  costosFijos: [], costosHistorial: [],
   contabilidad: { ingresos: [], egresos: [] },
 };
 
@@ -75,7 +76,7 @@ export function useSupaStore(userId, userName) {
       ]);
 
       // Tablas opcionales
-      const [com, lea, emp, nomP, nomR, movC, mer, cxc] = await Promise.all([
+      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH] = await Promise.all([
         safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('empleados').select('*').order('id')),
@@ -84,6 +85,8 @@ export function useSupaStore(userId, userName) {
         safeRows(supabase.from('movimientos_contables').select('*').order('id', { ascending: false }).limit(500)),
         safeRows(supabase.from('mermas').select('*').order('id', { ascending: false }).limit(200)),
         safeRows(supabase.from('cuentas_por_cobrar').select('*').order('id', { ascending: false }).limit(500)),
+        safeRows(supabase.from('costos_fijos').select('*').order('id')),
+        safeRows(supabase.from('costos_historial').select('*').order('id', { ascending: false }).limit(200)),
       ]);
       const clientes  = cli;
       const productos = prod;
@@ -265,6 +268,14 @@ export function useSupaStore(userId, userName) {
           montoPagado: Number(c.monto_pagado),
           saldoPendiente: Number(c.saldo_pendiente),
         })),
+        costosFijos: (costF || []).map(c => ({
+          ...toCamel(c),
+          monto: Number(c.monto),
+        })),
+        costosHistorial: (costH || []).map(c => ({
+          ...toCamel(c),
+          monto: Number(c.monto),
+        })),
         contabilidad: contabilidadObj,
       });
 
@@ -395,6 +406,9 @@ export function useSupaStore(userId, userName) {
           sku: p.sku, nombre: p.nombre, tipo: p.tipo,
           stock: Number(p.stock) || 0, ubicacion: p.ubicacion,
           precio: Number(p.precio) || 0,
+          costo_unitario: Number(p.costo_unitario || p.costoUnitario) || 0,
+          proveedor: p.proveedor || null,
+          empaque_sku: p.empaque_sku || p.empaqueSku || null,
         });
         if (error) { t()?.error('Error al crear producto'); return error; }
         log('Crear', 'Productos', `${p.sku} — ${p.nombre}`);
@@ -404,7 +418,10 @@ export function useSupaStore(userId, userName) {
       updateProducto: async (id, p) => {
         const { error } = await supabase.from('productos').update({
           nombre: p.nombre, tipo: p.tipo, ubicacion: p.ubicacion,
-          precio: Number(p.precio),
+          precio: Number(p.precio) || 0,
+          costo_unitario: Number(p.costo_unitario || p.costoUnitario) || 0,
+          proveedor: p.proveedor || null,
+          empaque_sku: p.empaque_sku || p.empaqueSku || null,
         }).eq('id', id);
         if (error) { t()?.error('Error al actualizar producto'); return error; }
         log('Editar', 'Productos', `ID ${id} — ${p.nombre}`);
@@ -613,8 +630,47 @@ export function useSupaStore(userId, userName) {
       },
 
       confirmarProduccion: async (id) => {
+        // Obtener datos de la producción antes de confirmar
+        const { data: prod } = await supabase.from('produccion').select('*').eq('id', id).single();
+        
+        // Confirmar en backend
         const { error } = await supabase.rpc('confirmar_produccion', { p_id: id, p_uid: uid() });
         if (error) { t()?.error('Error al confirmar producción'); return error; }
+        
+        // Calcular costo de producción (costo del empaque consumido)
+        if (prod) {
+          const cantidad = Number(prod.cantidad || 0);
+          // Buscar el producto y su empaque asociado
+          const { data: producto } = await supabase.from('productos').select('sku, empaque_sku').eq('sku', prod.sku).single();
+          if (producto?.empaque_sku) {
+            // Buscar costo del empaque
+            const { data: empaque } = await supabase.from('productos').select('costo_unitario').eq('sku', producto.empaque_sku).single();
+            const costoUnitario = Number(empaque?.costo_unitario || 0);
+            const costoTotal = centavos(cantidad * costoUnitario);
+            
+            if (costoTotal > 0) {
+              const hoy = new Date().toISOString().slice(0, 10);
+              const periodo = hoy.slice(0, 7);
+              
+              // Actualizar costo en la producción
+              await supabase.from('produccion').update({
+                costo_empaque: costoUnitario,
+                costo_total: costoTotal,
+              }).eq('id', id);
+              
+              // Registrar costo de producción en historial
+              await supabase.from('costos_historial').insert({
+                tipo: 'Producción',
+                categoria: 'Costo de Ventas',
+                concepto: `Producción ${prod.folio || id}: ${cantidad}× ${prod.sku} (empaque: ${producto.empaque_sku})`,
+                monto: costoTotal,
+                periodo,
+                fecha: hoy,
+              });
+            }
+          }
+        }
+        
         log('Confirmar', 'Producción', `ID ${id}`);
         rf();
       },
@@ -1002,6 +1058,118 @@ export function useSupaStore(userId, userName) {
         rf();
       },
 
+      // ── COSTOS FIJOS ──
+      addCostoFijo: async (c) => {
+        const { error } = await supabase.from('costos_fijos').insert({
+          nombre: c.nombre,
+          categoria: c.categoria || 'Operación',
+          monto: centavos(c.monto),
+          frecuencia: c.frecuencia || 'Mensual',
+          dia_cargo: c.diaCargo || 1,
+          proveedor: c.proveedor || '',
+          cuenta_pago: c.cuentaPago || '',
+          notas: c.notas || '',
+          activo: true,
+        });
+        if (error) { t()?.error('Error al crear costo fijo'); return error; }
+        log('Crear', 'Costos', `${c.nombre} — $${c.monto} ${c.frecuencia}`);
+        rf();
+      },
+
+      updateCostoFijo: async (id, c) => {
+        const update = {};
+        if (c.nombre !== undefined) update.nombre = c.nombre;
+        if (c.categoria !== undefined) update.categoria = c.categoria;
+        if (c.monto !== undefined) update.monto = centavos(c.monto);
+        if (c.frecuencia !== undefined) update.frecuencia = c.frecuencia;
+        if (c.diaCargo !== undefined) update.dia_cargo = c.diaCargo;
+        if (c.proveedor !== undefined) update.proveedor = c.proveedor;
+        if (c.cuentaPago !== undefined) update.cuenta_pago = c.cuentaPago;
+        if (c.notas !== undefined) update.notas = c.notas;
+        if (c.activo !== undefined) update.activo = c.activo;
+        const { error } = await supabase.from('costos_fijos').update(update).eq('id', id);
+        if (error) { t()?.error('Error al actualizar costo'); return error; }
+        log('Editar', 'Costos', `ID ${id}`);
+        rf();
+      },
+
+      deleteCostoFijo: async (id) => {
+        const { error } = await supabase.from('costos_fijos').delete().eq('id', id);
+        if (error) { t()?.error('Error al eliminar costo'); return error; }
+        log('Eliminar', 'Costos', `ID ${id}`);
+        rf();
+      },
+
+      // Aplicar costo fijo (genera egreso en movimientos_contables)
+      aplicarCostoFijo: async (costoFijoId, fecha, referencia) => {
+        const hoy = fecha || new Date().toISOString().slice(0, 10);
+        const periodo = hoy.slice(0, 7); // "2026-03"
+
+        // Buscar el costo
+        const { data: costo } = await supabase.from('costos_fijos').select('*').eq('id', costoFijoId).single();
+        if (!costo) { t()?.error('Costo no encontrado'); return { message: 'Costo no encontrado' }; }
+
+        // Crear egreso en movimientos_contables
+        const { data: movimiento, error: e1 } = await supabase.from('movimientos_contables').insert({
+          fecha: hoy,
+          tipo: 'Egreso',
+          categoria: costo.categoria,
+          concepto: `${costo.nombre} (${costo.frecuencia})`,
+          monto: centavos(costo.monto),
+          referencia: referencia || '',
+        }).select('id').single();
+        if (e1) { t()?.error('Error al registrar egreso'); return e1; }
+
+        // Registrar en historial
+        await supabase.from('costos_historial').insert({
+          costo_fijo_id: costoFijoId,
+          tipo: 'Fijo',
+          categoria: costo.categoria,
+          concepto: costo.nombre,
+          monto: centavos(costo.monto),
+          periodo,
+          fecha: hoy,
+          referencia: referencia || '',
+          movimiento_id: movimiento?.id,
+        });
+
+        t()?.success(`Gasto aplicado: ${costo.nombre}`);
+        log('Aplicar', 'Costos', `${costo.nombre} — $${costo.monto}`);
+        rf();
+      },
+
+      // Registrar costo variable (ej: compra de empaques)
+      registrarCostoVariable: async (categoria, concepto, monto, referencia) => {
+        const hoy = new Date().toISOString().slice(0, 10);
+        const periodo = hoy.slice(0, 7);
+
+        // Crear egreso
+        const { data: movimiento, error: e1 } = await supabase.from('movimientos_contables').insert({
+          fecha: hoy,
+          tipo: 'Egreso',
+          categoria,
+          concepto,
+          monto: centavos(monto),
+          referencia: referencia || '',
+        }).select('id').single();
+        if (e1) { t()?.error('Error al registrar gasto'); return e1; }
+
+        // Registrar en historial
+        await supabase.from('costos_historial').insert({
+          tipo: 'Variable',
+          categoria,
+          concepto,
+          monto: centavos(monto),
+          periodo,
+          fecha: hoy,
+          referencia: referencia || '',
+          movimiento_id: movimiento?.id,
+        });
+
+        log('Registrar', 'Costos', `Variable: ${concepto} — $${monto}`);
+        rf();
+      },
+
       // ── MERMAS ──
       registrarMerma: async (sku, cantidad, causa, origen, fotoUrl) => {
         const { error } = await supabase.from('mermas').insert({
@@ -1136,6 +1304,55 @@ export function useSupaStore(userId, userName) {
         const { error } = await supabase.from('nomina_recibos').insert(r);
         if (error) { t()?.error('Error al guardar recibo de nómina'); return error; }
         log('Crear', 'Nómina Recibo', `Empleado ${r.empleado_id}`);
+        rf();
+      },
+
+      // Pagar nómina — registra egreso automático en movimientos_contables
+      pagarNomina: async (periodoId) => {
+        const hoy = new Date().toISOString().slice(0, 10);
+        const periodo = hoy.slice(0, 7);
+
+        // Obtener el periodo de nómina
+        const { data: nomPeriodo } = await supabase.from('nomina_periodos').select('*').eq('id', periodoId).single();
+        if (!nomPeriodo) { t()?.error('Período no encontrado'); return { message: 'Período no encontrado' }; }
+
+        // Calcular total de todos los recibos del periodo
+        const { data: recibos } = await supabase.from('nomina_recibos').select('neto_a_pagar').eq('periodo_id', periodoId);
+        const totalNeto = (recibos || []).reduce((sum, r) => sum + Number(r.neto_a_pagar || 0), 0);
+
+        if (totalNeto <= 0) { t()?.error('No hay neto a pagar'); return { message: 'No hay neto' }; }
+
+        // Crear egreso en movimientos_contables
+        const { data: movimiento, error: e1 } = await supabase.from('movimientos_contables').insert({
+          fecha: hoy,
+          tipo: 'Egreso',
+          categoria: 'Nómina',
+          concepto: `Pago nómina ${nomPeriodo.periodo || periodoId}`,
+          monto: centavos(totalNeto),
+        }).select('id').single();
+        if (e1) { t()?.error('Error al registrar egreso'); return e1; }
+
+        // Actualizar periodo como pagado
+        await supabase.from('nomina_periodos').update({
+          total_neto: centavos(totalNeto),
+          estatus: 'Pagado',
+          pagado_at: new Date().toISOString(),
+          movimiento_id: movimiento?.id,
+        }).eq('id', periodoId);
+
+        // Registrar en historial de costos
+        await supabase.from('costos_historial').insert({
+          tipo: 'Nómina',
+          categoria: 'Nómina',
+          concepto: `Pago nómina ${nomPeriodo.periodo || periodoId}`,
+          monto: centavos(totalNeto),
+          periodo,
+          fecha: hoy,
+          movimiento_id: movimiento?.id,
+        });
+
+        t()?.success(`Nómina pagada: $${totalNeto.toLocaleString()}`);
+        log('Pagar', 'Nómina', `Período ${nomPeriodo.periodo || periodoId} — $${totalNeto}`);
         rf();
       },
 
