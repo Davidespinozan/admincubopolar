@@ -1138,14 +1138,14 @@ export function useSupaStore(userId, userName) {
         rf();
       },
 
-      // Registrar costo variable (ej: compra de empaques)
-      registrarCostoVariable: async (categoria, concepto, monto, referencia) => {
-        const hoy = new Date().toISOString().slice(0, 10);
-        const periodo = hoy.slice(0, 7);
+      // Registrar costo variable (ej: compra de empaques, gastos puntuales)
+      registrarCostoVariable: async (categoria, concepto, monto, referencia, fecha) => {
+        const fechaUsar = fecha || new Date().toISOString().slice(0, 10);
+        const periodo = fechaUsar.slice(0, 7);
 
         // Crear egreso
         const { data: movimiento, error: e1 } = await supabase.from('movimientos_contables').insert({
-          fecha: hoy,
+          fecha: fechaUsar,
           tipo: 'Egreso',
           categoria,
           concepto,
@@ -1161,7 +1161,7 @@ export function useSupaStore(userId, userName) {
           concepto,
           monto: centavos(monto),
           periodo,
-          fecha: hoy,
+          fecha: fechaUsar,
           referencia: referencia || '',
           movimiento_id: movimiento?.id,
         });

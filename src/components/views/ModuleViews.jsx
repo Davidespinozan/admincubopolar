@@ -2001,6 +2001,7 @@ export function CostosView({ data, actions }) {
   const [tab, setTab] = useState('fijos');
   const [modal, setModal] = useState(null);
   const [aplicarModal, setAplicarModal] = useState(null);
+  const [gastoModal, setGastoModal] = useState(false); // Para gastos directos
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
   const [filterCat, setFilterCat] = useState('');
@@ -2008,6 +2009,8 @@ export function CostosView({ data, actions }) {
   const empty = { nombre: '', categoria: 'Servicios', monto: '', frecuencia: 'Mensual', diaCargo: '1', proveedor: '', activo: true };
   const [form, setForm] = useState(empty);
   const [aplicarForm, setAplicarForm] = useState({ fecha: today(), referencia: '' });
+  const emptyGasto = { concepto: '', categoria: 'Gasolina', monto: '', fecha: today(), referencia: '' };
+  const [gastoForm, setGastoForm] = useState(emptyGasto);
 
   const costosFijos = useMemo(() => (data.costosFijos || []), [data.costosFijos]);
   const costosHistorial = useMemo(() => (data.costosHistorial || []).sort((a, b) => new Date(b.fecha || b.createdAt) - new Date(a.fecha || a.createdAt)), [data.costosHistorial]);
@@ -2083,6 +2086,25 @@ export function CostosView({ data, actions }) {
     setAplicarModal(null);
   };
 
+  // Registrar gasto directo/variable
+  const openGasto = () => { setGastoForm(emptyGasto); setErrors({}); setGastoModal(true); };
+  const guardarGasto = async () => {
+    const e = {};
+    if (!gastoForm.concepto.trim()) e.concepto = 'Requerido';
+    if (!gastoForm.monto || Number(gastoForm.monto) <= 0) e.monto = 'Monto inválido';
+    if (Object.keys(e).length) { setErrors(e); return; }
+    
+    await actions.registrarCostoVariable(
+      gastoForm.categoria,
+      gastoForm.concepto.trim(),
+      Number(gastoForm.monto),
+      gastoForm.referencia.trim() || null,
+      gastoForm.fecha
+    );
+    toast?.success('Gasto registrado y egreso generado');
+    setGastoModal(false);
+  };
+
   // Calculate totals by category
   const totalesPorCategoria = useMemo(() => {
     const t = {};
@@ -2142,9 +2164,14 @@ export function CostosView({ data, actions }) {
           <option value="">Todas las categorías</option>
           {CATEGORIAS_COSTO.map(c => <option key={c}>{c}</option>)}
         </select>
-        {tab === 'fijos' && (
-          <button onClick={openNew} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 min-h-[44px] ml-auto">+ Nuevo costo fijo</button>
-        )}
+        <div className="flex gap-2 ml-auto">
+          {tab === 'fijos' && (
+            <button onClick={openNew} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 min-h-[44px]">+ Nuevo costo fijo</button>
+          )}
+          {tab === 'historial' && (
+            <button onClick={openGasto} className="px-4 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl hover:bg-emerald-700 min-h-[44px]">+ Registrar gasto</button>
+          )}
+        </div>
       </div>
 
       {tab === 'fijos' && (
@@ -2250,6 +2277,22 @@ export function CostosView({ data, actions }) {
           </div>
         </div>
       )}
+    </Modal>
+
+    {/* Modal Registrar Gasto Directo */}
+    <Modal open={gastoModal} onClose={() => setGastoModal(false)} title="Registrar Gasto">
+      <div className="space-y-3">
+        <FormInput label="Concepto *" value={gastoForm.concepto} onChange={e => setGastoForm({ ...gastoForm, concepto: e.target.value })} error={errors.concepto} placeholder="Ej: Gasolina ruta norte, Reparación compresor" />
+        <FormSelect label="Categoría" options={CATEGORIAS_COSTO} value={gastoForm.categoria} onChange={e => setGastoForm({ ...gastoForm, categoria: e.target.value })} />
+        <FormInput label="Monto *" type="number" value={gastoForm.monto} onChange={e => setGastoForm({ ...gastoForm, monto: e.target.value })} error={errors.monto} placeholder="0.00" />
+        <FormInput label="Fecha" type="date" value={gastoForm.fecha} onChange={e => setGastoForm({ ...gastoForm, fecha: e.target.value })} />
+        <FormInput label="Referencia (opcional)" value={gastoForm.referencia} onChange={e => setGastoForm({ ...gastoForm, referencia: e.target.value })} placeholder="# Factura, ticket, voucher" />
+        <p className="text-xs text-slate-400">Este gasto se registrará como egreso en contabilidad automáticamente.</p>
+      </div>
+      <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-slate-200">
+        <FormBtn onClick={() => setGastoModal(false)}>Cancelar</FormBtn>
+        <FormBtn primary onClick={guardarGasto}>Registrar gasto</FormBtn>
+      </div>
     </Modal>
   </div>);
 }
