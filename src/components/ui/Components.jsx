@@ -123,17 +123,20 @@ export const DataTable = ({ columns, data, onRowClick, cardTitle, cardSubtitle }
 // ─── PAGE HEADER ───
 // Mobile: stacked, full-width action button
 // Desktop: row with inline button
-export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon }) => (
+export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon, extraButtons }) => (
   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
     <div>
       <h1 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight">{title}</h1>
       {subtitle && <p className="text-xs sm:text-sm text-slate-400 mt-0.5">{subtitle}</p>}
     </div>
-    {action && (
-      <button onClick={action} className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-3 sm:py-2.5 rounded-xl transition-colors shadow-sm shadow-blue-200 min-h-[44px]">
-        {actionIcon || <Icons.Plus />} {actionLabel}
-      </button>
-    )}
+    <div className="flex flex-wrap items-center gap-2">
+      {extraButtons}
+      {action && (
+        <button onClick={action} className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-3 sm:py-2.5 rounded-xl transition-colors shadow-sm shadow-blue-200 min-h-[44px]">
+          {actionIcon || <Icons.Plus />} {actionLabel}
+        </button>
+      )}
+    </div>
   </div>
 );
 

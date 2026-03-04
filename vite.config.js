@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react()],
   build: {
     outDir: 'dist',
@@ -19,5 +19,11 @@ export default defineConfig({
     },
     // Aumentar límite de advertencia ya que exportReports es lazy loaded
     chunkSizeWarningLimit: 750,
-  }
-})
+    // Remove console.log/warn in production, keep console.error
+    minify: 'esbuild',
+  },
+  esbuild: {
+    drop: mode === 'production' ? ['debugger'] : [],
+    pure: mode === 'production' ? ['console.log', 'console.warn'] : [],
+  },
+}))

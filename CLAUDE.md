@@ -6,11 +6,16 @@ Este repositorio contiene la aplicación ERP de Cubo Polar, una fábrica de prod
 
 - `src/` – React application
   - `components/` – UI components, vistas por rol, modales, etc.
-  - `data/` – lógica de acceso a Supabase (`store.js`, `supaStore.js` etc.)
+    - `views/` – Vistas modulares (index.js, ModuleViews.jsx, viewsCommon.js)
+    - `ui/` – Componentes reutilizables (Modal, Toast, Icons, Components)
+  - `data/` – lógica de acceso a Supabase (`supaStore.js`)
   - `lib/supabase.js` – inicialización del cliente Supabase.
-  - `utils/` – utilidades (`safe.js` con funciones `s`, `n`, `money`, etc.).
+  - `utils/` – utilidades:
+    - `safe.js` – funciones `s`, `n`, `money`, `fmtDate`, etc.
+    - `geocoding.js` – geocodificación con Google Maps API
+    - `exportReports.js` – exportación a Excel/PDF (lazy loaded)
 - `public/` – recursos estáticos (favicon, manifest, service worker).
-- `supabase/` – scripts SQL para schema y seed.
+- `supabase/` – scripts SQL para schema y seed (001-009).
 - configuraciones de Vite, Tailwind, Netlify, etc.
 
 ### Flujo de trabajo local
@@ -20,19 +25,34 @@ Este repositorio contiene la aplicación ERP de Cubo Polar, una fábrica de prod
 3. Crear ramas locales para cambios de prueba (`git checkout -b mi-rama`).
 4. Commit y push solo cuando se quiera sincronizar con GitHub/Netlify.
 
+### Configuración requerida
+
+Para geocodificación de direcciones, configurar en `.env`:
+```
+VITE_GOOGLE_MAPS_API_KEY=tu_api_key
+```
+
 ### Notas importantes
 
 - **Autenticación real**: se utiliza Supabase Auth; no hay usuarios de demostración.
-- **Branch `main`**: contiene el estado actual en producción. El historial fue reseteado recientemente.
-- **Rama de desarrollo**: `mis-cambios` (o cualquier otra creada) se usa para trabajar sin afectar el remoto.
+- **Branch `main`**: contiene el estado actual en producción.
 - **Netlify** despliega automáticamente desde `main`.
 
-### Advertencias y mejoras
+### Arquitectura y optimizaciones
 
-- El bundle de Vite es grande ( ~530 KB minificado ). Se sugiere code-splitting si el tamaño preocupa.
-- Algunas partes del código inicializan estado dentro del render; se corrigieron ejemplos en `ChoferView`.
-- No existen credenciales o datos sensibles en el repositorio.
+- **Code splitting**: Vistas por rol (Chofer, Bolsas, etc.) se cargan lazy
+- **Vendor chunks**: React, Supabase y DOMPurify separados
+- **Export reports**: ~700KB lazy loaded solo cuando se exporta
+- **Console cleanup**: console.log/warn removidos en producción (vite.config.js)
+- **Error Boundary**: Captura errores con opción de copiar detalles
+
+### Advertencias y mejoras futuras
+
+- `ModuleViews.jsx` tiene ~3000 líneas; se preparó `viewsCommon.js` e `index.js` para dividirlo
+- El bundle principal es ~977KB; dividir ModuleViews reduciría esto significativamente
+- Agregar TypeScript gradualmente mejoraría la mantenibilidad
+- Considerar tests para flujos críticos (crear orden, cerrar ruta)
 
 ### Propósito de este archivo
 
-El archivo `CLAUDE.md` se creó para documentar el proyecto y servir como referencia rápida para desarrolladores que trabajen con Claude o cualquier otro asistente. Contiene el contexto necesario para entender la arquitectura, los comandos habituales y notas de mantenimiento.
+El archivo `CLAUDE.md` sirve como referencia rápida para desarrolladores que trabajen con asistentes de IA. Contiene el contexto necesario para entender la arquitectura, los comandos habituales y notas de mantenimiento.

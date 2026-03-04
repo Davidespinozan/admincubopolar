@@ -6,7 +6,7 @@ import {
   InventarioView, OrdenesView, RutasView, FacturacionView,
   ConciliacionView, AuditoriaView, ConfiguracionView, AlmacenBolsasView,
   EmpleadosView, NominaView, ContabilidadView, CobrosView, CostosView, CuentasPorPagarView
-} from './views/ModuleViews';
+} from './views';
 
 /*
   ADMIN: 4 áreas — Operación, Comercial, Finanzas, Equipo

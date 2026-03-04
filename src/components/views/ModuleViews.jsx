@@ -6,6 +6,7 @@ import Modal, { FormInput, FormSelect, FormBtn, useConfirm } from '../ui/Modal';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today } from '../../utils/safe';
 import { useToast } from '../ui/Toast';
+import { reporteVentas, reporteProduccion, reporteInventario, reporteClientes, reporteRutas, reporteFinanciero } from '../../utils/exportReports';
 
 const PAGE_SIZE = 50;
 
@@ -70,9 +71,14 @@ export function ClientesView({ data, actions }) {
 
   const paginated = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
+  const exportBtns = <>
+    <button onClick={() => reporteClientes(data.clientes, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
+    <button onClick={() => reporteClientes(data.clientes, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+  </>;
+
   return (<div>
     {ConfirmEl}
-    <PageHeader title="Clientes" subtitle={`${(data.clientes || []).length} registrados`} action={openNew} actionLabel="Nuevo cliente" />
+    <PageHeader title="Clientes" subtitle={`${(data.clientes || []).length} registrados`} action={openNew} actionLabel="Nuevo cliente" extraButtons={exportBtns} />
     <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5 md:p-5">
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 mb-4">
         <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>{setSearch(e.target.value);setPage(0)}} placeholder="Buscar nombre o RFC..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
@@ -184,8 +190,13 @@ export function ProductosView({ data, actions }) {
 
   const hasDemoProducts = useMemo(() => data.productos.some(p => s(p.sku).startsWith('DEMO-')), [data.productos]);
 
+  const exportBtns = <>
+    <button onClick={() => reporteInventario(data.productos, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
+    <button onClick={() => reporteInventario(data.productos, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+  </>;
+
   return (<div>
-    <PageHeader title="Catálogo de Productos" subtitle="Empaque y producto terminado" action={openNew} actionLabel="Nuevo producto" />
+    <PageHeader title="Catálogo de Productos" subtitle="Empaque y producto terminado" action={openNew} actionLabel="Nuevo producto" extraButtons={exportBtns} />
     {hasDemoProducts && (
       <div className="mb-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
         <span className="text-amber-700 text-sm">Se detectaron productos de demostración (DEMO-*).</span>
@@ -343,8 +354,13 @@ export function ProduccionView({ data, actions }) {
     return { totalProd: total, enProceso: proc, confirmadas: conf };
   }, [data.produccion]);
 
+  const exportBtns = <>
+    <button onClick={() => reporteProduccion(data.produccion, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
+    <button onClick={() => reporteProduccion(data.produccion, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+  </>;
+
   return (<div>
-    <PageHeader title="Producir hielo" subtitle="Crear y confirmar producción" action={()=>{setModal(true);setErrors({})}} actionLabel="Nueva orden" />
+    <PageHeader title="Producir hielo" subtitle="Crear y confirmar producción" action={()=>{setModal(true);setErrors({})}} actionLabel="Nueva orden" extraButtons={exportBtns} />
     <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
       <div className="bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl p-3 sm:p-5 text-white"><p className="text-[10px] sm:text-xs font-semibold text-blue-100 uppercase mb-1">Producido</p><p className="text-xl sm:text-3xl font-extrabold">{totalProd.toLocaleString()}</p><p className="text-[10px] sm:text-xs text-blue-200 mt-0.5">bolsas</p></div>
       <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">En proceso</p><p className="text-xl sm:text-3xl font-extrabold text-amber-600">{enProceso}</p></div>
@@ -699,8 +715,13 @@ export function OrdenesView({ data, actions }) {
 
   const paginated = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
+  const exportBtns = <>
+    <button onClick={() => reporteVentas(data.ordenes, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
+    <button onClick={() => reporteVentas(data.ordenes, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+  </>;
+
   return (<div>
-    <PageHeader title="Ventas" subtitle="Crear venta, cobrar y asignar entregas" action={openModal} actionLabel="Nueva orden" />
+    <PageHeader title="Ventas" subtitle="Crear venta, cobrar y asignar entregas" action={openModal} actionLabel="Nueva orden" extraButtons={exportBtns} />
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
       <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>{setSearch(e.target.value);setPage(0)}} placeholder="Buscar folio o cliente..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
       <select value={filterEst} onChange={e=>{setFilterEst(e.target.value);setPage(0)}} className="border border-slate-200 rounded-xl px-3 py-3 md:py-2.5 text-sm text-slate-600 bg-white focus:outline-none focus:border-blue-400 min-h-[44px]"><option value="">Todos</option>{["Creada","Asignada","Entregada","Facturada"].map(st=><option key={st}>{st}</option>)}</select>
@@ -1047,9 +1068,14 @@ export function RutasView({ data, actions }) {
     });
   }, [data.rutas, dSearch, filterEst]);
 
+  const exportBtns = <>
+    <button onClick={() => reporteRutas(data.rutas, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
+    <button onClick={() => reporteRutas(data.rutas, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+  </>;
+
   return (<div>
     {ConfirmEl}
-    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},clientesIds:[]});setSearchCliente("");setModal(true);setErrors({})}} actionLabel="Autorizar ruta" />
+    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},clientesIds:[]});setSearchCliente("");setModal(true);setErrors({})}} actionLabel="Autorizar ruta" extraButtons={exportBtns} />
 
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
       <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar ruta, folio o chofer..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
@@ -2178,9 +2204,11 @@ export function ContabilidadView({ data, actions }) {
 
   return (<div className="space-y-4">
     {ConfirmEl}
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between flex-wrap gap-2">
       <h2 className="text-lg font-bold text-slate-800">Ingresos / Egresos</h2>
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={() => reporteFinanciero(cont, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
+        <button onClick={() => reporteFinanciero(cont, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
         <button onClick={() => openNew("Ingreso")} className="px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Ingreso</button>
         <button onClick={() => openNew("Egreso")} className="px-3 py-2 bg-red-500 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Gasto</button>
       </div>
