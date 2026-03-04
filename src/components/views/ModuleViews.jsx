@@ -1413,9 +1413,9 @@ export function FacturacionView({ data, actions }) {
   }, [data.ordenes]);
 
   // FIX P5b: handleTimbrar recreated every render, passed to every row button
-  const handleTimbrar = useCallback((folio) => {
-    actions.timbrar(folio);
-    toast?.success(`CFDI timbrado: ${folio}`);
+  const handleTimbrar = useCallback(async (folio) => {
+    const err = await actions.timbrar(folio);
+    if (!err) toast?.success(`CFDI timbrado: ${folio}`);
   }, [actions, toast]);
 
   return (<div>

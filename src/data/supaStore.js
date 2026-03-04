@@ -1079,8 +1079,12 @@ export function useSupaStore(userId, userName) {
 
       // ── FACTURACIÓN ──
       timbrar: async (folio) => {
-        const { error } = await supabase.rpc('timbrar_orden', { p_folio: folio, p_uid: uid() });
-        if (error) { t()?.error('Error al timbrar orden'); return error; }
+        const { error } = await supabase.rpc('timbrar_orden', { p_folio: folio, p_usuario_id: uid() });
+        if (error) { 
+          console.error('[timbrar]', error.message, error.code);
+          t()?.error('Error al timbrar orden: ' + error.message); 
+          return error; 
+        }
         log('Timbrar', 'Facturación', `${folio}`);
         rf();
       },
