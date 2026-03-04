@@ -231,6 +231,12 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
   const registrarMerma = () => {
     if (!mForm.cant || n(mForm.cant) <= 0 || !fotoMerma) return;
+    // Validar que no exceda stock disponible
+    const disponibleSku = disponible[mForm.sku] || 0;
+    if (n(mForm.cant) > disponibleSku) {
+      showToast(`Solo tienes ${disponibleSku} disponibles de ${mForm.sku}`, "error");
+      return;
+    }
     // Save to store with audit trail
     if (actions.registrarMerma) {
       actions.registrarMerma(mForm.sku, n(mForm.cant), mForm.causa, s(user?.nombre), fotoMerma);

@@ -50,6 +50,8 @@ export function ClientesView({ data, actions }) {
     if (!form.nombre.trim()) e.nombre = "Requerido";
     if (!form.rfc.trim()) e.rfc = "Requerido";
     if (form.rfc.trim() && (form.rfc.length < 12 || form.rfc.length > 13)) e.rfc = "RFC debe tener 12-13 caracteres";
+    if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
+    if (form.cp.trim() && !/^\d{5}$/.test(form.cp)) e.cp = "CP debe ser 5 dígitos";
     if (Object.keys(e).length) { setErrors(e); return; }
     if (modal === "new") actions.addCliente(form); else actions.updateCliente(modal.id, form);
     toast?.success(modal === "new" ? "Cliente creado" : "Cliente actualizado");
@@ -643,6 +645,16 @@ export function OrdenesView({ data, actions }) {
     const e = {};
     if (!form.clienteId) e.clienteId = "Requerido";
     if (lines.length===0||!lines.some(l=>l.sku&&l.qty>0)) e.productos = "Agrega al menos un producto";
+    // Validar stock disponible
+    for (const l of lines) {
+      if (l.sku && l.qty > 0) {
+        const stock = getStock(l.sku);
+        if (n(l.qty) > stock) {
+          e.productos = `Stock insuficiente de ${l.sku} (disp: ${stock})`;
+          break;
+        }
+      }
+    }
     if (Object.keys(e).length) { setErrors(e); return; }
     const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
     actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc});
@@ -806,7 +818,24 @@ export function RutasView({ data, actions }) {
     if (!form.choferId) e.choferId = "Requerido";
     // Validar que al menos un producto tenga carga
     const totalCarga = Object.values(form.cargaPorProducto).reduce((s, v) => s + n(v), 0);
-    if (totalCarga === 0 && !editingRuta) e.carga = "Debe autorizar al menos 1 producto";
+    const totalExtra = Object.values(form.extraPorProducto).reduce((s, v) => s + n(v), 0);
+    if ((totalCarga + totalExtra) === 0 && !editingRuta) e.carga = "Debe autorizar al menos 1 producto";
+    
+    // Validar stock disponible en cuartos fríos
+    if (!editingRuta) {
+      for (const [sku, qty] of Object.entries(form.cargaPorProducto)) {
+        const extraQty = n(form.extraPorProducto[sku]);
+        const totalReq = n(qty) + extraQty;
+        if (totalReq > 0) {
+          const prod = prodTerminados.find(p => s(p.sku) === sku);
+          const stockDisp = prod ? n(prod.stock) : 0;
+          if (totalReq > stockDisp) {
+            e.carga = `Stock insuficiente de ${sku} (disp: ${stockDisp}, sol: ${totalReq})`;
+            break;
+          }
+        }
+      }
+    }
     if (Object.keys(e).length) { setErrors(e); return; }
 
     // Convertir cargaPorProducto a JSONB limpio (sin valores 0)
@@ -1304,26 +1333,56 @@ export function ConciliacionView({ data }) {
 // ═══════════════════════════════════════════════
 export function AuditoriaView({ data }) {
   const [filterUsr, setFilterUsr] = useState("");
+  const [filterMod, setFilterMod] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
   const dSearch = useDebounce(search);
 
   const users = useMemo(() => [...new Set(data.auditoria.map(a => s(a.usuario)).filter(Boolean))], [data.auditoria]);
+  const modulos = useMemo(() => [...new Set(data.auditoria.map(a => s(a.modulo)).filter(Boolean))], [data.auditoria]);
+  
   const filtered = useMemo(() => {
     const q = dSearch?.toLowerCase() || "";
     return data.auditoria.filter(a => {
       const mu = !filterUsr || s(a.usuario) === filterUsr;
+      const mm = !filterMod || s(a.modulo) === filterMod;
       const ms = !q || s(a.accion).toLowerCase().includes(q) || s(a.modulo).toLowerCase().includes(q) || s(a.detalle).toLowerCase().includes(q);
-      return mu && ms;
+      return mu && mm && ms;
     });
-  }, [data.auditoria, filterUsr, dSearch]);
+  }, [data.auditoria, filterUsr, filterMod, dSearch]);
   const paginated = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
+
+  // Estadísticas rápidas
+  const stats = useMemo(() => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const accionesHoy = data.auditoria.filter(a => s(a.fecha).startsWith(hoy)).length;
+    const usuariosActivos = new Set(data.auditoria.filter(a => s(a.fecha).startsWith(hoy)).map(a => s(a.usuario))).size;
+    return { accionesHoy, usuariosActivos, total: data.auditoria.length };
+  }, [data.auditoria]);
 
   return (<div>
     <PageHeader title="Auditoría" subtitle="Historial de acciones" />
+    
+    {/* Estadísticas */}
+    <div className="grid grid-cols-3 gap-3 mb-4">
+      <div className="bg-blue-50 rounded-xl p-3 text-center border border-blue-100">
+        <p className="text-2xl font-bold text-blue-600">{stats.accionesHoy}</p>
+        <p className="text-xs text-blue-500">Acciones hoy</p>
+      </div>
+      <div className="bg-emerald-50 rounded-xl p-3 text-center border border-emerald-100">
+        <p className="text-2xl font-bold text-emerald-600">{stats.usuariosActivos}</p>
+        <p className="text-xs text-emerald-500">Usuarios activos</p>
+      </div>
+      <div className="bg-slate-50 rounded-xl p-3 text-center border border-slate-100">
+        <p className="text-2xl font-bold text-slate-600">{stats.total}</p>
+        <p className="text-xs text-slate-500">Total registros</p>
+      </div>
+    </div>
+
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
-      <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>{setSearch(e.target.value);setPage(0)}} placeholder="Buscar acción o módulo..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
+      <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>{setSearch(e.target.value);setPage(0)}} placeholder="Buscar acción o detalle..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
       <select value={filterUsr} onChange={e=>{setFilterUsr(e.target.value);setPage(0)}} className="border border-slate-200 rounded-xl px-3 py-3 md:py-2.5 text-sm text-slate-600 bg-white focus:outline-none focus:border-blue-400 min-h-[44px]"><option value="">Todos los usuarios</option>{users.map(u=><option key={u}>{u}</option>)}</select>
+      <select value={filterMod} onChange={e=>{setFilterMod(e.target.value);setPage(0)}} className="border border-slate-200 rounded-xl px-3 py-3 md:py-2.5 text-sm text-slate-600 bg-white focus:outline-none focus:border-blue-400 min-h-[44px]"><option value="">Todos los módulos</option>{modulos.map(m=><option key={m}>{m}</option>)}</select>
     </div>
     <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
       <DataTable columns={[
@@ -1687,7 +1746,9 @@ export function NominaView({ data, actions }) {
   const toast = useToast();
   const emps = data.empleados || [];
   const periodos = data.nominaPeriodos || [];
+  const recibos = data.nominaRecibos || [];
   const deptos = ["Ventas y Distribución", "Producción", "Administración", "Staff"];
+  const [periodoSeleccionado, setPeriodoSeleccionado] = useState(null);
 
   const empsPorDepto = {};
   for (const d of deptos) empsPorDepto[d] = emps.filter(e => s(e.depto) === d && s(e.estatus) === "Activo");
@@ -1695,6 +1756,17 @@ export function NominaView({ data, actions }) {
 
   const periodosPendientes = periodos.filter(p => s(p.estatus) !== "Pagado");
   const periodosPagados = periodos.filter(p => s(p.estatus) === "Pagado").slice(0, 10);
+
+  // Recibos del período seleccionado
+  const recibosPeriodo = useMemo(() => {
+    if (!periodoSeleccionado) return [];
+    return recibos.filter(r => n(r.periodoId) === n(periodoSeleccionado.id));
+  }, [recibos, periodoSeleccionado]);
+
+  const empsConRecibo = useMemo(() => {
+    const ids = new Set(recibosPeriodo.map(r => n(r.empleadoId)));
+    return ids;
+  }, [recibosPeriodo]);
 
   const generarNuevaSemana = async () => {
     const hoy = new Date();
@@ -1738,6 +1810,39 @@ export function NominaView({ data, actions }) {
     await actions.pagarNomina(p.id);
   };
 
+  const generarRecibosEmpleados = async (periodo) => {
+    const empsActivos = emps.filter(e => s(e.estatus) === "Activo");
+    let generados = 0;
+    for (const emp of empsActivos) {
+      // Verificar si ya tiene recibo para este período
+      const yaExiste = recibos.some(r => n(r.periodoId) === n(periodo.id) && n(r.empleadoId) === n(emp.id));
+      if (yaExiste) continue;
+      
+      const dias = n(periodo.diasPago) || 7;
+      const percepciones = n(emp.salarioDiario) * dias;
+      const deducciones = Math.round(percepciones * 0.02 * 100) / 100; // 2% IMSS estimado
+      const neto = percepciones - deducciones;
+      
+      await actions.addNominaRecibo({
+        periodo_id: periodo.id,
+        empleado_id: emp.id,
+        dias_pagados: dias,
+        salario_base: n(emp.salarioDiario),
+        percepciones: percepciones,
+        isr: 0,
+        imss: deducciones,
+        otras_deducciones: 0,
+        neto_a_pagar: neto,
+      });
+      generados++;
+    }
+    if (generados > 0) {
+      toast?.success(`${generados} recibos generados`);
+    } else {
+      toast?.info("Todos los empleados ya tienen recibo");
+    }
+  };
+
   return (<div className="space-y-4">
     <div className="flex justify-between items-center">
       <h2 className="text-lg font-bold text-slate-800">Nómina</h2>
@@ -1753,15 +1858,25 @@ export function NominaView({ data, actions }) {
     {periodosPendientes.length > 0 && (<div>
       <h3 className="text-xs font-bold text-amber-600 uppercase tracking-wider mt-4 mb-2">Períodos pendientes de pago</h3>
       <div className="space-y-2">
-        {periodosPendientes.map(p => (
-          <div key={p.id} className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex justify-between items-center">
-            <div>
-              <p className="text-sm font-semibold text-slate-800">Semana {n(p.numeroSemana)} — {n(p.ejercicio)}</p>
-              <p className="text-xs text-slate-500">{s(p.fechaInicio)} al {s(p.fechaFin)} · ${n(p.totalNeto).toLocaleString()}</p>
+        {periodosPendientes.map(p => {
+          const recibosP = recibos.filter(r => n(r.periodoId) === n(p.id));
+          const empsActivos = emps.filter(e => s(e.estatus) === "Activo").length;
+          return (
+          <div key={p.id} className="bg-amber-50 rounded-xl p-4 border border-amber-200">
+            <div className="flex justify-between items-center">
+              <div>
+                <p className="text-sm font-semibold text-slate-800">Semana {n(p.numeroSemana)} — {n(p.ejercicio)}</p>
+                <p className="text-xs text-slate-500">{s(p.fechaInicio)} al {s(p.fechaFin)} · ${n(p.totalNeto).toLocaleString()}</p>
+                <p className="text-xs text-slate-400 mt-1">{recibosP.length}/{empsActivos} recibos generados</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => generarRecibosEmpleados(p)} className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-semibold">Generar recibos</button>
+                <button onClick={() => setPeriodoSeleccionado(p)} className="bg-slate-600 text-white px-3 py-2 rounded-lg text-xs font-semibold">Ver</button>
+                <button onClick={() => pagarPeriodo(p)} className="bg-emerald-600 text-white px-3 py-2 rounded-lg text-xs font-semibold">Pagar</button>
+              </div>
             </div>
-            <button onClick={() => pagarPeriodo(p)} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-semibold">Pagar</button>
           </div>
-        ))}
+        );})}
       </div>
     </div>)}
 
@@ -1804,6 +1919,53 @@ export function NominaView({ data, actions }) {
         </div>
       </div>);
     })}
+
+    {/* Modal de recibos del período */}
+    {periodoSeleccionado && (
+      <Modal onClose={() => setPeriodoSeleccionado(null)} title={`Recibos Semana ${n(periodoSeleccionado.numeroSemana)}`}>
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          {recibosPeriodo.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-4">No hay recibos generados. Presiona "Generar recibos" para crearlos.</p>
+          ) : (
+            recibosPeriodo.map(r => {
+              const emp = emps.find(e => n(e.id) === n(r.empleadoId));
+              return (
+                <div key={r.id} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{emp ? s(emp.nombre) : `Empleado #${r.empleadoId}`}</p>
+                      <p className="text-xs text-slate-400">{emp ? s(emp.puesto) : ""}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-emerald-600">${n(r.netoAPagar || r.neto_a_pagar).toLocaleString()}</p>
+                      <p className="text-[10px] text-slate-400">Neto a pagar</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
+                    <div className="bg-white rounded-lg p-2 text-center">
+                      <p className="text-slate-400">Días</p>
+                      <p className="font-bold text-slate-700">{n(r.diasPagados || r.dias_pagados)}</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 text-center">
+                      <p className="text-slate-400">Percepciones</p>
+                      <p className="font-bold text-blue-600">${n(r.percepciones).toLocaleString()}</p>
+                    </div>
+                    <div className="bg-white rounded-lg p-2 text-center">
+                      <p className="text-slate-400">Deducciones</p>
+                      <p className="font-bold text-red-600">${n(r.imss).toLocaleString()}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+        <div className="flex gap-2 mt-4">
+          <button onClick={() => generarRecibosEmpleados(periodoSeleccionado)} className="flex-1 py-3 bg-blue-600 text-white font-semibold rounded-xl">Generar faltantes</button>
+          <button onClick={() => setPeriodoSeleccionado(null)} className="flex-1 py-3 bg-slate-200 text-slate-700 font-semibold rounded-xl">Cerrar</button>
+        </div>
+      </Modal>
+    )}
   </div>);
 }
 
