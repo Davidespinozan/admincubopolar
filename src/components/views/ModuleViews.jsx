@@ -790,8 +790,9 @@ export function RutasView({ data, actions }) {
   const [modal, setModal] = useState(false);
   const [editingRuta, setEditingRuta] = useState(null);
   const [errors, setErrors] = useState({});
-  // Carga por producto: objeto con SKU como key
-  const [form, setForm] = useState({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{}});
+  // Carga por producto: objeto con SKU como key; clientesIds: array de IDs de clientes
+  const [form, setForm] = useState({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},clientesIds:[]});
+  const [searchCliente, setSearchCliente] = useState("");
   const [asignarModal, setAsignarModal] = useState(null);
   const [cierreModal, setCierreModal] = useState(null);
   const [detalleModal, setDetalleModal] = useState(null);
@@ -805,6 +806,32 @@ export function RutasView({ data, actions }) {
     (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado"), 
     [data.productos]
   );
+
+  // Clientes para asignar a ruta
+  const clientesFiltrados = useMemo(() => {
+    const q = searchCliente.toLowerCase();
+    return (data.clientes || []).filter(c => 
+      !q || s(c.nombre).toLowerCase().includes(q) || s(c.contacto).toLowerCase().includes(q)
+    ).slice(0, 50);
+  }, [data.clientes, searchCliente]);
+
+  // Clientes seleccionados con su info
+  const clientesSeleccionados = useMemo(() => {
+    return form.clientesIds.map(id => {
+      const c = (data.clientes || []).find(cli => String(cli.id) === String(id));
+      return c || { id, nombre: `Cliente #${id}` };
+    });
+  }, [form.clientesIds, data.clientes]);
+
+  const toggleCliente = (clienteId) => {
+    const id = String(clienteId);
+    setForm(prev => ({
+      ...prev,
+      clientesIds: prev.clientesIds.includes(id) 
+        ? prev.clientesIds.filter(cid => cid !== id)
+        : [...prev.clientesIds, id]
+    }));
+  };
 
   // Órdenes sin asignar a ruta
   const ordenesSinRuta = useMemo(() => data.ordenes.filter(o => o.estatus === "Asignada" && !o.rutaId), [data.ordenes]);
@@ -853,6 +880,9 @@ export function RutasView({ data, actions }) {
       cargaTotal[sku] = (cargaAutorizada[sku] || 0) + (extraAutorizado[sku] || 0);
     }
 
+    // Preparar clientes asignados con orden
+    const clientesAsignados = form.clientesIds.map((id, idx) => ({ clienteId: Number(id), orden: idx + 1 }));
+
     let err;
     if (editingRuta) {
       err = await actions.updateRuta(editingRuta.id, {
@@ -862,6 +892,7 @@ export function RutasView({ data, actions }) {
         carga: cargaTotal,
         cargaAutorizada,
         extraAutorizado,
+        clientesAsignados,
       });
     } else {
       err = await actions.addRuta({
@@ -871,6 +902,7 @@ export function RutasView({ data, actions }) {
         carga: cargaTotal,
         cargaAutorizada,
         extraAutorizado,
+        clientesAsignados,
       });
     }
     if (err) {
@@ -880,7 +912,8 @@ export function RutasView({ data, actions }) {
     toast?.success(editingRuta ? "Ruta actualizada" : "Ruta creada y carga autorizada");
     setModal(false);
     setEditingRuta(null);
-    setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{}});
+    setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},clientesIds:[]});
+    setSearchCliente("");
     setErrors({});
   };
 
@@ -890,13 +923,19 @@ export function RutasView({ data, actions }) {
     const cargaObj = (ruta.carga && typeof ruta.carga === 'object') ? ruta.carga : {};
     const extraObj = (ruta.extraAutorizado && typeof ruta.extraAutorizado === 'object') ? ruta.extraAutorizado : {};
     const cargaAutObj = (ruta.cargaAutorizada && typeof ruta.cargaAutorizada === 'object') ? ruta.cargaAutorizada : cargaObj;
+    // Parsear clientes asignados
+    const clientesAsig = Array.isArray(ruta.clientesAsignados) 
+      ? ruta.clientesAsignados.map(c => String(c.clienteId || c))
+      : [];
     setForm({
       nombre: s(ruta.nombre),
       choferId: String(ruta.choferId || ruta.chofer_id || ""),
       estatus: s(ruta.estatus) || "Programada",
       cargaPorProducto: cargaAutObj,
       extraPorProducto: extraObj,
+      clientesIds: clientesAsig,
     });
+    setSearchCliente("");
     setErrors({});
     setModal(true);
   };
@@ -975,7 +1014,7 @@ export function RutasView({ data, actions }) {
 
   return (<div>
     {ConfirmEl}
-    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{}});setModal(true);setErrors({})}} actionLabel="Autorizar ruta" />
+    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},clientesIds:[]});setSearchCliente("");setModal(true);setErrors({})}} actionLabel="Autorizar ruta" />
 
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
       <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar ruta, folio o chofer..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
@@ -1110,6 +1149,66 @@ export function RutasView({ data, actions }) {
             </div>
           </div>
         )}
+
+        {/* Clientes asignados a la ruta */}
+        <div className="border-t pt-4">
+          <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+            <span className="w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-xs">3</span>
+            Clientes a visitar <span className="text-xs font-normal text-slate-400">(opcional)</span>
+          </h4>
+          
+          {/* Clientes seleccionados */}
+          {clientesSeleccionados.length > 0 && (
+            <div className="mb-3 space-y-2">
+              {clientesSeleccionados.map((c, idx) => (
+                <div key={c.id} className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <span className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-content text-xs font-bold">{idx + 1}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{s(c.nombre)}</p>
+                      {s(c.contacto) && <p className="text-xs text-purple-600">📞 {s(c.contacto)}</p>}
+                      {s(c.correo) && <p className="text-xs text-slate-400">✉️ {s(c.correo)}</p>}
+                    </div>
+                  </div>
+                  <button onClick={() => toggleCliente(c.id)} className="text-red-500 hover:text-red-700 p-1">
+                    <Icons.X />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Buscar y agregar clientes */}
+          <div className="relative">
+            <input 
+              type="text" 
+              value={searchCliente} 
+              onChange={e => setSearchCliente(e.target.value)}
+              placeholder="Buscar cliente por nombre..."
+              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-purple-400"
+            />
+          </div>
+          {searchCliente && (
+            <div className="mt-2 max-h-40 overflow-y-auto border border-slate-200 rounded-lg bg-white">
+              {clientesFiltrados.filter(c => !form.clientesIds.includes(String(c.id))).slice(0, 10).map(c => (
+                <button 
+                  key={c.id} 
+                  onClick={() => { toggleCliente(c.id); setSearchCliente(""); }}
+                  className="w-full px-3 py-2 text-left hover:bg-purple-50 border-b border-slate-100 last:border-b-0"
+                >
+                  <p className="text-sm font-medium text-slate-800">{s(c.nombre)}</p>
+                  <p className="text-xs text-slate-400">{s(c.tipo)} {s(c.contacto) ? `• ${s(c.contacto)}` : ""}</p>
+                </button>
+              ))}
+              {clientesFiltrados.filter(c => !form.clientesIds.includes(String(c.id))).length === 0 && (
+                <p className="px-3 py-2 text-xs text-slate-400">No se encontraron clientes</p>
+              )}
+            </div>
+          )}
+          {!searchCliente && clientesSeleccionados.length === 0 && (
+            <p className="text-xs text-slate-400 mt-2">Escribe para buscar clientes a asignar a esta ruta</p>
+          )}
+        </div>
       </div>
       <div className="flex justify-end gap-2 mt-5">
         <FormBtn onClick={()=>{setModal(false);setEditingRuta(null)}}>Cancelar</FormBtn>

@@ -64,6 +64,25 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     return miRutaActiva.extra_autorizado || miRutaActiva.extraAutorizado || {};
   }, [miRutaActiva]);
 
+  // Clientes asignados a la ruta (con info de contacto)
+  const clientesAsignados = useMemo(() => {
+    if (!miRutaActiva) return [];
+    const asignados = miRutaActiva.clientes_asignados || miRutaActiva.clientesAsignados || [];
+    if (!Array.isArray(asignados)) return [];
+    return asignados.map((item, idx) => {
+      const clienteId = item.clienteId || item;
+      const cliente = (data.clientes || []).find(c => String(c.id) === String(clienteId));
+      return {
+        id: clienteId,
+        orden: item.orden || idx + 1,
+        nombre: cliente ? s(cliente.nombre) : `Cliente #${clienteId}`,
+        contacto: cliente ? s(cliente.contacto) : "",
+        correo: cliente ? s(cliente.correo) : "",
+        tipo: cliente ? s(cliente.tipo) : "",
+      };
+    }).sort((a, b) => a.orden - b.orden);
+  }, [miRutaActiva, data.clientes]);
+
   // Carga total = autorizada + extra (lo que administración aprobó)
   const cargaTotal = useMemo(() => {
     const t = {};
@@ -293,6 +312,39 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           {pendientes.length === 0 && <p className="text-xs text-blue-400">No hay órdenes asignadas</p>}
           <p className="text-xs text-blue-500 mt-2">Carga extra para ventas en el camino</p>
         </div>
+
+        {/* Clientes asignados a visitar */}
+        {clientesAsignados.length > 0 && (
+          <div className="bg-purple-50 rounded-2xl p-4 border border-purple-200">
+            <h3 className="text-xs font-bold text-purple-600 uppercase tracking-wider mb-3">
+              📍 Clientes a visitar ({clientesAsignados.length})
+            </h3>
+            <div className="space-y-2">
+              {clientesAsignados.map((c, idx) => (
+                <div key={c.id} className="bg-white rounded-xl p-3 border border-purple-100 flex items-center gap-3">
+                  <span className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
+                    {idx + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 truncate">{c.nombre}</p>
+                    {c.contacto && (
+                      <a href={`tel:${c.contacto.replace(/\D/g, '')}`} className="text-xs text-purple-600 flex items-center gap-1">
+                        📞 {c.contacto}
+                      </a>
+                    )}
+                  </div>
+                  {c.contacto && (
+                    <a href={`tel:${c.contacto.replace(/\D/g, '')}`} 
+                       className="px-3 py-1.5 bg-purple-600 text-white text-xs font-semibold rounded-lg">
+                      Llamar
+                    </a>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {productos.map(p => (
           <div key={p.sku} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
             <div className="flex items-center justify-between">

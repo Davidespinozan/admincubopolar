@@ -943,6 +943,7 @@ export function useSupaStore(userId, userName) {
           carga: cargaObj,                     // JSONB: {"HC-25K": 50, ...}
           carga_autorizada: r.cargaAutorizada || cargaObj,
           extra_autorizado: r.extraAutorizado || {},
+          clientes_asignados: r.clientesAsignados || [],  // [{clienteId, orden}]
           autorizado_at: hoy,
         });
         if (error) { t()?.error('Error al crear ruta'); return error; }
@@ -1009,6 +1010,7 @@ export function useSupaStore(userId, userName) {
         if (r.carga     !== undefined) update.carga     = r.carga;
         if (r.cargaAutorizada !== undefined) update.carga_autorizada = r.cargaAutorizada;
         if (r.extraAutorizado !== undefined) update.extra_autorizado = r.extraAutorizado;
+        if (r.clientesAsignados !== undefined) update.clientes_asignados = r.clientesAsignados;
         const { error } = await supabase.from('rutas').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar ruta'); return error; }
         log('Editar', 'Rutas', `Ruta #${id}`);
