@@ -79,6 +79,11 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         contacto: cliente ? s(cliente.contacto) : "",
         correo: cliente ? s(cliente.correo) : "",
         tipo: cliente ? s(cliente.tipo) : "",
+        calle: cliente ? s(cliente.calle) : "",
+        colonia: cliente ? s(cliente.colonia) : "",
+        ciudad: cliente ? s(cliente.ciudad) : "",
+        latitud: cliente?.latitud,
+        longitud: cliente?.longitud,
       };
     }).sort((a, b) => a.orden - b.orden);
   }, [miRutaActiva, data.clientes]);
@@ -339,9 +344,30 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                       Llamar
                     </a>
                   )}
+                  {c.latitud && c.longitud && (
+                    <a href={`https://www.google.com/maps/dir/?api=1&destination=${c.latitud},${c.longitud}`}
+                       target="_blank" rel="noopener noreferrer"
+                       className="px-3 py-1.5 bg-blue-600 text-white text-xs font-semibold rounded-lg">
+                      🗺️ Maps
+                    </a>
+                  )}
                 </div>
               ))}
             </div>
+            {/* Botón ver ruta completa en Maps */}
+            {clientesAsignados.filter(c => c.latitud && c.longitud).length >= 2 && (
+              <a href={(() => {
+                const coords = clientesAsignados.filter(c => c.latitud && c.longitud);
+                if (coords.length < 2) return '#';
+                const dest = coords[coords.length - 1];
+                const waypoints = coords.slice(0, -1).map(c => `${c.latitud},${c.longitud}`).join('|');
+                return `https://www.google.com/maps/dir/?api=1&destination=${dest.latitud},${dest.longitud}&waypoints=${waypoints}`;
+              })()}
+                 target="_blank" rel="noopener noreferrer"
+                 className="mt-3 block w-full text-center py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-xl transition-colors">
+                🗺️ Ver ruta completa en Maps
+              </a>
+            )}
           </div>
         )}
 

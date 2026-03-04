@@ -392,6 +392,9 @@ export function useSupaStore(userId, userName) {
           nombre: c.nombre, rfc: c.rfc, regimen: c.regimen,
           uso_cfdi: c.usoCfdi || 'G03', cp: c.cp, correo: c.correo,
           tipo: c.tipo, contacto: c.contacto,
+          calle: c.calle || null, colonia: c.colonia || null,
+          ciudad: c.ciudad || 'Hermosillo', zona: c.zona || null,
+          latitud: c.latitud || null, longitud: c.longitud || null,
         }).select('id').single();
         if (error) {
           console.error('[addCliente]', error.message, error.code);
@@ -414,6 +417,12 @@ export function useSupaStore(userId, userName) {
         if (c.tipo     !== undefined) update.tipo     = c.tipo;
         if (c.contacto !== undefined) update.contacto = c.contacto;
         if (c.estatus  !== undefined) update.estatus  = c.estatus;
+        if (c.calle    !== undefined) update.calle    = c.calle || null;
+        if (c.colonia  !== undefined) update.colonia  = c.colonia || null;
+        if (c.ciudad   !== undefined) update.ciudad   = c.ciudad || null;
+        if (c.zona     !== undefined) update.zona     = c.zona || null;
+        if (c.latitud  !== undefined) update.latitud  = c.latitud || null;
+        if (c.longitud !== undefined) update.longitud = c.longitud || null;
         const { error } = await supabase.from('clientes').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar cliente'); return error; }
         log('Editar', 'Clientes', `ID ${id}`);

@@ -37,13 +37,14 @@ export function ClientesView({ data, actions }) {
   const [filterTipo, setFilterTipo] = useState("");
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
-  const empty = { nombre:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",cp:"",correo:"",tipo:"Tienda",contacto:"" };
+  const [geocoding, setGeocoding] = useState(false);
+  const empty = { nombre:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",cp:"",correo:"",tipo:"Tienda",contacto:"",calle:"",colonia:"",ciudad:"Hermosillo",zona:"",latitud:"",longitud:"" };
   const [form, setForm] = useState(empty);
 
   const dSearch = useDebounce(search);
 
   const openNew = () => { setForm(empty); setErrors({}); setModal("new"); };
-  const openEdit = (c) => { setForm({ nombre:s(c.nombre),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto) }); setErrors({}); setModal(c); };
+  const openEdit = (c) => { setForm({ nombre:s(c.nombre),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Hermosillo",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"" }); setErrors({}); setModal(c); };
 
   const save = () => {
     const e = {};
@@ -96,6 +97,20 @@ export function ClientesView({ data, actions }) {
         <FormInput label="Correo" type="email" value={form.correo} onChange={e=>setForm({...form,correo:e.target.value})} />
         <FormSelect label="Tipo" options={["Tienda","Restaurante","Cadena","Hotel","Nevería","General","Otro"]} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} />
         <FormInput label="Teléfono" value={form.contacto} onChange={e=>setForm({...form,contacto:e.target.value})} />
+      </div>
+      <div className="border-t border-slate-200 pt-4 mt-4">
+        <h4 className="text-sm font-semibold text-slate-700 mb-3">📍 Dirección para rutas</h4>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <FormInput label="Calle y número" value={form.calle} onChange={e=>setForm({...form,calle:e.target.value})} placeholder="Av. Revolución #123" />
+          <FormInput label="Colonia" value={form.colonia} onChange={e=>setForm({...form,colonia:e.target.value})} placeholder="Centro" />
+          <FormInput label="Ciudad" value={form.ciudad} onChange={e=>setForm({...form,ciudad:e.target.value})} />
+          <FormSelect label="Zona" options={["","Centro","Norte","Sur","Oriente","Poniente","Industrial","Periférico Norte","Periférico Sur"]} value={form.zona} onChange={e=>setForm({...form,zona:e.target.value})} />
+        </div>
+        <div className="flex items-center gap-2 mt-3">
+          <span className="text-xs text-slate-500">Coordenadas:</span>
+          <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded">{form.latitud && form.longitud ? `${form.latitud}, ${form.longitud}` : "Sin geocodificar"}</span>
+          {form.calle && form.colonia && <button type="button" disabled={geocoding} onClick={async()=>{ setGeocoding(true); const geo=await import('../../utils/geocoding.js').then(m=>m.geocodeDireccion(`${form.calle}, ${form.colonia}, ${form.ciudad||'Hermosillo'}, Sonora, México`)); if(geo){ setForm(f=>({...f,latitud:geo.lat,longitud:geo.lng})); toast?.success('Ubicación obtenida'); } else { toast?.error('No se pudo geocodificar'); } setGeocoding(false); }} className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg disabled:opacity-50">{geocoding?'Buscando...':'📍 Obtener ubicación'}</button>}
+        </div>
       </div>
       <div className="space-y-3 border-t border-slate-200 pt-4 mt-5">
         {modal !== "new" && (
@@ -823,6 +838,26 @@ export function RutasView({ data, actions }) {
     });
   }, [form.clientesIds, data.clientes]);
 
+  // Agrupar clientes disponibles por zona para sugerencias inteligentes
+  const clientesPorZona = useMemo(() => {
+    const zonas = {};
+    (data.clientes || []).forEach(c => {
+      const zona = s(c.zona) || 'Sin zona';
+      if (!zonas[zona]) zonas[zona] = [];
+      zonas[zona].push(c);
+    });
+    return zonas;
+  }, [data.clientes]);
+
+  // Sugerir clientes de la misma zona que los ya seleccionados
+  const zonasSeleccionadas = useMemo(() => {
+    const z = new Set();
+    clientesSeleccionados.forEach(c => { if (c.zona) z.add(c.zona); });
+    return Array.from(z);
+  }, [clientesSeleccionados]);
+
+  const [filterZona, setFilterZona] = useState('');
+
   const toggleCliente = (clienteId) => {
     const id = String(clienteId);
     setForm(prev => ({
@@ -1166,8 +1201,9 @@ export function RutasView({ data, actions }) {
                     <span className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-content text-xs font-bold">{idx + 1}</span>
                     <div>
                       <p className="text-sm font-semibold text-slate-800">{s(c.nombre)}</p>
-                      {s(c.contacto) && <p className="text-xs text-purple-600">📞 {s(c.contacto)}</p>}
-                      {s(c.correo) && <p className="text-xs text-slate-400">✉️ {s(c.correo)}</p>}
+                      {s(c.zona) && <span className="inline-block text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full mr-1">📍 {s(c.zona)}</span>}
+                      {c.latitud && c.longitud && <span className="inline-block text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">🗺️ GPS</span>}
+                      {s(c.contacto) && <p className="text-xs text-purple-600 mt-0.5">📞 {s(c.contacto)}</p>}
                     </div>
                   </div>
                   <button onClick={() => toggleCliente(c.id)} className="text-red-500 hover:text-red-700 p-1">
@@ -1179,34 +1215,62 @@ export function RutasView({ data, actions }) {
           )}
 
           {/* Buscar y agregar clientes */}
-          <div className="relative">
-            <input 
-              type="text" 
-              value={searchCliente} 
-              onChange={e => setSearchCliente(e.target.value)}
-              placeholder="Buscar cliente por nombre..."
-              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-purple-400"
-            />
+          <div className="flex gap-2 items-center">
+            <div className="flex-1 relative">
+              <input 
+                type="text" 
+                value={searchCliente} 
+                onChange={e => setSearchCliente(e.target.value)}
+                placeholder="Buscar cliente por nombre..."
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-purple-400"
+              />
+            </div>
+            <select 
+              value={filterZona} 
+              onChange={e => setFilterZona(e.target.value)}
+              className="border border-slate-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-purple-400"
+            >
+              <option value="">Todas zonas</option>
+              {Object.keys(clientesPorZona).sort().map(z => <option key={z} value={z}>{z} ({clientesPorZona[z].length})</option>)}
+            </select>
           </div>
-          {searchCliente && (
+          {zonasSeleccionadas.length > 0 && filterZona === '' && (
+            <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
+              <p className="text-xs text-green-700 font-medium">Sugerencia: Clientes ya seleccionados están en zona {zonasSeleccionadas.join(', ')}</p>
+              <button 
+                onClick={() => setFilterZona(zonasSeleccionadas[0])} 
+                className="text-xs text-green-600 underline mt-1"
+              >
+                Filtrar por {zonasSeleccionadas[0]}
+              </button>
+            </div>
+          )}
+          {(searchCliente || filterZona) && (
             <div className="mt-2 max-h-40 overflow-y-auto border border-slate-200 rounded-lg bg-white">
-              {clientesFiltrados.filter(c => !form.clientesIds.includes(String(c.id))).slice(0, 10).map(c => (
+              {clientesFiltrados
+                .filter(c => !form.clientesIds.includes(String(c.id)))
+                .filter(c => !filterZona || s(c.zona) === filterZona)
+                .slice(0, 10).map(c => (
                 <button 
                   key={c.id} 
                   onClick={() => { toggleCliente(c.id); setSearchCliente(""); }}
                   className="w-full px-3 py-2 text-left hover:bg-purple-50 border-b border-slate-100 last:border-b-0"
                 >
-                  <p className="text-sm font-medium text-slate-800">{s(c.nombre)}</p>
+                  <p className="text-sm font-medium text-slate-800">
+                    {s(c.nombre)}
+                    {s(c.zona) && <span className="ml-2 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">{s(c.zona)}</span>}
+                    {c.latitud && c.longitud && <span className="ml-1 text-xs">🗺️</span>}
+                  </p>
                   <p className="text-xs text-slate-400">{s(c.tipo)} {s(c.contacto) ? `• ${s(c.contacto)}` : ""}</p>
                 </button>
               ))}
-              {clientesFiltrados.filter(c => !form.clientesIds.includes(String(c.id))).length === 0 && (
+              {clientesFiltrados.filter(c => !form.clientesIds.includes(String(c.id))).filter(c => !filterZona || s(c.zona) === filterZona).length === 0 && (
                 <p className="px-3 py-2 text-xs text-slate-400">No se encontraron clientes</p>
               )}
             </div>
           )}
-          {!searchCliente && clientesSeleccionados.length === 0 && (
-            <p className="text-xs text-slate-400 mt-2">Escribe para buscar clientes a asignar a esta ruta</p>
+          {!searchCliente && !filterZona && clientesSeleccionados.length === 0 && (
+            <p className="text-xs text-slate-400 mt-2">Escribe o selecciona una zona para buscar clientes a asignar</p>
           )}
         </div>
       </div>
