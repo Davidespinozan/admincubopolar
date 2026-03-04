@@ -1672,22 +1672,97 @@ export function EmpleadosView({ data, actions }) {
 // ═══════════════════════════════════════════════════
 // NÓMINA (read for now, shows real employee data)
 // ═══════════════════════════════════════════════════
-export function NominaView({ data }) {
+export function NominaView({ data, actions }) {
+  const toast = useToast();
   const emps = data.empleados || [];
+  const periodos = data.nominaPeriodos || [];
   const deptos = ["Ventas y Distribución", "Producción", "Administración", "Staff"];
 
   const empsPorDepto = {};
   for (const d of deptos) empsPorDepto[d] = emps.filter(e => s(e.depto) === d && s(e.estatus) === "Activo");
   const totalSemanal = emps.filter(e => s(e.estatus) === "Activo").reduce((s, e) => s + n(e.salarioDiario) * 7, 0);
 
+  const periodosPendientes = periodos.filter(p => s(p.estatus) !== "Pagado");
+  const periodosPagados = periodos.filter(p => s(p.estatus) === "Pagado").slice(0, 10);
+
+  const generarNuevaSemana = async () => {
+    const hoy = new Date();
+    const inicioSemana = new Date(hoy);
+    inicioSemana.setDate(hoy.getDate() - hoy.getDay()); // Domingo
+    const finSemana = new Date(inicioSemana);
+    finSemana.setDate(inicioSemana.getDate() + 6); // Sábado
+
+    const periodoStr = `${inicioSemana.toISOString().slice(0, 10)} al ${finSemana.toISOString().slice(0, 10)}`;
+    
+    // Verificar si ya existe período de esta semana
+    const existente = periodos.find(p => s(p.periodo).includes(inicioSemana.toISOString().slice(0, 10)));
+    if (existente) {
+      toast?.error("Ya existe un período para esta semana");
+      return;
+    }
+
+    // Crear período de nómina con empleados activos
+    const nuevoTotal = emps.filter(e => s(e.estatus) === "Activo").reduce((sum, e) => sum + n(e.salarioDiario) * 7, 0);
+    await actions.addNominaPeriodo({
+      periodo: periodoStr,
+      fechaInicio: inicioSemana.toISOString().slice(0, 10),
+      fechaFin: finSemana.toISOString().slice(0, 10),
+      empleadosCount: emps.filter(e => s(e.estatus) === "Activo").length,
+      totalBruto: nuevoTotal,
+      totalNeto: nuevoTotal,
+      estatus: "Pendiente",
+    });
+    toast?.success(`Nómina generada: $${nuevoTotal.toLocaleString()}`);
+  };
+
+  const pagarPeriodo = async (p) => {
+    await actions.pagarNomina(p.id);
+  };
+
   return (<div className="space-y-4">
-    <h2 className="text-lg font-bold text-slate-800">Nómina</h2>
+    <div className="flex justify-between items-center">
+      <h2 className="text-lg font-bold text-slate-800">Nómina</h2>
+      <button onClick={generarNuevaSemana} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-semibold">+ Generar nómina semana</button>
+    </div>
     <div className="bg-white rounded-xl p-5 border border-slate-100">
       <p className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Total semanal estimado</p>
       <p className="text-3xl font-extrabold text-slate-800">${totalSemanal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
       <p className="text-xs text-slate-400 mt-1">{emps.filter(e => s(e.estatus) === "Activo").length} empleados activos · Salario × 7 días</p>
     </div>
 
+    {/* Períodos pendientes de pago */}
+    {periodosPendientes.length > 0 && (<div>
+      <h3 className="text-xs font-bold text-amber-600 uppercase tracking-wider mt-4 mb-2">Períodos pendientes de pago</h3>
+      <div className="space-y-2">
+        {periodosPendientes.map(p => (
+          <div key={p.id} className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">{s(p.periodo)}</p>
+              <p className="text-xs text-slate-500">{n(p.empleadosCount)} empleados · ${n(p.totalNeto).toLocaleString()}</p>
+            </div>
+            <button onClick={() => pagarPeriodo(p)} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-semibold">Pagar</button>
+          </div>
+        ))}
+      </div>
+    </div>)}
+
+    {/* Períodos pagados recientes */}
+    {periodosPagados.length > 0 && (<div>
+      <h3 className="text-xs font-bold text-emerald-600 uppercase tracking-wider mt-4 mb-2">Pagados recientemente</h3>
+      <div className="space-y-1.5">
+        {periodosPagados.map(p => (
+          <div key={p.id} className="bg-emerald-50 rounded-xl p-3 border border-emerald-100 flex justify-between items-center">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">{s(p.periodo)}</p>
+              <p className="text-xs text-slate-400">{p.pagadoAt ? new Date(p.pagadoAt).toLocaleDateString() : ""}</p>
+            </div>
+            <p className="text-sm font-bold text-emerald-700">${n(p.totalNeto).toLocaleString()}</p>
+          </div>
+        ))}
+      </div>
+    </div>)}
+
+    {/* Empleados por departamento */}
     {deptos.map(d => {
       const dEmps = empsPorDepto[d] || [];
       if (dEmps.length === 0) return null;

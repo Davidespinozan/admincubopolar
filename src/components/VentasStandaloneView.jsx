@@ -121,8 +121,8 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const cobrar = (ord) => { setPagoModal(ord); setPagoForm({ metodo: "Efectivo", referencia: "" }); };
   const confirmarCobro = () => {
     if (!pagoModal) return;
-    actions.updateOrdenEstatus(pagoModal.id, "Entregada");
-    showToast("Cobrado — " + pagoForm.metodo);
+    actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo);
+    showToast(pagoForm.metodo.includes("Crédito") || pagoForm.metodo.includes("fiado") ? "Venta a crédito registrada" : "Cobrado — " + pagoForm.metodo);
     setPagoModal(null);
   };
 

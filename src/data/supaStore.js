@@ -544,7 +544,7 @@ export function useSupaStore(userId, userName) {
         return e2;
       },
 
-      updateOrdenEstatus: async (id, nuevoEst) => {
+      updateOrdenEstatus: async (id, nuevoEst, metodoPago = null) => {
         let error;
         if (nuevoEst === 'Asignada') {
           ({ error } = await supabase.rpc('asignar_orden', { p_id: id, p_ruta: null, p_uid: uid() }));
@@ -556,23 +556,48 @@ export function useSupaStore(userId, userName) {
             ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id));
           }
         } else {
-          ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id));
+          const updateObj = { estatus: nuevoEst };
+          if (metodoPago) updateObj.metodo_pago = metodoPago;
+          ({ error } = await supabase.from('ordenes').update(updateObj).eq('id', id));
         }
         if (error) { t()?.error('Error al actualizar orden'); return error; }
 
-        // Auto-registrar ingreso contable al cobrar (Entregada)
+        // Auto-registrar ingreso o CxC al cobrar (Entregada)
         if (nuevoEst === 'Entregada') {
-          const { data: ord } = await supabase.from('ordenes').select('folio, total, cliente_id').eq('id', id).single();
+          const { data: ord } = await supabase.from('ordenes').select('folio, total, cliente_id, metodo_pago').eq('id', id).single();
           if (ord && n(ord.total) > 0) {
             const cli = ord.cliente_id
               ? (await supabase.from('clientes').select('nombre').eq('id', ord.cliente_id).single())?.data
               : null;
-            await supabase.from('movimientos_contables').insert({
-              fecha: new Date().toISOString().slice(0, 10),
-              tipo: 'Ingreso', categoria: 'Ventas',
-              concepto: `Cobro ${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
-              monto: centavos(n(ord.total)),
-            });
+            const mPago = metodoPago || s(ord.metodo_pago) || 'Efectivo';
+            const esCredito = mPago.toLowerCase().includes('crédito') || mPago.toLowerCase().includes('fiado');
+
+            if (esCredito && ord.cliente_id) {
+              // Crédito: crear cuenta por cobrar
+              const fechaVenc = new Date();
+              fechaVenc.setDate(fechaVenc.getDate() + 30);
+              await supabase.from('cuentas_por_cobrar').insert({
+                cliente_id: ord.cliente_id,
+                orden_id: id,
+                fecha_venta: new Date().toISOString().slice(0, 10),
+                fecha_vencimiento: fechaVenc.toISOString().slice(0, 10),
+                monto_original: centavos(n(ord.total)),
+                monto_pagado: 0,
+                saldo_pendiente: centavos(n(ord.total)),
+                concepto: `${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
+                estatus: 'Pendiente',
+              });
+              // Incrementar saldo del cliente
+              await supabase.rpc('increment_saldo', { p_cli: ord.cliente_id, p_delta: centavos(n(ord.total)) });
+            } else {
+              // Contado: registrar ingreso contable
+              await supabase.from('movimientos_contables').insert({
+                fecha: new Date().toISOString().slice(0, 10),
+                tipo: 'Ingreso', categoria: 'Ventas',
+                concepto: `Cobro ${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
+                monto: centavos(n(ord.total)),
+              });
+            }
           }
         }
 
@@ -876,19 +901,48 @@ export function useSupaStore(userId, userName) {
         const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_r_seq' });
         const folio = `R-${String(seq || 13).padStart(3, '0')}`;
         const hoy = new Date().toISOString();
+        const cargaObj = r.carga || {};
+        
         const { error } = await supabase.from('rutas').insert({
           folio, 
           nombre: r.nombre, 
           chofer_id: r.choferId || null,
           estatus: 'Programada', 
-          carga: r.carga || {},                     // JSONB: {"HC-25K": 50, ...}
-          carga_autorizada: r.cargaAutorizada || r.carga || {},
+          carga: cargaObj,                     // JSONB: {"HC-25K": 50, ...}
+          carga_autorizada: r.cargaAutorizada || cargaObj,
           extra_autorizado: r.extraAutorizado || {},
           autorizado_at: hoy,
         });
         if (error) { t()?.error('Error al crear ruta'); return error; }
+        
+        // Descontar carga autorizada del primer cuarto frío disponible
+        if (Object.keys(cargaObj).length > 0) {
+          const { data: cuartos } = await supabase.from('cuartos_frios').select('id, stock').order('id');
+          if (cuartos && cuartos.length > 0) {
+            // Distribuir el descuento entre cuartos fríos
+            for (const [sku, qtyNeeded] of Object.entries(cargaObj)) {
+              let remaining = Number(qtyNeeded);
+              for (const cf of cuartos) {
+                if (remaining <= 0) break;
+                const stockObj = (cf.stock && typeof cf.stock === 'object') ? { ...cf.stock } : {};
+                const available = Number(stockObj[sku] || 0);
+                if (available > 0) {
+                  const toTake = Math.min(available, remaining);
+                  stockObj[sku] = available - toTake;
+                  remaining -= toTake;
+                  await supabase.from('cuartos_frios').update({ stock: stockObj }).eq('id', cf.id);
+                  await supabase.from('inventario_mov').insert({
+                    tipo: 'Salida', producto: sku, cantidad: toTake,
+                    origen: `Carga ruta ${folio}`, usuario: uname(),
+                  });
+                }
+              }
+            }
+          }
+        }
+        
         // Log con detalle de carga
-        const cargaTxt = Object.entries(r.carga || {}).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '—';
+        const cargaTxt = Object.entries(cargaObj).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '—';
         log('Autorizar', 'Rutas', `${folio} — ${r.nombre} — Carga: ${cargaTxt}`);
         rf();
       },
