@@ -1520,8 +1520,12 @@ export function useSupaStore(userId, userName) {
       // ── NÓMINA ──
       addNominaPeriodo: async (p) => {
         const { data: row, error } = await supabase.from('nomina_periodos').insert(p).select().single();
-        if (error) { t()?.error('Error al crear período de nómina'); return error; }
-        log('Crear', 'Nómina', `Período ${p.inicio || ''} — ${p.fin || ''}`);
+        if (error) { 
+          console.error('[addNominaPeriodo]', error.message, error.code, error.details);
+          t()?.error('Error al crear período de nómina: ' + error.message); 
+          return error; 
+        }
+        log('Crear', 'Nómina', `Período ${p.fecha_inicio || ''} — ${p.fecha_fin || ''}`);
         rf();
         return row;
       },
