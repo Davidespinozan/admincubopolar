@@ -2797,10 +2797,12 @@ export function CuentasPorPagarView({ data, actions }) {
     };
 
     if (modal === 'new') {
-      await actions.addCuentaPorPagar(payload);
+      const err = await actions.addCuentaPorPagar(payload);
+      if (err) return; // error toast ya se mostró en store
       toast?.success('Cuenta por pagar creada');
     } else {
-      await actions.updateCuentaPorPagar(modal.id, payload);
+      const err = await actions.updateCuentaPorPagar(modal.id, payload);
+      if (err) return;
       toast?.success('Cuenta actualizada');
     }
     setModal(null);

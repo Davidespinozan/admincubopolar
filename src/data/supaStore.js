@@ -1311,7 +1311,11 @@ export function useSupaStore(userId, userName) {
           notas: cxp.notas || '',
           estatus: 'Pendiente',
         });
-        if (error) { t()?.error('Error al crear cuenta por pagar'); return error; }
+        if (error) { 
+          console.error('[addCuentaPorPagar]', error.message, error.code, error.details);
+          t()?.error('Error al crear cuenta por pagar: ' + error.message); 
+          return error; 
+        }
         log('Crear', 'Cuentas por Pagar', `${cxp.proveedor} — $${montoOriginal}`);
         rf();
       },
