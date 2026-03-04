@@ -248,7 +248,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full">
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-4 pb-6" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-4">
-          <div><h1 className="text-lg font-extrabold">CUBOPOLAR</h1><p className="text-xs text-blue-200">{s(user?.nombre)}</p></div>
+          <div><h1 className="text-lg font-extrabold">CUBOPOLAR</h1><p className="text-xs text-blue-100">{s(user?.nombre)}</p></div>
           <button onClick={onLogout} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg font-semibold">Salir</button>
         </div>
         <div className="bg-white/10 rounded-2xl p-4">
@@ -277,7 +277,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 <p className="text-xs text-slate-400">${n(p.precio)} c/u</p>
                 {necesitaPorSku[s(p.sku)] > 0 && <p className="text-xs text-blue-600 font-semibold mt-0.5">Mínimo: {necesitaPorSku[s(p.sku)]}</p>}
               </div>
-              <input type="number" value={carga[s(p.sku)] || ""} onChange={e => setCarga(c => ({ ...c, [s(p.sku)]: e.target.value }))}
+              <input type="number" inputMode="numeric" value={carga[s(p.sku)] || ""} onChange={e => setCarga(c => ({ ...c, [s(p.sku)]: e.target.value }))}
                 className="w-24 text-center text-2xl font-extrabold border-2 border-slate-200 rounded-xl py-3 focus:border-blue-500 focus:outline-none" placeholder="0" />
             </div>
             {carga[s(p.sku)] && n(carga[s(p.sku)]) > 0 && n(carga[s(p.sku)]) < (necesitaPorSku[s(p.sku)] || 0) && (
@@ -299,7 +299,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-4 pb-4" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-2">
-          <div><h1 className="text-base font-extrabold">En ruta</h1><p className="text-xs text-blue-200">{s(user?.nombre)}</p></div>
+          <div><h1 className="text-base font-extrabold">🚚 En ruta</h1><p className="text-xs text-blue-100">{s(user?.nombre)}</p></div>
           <div className="text-right"><p className="text-lg font-extrabold">${totalCobrado.toLocaleString()}</p><p className="text-xs text-blue-200">cobrado</p></div>
         </div>
         <div className="bg-white/10 rounded-xl p-2.5 flex items-center gap-3">
@@ -346,9 +346,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
       {/* Bottom bar */}
       <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[640px] bg-white border-t border-slate-200 px-4 py-3 flex gap-2" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
-        <button onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" }); }} className="flex-1 py-3 bg-emerald-600 text-white text-xs font-bold rounded-xl">+ Venta exprés</button>
-        <button onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="py-3 px-4 bg-amber-100 text-amber-700 text-xs font-bold rounded-xl">Merma</button>
-        <button onClick={() => setStep("cierre")} className="py-3 px-4 bg-slate-700 text-white text-xs font-bold rounded-xl">Cerrar</button>
+        <button onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" }); }} className="flex-1 py-4 bg-emerald-600 text-white text-sm font-bold rounded-xl">+ Venta</button>
+        <button onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="py-4 px-5 bg-amber-100 text-amber-700 text-sm font-bold rounded-xl">⚠️ Merma</button>
+        <button onClick={() => setStep("cierre")} className="py-4 px-5 bg-slate-700 text-white text-sm font-bold rounded-xl">🏁 Cerrar ruta</button>
       </div>
 
       {/* Modal cobro */}
@@ -439,7 +439,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 })}</div>
               </div>
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad</label>
-                <input type="number" value={vForm.cant} onChange={e => setVForm(f=>({...f,cant:e.target.value}))} className="w-full px-4 py-3 border border-slate-200 rounded-xl text-2xl font-extrabold text-center" placeholder="0" autoFocus />
+                <input type="number" inputMode="numeric" value={vForm.cant} onChange={e => setVForm(f=>({...f,cant:e.target.value}))} className="w-full px-4 py-3 border border-slate-200 rounded-xl text-2xl font-extrabold text-center" placeholder="0" autoFocus />
                 {vForm.cant && n(vForm.cant) > (restante[vForm.sku] || 0) && <p className="text-xs text-red-600 font-semibold mt-1">⚠ Solo te quedan {restante[vForm.sku] || 0}</p>}
               </div>
               {vForm.cant && n(vForm.cant) > 0 && n(vForm.cant) <= (restante[vForm.sku] || 0) && (

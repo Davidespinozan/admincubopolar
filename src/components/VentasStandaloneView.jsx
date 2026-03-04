@@ -151,9 +151,9 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
         </button>
 
         <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
-          {[{ k: "ventas", l: "Por cobrar" }, { k: "hoy", l: "Hoy" }, { k: "todas", l: "Todas" }].map(t => (
+          {[{ k: "ventas", l: "📋 Por cobrar" }, { k: "hoy", l: "📅 Hoy" }, { k: "todas", l: "📊 Todas" }].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${tab === t.k ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>
+              className={`flex-1 py-3 text-sm font-semibold rounded-lg transition-all ${tab === t.k ? "bg-white text-slate-800 shadow-sm" : "text-slate-600"}`}>
               {t.l}
             </button>
           ))}
@@ -183,13 +183,13 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
               </div>
               {o.estatus === "Creada" && (
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => cobrar(o)} className="flex-1 py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl active:scale-[0.98] transition-transform">💵 Cobrar</button>
+                  <button onClick={() => cobrar(o)} className="flex-1 py-3.5 bg-emerald-600 text-white text-sm font-bold rounded-xl active:scale-[0.98] transition-transform">💵 Cobrar</button>
                   <button onClick={() => { actions.updateOrdenEstatus(o.id, "Asignada"); showToast("Asignada a ruta"); }}
-                    className="flex-1 py-2.5 bg-blue-50 text-blue-600 text-xs font-bold rounded-xl border border-blue-200">🚚 A ruta</button>
+                    className="flex-1 py-3.5 bg-blue-50 text-blue-600 text-sm font-bold rounded-xl border border-blue-200">🚚 A ruta</button>
                 </div>
               )}
               {o.estatus === "Asignada" && (
-                <button onClick={() => cobrar(o)} className="w-full mt-3 py-2.5 bg-emerald-50 text-emerald-600 text-xs font-bold rounded-xl border border-emerald-200">Cobrar entrega</button>
+                <button onClick={() => cobrar(o)} className="w-full mt-3 py-3.5 bg-emerald-50 text-emerald-600 text-sm font-bold rounded-xl border border-emerald-200">💵 Cobrar entrega</button>
               )}
             </div>
           ))}
@@ -237,7 +237,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                       <div>
                         <label className="block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Teléfono</label>
                         <input value={cliForm.contacto} onChange={e => setCliForm(f => ({ ...f, contacto: e.target.value }))}
-                          className="w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm bg-white" placeholder="618 123 4567" type="tel" />
+                        className="w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm bg-white" placeholder="618 123 4567" type="tel" inputMode="tel" />
                       </div>
                       <div>
                         <label className="block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Tipo</label>

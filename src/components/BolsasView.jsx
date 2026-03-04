@@ -85,14 +85,14 @@ export default function BolsasView({ user, data, actions, onLogout }) {
               <div className="flex items-center justify-between mb-2">
                 <div>
                   <p className="text-sm font-bold text-slate-800">{s(p.nombre)}</p>
-                  <p className="text-xs text-slate-400 font-mono">{s(p.sku)}</p>
+                  <p className="text-xs text-slate-500 font-mono">{s(p.sku)}</p>
                 </div>
                 <div className={`px-3 py-1 rounded-full text-xs font-bold ${n(p.stock) < 200 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
                   {n(p.stock) < 200 ? "BAJO" : "OK"}
                 </div>
               </div>
               <p className="text-4xl font-extrabold text-slate-800">{n(p.stock).toLocaleString()}</p>
-              <p className="text-xs text-slate-400 mt-1">en almacén</p>
+              <p className="text-xs text-slate-500 mt-1">en almacén</p>
               {(mov.entradas > 0 || mov.salidas > 0) && (
                 <div className="grid grid-cols-2 gap-2 mt-3">
                   {mov.entradas > 0 && <div className="bg-emerald-50 rounded-xl p-2.5"><p className="text-xs text-emerald-600">Entradas hoy</p><p className="text-lg font-extrabold text-emerald-700">+{mov.entradas.toLocaleString()}</p></div>}
@@ -173,7 +173,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base" placeholder="Ej: Bolsas del Norte" />
                   </div>
                   <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Costo total (opcional)</label>
+                    <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Costo total (opcional)</label>
                     <input type="number" inputMode="decimal" value={form.costo} onChange={e => setForm(f => ({ ...f, costo: e.target.value }))}
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base text-center" placeholder="$0.00" />
                   </div>

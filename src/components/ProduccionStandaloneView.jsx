@@ -135,9 +135,9 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* Tabs */}
       <div className="px-4 pt-3">
         <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4">
-          {[{ k: "producir", l: "Producción" }, { k: "cuartos", l: "Congeladores" }, { k: "mermas", l: "Mermas" }].map(t => (
+          {[{ k: "producir", l: "🧊 Producción" }, { k: "cuartos", l: "❄️ Congeladores" }, { k: "mermas", l: "⚠️ Mermas" }].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
-              className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all ${tab === t.k ? "bg-white text-slate-800 shadow-sm" : "text-slate-500"}`}>
+              className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all ${tab === t.k ? "bg-white text-slate-800 shadow-sm" : "text-slate-600"}`}>
               {t.l}
             </button>
           ))}
@@ -161,7 +161,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-sm font-bold text-slate-800">{n(p.cantidad).toLocaleString()} × {s(p.sku)}</p>
-                      <p className="text-xs text-slate-400">{s(p.maquina)} · {s(p.turno)}</p>
+                      <p className="text-xs text-slate-500">{s(p.maquina)} · {s(p.turno)}</p>
                     </div>
                     <span className="text-xs text-emerald-600 font-bold bg-emerald-100 px-2 py-1 rounded-lg">✓ Congelado</span>
                   </div>
@@ -227,7 +227,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     </div>
                     <div>
                       <p className="text-base font-bold text-slate-800">{s(cf.nombre)}</p>
-                      <p className="text-xs text-slate-400">{n(cf.temp, -50, 10)}°C · {n(cf.capacidad)}%</p>
+                      <p className="text-xs text-slate-500">{n(cf.temp, -50, 10)}°C · {n(cf.capacidad)}%</p>
                     </div>
                   </div>
                   <div className="text-right">
@@ -281,7 +281,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad</label>
-                <input type="number" value={form.cantidad} onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
+                <input type="number" inputMode="numeric" value={form.cantidad} onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="Ej: 500" autoFocus />
               </div>
               {bolsaSku && (
@@ -376,7 +376,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   ))}
                 </div>
               </div>
-              <input type="number" value={tForm.cantidad} onChange={e => setTForm(f => ({ ...f, cantidad: e.target.value }))}
+              <input type="number" inputMode="numeric" value={tForm.cantidad} onChange={e => setTForm(f => ({ ...f, cantidad: e.target.value }))}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" />
             </div>
             <button onClick={hacerTraspaso} disabled={!tForm.cantidad || n(tForm.cantidad) <= 0 || tForm.origen === tForm.destino}
@@ -406,7 +406,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   ))}
                 </div>
               </div>
-              <input type="number" value={sacarForm.cantidad} onChange={e => setSacarForm(f => ({ ...f, cantidad: e.target.value }))}
+              <input type="number" inputMode="numeric" value={sacarForm.cantidad} onChange={e => setSacarForm(f => ({ ...f, cantidad: e.target.value }))}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" autoFocus />
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Motivo</label>
