@@ -1956,7 +1956,7 @@ export function NominaView({ data, actions }) {
     // Crear período de nómina con empleados activos
     const empsActivos = emps.filter(e => s(e.estatus) === "Activo");
     const nuevoTotal = empsActivos.reduce((sum, e) => sum + n(e.salarioDiario) * 7, 0);
-    const err = await actions.addNominaPeriodo({
+    const result = await actions.addNominaPeriodo({
       numero_semana: numeroSemana,
       ejercicio: ejercicio,
       fecha_inicio: inicioSemana.toISOString().slice(0, 10),
@@ -1968,7 +1968,7 @@ export function NominaView({ data, actions }) {
       total_neto: nuevoTotal,
       estatus: "Borrador", // Enum: Borrador, Calculada, Pagado
     });
-    if (err) return; // Error toast ya mostrado en store
+    if (result !== null) return; // Error toast ya mostrado en store
     toast?.success(`Nómina semana ${numeroSemana} generada: $${nuevoTotal.toLocaleString()}`);
   };
 

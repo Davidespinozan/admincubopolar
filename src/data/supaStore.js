@@ -1523,11 +1523,11 @@ export function useSupaStore(userId, userName) {
         if (error) { 
           console.error('[addNominaPeriodo]', error.message, error.code, error.details);
           t()?.error('Error al crear período de nómina: ' + error.message); 
-          return error; 
+          return { error }; // Devolver objeto con error para distinguir de éxito
         }
         log('Crear', 'Nómina', `Período ${p.fecha_inicio || ''} — ${p.fecha_fin || ''}`);
         rf();
-        return row;
+        return null; // null = éxito
       },
 
       addNominaRecibo: async (r) => {
