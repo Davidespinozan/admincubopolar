@@ -248,6 +248,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       const cobrosPorMetodo = {};
       for (const e of entregas) cobrosPorMetodo[e.pago] = (cobrosPorMetodo[e.pago]||0) + n(e.total);
       actions.cerrarRutaCompleta({
+        rutaId: miRutaActiva?.id, // ID de la ruta activa
         choferId: user?.id,
         choferNombre: s(user?.nombre),
         entregas,

@@ -1638,10 +1638,19 @@ export function useSupaStore(userId, userName) {
 
       // ── CERRAR RUTA COMPLETA (chofer) ──
       cerrarRutaCompleta: async (reporte) => {
-        const { choferNombre, entregas, mermas: mermasArr, cobros, carga } = reporte;
+        const { rutaId, choferNombre, entregas, mermas: mermasArr, cobros, carga } = reporte;
         const hoy = new Date().toISOString().slice(0, 10);
         // Default vencimiento: 15 días para crédito
         const fechaVenc = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+        // 0. Actualizar estatus de la ruta a Finalizada
+        if (rutaId) {
+          const { error: rutaErr } = await supabase.from('rutas').update({
+            estatus: 'Finalizada',
+            fecha_fin: hoy,
+          }).eq('id', rutaId);
+          if (rutaErr) console.warn('[cerrarRutaCompleta] Error actualizando ruta:', rutaErr.message);
+        }
 
         // 1. Crear órdenes + líneas + ingreso/pago/CxC por cada entrega
         for (const e of (entregas || [])) {

@@ -1703,27 +1703,35 @@ export function NominaView({ data, actions }) {
     const finSemana = new Date(inicioSemana);
     finSemana.setDate(inicioSemana.getDate() + 6); // Sábado
 
-    const periodoStr = `${inicioSemana.toISOString().slice(0, 10)} al ${finSemana.toISOString().slice(0, 10)}`;
+    // Calcular número de semana y ejercicio (año)
+    const startOfYear = new Date(hoy.getFullYear(), 0, 1);
+    const daysSinceStart = Math.floor((inicioSemana - startOfYear) / (24 * 60 * 60 * 1000));
+    const numeroSemana = Math.ceil((daysSinceStart + startOfYear.getDay() + 1) / 7);
+    const ejercicio = hoy.getFullYear();
     
     // Verificar si ya existe período de esta semana
-    const existente = periodos.find(p => s(p.periodo).includes(inicioSemana.toISOString().slice(0, 10)));
+    const existente = periodos.find(p => n(p.numeroSemana) === numeroSemana && n(p.ejercicio) === ejercicio);
     if (existente) {
       toast?.error("Ya existe un período para esta semana");
       return;
     }
 
     // Crear período de nómina con empleados activos
-    const nuevoTotal = emps.filter(e => s(e.estatus) === "Activo").reduce((sum, e) => sum + n(e.salarioDiario) * 7, 0);
+    const empsActivos = emps.filter(e => s(e.estatus) === "Activo");
+    const nuevoTotal = empsActivos.reduce((sum, e) => sum + n(e.salarioDiario) * 7, 0);
     await actions.addNominaPeriodo({
-      periodo: periodoStr,
-      fechaInicio: inicioSemana.toISOString().slice(0, 10),
-      fechaFin: finSemana.toISOString().slice(0, 10),
-      empleadosCount: emps.filter(e => s(e.estatus) === "Activo").length,
-      totalBruto: nuevoTotal,
-      totalNeto: nuevoTotal,
-      estatus: "Pendiente",
+      numero_semana: numeroSemana,
+      ejercicio: ejercicio,
+      fecha_inicio: inicioSemana.toISOString().slice(0, 10),
+      fecha_fin: finSemana.toISOString().slice(0, 10),
+      fecha_pago: finSemana.toISOString().slice(0, 10), // Pagas el sábado
+      dias_pago: 7,
+      total_percepciones: nuevoTotal,
+      total_deducciones: 0,
+      total_neto: nuevoTotal,
+      estatus: "Borrador", // Enum: Borrador, Calculada, Pagado
     });
-    toast?.success(`Nómina generada: $${nuevoTotal.toLocaleString()}`);
+    toast?.success(`Nómina semana ${numeroSemana} generada: $${nuevoTotal.toLocaleString()}`);
   };
 
   const pagarPeriodo = async (p) => {
@@ -1748,8 +1756,8 @@ export function NominaView({ data, actions }) {
         {periodosPendientes.map(p => (
           <div key={p.id} className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex justify-between items-center">
             <div>
-              <p className="text-sm font-semibold text-slate-800">{s(p.periodo)}</p>
-              <p className="text-xs text-slate-500">{n(p.empleadosCount)} empleados · ${n(p.totalNeto).toLocaleString()}</p>
+              <p className="text-sm font-semibold text-slate-800">Semana {n(p.numeroSemana)} — {n(p.ejercicio)}</p>
+              <p className="text-xs text-slate-500">{s(p.fechaInicio)} al {s(p.fechaFin)} · ${n(p.totalNeto).toLocaleString()}</p>
             </div>
             <button onClick={() => pagarPeriodo(p)} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-semibold">Pagar</button>
           </div>
@@ -1764,8 +1772,8 @@ export function NominaView({ data, actions }) {
         {periodosPagados.map(p => (
           <div key={p.id} className="bg-emerald-50 rounded-xl p-3 border border-emerald-100 flex justify-between items-center">
             <div>
-              <p className="text-sm font-semibold text-slate-800">{s(p.periodo)}</p>
-              <p className="text-xs text-slate-400">{p.pagadoAt ? new Date(p.pagadoAt).toLocaleDateString() : ""}</p>
+              <p className="text-sm font-semibold text-slate-800">Semana {n(p.numeroSemana)} — {n(p.ejercicio)}</p>
+              <p className="text-xs text-slate-400">{s(p.fechaInicio)} al {s(p.fechaFin)}</p>
             </div>
             <p className="text-sm font-bold text-emerald-700">${n(p.totalNeto).toLocaleString()}</p>
           </div>
