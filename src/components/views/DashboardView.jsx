@@ -22,6 +22,7 @@ const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto"
 
 export default function DashboardView({ data }) {
   const [exportando, setExportando] = useState(null);
+  const [periodoReporte, setPeriodoReporte] = useState('mes');
   const hoy = new Date();
   const y = hoy.getFullYear();
   const m = hoy.getMonth();
@@ -37,6 +38,52 @@ export default function DashboardView({ data }) {
     return base;
   }, [y, m, d]);
   const inicioMes = useMemo(() => new Date(y, m, 1), [y, m]);
+
+  // Función para filtrar datos por período seleccionado
+  const filtrarPorPeriodo = (arr, campoFecha = 'fecha') => {
+    if (!arr || arr.length === 0) return arr;
+    if (periodoReporte === 'todo') return arr;
+    
+    const ahora = new Date();
+    let desde, hasta;
+    
+    switch (periodoReporte) {
+      case 'hoy':
+        desde = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+        hasta = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + 1);
+        break;
+      case 'semana':
+        desde = new Date(ahora);
+        desde.setDate(desde.getDate() - 7);
+        hasta = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate() + 1);
+        break;
+      case 'mes':
+        desde = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+        hasta = new Date(ahora.getFullYear(), ahora.getMonth() + 1, 1);
+        break;
+      case 'mes-1':
+        desde = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+        hasta = new Date(ahora.getFullYear(), ahora.getMonth(), 1);
+        break;
+      case 'mes-2':
+        desde = new Date(ahora.getFullYear(), ahora.getMonth() - 2, 1);
+        hasta = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+        break;
+      case 'mes-3':
+        desde = new Date(ahora.getFullYear(), ahora.getMonth() - 3, 1);
+        hasta = new Date(ahora.getFullYear(), ahora.getMonth() - 2, 1);
+        break;
+      default:
+        return arr;
+    }
+    
+    return arr.filter(item => {
+      const fechaVal = item[campoFecha] || item.createdAt || item.created_at;
+      if (!fechaVal) return false;
+      const fecha = new Date(fechaVal);
+      return fecha >= desde && fecha < hasta;
+    });
+  };
 
   const productosHielo = useMemo(
     () => (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado"),
@@ -361,15 +408,46 @@ export default function DashboardView({ data }) {
 
       {/* REPORTES */}
       <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5 mb-4 md:mb-6">
-        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.ClipboardCheck /> Exportar Reportes</h3>
+        <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.ClipboardCheck /> Exportar Reportes</h3>
+        
+        {/* Selector de período */}
+        <div className="flex flex-wrap items-center gap-2 mb-4 p-3 bg-slate-50 rounded-xl">
+          <span className="text-xs font-semibold text-slate-600">Período:</span>
+          <select 
+            value={periodoReporte}
+            onChange={e => setPeriodoReporte(e.target.value)}
+            className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white font-medium"
+          >
+            <option value="todo">Todo el historial</option>
+            <option value="hoy">Hoy</option>
+            <option value="semana">Esta semana</option>
+            <option value="mes">Este mes</option>
+            <option value="mes-1">{MESES[(hoy.getMonth() - 1 + 12) % 12]} {hoy.getMonth() === 0 ? hoy.getFullYear() - 1 : hoy.getFullYear()}</option>
+            <option value="mes-2">{MESES[(hoy.getMonth() - 2 + 12) % 12]} {hoy.getMonth() <= 1 ? hoy.getFullYear() - 1 : hoy.getFullYear()}</option>
+            <option value="mes-3">{MESES[(hoy.getMonth() - 3 + 12) % 12]} {hoy.getMonth() <= 2 ? hoy.getFullYear() - 1 : hoy.getFullYear()}</option>
+          </select>
+          {periodoReporte !== 'todo' && (
+            <span className="text-xs text-slate-500">
+              {periodoReporte === 'hoy' && `📅 ${hoy.toLocaleDateString('es-MX')}`}
+              {periodoReporte === 'semana' && `📅 Últimos 7 días`}
+              {periodoReporte === 'mes' && `📅 ${MESES[hoy.getMonth()]} ${hoy.getFullYear()}`}
+              {periodoReporte.startsWith('mes-') && `📅 Mes completo`}
+            </span>
+          )}
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
           {[
-            { id: 'ventas', label: 'Ventas', icon: '💰', fnName: 'reporteVentas', args: () => [data.ordenes || []] },
-            { id: 'produccion', label: 'Producción', icon: '🧊', fnName: 'reporteProduccion', args: () => [data.produccion || []] },
+            { id: 'ventas', label: 'Ventas', icon: '💰', fnName: 'reporteVentas', args: () => [filtrarPorPeriodo(data.ordenes || [], 'fecha')] },
+            { id: 'produccion', label: 'Producción', icon: '🧊', fnName: 'reporteProduccion', args: () => [filtrarPorPeriodo(data.produccion || [], 'fecha')] },
             { id: 'inventario', label: 'Inventario', icon: '📦', fnName: 'reporteInventario', args: () => [data.productos || [], data.cuartosFrios || []] },
             { id: 'clientes', label: 'Clientes', icon: '👥', fnName: 'reporteClientes', args: () => [data.clientes || []] },
-            { id: 'rutas', label: 'Rutas', icon: '🚚', fnName: 'reporteRutas', args: () => [data.rutas || []] },
-            { id: 'financiero', label: 'Financiero', icon: '📊', fnName: 'reporteFinanciero', args: () => [{ contabilidad: [...(data.contabilidad?.ingresos||[]), ...(data.contabilidad?.egresos||[])], cxc: data.cuentasPorCobrar || [], cxp: data.cuentasPorPagar || [] }] },
+            { id: 'rutas', label: 'Rutas', icon: '🚚', fnName: 'reporteRutas', args: () => [filtrarPorPeriodo(data.rutas || [], 'fecha')] },
+            { id: 'financiero', label: 'Financiero', icon: '📊', fnName: 'reporteFinanciero', args: () => [{ 
+              contabilidad: filtrarPorPeriodo([...(data.contabilidad?.ingresos||[]), ...(data.contabilidad?.egresos||[])], 'fecha'), 
+              cxc: data.cuentasPorCobrar || [], 
+              cxp: data.cuentasPorPagar || [] 
+            }] },
           ].map(rep => (
             <div key={rep.id} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
               <div className="flex items-center gap-2 mb-2">
