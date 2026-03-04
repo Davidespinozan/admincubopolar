@@ -7,10 +7,27 @@ export const s = (v) => (typeof v === 'string' ? v : (v == null ? '' : String(v)
 
 // ── Null-safe number: null/undefined/NaN/Infinity → 0, clamped
 // For stock, precio, cantidad — always ≥ 0
+// Warns in development if value looks like corrupted data
 export const n = (v, min = 0, max = 999999) => {
   const num = Number(v);
-  if (!Number.isFinite(num)) return 0;
+  if (!Number.isFinite(num)) {
+    // Warn about potentially corrupted data in development
+    if (typeof v === 'string' && v.length > 0 && !/^\s*$/.test(v)) {
+      console.warn('[n()] valor no numérico:', JSON.stringify(v), '→ usando', min);
+    }
+    return min;
+  }
   return Math.min(max, Math.max(min, num));
+};
+
+// ── Strict number parser for critical monetary values
+// Throws if value is not a valid number - use for prices, totals, payments
+export const nStrict = (v, fieldName = 'valor') => {
+  const num = Number(v);
+  if (!Number.isFinite(num) || v === '' || v === null || v === undefined) {
+    throw new Error(`${fieldName} debe ser un número válido, recibido: ${JSON.stringify(v)}`);
+  }
+  return num;
 };
 
 // ── FIX F1: Centavo-safe rounding for all monetary operations.

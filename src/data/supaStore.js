@@ -13,11 +13,31 @@ import { useToast } from '../components/ui/Toast';
 //   auditoria      → columna "usuario" texto (no "usuario_id")
 // ═══════════════════════════════════════════════════════════════
 
-// Fetch helper — returns [] on error, never throws
-const safeRows = async (query) => {
-  const { data, error } = await query;
-  if (error) console.warn('[supaStore] ❌', error.message, '| code:', error.code);
-  return data || [];
+// Fetch helper — returns [] on error for queries, throws for critical mutations
+// Usage: safeRows(query) for reads | safeRows(query, { critical: true }) for writes
+const safeRows = async (query, options = {}) => {
+  const { critical = false, operation = 'query' } = options;
+  try {
+    const { data, error } = await query;
+    if (error) {
+      console.error('[supaStore] ❌', operation, '|', error.message, '| code:', error.code);
+      // Dispatch custom event for error tracking (can be caught by ErrorBoundary or Sentry)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('supabase-error', { 
+          detail: { operation, error: error.message, code: error.code } 
+        }));
+      }
+      if (critical) {
+        throw new Error(`Error en ${operation}: ${error.message}`);
+      }
+      return [];
+    }
+    return data || [];
+  } catch (e) {
+    console.error('[supaStore] ❌ Exception:', operation, '|', e.message);
+    if (critical) throw e;
+    return [];
+  }
 };
 
 // snake_case → camelCase
@@ -482,6 +502,11 @@ export function useSupaStore(userId, userName) {
         }).filter(Boolean);
         if (items.length === 0) return { message: 'Productos inválidos' };
 
+        // Validar cantidades positivas
+        if (items.some(i => i.qty <= 0)) {
+          return { message: 'Las cantidades deben ser positivas' };
+        }
+
         const [{ data: prods }, { data: pes }] = await Promise.all([
           supabase.from('productos').select('sku, precio, stock'),
           supabase.from('precios_esp').select('sku, precio').eq('cliente_id', o.clienteId),
@@ -490,8 +515,10 @@ export function useSupaStore(userId, userName) {
         for (const item of items) {
           const p = (prods || []).find(x => x.sku === item.sku);
           if (!p) return { message: `SKU ${item.sku} no existe` };
-          // Note: productos.stock is not kept in sync for finished goods — stock lives
-          // in cuartos_frios.stock. Do not block here; UI already shows a warning.
+          // Validar que el precio no es negativo
+          const pe = (pes || []).find(x => x.sku === item.sku);
+          const precio = pe ? Number(pe.precio) : Number(p?.precio || 0);
+          if (precio < 0) return { message: `Precio inválido para ${item.sku}` };
         }
 
         let total = 0;
@@ -504,6 +531,11 @@ export function useSupaStore(userId, userName) {
           return { sku: item.sku, cantidad: item.qty, precio_unit: unitPrice, subtotal };
         });
         total = centavos(total);
+
+        // Validar que el total sea positivo
+        if (total <= 0) {
+          return { message: 'El total de la orden debe ser mayor a 0' };
+        }
 
         const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
         const folio = `OV-${String(seq || 42).padStart(4, '0')}`;

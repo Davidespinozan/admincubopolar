@@ -4,11 +4,31 @@ import { s, n } from '../utils/safe';
 export default function BolsasView({ user, data, actions, onLogout }) {
   const [modal, setModal] = useState(null); // "entrada" | "salida"
   const [form, setForm] = useState({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
-  const [historial, setHistorial] = useState([]);
   const [toast, setToast] = useState("");
 
   const empaques = useMemo(() => data.productos.filter(p => s(p.tipo) === "Empaque"), [data.productos]);
+  const empaqueSKUs = useMemo(() => new Set(empaques.map(e => s(e.sku))), [empaques]);
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
+
+  // Cargar historial del día desde la BD (inventarioMov) para empaques
+  const historial = useMemo(() => {
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    return (data.inventarioMov || [])
+      .filter(m => {
+        const fecha = s(m.createdAt || m.created_at || m.fecha);
+        const sku = s(m.producto || m.sku);
+        return fecha.startsWith(hoyStr) && empaqueSKUs.has(sku);
+      })
+      .map(m => ({
+        id: m.id,
+        tipo: s(m.tipo).toLowerCase() === 'entrada' ? 'entrada' : 'salida',
+        sku: s(m.producto || m.sku),
+        cantidad: Math.abs(n(m.cantidad)),
+        motivo: s(m.origen),
+        hora: new Date(m.createdAt || m.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })
+      }))
+      .sort((a, b) => b.id - a.id);
+  }, [data.inventarioMov, empaqueSKUs]);
 
   const movHoy = useMemo(() => {
     const r = {};
@@ -36,11 +56,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
       form.esCredito
     );
 
-    setHistorial(prev => [{
-      id: Date.now(), tipo: esEntrada ? "entrada" : "salida", sku: form.sku,
-      cantidad: n(form.cantidad), motivo,
-      hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })
-    }, ...prev]);
+    // El historial se actualiza automáticamente via realtime desde inventarioMov
 
     showToast((esEntrada ? "+" : "-") + form.cantidad + " " + form.sku + (form.esCredito ? " (crédito)" : ""));
     setModal(null);
