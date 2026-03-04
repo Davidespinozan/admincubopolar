@@ -947,27 +947,41 @@ export function useSupaStore(userId, userName) {
         });
         if (error) { t()?.error('Error al crear ruta'); return error; }
         
-        // Descontar carga autorizada del primer cuarto frío disponible
+        // Descontar carga autorizada usando RPC atómica
         if (Object.keys(cargaObj).length > 0) {
           const { data: cuartos } = await supabase.from('cuartos_frios').select('id, stock').order('id');
           if (cuartos && cuartos.length > 0) {
-            // Distribuir el descuento entre cuartos fríos
+            // Calcular cambios distribuyendo entre cuartos fríos
+            const changes = [];
             for (const [sku, qtyNeeded] of Object.entries(cargaObj)) {
               let remaining = Number(qtyNeeded);
               for (const cf of cuartos) {
                 if (remaining <= 0) break;
-                const stockObj = (cf.stock && typeof cf.stock === 'object') ? { ...cf.stock } : {};
+                const stockObj = (cf.stock && typeof cf.stock === 'object') ? cf.stock : {};
                 const available = Number(stockObj[sku] || 0);
                 if (available > 0) {
                   const toTake = Math.min(available, remaining);
-                  stockObj[sku] = available - toTake;
                   remaining -= toTake;
-                  await supabase.from('cuartos_frios').update({ stock: stockObj }).eq('id', cf.id);
-                  await supabase.from('inventario_mov').insert({
-                    tipo: 'Salida', producto: sku, cantidad: toTake,
-                    origen: `Carga ruta ${folio}`, usuario: uname(),
+                  changes.push({
+                    cuarto_id: cf.id,
+                    sku,
+                    delta: -toTake,  // Negativo para descontar
+                    tipo: 'Salida',
+                    origen: `Carga ruta ${folio}`,
+                    usuario: uname(),
                   });
                 }
+              }
+            }
+            
+            // Ejecutar todos los cambios de forma atómica
+            if (changes.length > 0) {
+              const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
+                p_changes: changes
+              });
+              if (rpcErr) {
+                console.error('[addRuta] Error en descuento atómico:', rpcErr.message);
+                t()?.error('Error al descontar inventario');
               }
             }
           }
@@ -1733,20 +1747,29 @@ export function useSupaStore(userId, userName) {
             if (devuelto > 0) devueltoPorSku[sku] = devuelto;
           }
 
-          // Regresar al primer cuarto frío disponible
+          // Regresar al primer cuarto frío disponible usando RPC atómica
           if (Object.keys(devueltoPorSku).length > 0) {
-            const { data: cfs } = await supabase.from('cuartos_frios').select('id, stock').limit(1);
-            const cf = cfs?.[0];
-            if (cf) {
-              const stockObj = (cf.stock && typeof cf.stock === 'object') ? { ...cf.stock } : {};
-              for (const [sku, qty] of Object.entries(devueltoPorSku)) {
-                stockObj[sku] = (Number(stockObj[sku] || 0)) + qty;
-                await supabase.from('inventario_mov').insert({
-                  tipo: 'Entrada', producto: sku, cantidad: qty,
-                  origen: `Devolución ruta ${choferNombre}`, usuario: choferNombre || uname(),
-                });
+            const { data: cfs } = await supabase.from('cuartos_frios').select('id').limit(1);
+            const cfId = cfs?.[0]?.id;
+            if (cfId) {
+              // Usar función RPC atómica para actualizar stocks
+              const changes = Object.entries(devueltoPorSku).map(([sku, qty]) => ({
+                cuarto_id: cfId,
+                sku,
+                delta: qty,
+                tipo: 'Entrada',
+                origen: `Devolución ruta ${choferNombre}`,
+                usuario: choferNombre || uname(),
+              }));
+              
+              const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', { 
+                p_changes: changes 
+              });
+              
+              if (rpcErr) {
+                console.error('[cerrarRutaCompleta] Error en devolución atómica:', rpcErr.message);
+                t()?.error('Error al devolver stock: ' + rpcErr.message);
               }
-              await supabase.from('cuartos_frios').update({ stock: stockObj }).eq('id', cf.id);
             }
             const devTxt = Object.entries(devueltoPorSku).map(([sku, qty]) => `${qty}×${sku}`).join(', ');
             log('Devolución', 'Rutas', `${choferNombre} devolvió: ${devTxt}`);
