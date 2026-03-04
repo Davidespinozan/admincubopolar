@@ -1,8 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Icons } from '../ui/Icons';
 import { StatusBadge, DataTable, CapacityBar } from '../ui/Components';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, fmtDate, fmtDateTime } from '../../utils/safe';
+
+// Lazy load para reportes (xlsx + jspdf son ~700KB)
+const loadReports = () => import('../../utils/exportReports');
 
 // ── FIX P3: ALL DERIVED STATE NOW MEMOIZED ──
 // BEFORE: 4 reduce/filter calls ran on every render — even when user
@@ -18,6 +21,7 @@ const DIAS = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábad
 const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 
 export default function DashboardView({ data }) {
+  const [exportando, setExportando] = useState(null);
   const hoy = new Date();
   const y = hoy.getFullYear();
   const m = hoy.getMonth();
@@ -352,6 +356,54 @@ export default function DashboardView({ data }) {
               </span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* REPORTES */}
+      <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5 mb-4 md:mb-6">
+        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.ClipboardCheck /> Exportar Reportes</h3>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
+          {[
+            { id: 'ventas', label: 'Ventas', icon: '💰', fnName: 'reporteVentas', args: () => [data.ordenes || []] },
+            { id: 'produccion', label: 'Producción', icon: '🧊', fnName: 'reporteProduccion', args: () => [data.produccion || []] },
+            { id: 'inventario', label: 'Inventario', icon: '📦', fnName: 'reporteInventario', args: () => [data.productos || [], data.cuartosFrios || []] },
+            { id: 'clientes', label: 'Clientes', icon: '👥', fnName: 'reporteClientes', args: () => [data.clientes || []] },
+            { id: 'rutas', label: 'Rutas', icon: '🚚', fnName: 'reporteRutas', args: () => [data.rutas || []] },
+            { id: 'financiero', label: 'Financiero', icon: '📊', fnName: 'reporteFinanciero', args: () => [{ contabilidad: [...(data.contabilidad?.ingresos||[]), ...(data.contabilidad?.egresos||[])], cxc: data.cuentasPorCobrar || [], cxp: data.cuentasPorPagar || [] }] },
+          ].map(rep => (
+            <div key={rep.id} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-lg">{rep.icon}</span>
+                <span className="text-xs font-bold text-slate-700">{rep.label}</span>
+              </div>
+              <div className="flex gap-1">
+                <button
+                  onClick={async () => { 
+                    setExportando(rep.id + '-excel'); 
+                    const mod = await loadReports();
+                    mod[rep.fnName](...rep.args(), 'excel');
+                    setExportando(null);
+                  }}
+                  disabled={!!exportando}
+                  className="flex-1 py-2 text-[10px] font-bold bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50"
+                >
+                  {exportando === rep.id + '-excel' ? '...' : '📗 Excel'}
+                </button>
+                <button
+                  onClick={async () => { 
+                    setExportando(rep.id + '-pdf'); 
+                    const mod = await loadReports();
+                    mod[rep.fnName](...rep.args(), 'pdf');
+                    setExportando(null);
+                  }}
+                  disabled={!!exportando}
+                  className="flex-1 py-2 text-[10px] font-bold bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50"
+                >
+                  {exportando === rep.id + '-pdf' ? '...' : '📕 PDF'}
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
