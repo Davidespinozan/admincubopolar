@@ -1458,27 +1458,38 @@ export function ConfiguracionView({ data, actions }) {
     if (Object.keys(e).length) { setErrors(e); return; }
 
     if (modal === "new") {
-      // Create in Supabase Auth using signUp (no service_role key needed)
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
-        email: form.email.trim().toLowerCase(),
-        password: form.password,
+      // Create user via secure Edge Function (validates rol server-side)
+      const { data: fnData, error: fnError } = await supabase.functions.invoke('hyper-endpoint', {
+        body: {
+          email: form.email.trim().toLowerCase(),
+          password: form.password,
+          nombre: form.nombre.trim(),
+          rol: form.rol,
+        }
       });
 
-      if (signUpError) {
-        if (signUpError.message && signUpError.message.includes('rate limit')) {
-          setErrors({ email: "⏳ Demasiados intentos. Espera unos minutos e intenta de nuevo" });
-        } else {
-          setErrors({ email: signUpError.message });
-        }
+      if (fnError) {
+        setErrors({ email: fnError.message || 'Error al crear usuario' });
         return;
       }
 
-      // Then create profile in usuarios table with auth_id
+      if (fnData?.error) {
+        setErrors({ email: fnData.error });
+        return;
+      }
+
+      // Create profile in usuarios table with auth_id from Edge Function
+      const authId = fnData?.user?.id;
+      if (!authId) {
+        setErrors({ email: 'No se obtuvo ID del usuario creado' });
+        return;
+      }
+
       const insertError = await actions.addUsuario({ 
-        nombre: form.nombre, 
+        nombre: form.nombre.trim(), 
         email: form.email.trim().toLowerCase(), 
         rol: form.rol, 
-        auth_id: authData.user.id,
+        auth_id: authId,
         estatus: "Activo" 
       });
       
