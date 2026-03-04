@@ -1221,7 +1221,7 @@ export function RutasView({ data, actions }) {
                 type="text" 
                 value={searchCliente} 
                 onChange={e => setSearchCliente(e.target.value)}
-                placeholder="Buscar cliente por nombre..."
+                placeholder="Filtrar clientes..."
                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-purple-400"
               />
             </div>
@@ -1245,36 +1245,38 @@ export function RutasView({ data, actions }) {
               </button>
             </div>
           )}
-          {(searchCliente || filterZona) && (
-            <div className="mt-2 max-h-40 overflow-y-auto border border-slate-200 rounded-lg bg-white">
-              {clientesFiltrados
-                .filter(c => !form.clientesIds.includes(String(c.id)))
-                .filter(c => !filterZona || s(c.zona) === filterZona)
-                .slice(0, 10).map(c => (
-                <button 
-                  key={c.id} 
-                  onClick={() => { toggleCliente(c.id); setSearchCliente(""); }}
-                  className="w-full px-3 py-2 text-left hover:bg-purple-50 border-b border-slate-100 last:border-b-0"
-                >
-                  <p className="text-sm font-medium text-slate-800">
+          {/* Lista de clientes disponibles - siempre visible */}
+          <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200 rounded-lg bg-white">
+            {clientesFiltrados
+              .filter(c => !form.clientesIds.includes(String(c.id)))
+              .filter(c => !filterZona || s(c.zona) === filterZona)
+              .slice(0, 15).map(c => (
+              <button 
+                key={c.id} 
+                onClick={() => { toggleCliente(c.id); }}
+                className="w-full px-3 py-2 text-left hover:bg-purple-50 border-b border-slate-100 last:border-b-0 flex items-center gap-2"
+              >
+                <span className="w-5 h-5 border-2 border-slate-300 rounded flex items-center justify-center text-xs flex-shrink-0"></span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-slate-800 truncate">
                     {s(c.nombre)}
                     {s(c.zona) && <span className="ml-2 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">{s(c.zona)}</span>}
                     {c.latitud && c.longitud && <span className="ml-1 text-xs">🗺️</span>}
                   </p>
-                  <p className="text-xs text-slate-400">{s(c.tipo)} {s(c.contacto) ? `• ${s(c.contacto)}` : ""}</p>
-                </button>
-              ))}
-              {clientesFiltrados.filter(c => !form.clientesIds.includes(String(c.id))).filter(c => !filterZona || s(c.zona) === filterZona).length === 0 && (
-                <p className="px-3 py-2 text-xs text-slate-400">No se encontraron clientes</p>
-              )}
-            </div>
-          )}
-          {!searchCliente && !filterZona && clientesSeleccionados.length === 0 && (
-            <p className="text-xs text-slate-400 mt-2">Escribe o selecciona una zona para buscar clientes a asignar</p>
-          )}
+                  <p className="text-xs text-slate-400 truncate">{s(c.tipo)} {s(c.contacto) ? `• ${s(c.contacto)}` : ""}</p>
+                </div>
+              </button>
+            ))}
+            {clientesFiltrados.filter(c => !form.clientesIds.includes(String(c.id))).filter(c => !filterZona || s(c.zona) === filterZona).length === 0 && (
+              <p className="px-3 py-2 text-xs text-slate-400">No hay más clientes disponibles</p>
+            )}
+          </div>
         </div>
       </div>
       <div className="flex justify-end gap-2 mt-5">
+        {(errors.nombre || errors.choferId) && (
+          <p className="text-sm text-red-500 flex-1">⚠️ Completa el nombre de ruta y selecciona un chofer</p>
+        )}
         <FormBtn onClick={()=>{setModal(false);setEditingRuta(null)}}>Cancelar</FormBtn>
         <FormBtn primary onClick={save}>{editingRuta ? "Guardar cambios" : "Autorizar carga"}</FormBtn>
       </div>
