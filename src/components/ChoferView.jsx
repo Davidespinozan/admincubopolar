@@ -8,7 +8,7 @@ const USOS_CFDI = ["G01", "G03", "S01", "P01"];
 
 export default function ChoferView({ user, data, actions, onLogout }) {
   const [step, setStep] = useState("cargar");
-  const [carga, setCarga] = useState({});
+  const [confirmadoCarga, setConfirmadoCarga] = useState(false);
   const [entregas, setEntregas] = useState([]);
   const [mermas, setMermas] = useState([]);
   const [entregaModal, setEntregaModal] = useState(null);
@@ -40,20 +40,50 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     return prod ? n(prod.precio) : 0;
   }, [data.preciosEsp, data.clientes, data.productos]);
 
+  // ── MI RUTA ACTIVA (asignada por administración) ──
+  const miRutaActiva = useMemo(() => {
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    return (data.rutas || []).find(r => {
+      const choferId = r.choferId || r.chofer_id;
+      const esDelChofer = choferId && (String(choferId) === String(user?.id) || s(r.choferNombre) === s(user?.nombre));
+      const estatus = s(r.estatus).toLowerCase();
+      const estaActiva = estatus === 'programada' || estatus === 'en progreso' || estatus === 'en_progreso';
+      const esFechaHoy = !r.fecha || s(r.fecha).startsWith(hoyStr);
+      return esDelChofer && estaActiva && esFechaHoy;
+    }) || null;
+  }, [data.rutas, user]);
+
+  // Carga autorizada por administración (SOLO LECTURA)
+  const cargaAutorizada = useMemo(() => {
+    if (!miRutaActiva) return {};
+    return miRutaActiva.carga_autorizada || miRutaActiva.cargaAutorizada || {};
+  }, [miRutaActiva]);
+
+  const extraAutorizado = useMemo(() => {
+    if (!miRutaActiva) return {};
+    return miRutaActiva.extra_autorizado || miRutaActiva.extraAutorizado || {};
+  }, [miRutaActiva]);
+
+  // Carga total = autorizada + extra (lo que administración aprobó)
+  const cargaTotal = useMemo(() => {
+    const t = {};
+    for (const p of productos) {
+      const sku = s(p.sku);
+      t[sku] = n(cargaAutorizada[sku]) + n(extraAutorizado[sku]);
+    }
+    return t;
+  }, [productos, cargaAutorizada, extraAutorizado]);
+
   // My route orders — only orders assigned to routes for THIS chofer
   const misOrdenes = useMemo(() => {
-    const misRutas = data.rutas?.filter(r => {
-      const choferId = r.choferId || r.chofer_id;
-      return choferId && (String(choferId) === String(user?.id) || s(r.choferNombre) === s(user?.nombre));
-    }).map(r => r.id) || [];
-    return data.ordenes.filter(o => {
+    if (!miRutaActiva) return [];
+    return (data.ordenes || []).filter(o => {
       const est = s(o.estatus);
       if (est !== "Asignada" && est !== "Creada") return false;
       const rid = o.rutaId || o.ruta_id;
-      if (!rid) return false;
-      return misRutas.includes(rid) || misRutas.map(String).includes(String(rid));
+      return rid && (String(rid) === String(miRutaActiva.id));
     });
-  }, [data.ordenes, data.rutas, user]);
+  }, [data.ordenes, miRutaActiva]);
 
   // Build order items with real prices
   const ordenesConDetalle = useMemo(() => {
@@ -91,25 +121,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     return t;
   }, [pendientes, productos]);
 
-  // Initialize carga with all product SKUs
-  const cargaInicial = useMemo(() => {
-    const c = {};
-    for (const p of productos) c[s(p.sku)] = "";
-    return c;
-  }, [productos]);
 
-  // initialize carga once productos are loaded
-  useEffect(() => {
-    if (productos.length > 0 && Object.keys(carga).length === 0) {
-      setCarga(cargaInicial);
-    }
-  }, [productos, carga, cargaInicial]);
-
-  const cargaTotal = useMemo(() => {
-    const t = {};
-    for (const p of productos) t[s(p.sku)] = n(carga[s(p.sku)]);
-    return t;
-  }, [carga, productos]);
 
   const entregadoTotal = useMemo(() => {
     const t = {};
@@ -139,9 +151,14 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
   // ── ACTIONS ──
   const iniciarRuta = () => {
-    if (!Object.values(carga).some(v => n(v) > 0)) return;
+    // Usa la carga autorizada por administración, no input del chofer
+    if (!Object.values(cargaTotal).some(v => n(v) > 0)) {
+      showToast("No hay carga autorizada. Contacte a administración.", "error");
+      return;
+    }
+    setConfirmadoCarga(true);
     setStep("ruta");
-    showToast("Ruta iniciada");
+    showToast("Carga confirmada. Ruta iniciada.");
   };
 
   const confirmarEntrega = () => {
@@ -275,20 +292,35 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               <div>
                 <p className="text-sm font-bold text-slate-800">{s(p.nombre)}</p>
                 <p className="text-xs text-slate-400">${n(p.precio)} c/u</p>
-                {necesitaPorSku[s(p.sku)] > 0 && <p className="text-xs text-blue-600 font-semibold mt-0.5">Mínimo: {necesitaPorSku[s(p.sku)]}</p>}
+                {necesitaPorSku[s(p.sku)] > 0 && <p className="text-xs text-blue-600 font-semibold mt-0.5">Pedidos: {necesitaPorSku[s(p.sku)]}</p>}
               </div>
-              <input type="number" inputMode="numeric" value={carga[s(p.sku)] || ""} onChange={e => setCarga(c => ({ ...c, [s(p.sku)]: e.target.value }))}
-                className="w-24 text-center text-2xl font-extrabold border-2 border-slate-200 rounded-xl py-3 focus:border-blue-500 focus:outline-none" placeholder="0" />
+              {/* Cantidad autorizada por administración (SOLO LECTURA) */}
+              <div className="text-center">
+                <div className="w-24 text-center text-2xl font-extrabold bg-slate-100 rounded-xl py-3 text-slate-700">
+                  {n(cargaTotal[s(p.sku)])}
+                </div>
+                <p className="text-xs text-green-600 font-medium mt-1">Autorizado</p>
+              </div>
             </div>
-            {carga[s(p.sku)] && n(carga[s(p.sku)]) > 0 && n(carga[s(p.sku)]) < (necesitaPorSku[s(p.sku)] || 0) && (
-              <p className="text-xs text-amber-600 font-semibold mt-2">⚠ Llevas menos de lo necesario</p>
+            {n(cargaAutorizada[s(p.sku)]) > 0 && n(extraAutorizado[s(p.sku)]) > 0 && (
+              <p className="text-xs text-slate-500 mt-2">
+                {n(cargaAutorizada[s(p.sku)])} pedidos + {n(extraAutorizado[s(p.sku)])} extra
+              </p>
+            )}
+            {n(cargaTotal[s(p.sku)]) > 0 && n(cargaTotal[s(p.sku)]) < (necesitaPorSku[s(p.sku)] || 0) && (
+              <p className="text-xs text-amber-600 font-semibold mt-2">⚠ Autorizado menos de lo pedido</p>
             )}
           </div>
         ))}
-        <button onClick={iniciarRuta} disabled={!Object.values(carga).some(v => n(v) > 0)}
+        <button onClick={iniciarRuta} disabled={!miRutaActiva || !Object.values(cargaTotal).some(v => n(v) > 0)}
           className="w-full py-5 bg-blue-600 text-white font-extrabold rounded-2xl text-lg shadow-lg shadow-blue-200 disabled:opacity-40 active:scale-[0.98] transition-transform mt-4">
-          Iniciar ruta →
+          {miRutaActiva ? "Confirmar carga e iniciar ruta →" : "Sin ruta asignada"}
         </button>
+        {!miRutaActiva && (
+          <p className="text-center text-sm text-amber-600 font-medium mt-2">
+            No tienes una ruta asignada para hoy. Contacta a administración.
+          </p>
+        )}
       </div>
       {toast && <Toast msg={toast} />}
     </div>
