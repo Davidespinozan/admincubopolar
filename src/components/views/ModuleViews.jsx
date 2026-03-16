@@ -720,11 +720,11 @@ export function OrdenesView({ data, actions }) {
 
   const [pagoModal, setPagoModal] = useState(null);
   const [pagoForm, setPagoForm] = useState({metodo:"Efectivo",referencia:""});
-  const [checkoutProvider, setCheckoutProvider] = useState('mercadopago');
+  const [checkoutProvider] = useState('stripe');
 
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [shortUrl, setShortUrl] = useState(null);
-  const cobrarOrden = (ord, tipo) => { setPagoModal({...ord, tipoCobro: tipo || "oficina"}); setPagoForm({metodo:"Efectivo",referencia:""}); setCheckoutProvider('mercadopago'); setCheckoutUrl(null); setShortUrl(null); };
+  const cobrarOrden = (ord, tipo) => { setPagoModal({...ord, tipoCobro: tipo || "oficina"}); setPagoForm({metodo:"Efectivo",referencia:""}); setCheckoutUrl(null); setShortUrl(null); };
   const confirmarCobro = async () => {
     if (!pagoModal) return;
     if (pagoForm.metodo === "QR / Link de pago") {
@@ -843,22 +843,7 @@ export function OrdenesView({ data, actions }) {
                 className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Últimos 6 dígitos"/>
             </div>
           )}
-          {pagoForm.metodo==="QR / Link de pago" && (
-            <div className="mb-4 p-3 bg-blue-50 rounded-xl">
-              <p className="text-xs text-blue-700 font-semibold mb-2">Proveedor de checkout</p>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { value: 'mercadopago', label: 'Mercado Pago' },
-                  { value: 'stripe', label: 'Stripe' },
-                ].map(opt => (
-                  <button key={opt.value} type="button" onClick={()=>setCheckoutProvider(opt.value)}
-                    className={`py-2 px-3 rounded-lg text-xs font-semibold border ${checkoutProvider===opt.value ? 'border-blue-500 bg-white text-blue-700' : 'border-blue-100 text-blue-600'}`}>
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+
           {pagoForm.metodo==="QR / Link de pago" && checkoutUrl && (
             <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
               <p className="text-xs font-bold text-emerald-700">✓ Link de pago generado</p>

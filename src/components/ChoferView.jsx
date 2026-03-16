@@ -16,7 +16,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [mermaModal, setMermaModal] = useState(false);
   const [cobroMetodo, setCobroMetodo] = useState("Efectivo");
   const [cobroRef, setCobroRef] = useState("");
-  const [checkoutProvider, setCheckoutProvider] = useState('stripe');
+  const [checkoutProvider] = useState('stripe');
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [shortUrl, setShortUrl] = useState(null);
   const [vForm, setVForm] = useState({ clienteId: "", cliente: "", sku: "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
@@ -512,18 +512,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 </label>
               )}
             </div>}
-            {cobroMetodo==="QR / Link de pago" && (
+            {cobroMetodo==="QR / Link de pago" && !checkoutUrl && (
               <div className="mb-4 p-3 bg-blue-50 rounded-xl">
-                <p className="text-xs text-blue-700 font-semibold mb-2">Proveedor de checkout</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {[{ value: 'stripe', label: '💳 Stripe' }, { value: 'mercadopago', label: '🟢 Mercado Pago' }].map(opt => (
-                    <button key={opt.value} onClick={() => setCheckoutProvider(opt.value)}
-                      className={`py-2.5 px-3 rounded-lg text-xs font-bold border-2 ${checkoutProvider === opt.value ? 'border-blue-500 bg-white text-blue-700' : 'border-blue-100 text-blue-600'}`}>
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-blue-600 mt-2">Se abre un link para que el cliente pague.</p>
+                <p className="text-xs text-blue-600">Se genera un link de Stripe para que el cliente pague.</p>
               </div>
             )}
             {cobroMetodo==="QR / Link de pago" && checkoutUrl && (
@@ -615,19 +606,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pago</label>
                 <div className="grid grid-cols-3 gap-1.5">{PAGOS.map(m => <button key={m} onClick={() => setVForm(f=>({...f,pago:m}))} className={`py-2 rounded-lg text-[11px] font-bold border-2 ${vForm.pago===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-500"}`}>{m==="QR / Link de pago"?"🔗 QR/Link":m}</button>)}</div>
               </div>
-              {vForm.pago === "QR / Link de pago" && (
-                <div className="p-3 bg-blue-50 rounded-xl">
-                  <p className="text-xs text-blue-700 font-semibold mb-2">Proveedor</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[{ value: 'stripe', label: '💳 Stripe' }, { value: 'mercadopago', label: '🟢 Mercado Pago' }].map(opt => (
-                      <button key={opt.value} onClick={() => setCheckoutProvider(opt.value)}
-                        className={`py-2 px-3 rounded-lg text-xs font-bold border-2 ${checkoutProvider === opt.value ? 'border-blue-500 bg-white text-blue-700' : 'border-blue-100 text-blue-600'}`}>
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+
             </div>
             <button onClick={crearVentaExpress} disabled={!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&(!vForm.cliente.trim()||!vForm.rfc.trim()||!vForm.correo.trim()||!vForm.regimen||!vForm.usoCfdi||vForm.cp.trim().length!==5||vForm.rfc.trim().length<12||vForm.rfc.trim().length>13))} className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40">{vForm.factura ? "Crear venta con factura" : "Crear venta"}</button>
           </div>
