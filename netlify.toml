@@ -2,6 +2,7 @@
   from = "/pagar/:id"
   to = "/.netlify/functions/billing-pay?o=:id"
   status = 200
+  force = true
 
 [[redirects]]
   from = "/*"

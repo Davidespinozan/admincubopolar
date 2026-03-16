@@ -1,7 +1,12 @@
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 
 export const handler = async (event) => {
-  const ordenId = event.queryStringParameters?.o;
+  // Support both query param ?o=ID and path param /pagar/ID
+  let ordenId = event.queryStringParameters?.o;
+  if (!ordenId && event.path) {
+    const match = event.path.match(/\/pagar\/(\d+)/);
+    if (match) ordenId = match[1];
+  }
   if (!ordenId || !/^\d+$/.test(ordenId)) {
     return { statusCode: 400, body: 'Enlace inválido' };
   }
