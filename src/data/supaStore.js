@@ -1091,45 +1091,45 @@ export function useSupaStore(userId, userName) {
       },
 
       // ── FACTURACIÓN ──
-      crearCheckoutPago: async (ordenId, provider = 'mercadopago') => {
-        const { data: orden, error: ordenError } = await supabase
-          .from('ordenes')
-          .select('id, folio, total, cliente_id, cliente_nombre, productos')
-          .eq('id', ordenId)
-          .single();
-        if (ordenError || !orden) {
-          t()?.error('Orden no encontrada');
-          return ordenError || new Error('Orden no encontrada');
-        }
-
-        // Fetch order lines with product names
-        const { data: lineas } = await supabase
-          .from('orden_lineas')
-          .select('sku, cantidad, precio_unit, subtotal')
-          .eq('orden_id', ordenId);
-
-        const prods = get().productos || [];
-        const items = (lineas || []).map(l => {
-          const prod = prods.find(p => s(p.sku) === s(l.sku));
-          return {
-            name: prod ? s(prod.nombre) || s(l.sku) : s(l.sku),
-            sku: s(l.sku),
-            quantity: l.cantidad,
-            unitPrice: l.precio_unit,
-          };
-        });
-
-        let cliente = null;
-        if (orden.cliente_id) {
-          const { data: cli } = await supabase
-            .from('clientes')
-            .select('nombre, correo')
-            .eq('id', orden.cliente_id)
-            .single();
-          cliente = cli;
-        }
-
+      crearCheckoutPago: async (ordenId, provider = 'stripe') => {
         try {
+          const { data: orden, error: ordenError } = await supabase
+            .from('ordenes')
+            .select('id, folio, total, cliente_id, cliente_nombre, productos')
+            .eq('id', ordenId)
+            .single();
+          if (ordenError || !orden) {
+            t()?.error('Orden no encontrada');
+            return { error: ordenError?.message || 'Orden no encontrada' };
+          }
+
+          // Fetch order lines with product names
+          const { data: lineas } = await supabase
+            .from('orden_lineas')
+            .select('sku, cantidad, precio_unit, subtotal')
+            .eq('orden_id', ordenId);
+
+          const prods = get().productos || [];
+          const items = (lineas || []).map(l => {
+            const prod = prods.find(p => s(p.sku) === s(l.sku));
+            return {
+              name: prod ? s(prod.nombre) || s(l.sku) : s(l.sku),
+              sku: s(l.sku),
+              quantity: l.cantidad,
+              unitPrice: l.precio_unit,
+            };
+          });
+
+          let cliente = null;
+          if (orden.cliente_id) {
+            const { data: cli } = await supabase
+              .from('clientes')
+              .select('nombre, correo')
+              .eq('id', orden.cliente_id)
+              .single();
+            cliente = cli;
+          }
+
           const origin = typeof window !== 'undefined' ? window.location.origin : '';
           const payload = await backendPost('billing-create-checkout', {
             provider,
@@ -1150,8 +1150,8 @@ export function useSupaStore(userId, userName) {
           const shortUrl = origin ? `${origin}/pagar/${orden.id}` : null;
           return { ...payload, shortUrl, folio: orden.folio, clienteNombre: orden.cliente_nombre };
         } catch (error) {
-          t()?.error('Error al generar checkout: ' + error.message);
-          return error;
+          t()?.error('Error al generar checkout: ' + (error.message || error));
+          return { error: error.message || 'Error desconocido' };
         }
       },
 

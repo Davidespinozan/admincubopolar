@@ -19,6 +19,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [checkoutProvider] = useState('stripe');
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [shortUrl, setShortUrl] = useState(null);
+  const [generandoLink, setGenerandoLink] = useState(false);
   const [vForm, setVForm] = useState({ clienteId: "", cliente: "", sku: "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
   const [mForm, setMForm] = useState({ sku: "", cant: "", causa: "Bolsa rota" });
   const [fotoMerma, setFotoMerma] = useState(null);
@@ -192,13 +193,20 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     if (!entregaModal) return;
     // QR / Link de pago → generate checkout
     if (cobroMetodo === "QR / Link de pago") {
-      const result = await actions.crearCheckoutPago?.(entregaModal.id, checkoutProvider);
-      if (result?.checkoutUrl) {
-        setCheckoutUrl(result.checkoutUrl);
-        setShortUrl(result.shortUrl || result.checkoutUrl);
-        showToast('Link de pago generado');
-      } else {
-        showToast("Error al generar link de pago");
+      setGenerandoLink(true);
+      try {
+        const result = await actions.crearCheckoutPago?.(entregaModal.id, checkoutProvider);
+        if (result?.checkoutUrl) {
+          setCheckoutUrl(result.checkoutUrl);
+          setShortUrl(result.shortUrl || result.checkoutUrl);
+          showToast('Link de pago generado');
+        } else {
+          showToast("Error al generar link de pago");
+        }
+      } catch (e) {
+        showToast('Error: ' + (e.message || 'No se pudo generar el link'));
+      } finally {
+        setGenerandoLink(false);
       }
       return;
     }
@@ -529,7 +537,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               </div>
             )}
             {cobroMetodo==="Crédito" && <div className="bg-amber-50 rounded-xl p-3 mb-4"><p className="text-xs text-amber-700 font-semibold">Se agrega a la cuenta del cliente</p></div>}
-            {!checkoutUrl && <button onClick={confirmarEntrega} className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform">{cobroMetodo === "QR / Link de pago" ? "Generar link de pago" : "✓ Confirmar entrega"}</button>}
+            {!checkoutUrl && <button onClick={confirmarEntrega} disabled={generandoLink} className={`w-full py-4 text-white font-extrabold rounded-xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform ${generandoLink ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : cobroMetodo === "QR / Link de pago" ? "Generar link de pago" : "✓ Confirmar entrega"}</button>}
           </div>
         </div>
       )}

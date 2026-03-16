@@ -17,6 +17,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const [checkoutProvider] = useState('stripe');
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [shortUrl, setShortUrl] = useState(null);
+  const [generandoLink, setGenerandoLink] = useState(false);
   const [toast, setToast] = useState("");
 
   // Order form
@@ -132,13 +133,20 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const confirmarCobro = async () => {
     if (!pagoModal) return;
     if (pagoForm.metodo === "QR / Link de pago") {
-      const result = await actions.crearCheckoutPago?.(pagoModal.id, checkoutProvider);
-      if (result?.checkoutUrl) {
-        setCheckoutUrl(result.checkoutUrl);
-        setShortUrl(result.shortUrl || result.checkoutUrl);
-        showToast('Link de pago generado');
-      } else {
-        showToast('Error al generar link de pago');
+      setGenerandoLink(true);
+      try {
+        const result = await actions.crearCheckoutPago?.(pagoModal.id, checkoutProvider);
+        if (result?.checkoutUrl) {
+          setCheckoutUrl(result.checkoutUrl);
+          setShortUrl(result.shortUrl || result.checkoutUrl);
+          showToast('Link de pago generado');
+        } else {
+          showToast('Error al generar link de pago');
+        }
+      } catch (e) {
+        showToast('Error: ' + (e.message || 'No se pudo generar el link'));
+      } finally {
+        setGenerandoLink(false);
       }
       return;
     }
@@ -425,7 +433,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
             {pagoForm.metodo === "Crédito (fiado)" && (
               <div className="mb-4 p-3 bg-amber-50 rounded-xl"><p className="text-xs text-amber-700 font-semibold">Se agregará al saldo del cliente</p></div>
             )}
-            {!checkoutUrl && <button onClick={confirmarCobro} className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-emerald-200">{pagoForm.metodo === "QR / Link de pago" ? "Generar link de pago" : "Confirmar cobro"}</button>}
+            {!checkoutUrl && <button onClick={confirmarCobro} disabled={generandoLink} className={`w-full py-3.5 text-white font-bold rounded-xl text-sm shadow-lg shadow-emerald-200 ${generandoLink ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : pagoForm.metodo === "QR / Link de pago" ? "Generar link de pago" : "Confirmar cobro"}</button>}
           </div>
         </div>
       )}

@@ -724,17 +724,25 @@ export function OrdenesView({ data, actions }) {
 
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [shortUrl, setShortUrl] = useState(null);
+  const [generandoLink, setGenerandoLink] = useState(false);
   const cobrarOrden = (ord, tipo) => { setPagoModal({...ord, tipoCobro: tipo || "oficina"}); setPagoForm({metodo:"Efectivo",referencia:""}); setCheckoutUrl(null); setShortUrl(null); };
   const confirmarCobro = async () => {
     if (!pagoModal) return;
     if (pagoForm.metodo === "QR / Link de pago") {
-      const result = await actions.crearCheckoutPago?.(pagoModal.id, checkoutProvider);
-      if (result?.checkoutUrl) {
-        setCheckoutUrl(result.checkoutUrl);
-        setShortUrl(result.shortUrl || result.checkoutUrl);
-        toast?.success('Link de pago generado');
-      } else {
-        toast?.error('Error al generar link de pago');
+      setGenerandoLink(true);
+      try {
+        const result = await actions.crearCheckoutPago?.(pagoModal.id, checkoutProvider);
+        if (result?.checkoutUrl) {
+          setCheckoutUrl(result.checkoutUrl);
+          setShortUrl(result.shortUrl || result.checkoutUrl);
+          toast?.success('Link de pago generado');
+        } else {
+          toast?.error('Error al generar link de pago');
+        }
+      } catch (e) {
+        toast?.error('Error: ' + (e.message || 'No se pudo generar el link'));
+      } finally {
+        setGenerandoLink(false);
       }
       return;
     }
@@ -856,7 +864,7 @@ export function OrdenesView({ data, actions }) {
           )}
           <div className="flex gap-2 mt-4">
             <button onClick={()=>{setCheckoutUrl(null);setShortUrl(null);setPagoModal(null)}} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600">{checkoutUrl ? 'Cerrar' : 'Cancelar'}</button>
-            {!checkoutUrl && <button onClick={confirmarCobro} className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold">{pagoForm.metodo==="QR / Link de pago" ? 'Generar link de pago' : 'Confirmar cobro'}</button>}
+            {!checkoutUrl && <button onClick={confirmarCobro} disabled={generandoLink} className={`flex-1 py-2.5 text-white rounded-xl text-sm font-bold ${generandoLink ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : pagoForm.metodo==="QR / Link de pago" ? 'Generar link de pago' : 'Confirmar cobro'}</button>}
           </div>
         </div>
       </div>
