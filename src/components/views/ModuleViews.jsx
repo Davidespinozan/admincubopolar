@@ -310,7 +310,7 @@ export function PreciosView({ data, actions }) {
         <h3 className="text-sm font-bold text-slate-700 mb-4">Precio público general</h3>
         {prodTerminados.length === 0
           ? <EmptyState message="Sin productos terminados" />
-          : prodTerminados.map(p=><div key={p.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2"><div><span className="text-sm font-semibold text-slate-700">{s(p.nombre)}</span><span className="text-xs text-slate-400 ml-2">{s(p.sku)}</span></div><span className="text-sm font-bold">${n(p.precio).toFixed(2)}</span></div>)}
+          : prodTerminados.map(p=><div key={p.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2"><div className="min-w-0"><span className="text-sm font-semibold text-slate-700 truncate block">{s(p.nombre)}</span><span className="text-xs text-slate-400 ml-0">{s(p.sku)}</span></div><span className="text-sm font-bold flex-shrink-0">${n(p.precio).toFixed(2)}</span></div>)}
       </div>
       <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
         <h3 className="text-sm font-bold text-slate-700 mb-4">Precios especiales</h3>
@@ -1163,7 +1163,7 @@ export function RutasView({ data, actions }) {
             </div>
           </div>
           <h3 className="text-base font-bold text-slate-800 mb-1">{s(r.nombre)}</h3>
-          <p className="text-xs text-slate-500 mb-3">{choferLabel(r)} · {rutaOrdenes.length} órdenes · {cargaLabel(r)}</p>
+          <p className="text-xs text-slate-500 mb-3 truncate">{choferLabel(r)} · {rutaOrdenes.length} órdenes · {cargaLabel(r)}</p>
           <div className="flex items-center justify-between text-xs mb-1"><span className="text-slate-400">Entregas</span><span className="font-semibold">{entregadas}/{rutaOrdenes.length}</span></div>
           <CapacityBar pct={rutaOrdenes.length>0?(entregadas/rutaOrdenes.length)*100:0}/>
           
@@ -1567,8 +1567,8 @@ export function ConciliacionView({ data }) {
           <div className="space-y-1.5">
             {ruta.entregadas.map(o => (
               <div key={o.id} className="flex justify-between items-center p-2 bg-slate-50 rounded-lg">
-                <div><span className="font-mono text-xs text-blue-600 font-bold">{s(o.folio)}</span> <span className="text-sm text-slate-700 ml-1">{s(o.clienteNombre || o.cliente)}</span></div>
-                <div className="text-right"><span className="text-sm font-bold">${n(o.total).toLocaleString()}</span> <span className="text-xs text-slate-400 ml-1">{s(o.metodoPago) || "—"}</span></div>
+                <div className="min-w-0 flex-1"><span className="font-mono text-xs text-blue-600 font-bold">{s(o.folio)}</span> <span className="text-sm text-slate-700 ml-1 truncate">{s(o.clienteNombre || o.cliente)}</span></div>
+                <div className="text-right flex-shrink-0"><span className="text-sm font-bold">${n(o.total).toLocaleString()}</span> <span className="text-xs text-slate-400 ml-1">{s(o.metodoPago) || "—"}</span></div>
               </div>
             ))}
           </div>
@@ -1722,9 +1722,9 @@ export function AlmacenBolsasView({ data }) {
     {prodHoy.length > 0 && (<div className="bg-white border border-slate-100 rounded-2xl p-4 mb-4">
       <h3 className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Producción hoy ({prodHoy.length} lotes)</h3>
       {prodHoy.map(p => (
-        <div key={p.id} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-          <div><span className="text-sm font-bold text-slate-700">{n(p.cantidad)}× {s(p.sku)}</span> <span className="text-xs text-slate-400 ml-1">{s(p.turno)} · {s(p.maquina)}</span></div>
-          <span className="text-xs font-mono text-slate-400">{s(p.folio)}</span>
+        <div key={p.id} className="flex justify-between items-center gap-2 py-2 border-b border-slate-50 last:border-0">
+          <div className="min-w-0 truncate"><span className="text-sm font-bold text-slate-700">{n(p.cantidad)}× {s(p.sku)}</span> <span className="text-xs text-slate-400 ml-1">{s(p.turno)} · {s(p.maquina)}</span></div>
+          <span className="text-xs font-mono text-slate-400 flex-shrink-0">{s(p.folio)}</span>
         </div>
       ))}
     </div>)}
@@ -1732,9 +1732,9 @@ export function AlmacenBolsasView({ data }) {
     {movs.length > 0 && (<div className="bg-white border border-slate-100 rounded-2xl p-4">
       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Movimientos de almacén</h3>
       {movs.map(m => (
-        <div key={m.id} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-          <div><span className={`text-sm font-bold ${s(m.tipo) === "Entrada" ? "text-emerald-600" : "text-red-600"}`}>{s(m.tipo) === "Entrada" ? "+" : "-"}{n(m.cantidad)}</span> <span className="text-sm text-slate-600 ml-1">{s(m.producto)}</span></div>
-          <div className="text-right"><span className="text-xs text-slate-400">{s(m.origen)} · {s(m.usuario)}</span></div>
+        <div key={m.id} className="flex justify-between items-center gap-2 py-2 border-b border-slate-50 last:border-0">
+          <div className="min-w-0 truncate"><span className={`text-sm font-bold ${s(m.tipo) === "Entrada" ? "text-emerald-600" : "text-red-600"}`}>{s(m.tipo) === "Entrada" ? "+" : "-"}{n(m.cantidad)}</span> <span className="text-sm text-slate-600 ml-1">{s(m.producto)}</span></div>
+          <div className="text-right flex-shrink-0"><span className="text-xs text-slate-400">{s(m.origen)} · {s(m.usuario)}</span></div>
         </div>
       ))}
     </div>)}
@@ -1943,10 +1943,10 @@ export function EmpleadosView({ data, actions }) {
           {dEmps.map(e => (
             <div key={e.id} onClick={() => openEdit(e)}
               className="bg-white rounded-xl p-4 border border-slate-100 cursor-pointer hover:border-blue-300 transition-all">
-              <div className="flex justify-between items-start">
-                <div>
-                  <p className="text-sm font-bold text-slate-800">{s(e.nombre)}</p>
-                  <p className="text-xs text-slate-500">{s(e.puesto)} · ${n(e.salarioDiario).toFixed(2)}/día</p>
+              <div className="flex justify-between items-start gap-2">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-800 truncate">{s(e.nombre)}</p>
+                  <p className="text-xs text-slate-500 truncate">{s(e.puesto)} · ${n(e.salarioDiario).toFixed(2)}/día</p>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded-full font-semibold ${s(e.estatus) === "Activo" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{s(e.estatus)}</span>
               </div>
@@ -2273,16 +2273,16 @@ export function ContabilidadView({ data, actions }) {
       </div>
     </div>
 
-    <div className="grid grid-cols-3 gap-3">
-      <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+      <div className="bg-emerald-50 rounded-xl p-3 sm:p-4 border border-emerald-200">
         <p className="text-[10px] text-emerald-500 uppercase font-bold">Ingresos</p>
-        <p className="text-xl font-extrabold text-emerald-700">${totalIngresos.toLocaleString()}</p>
+        <p className="text-lg sm:text-xl font-extrabold text-emerald-700">${totalIngresos.toLocaleString()}</p>
       </div>
-      <div className="bg-red-50 rounded-xl p-4 border border-red-200">
+      <div className="bg-red-50 rounded-xl p-3 sm:p-4 border border-red-200">
         <p className="text-[10px] text-red-500 uppercase font-bold">Egresos</p>
-        <p className="text-xl font-extrabold text-red-600">${totalEgresos.toLocaleString()}</p>
+        <p className="text-lg sm:text-xl font-extrabold text-red-600">${totalEgresos.toLocaleString()}</p>
       </div>
-      <div className={`rounded-xl p-4 border ${balance >= 0 ? "bg-blue-50 border-blue-200" : "bg-red-50 border-red-200"}`}>
+      <div className={`col-span-2 sm:col-span-1 rounded-xl p-3 sm:p-4 border ${balance >= 0 ? "bg-blue-50 border-blue-200" : "bg-red-50 border-red-200"}`}>
         <p className="text-[10px] text-slate-500 uppercase font-bold">Balance</p>
         <p className={`text-xl font-extrabold ${balance >= 0 ? "text-blue-700" : "text-red-600"}`}>${balance.toLocaleString()}</p>
       </div>
@@ -2305,10 +2305,10 @@ export function ContabilidadView({ data, actions }) {
       {todos.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin movimientos. Usa los botones + Ingreso o + Gasto para registrar.</p>}
       <div className="space-y-1.5">
         {todos.slice(0, 30).map(m => (
-          <div key={m.id} className={`rounded-lg p-3 border ${m._tipo === "Ingreso" ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100"}`}>
-            <div className="flex justify-between">
-              <span className="text-sm font-semibold text-slate-700">{s(m.concepto)}</span>
-              <div className="flex items-center gap-2">
+          <div key={m.id} className={`rounded-lg p-3 border overflow-hidden ${m._tipo === "Ingreso" ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100"}`}>
+            <div className="flex justify-between gap-2">
+              <span className="text-sm font-semibold text-slate-700 min-w-0 truncate">{s(m.concepto)}</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
                 <span className={`text-sm font-bold ${m._tipo === "Ingreso" ? "text-emerald-700" : "text-red-600"}`}>{m._tipo === "Ingreso" ? "+" : "-"}${n(m.monto).toLocaleString()}</span>
                 <button onClick={() => askConfirm('Eliminar movimiento','¿Eliminar este movimiento contable?',()=>actions.deleteMovContable(m.id),true)} className="text-red-400 hover:text-red-600 text-xs p-1">✕</button>
               </div>
@@ -2425,10 +2425,10 @@ export function CobrosView({ data, actions }) {
           const pctPagado = (n(cxc.montoPagado) / n(cxc.montoOriginal)) * 100;
           return (
             <div key={cxc.id} className="bg-white rounded-xl p-4 border border-slate-100">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <p className="font-semibold text-slate-800">{s(cli?.nombre) || 'Cliente'}</p>
-                  <p className="text-xs text-slate-400">{s(cxc.concepto)}</p>
+              <div className="flex justify-between items-start gap-2 mb-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-800 truncate">{s(cli?.nombre) || 'Cliente'}</p>
+                  <p className="text-xs text-slate-400 truncate">{s(cxc.concepto)}</p>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded-full font-semibold ${cxc.estatus === 'Parcial' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
                   {cxc.estatus}
@@ -2462,14 +2462,14 @@ export function CobrosView({ data, actions }) {
         {pagosRecientes.map(p => {
           const cli = clientes[p.clienteId];
           return (
-            <div key={p.id} className="bg-emerald-50 rounded-lg p-3 border border-emerald-100">
-              <div className="flex justify-between">
-                <span className="text-sm font-semibold text-slate-700">{s(cli?.nombre) || 'Cliente'}</span>
-                <span className="text-sm font-bold text-emerald-700">+${n(p.monto).toLocaleString()}</span>
+            <div key={p.id} className="bg-emerald-50 rounded-lg p-3 border border-emerald-100 overflow-hidden">
+              <div className="flex justify-between gap-2">
+                <span className="text-sm font-semibold text-slate-700 min-w-0 truncate">{s(cli?.nombre) || 'Cliente'}</span>
+                <span className="text-sm font-bold text-emerald-700 flex-shrink-0">+${n(p.monto).toLocaleString()}</span>
               </div>
-              <div className="flex justify-between mt-0.5">
-                <span className="text-xs text-slate-400">{s(p.fecha)} • {s(p.metodoPago) || 'Efectivo'}</span>
-                <span className="text-xs text-emerald-600">{s(p.referencia)}</span>
+              <div className="flex justify-between gap-2 mt-0.5">
+                <span className="text-xs text-slate-400 truncate">{s(p.fecha)} • {s(p.metodoPago) || 'Efectivo'}</span>
+                <span className="text-xs text-emerald-600 truncate max-w-[120px] text-right flex-shrink-0">{s(p.referencia)}</span>
               </div>
             </div>
           );
@@ -2689,11 +2689,11 @@ export function CostosView({ data, actions }) {
           <div className="space-y-2">
             {paginatedFijos.map(c => (
               <div key={c.id} className={`rounded-lg p-3.5 border ${c.activo ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-100 opacity-60'}`}>
-                <div className="flex justify-between items-start">
-                  <div>
-                    <p className="font-semibold text-slate-800">{s(c.nombre)}</p>
-                    <p className="text-xs text-slate-400">{s(c.categoria)} • {s(c.frecuencia)} • Día {c.diaCargo || 1}</p>
-                    {c.proveedor && <p className="text-xs text-slate-400">Proveedor: {s(c.proveedor)}</p>}
+                <div className="flex justify-between items-start gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-800 truncate">{s(c.nombre)}</p>
+                    <p className="text-xs text-slate-400 truncate">{s(c.categoria)} • {s(c.frecuencia)} • Día {c.diaCargo || 1}</p>
+                    {c.proveedor && <p className="text-xs text-slate-400 truncate">Proveedor: {s(c.proveedor)}</p>}
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-red-600">${n(c.monto).toLocaleString()}</p>
@@ -2721,11 +2721,11 @@ export function CostosView({ data, actions }) {
               const costoFijo = costosFijosMap[c.costoFijoId];
               return (
                 <div key={c.id} className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-700">{s(c.concepto) || s(costoFijo?.nombre) || 'Costo'}</p>
-                      <p className="text-xs text-slate-400">{s(c.categoria)} • {s(c.tipo) || 'Fijo'}</p>
-                      {c.referencia && <p className="text-xs text-slate-400">Ref: {s(c.referencia)}</p>}
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-700 truncate">{s(c.concepto) || s(costoFijo?.nombre) || 'Costo'}</p>
+                      <p className="text-xs text-slate-400 truncate">{s(c.categoria)} • {s(c.tipo) || 'Fijo'}</p>
+                      {c.referencia && <p className="text-xs text-slate-400 truncate">Ref: {s(c.referencia)}</p>}
                     </div>
                     <div className="text-right">
                       <p className="text-sm font-bold text-red-600">-${n(c.monto).toLocaleString()}</p>
@@ -2960,11 +2960,11 @@ export function CuentasPorPagarView({ data, actions }) {
           const vencida = cxp.fechaVencimiento && new Date(cxp.fechaVencimiento) < new Date();
           return (
             <div key={cxp.id} className={`bg-white rounded-xl p-4 border ${vencida ? 'border-red-300 bg-red-50' : 'border-slate-100'}`}>
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <p className="font-semibold text-slate-800">{s(cxp.proveedor)}</p>
-                  <p className="text-xs text-slate-400">{s(cxp.concepto)}</p>
-                  <p className="text-xs text-slate-400">{s(cxp.categoria)} • {s(cxp.referencia)}</p>
+              <div className="flex justify-between items-start gap-2 mb-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-slate-800 truncate">{s(cxp.proveedor)}</p>
+                  <p className="text-xs text-slate-400 truncate">{s(cxp.concepto)}</p>
+                  <p className="text-xs text-slate-400 truncate">{s(cxp.categoria)} • {s(cxp.referencia)}</p>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded-full font-semibold ${cxp.estatus === 'Parcial' ? 'bg-amber-100 text-amber-700' : vencida ? 'bg-red-200 text-red-800' : 'bg-slate-100 text-slate-600'}`}>
                   {vencida ? 'Vencida' : cxp.estatus}
@@ -3001,10 +3001,10 @@ export function CuentasPorPagarView({ data, actions }) {
         {paginatedPagadas.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin cuentas pagadas</p>}
         {paginatedPagadas.map(cxp => (
           <div key={cxp.id} className="bg-emerald-50 rounded-lg p-3.5 border border-emerald-100">
-            <div className="flex justify-between items-start">
-              <div>
-                <p className="font-semibold text-slate-700">{s(cxp.proveedor)}</p>
-                <p className="text-xs text-slate-500">{s(cxp.concepto)}</p>
+            <div className="flex justify-between items-start gap-2">
+              <div className="min-w-0">
+                <p className="font-semibold text-slate-700 truncate">{s(cxp.proveedor)}</p>
+                <p className="text-xs text-slate-500 truncate">{s(cxp.concepto)}</p>
               </div>
               <span className="text-xs px-2 py-1 rounded-full font-semibold bg-emerald-200 text-emerald-700">Pagada</span>
             </div>
@@ -3019,13 +3019,13 @@ export function CuentasPorPagarView({ data, actions }) {
       <div className="space-y-1.5">
         {pagosRecientes.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin pagos registrados</p>}
         {pagosRecientes.map(p => (
-          <div key={p.id} className="bg-red-50 rounded-lg p-3 border border-red-100">
-            <div className="flex justify-between">
-              <span className="text-sm font-semibold text-slate-700">{s(p.referencia) || 'Pago a proveedor'}</span>
-              <span className="text-sm font-bold text-red-700">-${n(p.monto).toLocaleString()}</span>
+          <div key={p.id} className="bg-red-50 rounded-lg p-3 border border-red-100 overflow-hidden">
+            <div className="flex justify-between gap-2">
+              <span className="text-sm font-semibold text-slate-700 min-w-0 truncate">{s(p.referencia) || 'Pago a proveedor'}</span>
+              <span className="text-sm font-bold text-red-700 flex-shrink-0">-${n(p.monto).toLocaleString()}</span>
             </div>
             <div className="flex justify-between mt-0.5">
-              <span className="text-xs text-slate-400">{s(p.fecha)} • {s(p.metodoPago)}</span>
+              <span className="text-xs text-slate-400 truncate">{s(p.fecha)} • {s(p.metodoPago)}</span>
             </div>
           </div>
         ))}
