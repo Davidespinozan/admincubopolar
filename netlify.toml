@@ -1,4 +1,13 @@
 [[redirects]]
+  from = "/pagar/:id"
+  to = "/.netlify/functions/billing-pay?o=:id"
+  status = 200
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"

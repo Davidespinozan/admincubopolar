@@ -47,7 +47,7 @@ export function ClientesView({ data, actions }) {
   const openNew = () => { setForm(empty); setErrors({}); setModal("new"); };
   const openEdit = (c) => { setForm({ nombre:s(c.nombre),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Hermosillo",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"" }); setErrors({}); setModal(c); };
 
-  const save = () => {
+    const save = async () => {
     const e = {};
     if (!form.nombre.trim()) e.nombre = "Requerido";
     if (!form.rfc.trim()) e.rfc = "Requerido";
@@ -55,7 +55,13 @@ export function ClientesView({ data, actions }) {
     if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
     if (form.cp.trim() && !/^\d{5}$/.test(form.cp)) e.cp = "CP debe ser 5 dígitos";
     if (Object.keys(e).length) { setErrors(e); return; }
-    if (modal === "new") actions.addCliente(form); else actions.updateCliente(modal.id, form);
+    const err = modal === "new"
+      ? await actions.addCliente(form)
+      : await actions.updateCliente(modal.id, form);
+    if (err) {
+      toast?.error(modal === "new" ? "No se pudo crear el cliente" : "No se pudo actualizar el cliente");
+      return;
+    }
     toast?.success(modal === "new" ? "Cliente creado" : "Cliente actualizado");
     setModal(null);
   };
@@ -153,7 +159,7 @@ export function ProductosView({ data, actions }) {
   const openNew = () => { setForm(empty); setErrors({}); setModal("new"); };
   const openEdit = (p) => { setForm({sku:s(p.sku),nombre:s(p.nombre),tipo:s(p.tipo),stock:n(p.stock),ubicacion:s(p.ubicacion),precio:n(p.precio),costoUnitario:n(p.costo_unitario||p.costoUnitario),proveedor:s(p.proveedor),empaqueSku:s(p.empaque_sku||p.empaqueSku)}); setErrors({}); setModal(p); };
 
-  const save = () => {
+  const save = async () => {
     const e = {};
     if (!form.sku.trim()) e.sku = "Requerido";
     if (!form.nombre.trim()) e.nombre = "Requerido";
@@ -169,7 +175,13 @@ export function ProductosView({ data, actions }) {
       proveedor: form.proveedor || null,
       empaque_sku: form.tipo === "Producto Terminado" ? form.empaqueSku || null : null,
     };
-    if (modal === "new") actions.addProducto(payload); else actions.updateProducto(modal.id, payload);
+    const err = modal === "new"
+      ? await actions.addProducto(payload)
+      : await actions.updateProducto(modal.id, payload);
+    if (err) {
+      toast?.error(modal === "new" ? "No se pudo crear el producto" : "No se pudo actualizar el producto");
+      return;
+    }
     toast?.success(modal === "new" ? "Producto creado" : "Producto actualizado");
     setModal(null);
   };
@@ -275,14 +287,18 @@ export function PreciosView({ data, actions }) {
     return m;
   }, [data.productos]);
 
-  const save = () => {
+  const save = async () => {
     const e = {};
     if (!form.clienteId) e.clienteId = "Requerido";
     if (!form.sku) e.sku = "Requerido";
     if (!form.precio || n(form.precio) <= 0) e.precio = "Precio debe ser mayor a 0";
     if (Object.keys(e).length) { setErrors(e); return; }
     const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
-    actions.addPrecioEsp({clienteId:form.clienteId,clienteNom:s(cli?.nombre),sku:form.sku,precio:form.precio});
+    const err = await actions.addPrecioEsp({clienteId:form.clienteId,clienteNom:s(cli?.nombre),sku:form.sku,precio:form.precio});
+    if (err) {
+      toast?.error("No se pudo crear el precio especial");
+      return;
+    }
     toast?.success("Precio especial creado");
     setModal(false); setForm({clienteId:"",sku:"",precio:""}); setErrors({});
   };
@@ -332,12 +348,16 @@ export function ProduccionView({ data, actions }) {
     return p ? n(p.stock) : 0;
   }, [data.productos, bolsaNecesaria]);
 
-  const save = () => {
+  const save = async () => {
     const e = {};
     if (!form.cantidad || n(form.cantidad) <= 0) e.cantidad = "Cantidad debe ser mayor a 0";
     if (bolsaNecesaria && n(form.cantidad) > stockBolsa) e.cantidad = "Stock insuficiente de " + bolsaNecesaria + " (" + stockBolsa + " disp.)";
     if (Object.keys(e).length) { setErrors(e); return; }
-    actions.addProduccion(form);
+    const err = await actions.addProduccion(form);
+    if (err) {
+      toast?.error("No se pudo crear la orden de producción");
+      return;
+    }
     toast?.success("Orden creada: " + form.cantidad + " " + form.sku + " (consume " + form.cantidad + " " + (bolsaNecesaria||"N/A") + ")");
     setModal(false); setForm({turno:"Matutino",maquina:"Máquina 30",sku:"HC-25K",cantidad:""}); setErrors({});
   };
@@ -672,7 +692,7 @@ export function OrdenesView({ data, actions }) {
   const totalCalc = subtotal+iva;
   const productosStr = useMemo(()=>lines.filter(l=>l.sku&&l.qty>0).map(l=>`${l.qty}×${l.sku}`).join(", "),[lines]);
 
-  const save = () => {
+  const save = async () => {
     const e = {};
     if (!form.clienteId) e.clienteId = "Requerido";
     if (lines.length===0||!lines.some(l=>l.sku&&l.qty>0)) e.productos = "Agrega al menos un producto";
@@ -688,7 +708,11 @@ export function OrdenesView({ data, actions }) {
     }
     if (Object.keys(e).length) { setErrors(e); return; }
     const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
-    actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc});
+    const err = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc});
+    if (err) {
+      toast?.error(err.message || "No se pudo crear la orden");
+      return;
+    }
     toast?.success("Orden creada");
     setModal(false); setForm({clienteId:"",fecha:""}); setLines([]); setErrors({});
   };
@@ -696,11 +720,29 @@ export function OrdenesView({ data, actions }) {
 
   const [pagoModal, setPagoModal] = useState(null);
   const [pagoForm, setPagoForm] = useState({metodo:"Efectivo",referencia:""});
+  const [checkoutProvider, setCheckoutProvider] = useState('mercadopago');
 
-  const cobrarOrden = (ord, tipo) => { setPagoModal({...ord, tipoCobro: tipo || "oficina"}); setPagoForm({metodo:"Efectivo",referencia:""}); };
-  const confirmarCobro = () => {
+  const [checkoutUrl, setCheckoutUrl] = useState(null);
+  const [shortUrl, setShortUrl] = useState(null);
+  const cobrarOrden = (ord, tipo) => { setPagoModal({...ord, tipoCobro: tipo || "oficina"}); setPagoForm({metodo:"Efectivo",referencia:""}); setCheckoutProvider('mercadopago'); setCheckoutUrl(null); setShortUrl(null); };
+  const confirmarCobro = async () => {
     if (!pagoModal) return;
-    actions.updateOrdenEstatus(pagoModal.id, "Entregada");
+    if (pagoForm.metodo === "QR / Link de pago") {
+      const result = await actions.crearCheckoutPago?.(pagoModal.id, checkoutProvider);
+      if (result?.checkoutUrl) {
+        setCheckoutUrl(result.checkoutUrl);
+        setShortUrl(result.shortUrl || result.checkoutUrl);
+        toast?.success('Link de pago generado');
+      } else {
+        toast?.error('Error al generar link de pago');
+      }
+      return;
+    }
+    const err = await actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo);
+    if (err) {
+      toast?.error("No se pudo registrar el cobro");
+      return;
+    }
     toast?.success("Orden " + s(pagoModal.folio) + " cobrada - " + pagoForm.metodo);
     setPagoModal(null);
   };
@@ -732,7 +774,7 @@ export function OrdenesView({ data, actions }) {
         {key:"cliente",label:"Cliente",bold:true},{key:"fecha",label:"Fecha",render:v=>fmtDate(v),hideOnMobile:true},
         {key:"productos",label:"Productos",render:v=><span className="text-xs text-slate-500 font-mono">{s(v)}</span>,hideOnMobile:true},
         {key:"total",label:"Total",bold:true,render:v=>`$${n(v).toLocaleString()}`},
-        {key:"estatus",label:"Estatus",badge:true,render:(v,r)=><div className="flex items-center gap-2 flex-wrap"><StatusBadge status={v}/><span className="hidden md:inline">{v==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"oficina")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="text-xs text-blue-600 font-semibold px-2 py-0.5">Asignar ruta</button></>}{v==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"ruta")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar entrega</button>}{v==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="text-xs text-purple-600 font-semibold px-2 py-0.5">→ Facturar</button>}</span></div>},
+        {key:"estatus",label:"Estatus",badge:true,render:(v,r)=><div className="flex items-center gap-2 flex-wrap"><StatusBadge status={v}/><span className="hidden md:inline">{v==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="text-xs text-blue-600 font-semibold px-2 py-0.5">Asignar ruta</button></>}{v==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"entrega")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar entrega</button>}{v==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="text-xs text-purple-600 font-semibold px-2 py-0.5">→ Facturar</button>}</span></div>},
         {key:"ruta",label:"Ruta",hideOnMobile:true},
       ]} data={paginated}
       cardSubtitle={r => {
@@ -740,8 +782,8 @@ export function OrdenesView({ data, actions }) {
         const btn = (label, color, next) => <button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,next)}} className={`mt-2 w-full text-xs font-semibold ${color} px-3 py-2.5 rounded-lg min-h-[44px]`}>{label}</button>;
         return <div>
           <span className="text-xs text-slate-400">{fmtDate(r.fecha)} · {s(r.productos)}</span>
-          {est==="Creada"&&<div className="flex gap-2 mt-2"><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"oficina")}} className="flex-1 text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2.5 rounded-lg min-h-[44px]">Cobrar en tienda</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="flex-1 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-2.5 rounded-lg min-h-[44px]">Asignar a ruta</button></div>}
-          {est==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"ruta")}} className="mt-2 w-full text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2.5 rounded-lg min-h-[44px]">Cobrar entrega</button>}
+          {est==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="mt-2 w-full text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2.5 rounded-lg min-h-[44px]">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="mt-2 w-full text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-2.5 rounded-lg min-h-[44px]">Asignar a ruta</button></>}
+          {est==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"entrega")}} className="mt-2 w-full text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2.5 rounded-lg min-h-[44px]">Cobrar entrega</button>}
           {est==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="mt-2 w-full text-xs font-semibold text-purple-600 bg-purple-50 px-3 py-2.5 rounded-lg min-h-[44px]">→ Facturar</button>}
         </div>;
       }}
@@ -803,13 +845,33 @@ export function OrdenesView({ data, actions }) {
           )}
           {pagoForm.metodo==="QR / Link de pago" && (
             <div className="mb-4 p-3 bg-blue-50 rounded-xl">
-              <p className="text-xs text-blue-700 font-semibold mb-1">Próximamente</p>
-              <p className="text-xs text-blue-600">Se generará QR de Mercado Pago / Stripe.</p>
+              <p className="text-xs text-blue-700 font-semibold mb-2">Proveedor de checkout</p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'mercadopago', label: 'Mercado Pago' },
+                  { value: 'stripe', label: 'Stripe' },
+                ].map(opt => (
+                  <button key={opt.value} type="button" onClick={()=>setCheckoutProvider(opt.value)}
+                    className={`py-2 px-3 rounded-lg text-xs font-semibold border ${checkoutProvider===opt.value ? 'border-blue-500 bg-white text-blue-700' : 'border-blue-100 text-blue-600'}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {pagoForm.metodo==="QR / Link de pago" && checkoutUrl && (
+            <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
+              <p className="text-xs font-bold text-emerald-700">✓ Link de pago generado</p>
+              <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); toast?.success('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
+                <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por $${n(pagoModal.total).toLocaleString()} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>
+              </div>
             </div>
           )}
           <div className="flex gap-2 mt-4">
-            <button onClick={()=>setPagoModal(null)} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600">Cancelar</button>
-            <button onClick={confirmarCobro} className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold">Confirmar cobro</button>
+            <button onClick={()=>{setCheckoutUrl(null);setShortUrl(null);setPagoModal(null)}} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600">{checkoutUrl ? 'Cerrar' : 'Cancelar'}</button>
+            {!checkoutUrl && <button onClick={confirmarCobro} className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold">{pagoForm.metodo==="QR / Link de pago" ? 'Generar link de pago' : 'Confirmar cobro'}</button>}
           </div>
         </div>
       </div>
@@ -1476,9 +1538,13 @@ export function ConciliacionView({ data }) {
     return (data.rutas || []).filter(r => r.estatus === "Completada" || r.estatus === "Cerrada").map(ruta => {
       const rutaOrdenes = data.ordenes.filter(o => eqId(o.rutaId, ruta.id));
       const entregadas = rutaOrdenes.filter(o => o.estatus === "Entregada");
+      const esCredito = (orden) => {
+        const metodo = s(orden.metodoPago || orden.metodo_pago).toLowerCase();
+        return metodo.includes("crédito") || metodo.includes("fiado");
+      };
       const totalVendido = entregadas.reduce((s, o) => s + n(o.total), 0);
-      const totalCobrado = entregadas.filter(o => o.metodoPago !== "Crédito").reduce((s, o) => s + n(o.total), 0);
-      const totalCredito = entregadas.filter(o => o.metodoPago === "Crédito").reduce((s, o) => s + n(o.total), 0);
+      const totalCobrado = entregadas.filter(o => !esCredito(o)).reduce((s, o) => s + n(o.total), 0);
+      const totalCredito = entregadas.filter(esCredito).reduce((s, o) => s + n(o.total), 0);
       return { ...ruta, rutaOrdenes, entregadas, totalVendido, totalCobrado, totalCredito };
     });
   }, [data.rutas, data.ordenes]);

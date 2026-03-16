@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { backendPost } from '../lib/backend';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 
@@ -570,9 +571,10 @@ export function useSupaStore(userId, userName) {
           total,
           estatus: 'Creada',
           metodo_pago: o.metodoPago || 'Efectivo',
+          vendedor_id: o.usuarioId || null,
         };
 
-        const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id').single();
+        const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id, folio, cliente_nombre, productos, total, estatus, fecha, metodo_pago, cliente_id, requiere_factura').single();
         if (e1) { t()?.error('Error al crear orden'); return e1; }
 
         const { error: e2 } = await supabase.from('orden_lineas').insert(
@@ -582,7 +584,9 @@ export function useSupaStore(userId, userName) {
         await log('Crear', 'Órdenes', `${folio} — $${total}`);
 
         if (!e2) rf();
-        return e2;
+        if (e2) return e2;
+        // Return the created order so callers can use it immediately
+        return { orden: { ...newOrd, cliente: newOrd.cliente_nombre } };
       },
 
       updateOrdenEstatus: async (id, nuevoEst, metodoPago = null) => {
@@ -605,7 +609,7 @@ export function useSupaStore(userId, userName) {
 
         // Auto-registrar ingreso o CxC al cobrar (Entregada)
         if (nuevoEst === 'Entregada') {
-          const { data: ord } = await supabase.from('ordenes').select('folio, total, cliente_id, metodo_pago').eq('id', id).single();
+          const { data: ord } = await supabase.from('ordenes').select('id, folio, total, cliente_id, metodo_pago, facturama_id').eq('id', id).single();
           if (ord && n(ord.total) > 0) {
             const cli = ord.cliente_id
               ? (await supabase.from('clientes').select('nombre').eq('id', ord.cliente_id).single())?.data
@@ -638,6 +642,15 @@ export function useSupaStore(userId, userName) {
                 concepto: `Cobro ${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
                 monto: centavos(n(ord.total)),
               });
+            }
+          }
+
+          // Sync payment status with Facturama if invoice exists
+          if (ord.facturama_id) {
+            try {
+              await backendPost('billing-sync-payment', { ordenId: ord.id });
+            } catch (syncErr) {
+              console.warn('[syncFacturama]', syncErr.message);
             }
           }
         }
@@ -1078,13 +1091,79 @@ export function useSupaStore(userId, userName) {
       },
 
       // ── FACTURACIÓN ──
-      timbrar: async (folio) => {
-        const { error } = await supabase.rpc('timbrar_orden', { p_folio: folio, p_usuario_id: uid() });
-        if (error) { 
-          console.error('[timbrar]', error.message, error.code);
-          t()?.error('Error al timbrar orden: ' + error.message); 
-          return error; 
+      crearCheckoutPago: async (ordenId, provider = 'mercadopago') => {
+        const { data: orden, error: ordenError } = await supabase
+          .from('ordenes')
+          .select('id, folio, total, cliente_id, cliente_nombre, productos')
+          .eq('id', ordenId)
+          .single();
+        if (ordenError || !orden) {
+          t()?.error('Orden no encontrada');
+          return ordenError || new Error('Orden no encontrada');
         }
+
+        // Fetch order lines with product names
+        const { data: lineas } = await supabase
+          .from('orden_lineas')
+          .select('sku, cantidad, precio_unit, subtotal')
+          .eq('orden_id', ordenId);
+
+        const prods = get().productos || [];
+        const items = (lineas || []).map(l => {
+          const prod = prods.find(p => s(p.sku) === s(l.sku));
+          return {
+            name: prod ? s(prod.nombre) || s(l.sku) : s(l.sku),
+            sku: s(l.sku),
+            quantity: l.cantidad,
+            unitPrice: l.precio_unit,
+          };
+        });
+
+        let cliente = null;
+        if (orden.cliente_id) {
+          const { data: cli } = await supabase
+            .from('clientes')
+            .select('nombre, correo')
+            .eq('id', orden.cliente_id)
+            .single();
+          cliente = cli;
+        }
+
+        try {
+          const origin = typeof window !== 'undefined' ? window.location.origin : '';
+          const payload = await backendPost('billing-create-checkout', {
+            provider,
+            ordenId: orden.id,
+            amount: n(orden.total),
+            currency: 'MXN',
+            description: `Orden ${orden.folio} — ${orden.cliente_nombre || 'Cliente'}`,
+            items: items.length > 0 ? items : undefined,
+            customer: {
+              email: cliente?.correo || undefined,
+              name: cliente?.nombre || orden.cliente_nombre || 'Cliente',
+            },
+            successUrl: origin ? `${origin}/?checkout=success&folio=${encodeURIComponent(orden.folio)}` : undefined,
+            cancelUrl: origin ? `${origin}/?checkout=cancel&folio=${encodeURIComponent(orden.folio)}` : undefined,
+          });
+          log('Checkout', 'Pagos', `${orden.folio} — ${provider}`);
+          // Add short URL for sharing
+          const shortUrl = origin ? `${origin}/pagar/${orden.id}` : null;
+          return { ...payload, shortUrl, folio: orden.folio, clienteNombre: orden.cliente_nombre };
+        } catch (error) {
+          t()?.error('Error al generar checkout: ' + error.message);
+          return error;
+        }
+      },
+
+      timbrar: async (folio) => {
+        try {
+          await backendPost('billing-create-invoice', { folio });
+        } catch (error) {
+          console.error('[timbrar]', error.message);
+          t()?.error('Error al timbrar orden: ' + error.message);
+          return error;
+        }
+        // Backend already updates estatus to 'Facturada' and saves facturama_id
         log('Timbrar', 'Facturación', `${folio}`);
         rf();
       },
@@ -1666,17 +1745,21 @@ export function useSupaStore(userId, userName) {
         // Default vencimiento: 15 días para crédito
         const fechaVenc = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-        // 0. Actualizar estatus de la ruta a Finalizada
+        // 0. Actualizar estatus de la ruta a Cerrada para mantener consistencia con la UI
         if (rutaId) {
           const { error: rutaErr } = await supabase.from('rutas').update({
-            estatus: 'Finalizada',
+            estatus: 'Cerrada',
             fecha_fin: hoy,
           }).eq('id', rutaId);
           if (rutaErr) console.warn('[cerrarRutaCompleta] Error actualizando ruta:', rutaErr.message);
         }
 
-        // 1. Crear órdenes + líneas + ingreso/pago/CxC por cada entrega
+        // 1. Crear órdenes + líneas + ingreso/pago/CxC solo para ventas exprés.
+        // Las órdenes ya asignadas a la ruta se cobran/entregan antes y no deben duplicarse al cierre.
         for (const e of (entregas || [])) {
+          const esVentaExpress = Boolean(e?.express) || !e?.ordenId;
+          if (!esVentaExpress) continue;
+
           const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
           const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
           // Build productos string from items
@@ -1692,6 +1775,7 @@ export function useSupaStore(userId, userName) {
             productos: itemsStr || 'Varios',
             fecha: hoy, total, estatus: 'Entregada',
             metodo_pago: metodoPago,
+            ruta_id: rutaId || null,
           }).select('id').single();
           if (ordErr) console.warn('[cerrarRutaCompleta] orden insert error:', ordErr.message);
 

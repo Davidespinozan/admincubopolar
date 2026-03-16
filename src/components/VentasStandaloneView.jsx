@@ -14,6 +14,9 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const [modal, setModal] = useState(false);
   const [pagoModal, setPagoModal] = useState(null);
   const [pagoForm, setPagoForm] = useState({ metodo: "Efectivo", referencia: "" });
+  const [checkoutProvider, setCheckoutProvider] = useState('mercadopago');
+  const [checkoutUrl, setCheckoutUrl] = useState(null);
+  const [shortUrl, setShortUrl] = useState(null);
   const [toast, setToast] = useState("");
 
   // Order form
@@ -100,28 +103,46 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
     setCliForm({ nombre: "", contacto: "", tipo: "Tienda", requiereFactura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
   };
 
-  const crearOrden = () => {
+  const crearOrden = async () => {
     if (!form.clienteId) return;
     if (!lines.some(l => l.sku && l.qty > 0)) return;
     const cli = (data.clientes || []).find(c => eqId(c.id, form.clienteId));
-    actions.addOrden({
+    const total = totalCalc;
+    const result = await actions.addOrden({
       cliente: s(cli?.nombre), clienteId: form.clienteId,
       fecha: new Date().toISOString().slice(0, 10),
-      productos: productosStr, total: totalCalc,
+      productos: productosStr, total,
       requiereFactura: form.requiereFactura,
       usuarioId: user?.id,
       authId: user?.auth_id,
     });
-    showToast("Orden creada — $" + totalCalc.toLocaleString() + (form.requiereFactura ? " (con factura)" : ""));
     setModal(false);
     setForm({ clienteId: "", requiereFactura: false });
     setLines([{ sku: "", qty: 1, precio: 0 }]);
+    // Auto-open payment modal with the newly created order
+    if (result?.orden) {
+      showToast("Orden creada — ahora cobra");
+      cobrar(result.orden);
+    } else {
+      showToast("Orden creada — $" + total.toLocaleString());
+    }
   };
 
-  const cobrar = (ord) => { setPagoModal(ord); setPagoForm({ metodo: "Efectivo", referencia: "" }); };
-  const confirmarCobro = () => {
+  const cobrar = (ord) => { setPagoModal(ord); setPagoForm({ metodo: "Efectivo", referencia: "" }); setCheckoutProvider('mercadopago'); setCheckoutUrl(null); setShortUrl(null); };
+  const confirmarCobro = async () => {
     if (!pagoModal) return;
-    actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo);
+    if (pagoForm.metodo === "QR / Link de pago") {
+      const result = await actions.crearCheckoutPago?.(pagoModal.id, checkoutProvider);
+      if (result?.checkoutUrl) {
+        setCheckoutUrl(result.checkoutUrl);
+        setShortUrl(result.shortUrl || result.checkoutUrl);
+        showToast('Link de pago generado');
+      } else {
+        showToast('Error al generar link de pago');
+      }
+      return;
+    }
+    await actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo);
     showToast(pagoForm.metodo.includes("Crédito") || pagoForm.metodo.includes("fiado") ? "Venta a crédito registrada" : "Cobrado — " + pagoForm.metodo);
     setPagoModal(null);
   };
@@ -389,10 +410,37 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                 <input value={pagoForm.referencia} onChange={e => setPagoForm(f => ({ ...f, referencia: e.target.value }))}
                   className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Últimos 6 dígitos" /></div>
             )}
+            {pagoForm.metodo === "QR / Link de pago" && (
+              <div className="mb-4 p-3 bg-blue-50 rounded-xl">
+                <p className="text-xs text-blue-700 font-semibold mb-2">Proveedor de checkout</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: 'mercadopago', label: 'Mercado Pago' },
+                    { value: 'stripe', label: 'Stripe' },
+                  ].map(opt => (
+                    <button key={opt.value} type="button" onClick={() => setCheckoutProvider(opt.value)}
+                      className={`py-2 px-3 rounded-lg text-xs font-semibold border ${checkoutProvider === opt.value ? 'border-blue-500 bg-white text-blue-700' : 'border-blue-100 text-blue-600'}`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {pagoForm.metodo === "QR / Link de pago" && checkoutUrl && (
+              <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
+                <p className="text-xs font-bold text-emerald-700">✓ Link de pago generado</p>
+                <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
+                  <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por $${n(pagoModal.total).toLocaleString()} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>
+                </div>
+                <button onClick={() => { setCheckoutUrl(null); setShortUrl(null); setPagoModal(null); }} className="w-full py-2 text-xs text-slate-500 font-semibold">Cerrar</button>
+              </div>
+            )}
             {pagoForm.metodo === "Crédito (fiado)" && (
               <div className="mb-4 p-3 bg-amber-50 rounded-xl"><p className="text-xs text-amber-700 font-semibold">Se agregará al saldo del cliente</p></div>
             )}
-            <button onClick={confirmarCobro} className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-emerald-200">Confirmar cobro</button>
+            {!checkoutUrl && <button onClick={confirmarCobro} className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-xl text-sm shadow-lg shadow-emerald-200">{pagoForm.metodo === "QR / Link de pago" ? "Generar link de pago" : "Confirmar cobro"}</button>}
           </div>
         </div>
       )}

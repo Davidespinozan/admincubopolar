@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { s, n } from '../utils/safe';
 
-const PAGOS = ["Efectivo", "Transferencia", "Tarjeta", "Crédito"];
+const PAGOS = ["Efectivo", "Transferencia", "Tarjeta", "QR / Link de pago", "Crédito"];
 const MERMA_CAUSAS = ["Bolsa rota", "Hielo derretido", "Daño transporte", "Rechazo cliente"];
 const REGIMENES = ["Régimen General", "Régimen Simplificado", "Sin obligaciones"];
 const USOS_CFDI = ["G01", "G03", "S01", "P01"];
@@ -16,6 +16,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [mermaModal, setMermaModal] = useState(false);
   const [cobroMetodo, setCobroMetodo] = useState("Efectivo");
   const [cobroRef, setCobroRef] = useState("");
+  const [checkoutProvider, setCheckoutProvider] = useState('stripe');
+  const [checkoutUrl, setCheckoutUrl] = useState(null);
+  const [shortUrl, setShortUrl] = useState(null);
   const [vForm, setVForm] = useState({ clienteId: "", cliente: "", sku: "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
   const [mForm, setMForm] = useState({ sku: "", cant: "", causa: "Bolsa rota" });
   const [fotoMerma, setFotoMerma] = useState(null);
@@ -185,8 +188,20 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     showToast("Carga confirmada. Ruta iniciada.");
   };
 
-  const confirmarEntrega = () => {
+  const confirmarEntrega = async () => {
     if (!entregaModal) return;
+    // QR / Link de pago → generate checkout
+    if (cobroMetodo === "QR / Link de pago") {
+      const result = await actions.crearCheckoutPago?.(entregaModal.id, checkoutProvider);
+      if (result?.checkoutUrl) {
+        setCheckoutUrl(result.checkoutUrl);
+        setShortUrl(result.shortUrl || result.checkoutUrl);
+        showToast('Link de pago generado');
+      } else {
+        showToast("Error al generar link de pago");
+      }
+      return;
+    }
     const entrega = {
       ordenId: entregaModal.id,
       folio: s(entregaModal.folio),
@@ -198,9 +213,15 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       foto: cobroMetodo === "Transferencia" ? fotoTransf : null,
       hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
     };
-    setEntregas(prev => [...prev, entrega]);
     // Update order status in store
-    if (actions.updateOrdenEstatus) actions.updateOrdenEstatus(entregaModal.id, "Entregada");
+    const err = actions.updateOrdenEstatus
+      ? await actions.updateOrdenEstatus(entregaModal.id, "Entregada", cobroMetodo)
+      : null;
+    if (err) {
+      showToast("No se pudo registrar la entrega");
+      return;
+    }
+    setEntregas(prev => [...prev, entrega]);
     showToast("Entregado a " + entrega.cliente);
     setEntregaModal(null);
     setFotoTransf(null);
@@ -272,12 +293,12 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" });
   };
 
-  const cerrarRuta = () => {
+  const cerrarRuta = async () => {
     // Save complete route report to store
     if (actions.cerrarRutaCompleta) {
       const cobrosPorMetodo = {};
       for (const e of entregas) cobrosPorMetodo[e.pago] = (cobrosPorMetodo[e.pago]||0) + n(e.total);
-      actions.cerrarRutaCompleta({
+      await actions.cerrarRutaCompleta({
         rutaId: miRutaActiva?.id, // ID de la ruta activa
         choferId: user?.id,
         choferNombre: s(user?.nombre),
@@ -436,7 +457,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               <div className="flex flex-wrap gap-1 mb-3">
                 {o.items.map((it, i) => <span key={i} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{it.cant}× {it.sku} · ${it.precio}</span>)}
               </div>
-              <button onClick={() => { setEntregaModal(o); setCobroMetodo("Efectivo"); setCobroRef(""); }}
+              <button onClick={() => { setEntregaModal(o); setCobroMetodo("Efectivo"); setCobroRef(""); setCheckoutUrl(null); setShortUrl(null); }}
                 className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-xl text-sm active:scale-[0.98] transition-transform shadow-sm">
                 Entregar y cobrar
               </button>
@@ -477,8 +498,8 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <div className="flex flex-wrap gap-1 my-3">{entregaModal.items.map((it, i) => <span key={i} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{it.cant}× {it.sku} · ${it.precio}</span>)}</div>
             <p className="text-3xl font-extrabold text-slate-800 mb-4">${entregaModal.totalCalc.toLocaleString()}</p>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">¿Cómo paga?</label>
-            <div className="grid grid-cols-2 gap-2 mb-4">
-              {PAGOS.map(m => <button key={m} onClick={() => setCobroMetodo(m)} className={`py-3.5 rounded-xl text-sm font-bold border-2 transition-all ${cobroMetodo===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-600"}`}>{m==="Efectivo"?"💵 Efectivo":m==="Transferencia"?"📱 Transferencia":m==="Tarjeta"?"💳 Tarjeta":"📋 Crédito"}</button>)}
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              {PAGOS.map(m => <button key={m} onClick={() => setCobroMetodo(m)} className={`py-3.5 rounded-xl text-sm font-bold border-2 transition-all ${cobroMetodo===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-600"}`}>{m==="Efectivo"?"💵 Efectivo":m==="Transferencia"?"📱 Transferencia":m==="Tarjeta"?"💳 Tarjeta":m==="QR / Link de pago"?"🔗 QR / Link":"📋 Crédito"}</button>)}
             </div>
             {cobroMetodo==="Transferencia" && <div className="mb-4 space-y-2">
               <input value={cobroRef} onChange={e=>setCobroRef(e.target.value)} className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Referencia (últimos 6 dígitos)" />
@@ -491,8 +512,33 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 </label>
               )}
             </div>}
+            {cobroMetodo==="QR / Link de pago" && (
+              <div className="mb-4 p-3 bg-blue-50 rounded-xl">
+                <p className="text-xs text-blue-700 font-semibold mb-2">Proveedor de checkout</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {[{ value: 'stripe', label: '💳 Stripe' }, { value: 'mercadopago', label: '🟢 Mercado Pago' }].map(opt => (
+                    <button key={opt.value} onClick={() => setCheckoutProvider(opt.value)}
+                      className={`py-2.5 px-3 rounded-lg text-xs font-bold border-2 ${checkoutProvider === opt.value ? 'border-blue-500 bg-white text-blue-700' : 'border-blue-100 text-blue-600'}`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-blue-600 mt-2">Se abre un link para que el cliente pague.</p>
+              </div>
+            )}
+            {cobroMetodo==="QR / Link de pago" && checkoutUrl && (
+              <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
+                <p className="text-xs font-bold text-emerald-700">✓ Link de pago generado</p>
+                <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
+                  <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por $${entregaModal.totalCalc.toLocaleString()} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 WhatsApp</a>
+                </div>
+                <button onClick={() => { setCheckoutUrl(null); setShortUrl(null); setEntregaModal(null); }} className="w-full py-2 text-xs text-slate-500 font-semibold">Cerrar</button>
+              </div>
+            )}
             {cobroMetodo==="Crédito" && <div className="bg-amber-50 rounded-xl p-3 mb-4"><p className="text-xs text-amber-700 font-semibold">Se agrega a la cuenta del cliente</p></div>}
-            <button onClick={confirmarEntrega} className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform">✓ Confirmar entrega</button>
+            {!checkoutUrl && <button onClick={confirmarEntrega} className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform">{cobroMetodo === "QR / Link de pago" ? "Generar link de pago" : "✓ Confirmar entrega"}</button>}
           </div>
         </div>
       )}
@@ -567,8 +613,21 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 </div>
               )}
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pago</label>
-                <div className="grid grid-cols-4 gap-1.5">{PAGOS.map(m => <button key={m} onClick={() => setVForm(f=>({...f,pago:m}))} className={`py-2 rounded-lg text-[11px] font-bold border-2 ${vForm.pago===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-500"}`}>{m}</button>)}</div>
+                <div className="grid grid-cols-3 gap-1.5">{PAGOS.map(m => <button key={m} onClick={() => setVForm(f=>({...f,pago:m}))} className={`py-2 rounded-lg text-[11px] font-bold border-2 ${vForm.pago===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-500"}`}>{m==="QR / Link de pago"?"🔗 QR/Link":m}</button>)}</div>
               </div>
+              {vForm.pago === "QR / Link de pago" && (
+                <div className="p-3 bg-blue-50 rounded-xl">
+                  <p className="text-xs text-blue-700 font-semibold mb-2">Proveedor</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[{ value: 'stripe', label: '💳 Stripe' }, { value: 'mercadopago', label: '🟢 Mercado Pago' }].map(opt => (
+                      <button key={opt.value} onClick={() => setCheckoutProvider(opt.value)}
+                        className={`py-2 px-3 rounded-lg text-xs font-bold border-2 ${checkoutProvider === opt.value ? 'border-blue-500 bg-white text-blue-700' : 'border-blue-100 text-blue-600'}`}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             <button onClick={crearVentaExpress} disabled={!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&(!vForm.cliente.trim()||!vForm.rfc.trim()||!vForm.correo.trim()||!vForm.regimen||!vForm.usoCfdi||vForm.cp.trim().length!==5||vForm.rfc.trim().length<12||vForm.rfc.trim().length>13))} className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40">{vForm.factura ? "Crear venta con factura" : "Crear venta"}</button>
           </div>

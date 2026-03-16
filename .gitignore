@@ -5,3 +5,11 @@ dist
 .env
 .env.local
 .env.*.local
+
+# Local Netlify folder
+.netlify
+
+# Stray files
+npm
+ordenes
+deno.lock
