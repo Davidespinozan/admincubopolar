@@ -1104,12 +1104,11 @@ export function useSupaStore(userId, userName) {
           }
 
           // Fetch order lines with product names
-          const { data: lineas } = await supabase
-            .from('orden_lineas')
-            .select('sku, cantidad, precio_unit, subtotal')
-            .eq('orden_id', ordenId);
+          const [{ data: lineas }, { data: prods }] = await Promise.all([
+            supabase.from('orden_lineas').select('sku, cantidad, precio_unit, subtotal').eq('orden_id', ordenId),
+            supabase.from('productos').select('sku, nombre'),
+          ]);
 
-          const prods = get().productos || [];
           const items = (lineas || []).map(l => {
             const prod = prods.find(p => s(p.sku) === s(l.sku));
             return {
