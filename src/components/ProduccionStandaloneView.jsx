@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { supabase } from '../lib/supabase';
 import { s, n } from '../utils/safe';
 
 const empaqueMap = { "HC-25K": "EMP-25", "HC-5K": "EMP-5", "HT-25K": "EMP-25", "BH-50K": null };
@@ -21,28 +22,78 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const [mermaModal, setMermaModal] = useState(false);
   const [mForm, setMForm] = useState({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" });
-  const [mermas, setMermas] = useState([]);
-  const [fotoMerma, setFotoMerma] = useState(null);
+  const [fotoMermaFile, setFotoMermaFile] = useState(null);
+  const [fotoMermaPreview, setFotoMermaPreview] = useState('');
+  const [guardandoMerma, setGuardandoMerma] = useState(false);
 
   const [toast, setToast] = useState("");
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
   const MERMA_CAUSAS = ["Bolsa rota", "Mal sellado", "Hielo derretido", "Falla de equipo", "Desmolde fallido", "Contaminación", "Otro"];
 
-  const registrarMerma = () => {
-    if (!mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMerma) return;
-    const cant = n(mForm.cantidad);
-    // 1. Persist merma to Supabase
-    actions.registrarMerma(mForm.sku, cant, mForm.causa, s(user?.nombre), fotoMerma);
-    // 2. Deduct from cuarto frío stock (updateProducto doesn't touch stock — wrong action)
-    if (mForm.congelador && actions.sacarDeCuartoFrio) {
-      actions.sacarDeCuartoFrio(mForm.congelador, mForm.sku, cant, `Merma: ${mForm.causa}`);
+  useEffect(() => {
+    return () => {
+      if (fotoMermaPreview && fotoMermaPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(fotoMermaPreview);
+      }
+    };
+  }, [fotoMermaPreview]);
+
+  const clearFotoMerma = () => {
+    if (fotoMermaPreview && fotoMermaPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(fotoMermaPreview);
     }
-    setMermas(prev => [...prev, { id: Date.now(), sku: mForm.sku, cantidad: cant, causa: mForm.causa, congelador: mForm.congelador, foto: fotoMerma, hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) }]);
-    showToast("Merma: " + cant + "× " + mForm.sku + " registrada");
-    setMermaModal(false);
-    setFotoMerma(null);
-    setMForm({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" });
+    setFotoMermaFile(null);
+    setFotoMermaPreview('');
+  };
+
+  const registrarMerma = async () => {
+    if (!mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMermaFile) return;
+    const cant = n(mForm.cantidad);
+    const authOwner = s(user?.auth_id || user?.id || 'usuario');
+    const ext = (fotoMermaFile.name?.split('.').pop() || 'jpg').toLowerCase();
+    const safeExt = /^[a-z0-9]+$/.test(ext) ? ext : 'jpg';
+    const filePath = `${authOwner}/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${mForm.sku}.${safeExt}`;
+
+    setGuardandoMerma(true);
+    try {
+      const { error: uploadErr } = await supabase.storage
+        .from('mermas')
+        .upload(filePath, fotoMermaFile, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: fotoMermaFile.type || 'image/jpeg',
+        });
+      if (uploadErr) {
+        showToast('No se pudo subir la foto');
+        return;
+      }
+
+      let stockErr = null;
+      if (mForm.congelador && actions.sacarDeCuartoFrio) {
+        stockErr = await actions.sacarDeCuartoFrio(mForm.congelador, mForm.sku, cant, `Merma: ${mForm.causa}`);
+      }
+      if (stockErr) {
+        await supabase.storage.from('mermas').remove([filePath]);
+        return;
+      }
+
+      const mermaErr = await actions.registrarMerma(mForm.sku, cant, mForm.causa, s(user?.nombre), filePath);
+      if (mermaErr) {
+        if (mForm.congelador && actions.meterACuartoFrio) {
+          await actions.meterACuartoFrio(mForm.congelador, mForm.sku, cant);
+        }
+        await supabase.storage.from('mermas').remove([filePath]);
+        return;
+      }
+
+      showToast("Merma: " + cant + "× " + mForm.sku + " registrada");
+      setMermaModal(false);
+      clearFotoMerma();
+      setMForm({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" });
+    } finally {
+      setGuardandoMerma(false);
+    }
   };
 
   const prodHoy = useMemo(() => {
@@ -52,7 +103,12 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const totalHoy = useMemo(() => prodHoy.reduce((s, p) => s + n(p.cantidad), 0), [prodHoy]);
 
-  const mermaHoy = useMemo(() => mermas.reduce((s, m) => s + n(m.cantidad), 0), [mermas]);
+  const mermasHoyList = useMemo(() => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    return (data.mermas || []).filter(m => s(m.fecha).slice(0, 10) === hoy);
+  }, [data.mermas]);
+
+  const mermaHoy = useMemo(() => mermasHoyList.reduce((sum, item) => sum + n(item.cantidad), 0), [mermasHoyList]);
   const skuOptions = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
   const cuartos = data.cuartosFrios || [];
 
@@ -430,22 +486,22 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
       {/* ═══ TAB MERMAS ═══ */}
         {tab === "mermas" && (<>
-          <button onClick={() => { setMermaModal(true); setFotoMerma(null); setMForm({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" }); }}
+          <button onClick={() => { setMermaModal(true); clearFotoMerma(); setMForm({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" }); }}
             className="w-full py-5 bg-red-500 text-white font-extrabold rounded-2xl text-lg shadow-lg shadow-red-200 active:scale-[0.98] transition-transform">
             + Registrar merma
           </button>
 
-          {mermas.length > 0 ? (
+          {mermasHoyList.length > 0 ? (
             <div className="space-y-2">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Mermas de hoy ({mermas.length})</h3>
-              {mermas.map(m => (
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Mermas de hoy ({mermasHoyList.length})</h3>
+              {mermasHoyList.map(m => (
                 <div key={m.id} className="bg-red-50 rounded-xl p-3 border border-red-200">
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="text-sm font-bold text-red-700">{m.cantidad}× {m.sku}</p>
-                      <p className="text-xs text-slate-500">{m.causa} · {m.congelador} · {m.hora}</p>
+                      <p className="text-xs text-slate-500">{m.causa} · {m.origen} · {s(m.fecha) || 'Hoy'}</p>
                     </div>
-                    {m.foto && <img src={m.foto} alt="Evidencia" className="w-10 h-10 object-cover rounded-lg border border-red-300" />}
+                    {m.fotoUrl && <img src={m.fotoUrl} alt="Evidencia" className="w-10 h-10 object-cover rounded-lg border border-red-300" />}
                   </div>
                 </div>
               ))}
@@ -502,19 +558,19 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Evidencia (foto) *</label>
-                {fotoMerma ? (
-                  <div><img src={fotoMerma} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoMerma(null)} className="text-xs text-slate-400 mt-1">Tomar otra</button></div>
+                {fotoMermaPreview ? (
+                  <div><img src={fotoMermaPreview} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={clearFotoMerma} className="text-xs text-slate-400 mt-1">Tomar otra</button></div>
                 ) : (
                   <label className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
                     <span className="text-lg">📷</span> Tomar foto de evidencia
-                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { const r = new FileReader(); r.onload = ev => setFotoMerma(ev.target.result); r.readAsDataURL(f); }}} />
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { clearFotoMerma(); setFotoMermaFile(f); setFotoMermaPreview(URL.createObjectURL(f)); } }} />
                   </label>
                 )}
               </div>
             </div>
-            <button onClick={registrarMerma} disabled={!mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMerma}
+            <button onClick={registrarMerma} disabled={guardandoMerma || !mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMermaFile}
               className="w-full py-3.5 bg-red-500 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">
-              Registrar merma
+              {guardandoMerma ? 'Guardando...' : 'Registrar merma'}
             </button>
           </div>
         </div>

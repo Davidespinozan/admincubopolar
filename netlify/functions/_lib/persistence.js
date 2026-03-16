@@ -34,6 +34,50 @@ const markWebhookEventProcessed = async (id) => {
   if (error) throw error;
 };
 
+const syncCuentaPorCobrarPayment = async ({ orden, amount, referencia }) => {
+  const supabase = getSupabaseAdmin();
+  const { data: cxc, error } = await supabase
+    .from('cuentas_por_cobrar')
+    .select('id, cliente_id, monto_original, monto_pagado, saldo_pendiente')
+    .eq('orden_id', orden.id)
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !cxc) {
+    return { cxcId: null, saldoAntes: 0, saldoDespues: 0 };
+  }
+
+  const montoOriginal = Number(cxc.monto_original || 0);
+  const saldoAntes = Number(cxc.saldo_pendiente || 0);
+  const montoPagado = Number(cxc.monto_pagado || 0);
+  const nuevoMontoPagado = Math.min(montoOriginal, montoPagado + Number(amount || 0));
+  const saldoDespues = Math.max(0, montoOriginal - nuevoMontoPagado);
+  const nuevoEstatus = saldoDespues <= 0 ? 'Pagada' : (nuevoMontoPagado > 0 ? 'Parcial' : 'Pendiente');
+
+  const { error: updateError } = await supabase
+    .from('cuentas_por_cobrar')
+    .update({
+      monto_pagado: nuevoMontoPagado,
+      saldo_pendiente: saldoDespues,
+      estatus: nuevoEstatus,
+    })
+    .eq('id', cxc.id);
+
+  if (updateError) throw updateError;
+
+  const deltaSaldo = saldoAntes - saldoDespues;
+  if (cxc.cliente_id && deltaSaldo > 0) {
+    const { error: saldoError } = await supabase.rpc('increment_saldo', {
+      p_cli: cxc.cliente_id,
+      p_delta: -deltaSaldo,
+    });
+    if (saldoError) throw saldoError;
+  }
+
+  return { cxcId: cxc.id, saldoAntes, saldoDespues, referencia };
+};
+
 const syncOrderPayment = async ({ ordenId, provider, providerReference, amount, currency = 'MXN', metodoPago, rawPayload }) => {
   const supabase = getSupabaseAdmin();
 
@@ -65,15 +109,17 @@ const syncOrderPayment = async ({ ordenId, provider, providerReference, amount, 
     .maybeSingle();
 
   if (!pagoExistente) {
+    const cxcSync = await syncCuentaPorCobrarPayment({ orden, amount, referencia });
     await supabase.from('pagos').insert({
       cliente_id: orden.cliente_id || 0,
       orden_id: orden.id,
+      cxc_id: cxcSync.cxcId,
       monto: amount,
       metodo_pago: metodoPago,
       fecha: new Date().toISOString().slice(0, 10),
       referencia,
-      saldo_antes: 0,
-      saldo_despues: 0,
+      saldo_antes: cxcSync.saldoAntes,
+      saldo_despues: cxcSync.saldoDespues,
       usuario_id: null,
     });
   }

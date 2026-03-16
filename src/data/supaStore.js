@@ -205,7 +205,7 @@ export function useSupaStore(userId, userName) {
         const stockFiltered = {};
         for (const [sku, qty] of Object.entries(stockObj)) {
           const p = productos.find(x => x.sku === sku);
-          if (!p || s(p.tipo) === "Producto Terminado") {
+          if (p && s(p.tipo) === "Producto Terminado") {
             stockFiltered[sku] = Number(qty);
           }
         }
@@ -263,6 +263,24 @@ export function useSupaStore(userId, userName) {
         egresos:  movContables.filter(m => m.tipo === 'Egreso'),
       };
 
+      const mermasMapped = await Promise.all((mer || []).map(async (m) => {
+        const row = { ...toCamel(m), cantidad: Number(m.cantidad) };
+        const fotoPath = s(m.foto_url);
+        row.fotoPath = fotoPath;
+        row.fotoUrl = fotoPath;
+
+        if (fotoPath && !/^https?:\/\//.test(fotoPath) && !/^data:/.test(fotoPath) && !/^blob:/.test(fotoPath)) {
+          const { data: signedData, error: signedErr } = await supabase.storage
+            .from('mermas')
+            .createSignedUrl(fotoPath, 60 * 60 * 12);
+          if (!signedErr && signedData?.signedUrl) {
+            row.fotoUrl = signedData.signedUrl;
+          }
+        }
+
+        return row;
+      }));
+
       setData({
         clientes: clientesMapped,
         productos: productos.map(p => ({ ...p, stock: Number(p.stock), precio: Number(p.precio) })),
@@ -285,7 +303,7 @@ export function useSupaStore(userId, userName) {
         nominaPeriodos: (nomP || []).map(toCamel),
         nominaRecibos:  (nomR || []).map(toCamel),
         movContables,
-        mermas: (mer || []).map(m => ({ ...toCamel(m), cantidad: Number(m.cantidad) })),
+        mermas: mermasMapped,
         cuentasPorCobrar: (cxc || []).map(c => ({
           ...toCamel(c),
           montoOriginal: Number(c.monto_original),
@@ -590,6 +608,12 @@ export function useSupaStore(userId, userName) {
       },
 
       updateOrdenEstatus: async (id, nuevoEst, metodoPago = null) => {
+        const { data: ordenPrev } = await supabase
+          .from('ordenes')
+          .select('estatus, metodo_pago')
+          .eq('id', id)
+          .single();
+
         let error;
         if (nuevoEst === 'Asignada') {
           ({ error } = await supabase.rpc('asignar_orden', { p_id: id, p_ruta: null, p_uid: uid() }));
@@ -609,39 +633,78 @@ export function useSupaStore(userId, userName) {
 
         // Auto-registrar ingreso o CxC al cobrar (Entregada)
         if (nuevoEst === 'Entregada') {
-          const { data: ord } = await supabase.from('ordenes').select('id, folio, total, cliente_id, metodo_pago, facturama_id').eq('id', id).single();
+          const { data: ord } = await supabase
+            .from('ordenes')
+            .select('id, folio, total, cliente_id, metodo_pago, facturama_id')
+            .eq('id', id)
+            .single();
           if (ord && n(ord.total) > 0) {
             const cli = ord.cliente_id
               ? (await supabase.from('clientes').select('nombre').eq('id', ord.cliente_id).single())?.data
               : null;
             const mPago = metodoPago || s(ord.metodo_pago) || 'Efectivo';
             const esCredito = mPago.toLowerCase().includes('crédito') || mPago.toLowerCase().includes('fiado');
+            let downstreamError = null;
 
             if (esCredito && ord.cliente_id) {
-              // Crédito: crear cuenta por cobrar
-              const fechaVenc = new Date();
-              fechaVenc.setDate(fechaVenc.getDate() + 30);
-              await supabase.from('cuentas_por_cobrar').insert({
-                cliente_id: ord.cliente_id,
-                orden_id: id,
-                fecha_venta: new Date().toISOString().slice(0, 10),
-                fecha_vencimiento: fechaVenc.toISOString().slice(0, 10),
-                monto_original: centavos(n(ord.total)),
-                monto_pagado: 0,
-                saldo_pendiente: centavos(n(ord.total)),
-                concepto: `${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
-                estatus: 'Pendiente',
-              });
-              // Incrementar saldo del cliente
-              await supabase.rpc('increment_saldo', { p_cli: ord.cliente_id, p_delta: centavos(n(ord.total)) });
+              const { data: existingCxc } = await supabase
+                .from('cuentas_por_cobrar')
+                .select('id')
+                .eq('orden_id', id)
+                .maybeSingle();
+
+              if (!existingCxc) {
+                const fechaVenc = new Date();
+                fechaVenc.setDate(fechaVenc.getDate() + 30);
+                const { error: cxcError } = await supabase.from('cuentas_por_cobrar').insert({
+                  cliente_id: ord.cliente_id,
+                  orden_id: id,
+                  fecha_venta: new Date().toISOString().slice(0, 10),
+                  fecha_vencimiento: fechaVenc.toISOString().slice(0, 10),
+                  monto_original: centavos(n(ord.total)),
+                  monto_pagado: 0,
+                  saldo_pendiente: centavos(n(ord.total)),
+                  concepto: `${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
+                  estatus: 'Pendiente',
+                });
+                if (cxcError) {
+                  downstreamError = cxcError;
+                } else {
+                  const { error: saldoError } = await supabase.rpc('increment_saldo', {
+                    p_cli: ord.cliente_id,
+                    p_delta: centavos(n(ord.total)),
+                  });
+                  if (saldoError) downstreamError = saldoError;
+                }
+              }
             } else {
-              // Contado: registrar ingreso contable
-              await supabase.from('movimientos_contables').insert({
-                fecha: new Date().toISOString().slice(0, 10),
-                tipo: 'Ingreso', categoria: 'Ventas',
-                concepto: `Cobro ${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
-                monto: centavos(n(ord.total)),
-              });
+              const { data: existingIngreso } = await supabase
+                .from('movimientos_contables')
+                .select('id')
+                .eq('orden_id', id)
+                .eq('tipo', 'Ingreso')
+                .eq('categoria', 'Ventas')
+                .maybeSingle();
+
+              if (!existingIngreso) {
+                const { error: ingresoError } = await supabase.from('movimientos_contables').insert({
+                  fecha: new Date().toISOString().slice(0, 10),
+                  tipo: 'Ingreso', categoria: 'Ventas',
+                  concepto: `Cobro ${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
+                  monto: centavos(n(ord.total)),
+                  orden_id: id,
+                });
+                if (ingresoError) downstreamError = ingresoError;
+              }
+            }
+
+            if (downstreamError) {
+              await supabase.from('ordenes').update({
+                estatus: ordenPrev?.estatus || 'Creada',
+                metodo_pago: ordenPrev?.metodo_pago || ord.metodo_pago,
+              }).eq('id', id);
+              t()?.error('No se pudo sincronizar el cobro de la orden');
+              return downstreamError;
             }
           }
 
@@ -810,32 +873,54 @@ export function useSupaStore(userId, userName) {
 
       // ── CUARTOS FRÍOS — STOCK (JSONB) ──
       meterACuartoFrio: async (cfId, sku, cantidad) => {
-        const { data: row } = await supabase
+        const { data: row, error: rowErr } = await supabase
           .from('cuartos_frios').select('stock').eq('id', cfId).single();
+        if (rowErr) { t()?.error('Error al leer cuarto frío'); return rowErr; }
         const current = (row?.stock && typeof row.stock === 'object') ? row.stock : {};
         const updated = { ...current, [sku]: (Number(current[sku] || 0) + Number(cantidad)) };
-        await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
-        await supabase.from('inventario_mov').insert({
+        const { error: updateErr } = await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
+        if (updateErr) { t()?.error('Error al actualizar cuarto frío'); return updateErr; }
+        const { error: movErr } = await supabase.from('inventario_mov').insert({
           tipo: 'Entrada', producto: sku, cantidad: Number(cantidad),
           origen: `Entrada a ${cfId}`, usuario: uname(),
         });
+        if (movErr) {
+          await supabase.from('cuartos_frios').update({ stock: current }).eq('id', cfId);
+          t()?.error('Error al registrar movimiento de inventario');
+          return movErr;
+        }
         log('Entrada CF', 'Cuartos Fríos', `${cantidad}×${sku} → ${cfId}`);
         rf();
       },
 
       sacarDeCuartoFrio: async (cfId, sku, cantidad, motivo) => {
-        const { data: row } = await supabase
+        const { data: row, error: rowErr } = await supabase
           .from('cuartos_frios').select('stock').eq('id', cfId).single();
+        if (rowErr) { t()?.error('Error al leer cuarto frío'); return rowErr; }
         const current = (row?.stock && typeof row.stock === 'object') ? row.stock : {};
+        const actual = Number(current[sku] || 0);
+        const qty = Number(cantidad);
+        if (qty <= 0) return new Error('Cantidad inválida');
+        if (actual < qty) {
+          const err = new Error('Inventario insuficiente en cuarto frío');
+          t()?.error(err.message);
+          return err;
+        }
         const updated = {
           ...current,
-          [sku]: Math.max(0, Number(current[sku] || 0) - Number(cantidad)),
+          [sku]: actual - qty,
         };
-        await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
-        await supabase.from('inventario_mov').insert({
-          tipo: 'Salida', producto: sku, cantidad: Number(cantidad),
+        const { error: updateErr } = await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
+        if (updateErr) { t()?.error('Error al actualizar cuarto frío'); return updateErr; }
+        const { error: movErr } = await supabase.from('inventario_mov').insert({
+          tipo: 'Salida', producto: sku, cantidad: qty,
           origen: motivo || String(cfId), usuario: uname(),
         });
+        if (movErr) {
+          await supabase.from('cuartos_frios').update({ stock: current }).eq('id', cfId);
+          t()?.error('Error al registrar movimiento de inventario');
+          return movErr;
+        }
         log('Salida CF', 'Cuartos Fríos', `${cantidad}×${sku} de ${cfId} — ${motivo || 'Sin motivo'}`);
         rf();
       },
@@ -957,7 +1042,7 @@ export function useSupaStore(userId, userName) {
         const hoy = new Date().toISOString();
         const cargaObj = r.carga || {};
         
-        const { error } = await supabase.from('rutas').insert({
+        const { data: newRuta, error } = await supabase.from('rutas').insert({
           folio, 
           nombre: r.nombre, 
           chofer_id: r.choferId || null,
@@ -967,7 +1052,7 @@ export function useSupaStore(userId, userName) {
           extra_autorizado: r.extraAutorizado || {},
           clientes_asignados: r.clientesAsignados || [],  // [{clienteId, orden}]
           autorizado_at: hoy,
-        });
+        }).select('id').single();
         if (error) { t()?.error('Error al crear ruta'); return error; }
         
         // Descontar carga autorizada usando RPC atómica
@@ -976,6 +1061,7 @@ export function useSupaStore(userId, userName) {
           if (cuartos && cuartos.length > 0) {
             // Calcular cambios distribuyendo entre cuartos fríos
             const changes = [];
+            let stockInsuficiente = false;
             for (const [sku, qtyNeeded] of Object.entries(cargaObj)) {
               let remaining = Number(qtyNeeded);
               for (const cf of cuartos) {
@@ -995,6 +1081,17 @@ export function useSupaStore(userId, userName) {
                   });
                 }
               }
+
+              if (remaining > 0) {
+                stockInsuficiente = true;
+                break;
+              }
+            }
+
+            if (stockInsuficiente) {
+              await supabase.from('rutas').delete().eq('id', newRuta?.id);
+              t()?.error('Inventario insuficiente para autorizar la ruta');
+              return new Error('Inventario insuficiente para autorizar la ruta');
             }
             
             // Ejecutar todos los cambios de forma atómica
@@ -1003,8 +1100,10 @@ export function useSupaStore(userId, userName) {
                 p_changes: changes
               });
               if (rpcErr) {
+                await supabase.from('rutas').delete().eq('id', newRuta?.id);
                 console.error('[addRuta] Error en descuento atómico:', rpcErr.message);
                 t()?.error('Error al descontar inventario');
+                return rpcErr;
               }
             }
           }
@@ -1207,7 +1306,7 @@ export function useSupaStore(userId, userName) {
         if (e2) { t()?.error('Error al actualizar cuenta'); return e2; }
 
         // Registrar pago
-        await supabase.from('pagos').insert({
+        const { data: pagoInsertado, error: pagoError } = await supabase.from('pagos').insert({
           cliente_id: cxc.cliente_id,
           orden_id: cxc.orden_id,
           cxc_id: cxcId,
@@ -1218,19 +1317,49 @@ export function useSupaStore(userId, userName) {
           saldo_antes: cxc.saldo_pendiente,
           saldo_despues: Math.max(0, nuevoSaldo),
           usuario_id: uid(),
-        });
+        }).select('id').single();
+        if (pagoError) {
+          await supabase.from('cuentas_por_cobrar').update({
+            monto_pagado: cxc.monto_pagado,
+            saldo_pendiente: cxc.saldo_pendiente,
+            estatus: cxc.estatus,
+          }).eq('id', cxcId);
+          t()?.error('Error al registrar pago');
+          return pagoError;
+        }
 
         // Registrar ingreso contable
-        await supabase.from('movimientos_contables').insert({
+        const { data: ingresoInsertado, error: ingresoError } = await supabase.from('movimientos_contables').insert({
           fecha: hoy, tipo: 'Ingreso', categoria: 'Cobranza',
           concepto: `Cobro CxC #${cxcId} — ${s(cxc.concepto) || 'Cliente'}`,
           monto: montoNum,
           orden_id: cxc.orden_id,
-        });
+        }).select('id').single();
+        if (ingresoError) {
+          await supabase.from('pagos').delete().eq('id', pagoInsertado?.id);
+          await supabase.from('cuentas_por_cobrar').update({
+            monto_pagado: cxc.monto_pagado,
+            saldo_pendiente: cxc.saldo_pendiente,
+            estatus: cxc.estatus,
+          }).eq('id', cxcId);
+          t()?.error('Error al registrar ingreso contable');
+          return ingresoError;
+        }
 
         // Reducir saldo del cliente
         if (cxc.cliente_id) {
-          await supabase.rpc('increment_saldo', { p_cli: cxc.cliente_id, p_delta: -montoNum });
+          const { error: saldoError } = await supabase.rpc('increment_saldo', { p_cli: cxc.cliente_id, p_delta: -montoNum });
+          if (saldoError) {
+            await supabase.from('movimientos_contables').delete().eq('id', ingresoInsertado?.id);
+            await supabase.from('pagos').delete().eq('id', pagoInsertado?.id);
+            await supabase.from('cuentas_por_cobrar').update({
+              monto_pagado: cxc.monto_pagado,
+              saldo_pendiente: cxc.saldo_pendiente,
+              estatus: cxc.estatus,
+            }).eq('id', cxcId);
+            t()?.error('Error al actualizar saldo del cliente');
+            return saldoError;
+          }
         }
 
         log('Cobrar', 'Cuentas por Cobrar', `CxC #${cxcId} — $${monto} — ${nuevoEstatus}`);
@@ -1458,9 +1587,17 @@ export function useSupaStore(userId, userName) {
           monto: montoNum,
           referencia: referencia || '',
         }).select('id').single();
-        if (e3) { t()?.error('Error al registrar egreso'); return e3; }
+        if (e3) {
+          await supabase.from('cuentas_por_pagar').update({
+            monto_pagado: cxp.monto_pagado,
+            saldo_pendiente: cxp.saldo_pendiente,
+            estatus: cxp.estatus,
+          }).eq('id', cxpId);
+          t()?.error('Error al registrar egreso');
+          return e3;
+        }
 
-        await supabase.from('pagos_proveedores').insert({
+        const { error: pagoProvError } = await supabase.from('pagos_proveedores').insert({
           cxp_id: cxpId,
           monto: montoNum,
           fecha: hoy,
@@ -1468,6 +1605,16 @@ export function useSupaStore(userId, userName) {
           referencia: referencia || '',
           movimiento_id: movimiento?.id,
         });
+        if (pagoProvError) {
+          await supabase.from('movimientos_contables').delete().eq('id', movimiento?.id);
+          await supabase.from('cuentas_por_pagar').update({
+            monto_pagado: cxp.monto_pagado,
+            saldo_pendiente: cxp.saldo_pendiente,
+            estatus: cxp.estatus,
+          }).eq('id', cxpId);
+          t()?.error('Error al registrar pago a proveedor');
+          return pagoProvError;
+        }
 
         t()?.success(`Pago registrado: $${monto}`);
         log('Pagar', 'Cuentas por Pagar', `CxP #${cxpId} — $${monto} — ${nuevoEstatus}`);
@@ -1477,7 +1624,12 @@ export function useSupaStore(userId, userName) {
       // ── MERMAS ──
       registrarMerma: async (sku, cantidad, causa, origen, fotoUrl) => {
         const { error } = await supabase.from('mermas').insert({
-          sku, cantidad: Number(cantidad), causa, origen, foto_url: fotoUrl || '',
+          sku,
+          cantidad: Number(cantidad),
+          causa,
+          origen,
+          foto_url: fotoUrl || '',
+          usuario_id: uid() || null,
         });
         if (error) { t()?.error('Error al registrar merma'); return error; }
         log('Registrar', 'Mermas', `${cantidad}×${sku} — ${causa}`);
@@ -1741,133 +1893,145 @@ export function useSupaStore(userId, userName) {
       cerrarRutaCompleta: async (reporte) => {
         const { rutaId, choferNombre, entregas, mermas: mermasArr, cobros, carga } = reporte;
         const hoy = new Date().toISOString().slice(0, 10);
-        // Default vencimiento: 15 días para crédito
         const fechaVenc = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const createdOrderIds = [];
+        const createdPagoIds = [];
+        const createdMovIds = [];
+        const createdCxcIds = [];
+        const createdMermaIds = [];
+        const saldoAdjustments = [];
 
-        // 0. Actualizar estatus de la ruta a Cerrada para mantener consistencia con la UI
-        if (rutaId) {
-          const { error: rutaErr } = await supabase.from('rutas').update({
-            estatus: 'Cerrada',
-            fecha_fin: hoy,
-          }).eq('id', rutaId);
-          if (rutaErr) console.warn('[cerrarRutaCompleta] Error actualizando ruta:', rutaErr.message);
-        }
-
-        // 1. Crear órdenes + líneas + ingreso/pago/CxC solo para ventas exprés.
-        // Las órdenes ya asignadas a la ruta se cobran/entregan antes y no deben duplicarse al cierre.
-        for (const e of (entregas || [])) {
-          const esVentaExpress = Boolean(e?.express) || !e?.ordenId;
-          if (!esVentaExpress) continue;
-
-          const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
-          const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
-          // Build productos string from items
-          const itemsStr = (e.items || []).map(it => `${it.cant || it.qty || 0}×${it.sku}`).join(', ');
-          const clienteNombre = s(e.cliente) || 'Público en general';
-          const total = centavos(n(e.total));
-          const metodoPago = s(e.pago) || 'Efectivo';
-          const esCredito = metodoPago === 'Crédito';
-
-          const { data: newOrd, error: ordErr } = await supabase.from('ordenes').insert({
-            folio, cliente_id: e.clienteId || null,
-            cliente_nombre: clienteNombre,
-            productos: itemsStr || 'Varios',
-            fecha: hoy, total, estatus: 'Entregada',
-            metodo_pago: metodoPago,
-            ruta_id: rutaId || null,
-          }).select('id').single();
-          if (ordErr) console.warn('[cerrarRutaCompleta] orden insert error:', ordErr.message);
-
-          // Insertar líneas de la orden
-          if (newOrd && e.items && e.items.length > 0) {
-            await supabase.from('orden_lineas').insert(
-              e.items.map(it => ({
-                orden_id: newOrd.id, sku: it.sku,
-                cantidad: Number(it.cant || it.qty || 0),
-                precio_unit: centavos(Number(it.precio || 0)),
-                subtotal: centavos(Number(it.cant || it.qty || 0) * Number(it.precio || 0)),
-              }))
-            );
-          }
-
-          if (newOrd && total > 0) {
-            if (esCredito) {
-              // Crédito: crear cuenta por cobrar (NO ingreso contable aún)
-              if (e.clienteId) {
-                await supabase.from('cuentas_por_cobrar').insert({
-                  cliente_id: e.clienteId,
-                  orden_id: newOrd.id,
-                  fecha_venta: hoy,
-                  fecha_vencimiento: fechaVenc,
-                  monto_original: total,
-                  monto_pagado: 0,
-                  saldo_pendiente: total,
-                  concepto: `${folio} — ${clienteNombre}`,
-                  estatus: 'Pendiente',
-                });
-                // Incrementar saldo del cliente
-                await supabase.rpc('increment_saldo', { p_cli: e.clienteId, p_delta: total });
-              }
-            } else {
-              // Cobrado: registrar pago + ingreso contable
-              await supabase.from('pagos').insert({
-                cliente_id: e.clienteId || 0,
-                orden_id: newOrd.id,
-                monto: total,
-                metodo_pago: metodoPago,
-                fecha: hoy,
-                referencia: s(e.referencia) || folio,
-                saldo_antes: 0, saldo_despues: 0,
-                usuario_id: uid(),
-              });
-              await supabase.from('movimientos_contables').insert({
-                fecha: hoy, tipo: 'Ingreso', categoria: 'Ventas',
-                concepto: `Cobro ${folio} — ${clienteNombre} (${metodoPago})`,
-                monto: total,
-                orden_id: newOrd.id,
-              });
-            }
-          }
-        }
-
-        // 2. Registrar mermas
-        for (const m of (mermasArr || [])) {
-          await supabase.from('mermas').insert({
-            sku: m.sku, cantidad: Number(m.cant), causa: m.causa,
-            origen: 'Ruta ' + choferNombre, foto_url: m.foto || '',
-          });
-        }
-
-        // 3. Conciliar devuelto → regresar stock sobrante al primer cuarto frío
-        if (carga && typeof carga === 'object') {
-          // Calcular entregado por SKU
-          const entregadoPorSku = {};
+        try {
           for (const e of (entregas || [])) {
-            for (const it of (e.items || [])) {
-              entregadoPorSku[it.sku] = (entregadoPorSku[it.sku] || 0) + Number(it.cant || it.qty || 0);
+            const esVentaExpress = Boolean(e?.express) || !e?.ordenId;
+            if (!esVentaExpress) continue;
+
+            const { data: seq, error: seqErr } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
+            if (seqErr) throw seqErr;
+
+            const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
+            const itemsStr = (e.items || []).map(it => `${it.cant || it.qty || 0}×${it.sku}`).join(', ');
+            const clienteNombre = s(e.cliente) || 'Público en general';
+            const total = centavos(n(e.total));
+            const metodoPago = s(e.pago) || 'Efectivo';
+            const esCredito = metodoPago === 'Crédito';
+
+            const { data: newOrd, error: ordErr } = await supabase.from('ordenes').insert({
+              folio,
+              cliente_id: e.clienteId || null,
+              cliente_nombre: clienteNombre,
+              productos: itemsStr || 'Varios',
+              fecha: hoy,
+              total,
+              estatus: 'Entregada',
+              metodo_pago: metodoPago,
+              ruta_id: rutaId || null,
+            }).select('id').single();
+            if (ordErr || !newOrd) throw ordErr || new Error('No se pudo crear la orden exprés');
+            createdOrderIds.push(newOrd.id);
+
+            if (e.items && e.items.length > 0) {
+              const { error: lineErr } = await supabase.from('orden_lineas').insert(
+                e.items.map(it => ({
+                  orden_id: newOrd.id,
+                  sku: it.sku,
+                  cantidad: Number(it.cant || it.qty || 0),
+                  precio_unit: centavos(Number(it.precio || 0)),
+                  subtotal: centavos(Number(it.cant || it.qty || 0) * Number(it.precio || 0)),
+                }))
+              );
+              if (lineErr) throw lineErr;
+            }
+
+            if (total > 0) {
+              if (esCredito) {
+                if (e.clienteId) {
+                  const { data: cxcRow, error: cxcErr } = await supabase.from('cuentas_por_cobrar').insert({
+                    cliente_id: e.clienteId,
+                    orden_id: newOrd.id,
+                    fecha_venta: hoy,
+                    fecha_vencimiento: fechaVenc,
+                    monto_original: total,
+                    monto_pagado: 0,
+                    saldo_pendiente: total,
+                    concepto: `${folio} — ${clienteNombre}`,
+                    estatus: 'Pendiente',
+                  }).select('id').single();
+                  if (cxcErr || !cxcRow) throw cxcErr || new Error('No se pudo crear la cuenta por cobrar');
+                  createdCxcIds.push(cxcRow.id);
+
+                  const { error: saldoErr } = await supabase.rpc('increment_saldo', { p_cli: e.clienteId, p_delta: total });
+                  if (saldoErr) throw saldoErr;
+                  saldoAdjustments.push({ clienteId: e.clienteId, delta: total });
+                }
+              } else {
+                const { data: pagoRow, error: pagoErr } = await supabase.from('pagos').insert({
+                  cliente_id: e.clienteId || 0,
+                  orden_id: newOrd.id,
+                  monto: total,
+                  metodo_pago: metodoPago,
+                  fecha: hoy,
+                  referencia: s(e.referencia) || folio,
+                  saldo_antes: 0,
+                  saldo_despues: 0,
+                  usuario_id: uid(),
+                }).select('id').single();
+                if (pagoErr || !pagoRow) throw pagoErr || new Error('No se pudo registrar el pago');
+                createdPagoIds.push(pagoRow.id);
+
+                const { data: movRow, error: movErr } = await supabase.from('movimientos_contables').insert({
+                  fecha: hoy,
+                  tipo: 'Ingreso',
+                  categoria: 'Ventas',
+                  concepto: `Cobro ${folio} — ${clienteNombre} (${metodoPago})`,
+                  monto: total,
+                  orden_id: newOrd.id,
+                }).select('id').single();
+                if (movErr || !movRow) throw movErr || new Error('No se pudo registrar el ingreso');
+                createdMovIds.push(movRow.id);
+              }
             }
           }
-          // Calcular merma por SKU
-          const mermaPorSku = {};
+
           for (const m of (mermasArr || [])) {
-            mermaPorSku[m.sku] = (mermaPorSku[m.sku] || 0) + Number(m.cant || 0);
+            const { data: mermaRow, error: mermaErr } = await supabase.from('mermas').insert({
+              sku: m.sku,
+              cantidad: Number(m.cant),
+              causa: m.causa,
+              origen: 'Ruta ' + choferNombre,
+              foto_url: m.foto || '',
+            }).select('id').single();
+            if (mermaErr || !mermaRow) throw mermaErr || new Error('No se pudo registrar la merma');
+            createdMermaIds.push(mermaRow.id);
           }
 
-          // Devuelto = cargado - entregado - merma
-          const devueltoPorSku = {};
-          for (const [sku, cargado] of Object.entries(carga)) {
-            const entregado = entregadoPorSku[sku] || 0;
-            const merma = mermaPorSku[sku] || 0;
-            const devuelto = Number(cargado) - entregado - merma;
-            if (devuelto > 0) devueltoPorSku[sku] = devuelto;
-          }
+          if (carga && typeof carga === 'object') {
+            const entregadoPorSku = {};
+            for (const e of (entregas || [])) {
+              for (const it of (e.items || [])) {
+                entregadoPorSku[it.sku] = (entregadoPorSku[it.sku] || 0) + Number(it.cant || it.qty || 0);
+              }
+            }
 
-          // Regresar al primer cuarto frío disponible usando RPC atómica
-          if (Object.keys(devueltoPorSku).length > 0) {
-            const { data: cfs } = await supabase.from('cuartos_frios').select('id').limit(1);
-            const cfId = cfs?.[0]?.id;
-            if (cfId) {
-              // Usar función RPC atómica para actualizar stocks
+            const mermaPorSku = {};
+            for (const m of (mermasArr || [])) {
+              mermaPorSku[m.sku] = (mermaPorSku[m.sku] || 0) + Number(m.cant || 0);
+            }
+
+            const devueltoPorSku = {};
+            for (const [sku, cargado] of Object.entries(carga)) {
+              const entregado = entregadoPorSku[sku] || 0;
+              const merma = mermaPorSku[sku] || 0;
+              const devuelto = Number(cargado) - entregado - merma;
+              if (devuelto > 0) devueltoPorSku[sku] = devuelto;
+            }
+
+            if (Object.keys(devueltoPorSku).length > 0) {
+              const { data: cfs, error: cfErr } = await supabase.from('cuartos_frios').select('id').limit(1);
+              if (cfErr) throw cfErr;
+              const cfId = cfs?.[0]?.id;
+              if (!cfId) throw new Error('No hay cuarto frío para devolver inventario');
+
               const changes = Object.entries(devueltoPorSku).map(([sku, qty]) => ({
                 cuarto_id: cfId,
                 sku,
@@ -1876,23 +2040,42 @@ export function useSupaStore(userId, userName) {
                 origen: `Devolución ruta ${choferNombre}`,
                 usuario: choferNombre || uname(),
               }));
-              
-              const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', { 
-                p_changes: changes 
-              });
-              
-              if (rpcErr) {
-                console.error('[cerrarRutaCompleta] Error en devolución atómica:', rpcErr.message);
-                t()?.error('Error al devolver stock: ' + rpcErr.message);
-              }
-            }
-            const devTxt = Object.entries(devueltoPorSku).map(([sku, qty]) => `${qty}×${sku}`).join(', ');
-            log('Devolución', 'Rutas', `${choferNombre} devolvió: ${devTxt}`);
-          }
-        }
 
-        await log('Cierre Ruta', 'Rutas', `Chofer: ${choferNombre}, Entregas: ${(entregas || []).length}, Mermas: ${(mermasArr || []).length}, Efectivo: $${cobros?.Efectivo || 0}`);
-        rf();
+              const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
+                p_changes: changes,
+              });
+              if (rpcErr) throw rpcErr;
+
+              const devTxt = Object.entries(devueltoPorSku).map(([sku, qty]) => `${qty}×${sku}`).join(', ');
+              await log('Devolución', 'Rutas', `${choferNombre} devolvió: ${devTxt}`);
+            }
+          }
+
+          if (rutaId) {
+            const { error: rutaErr } = await supabase.from('rutas').update({
+              estatus: 'Cerrada',
+              fecha_fin: hoy,
+            }).eq('id', rutaId);
+            if (rutaErr) throw rutaErr;
+          }
+
+          await log('Cierre Ruta', 'Rutas', `Chofer: ${choferNombre}, Entregas: ${(entregas || []).length}, Mermas: ${(mermasArr || []).length}, Efectivo: $${cobros?.Efectivo || 0}`);
+          rf();
+        } catch (err) {
+          for (const saldoAdj of saldoAdjustments.reverse()) {
+            await supabase.rpc('increment_saldo', { p_cli: saldoAdj.clienteId, p_delta: -saldoAdj.delta });
+          }
+          if (createdMermaIds.length) await supabase.from('mermas').delete().in('id', createdMermaIds);
+          if (createdMovIds.length) await supabase.from('movimientos_contables').delete().in('id', createdMovIds);
+          if (createdPagoIds.length) await supabase.from('pagos').delete().in('id', createdPagoIds);
+          if (createdCxcIds.length) await supabase.from('cuentas_por_cobrar').delete().in('id', createdCxcIds);
+          if (createdOrderIds.length) {
+            await supabase.from('orden_lineas').delete().in('orden_id', createdOrderIds);
+            await supabase.from('ordenes').delete().in('id', createdOrderIds);
+          }
+          t()?.error('No se pudo cerrar la ruta correctamente');
+          return err;
+        }
       },
 
       // ── AUDITORÍA ──
