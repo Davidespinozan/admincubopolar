@@ -1141,8 +1141,8 @@ export function useSupaStore(userId, userName) {
               email: cliente?.correo || undefined,
               name: cliente?.nombre || orden.cliente_nombre || 'Cliente',
             },
-            successUrl: origin ? `${origin}/?checkout=success&folio=${encodeURIComponent(orden.folio)}` : undefined,
-            cancelUrl: origin ? `${origin}/?checkout=cancel&folio=${encodeURIComponent(orden.folio)}` : undefined,
+            successUrl: origin ? `${origin}/pago-resultado?status=success&folio=${encodeURIComponent(orden.folio)}` : undefined,
+            cancelUrl: origin ? `${origin}/pago-resultado?status=cancel&folio=${encodeURIComponent(orden.folio)}` : undefined,
           });
           log('Checkout', 'Pagos', `${orden.folio} — ${provider}`);
           // Add short URL for sharing

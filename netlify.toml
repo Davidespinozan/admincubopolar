@@ -5,6 +5,12 @@
   force = true
 
 [[redirects]]
+  from = "/pago-resultado"
+  to = "/.netlify/functions/billing-result"
+  status = 200
+  force = true
+
+[[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
