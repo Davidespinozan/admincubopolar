@@ -2,29 +2,29 @@ import { Icons } from './Icons';
 
 // ─── STATUS BADGE ───
 const STATUS_COLORS = {
-  "Activo": "bg-emerald-50 text-emerald-700 border-emerald-200",
-  "Inactivo": "bg-slate-100 text-slate-500 border-slate-200",
-  "Creada": "bg-amber-50 text-amber-700 border-amber-200",
-  "Asignada": "bg-blue-50 text-blue-700 border-blue-200",
-  "Entregada": "bg-emerald-50 text-emerald-700 border-emerald-200",
-  "Facturada": "bg-purple-50 text-purple-700 border-purple-200",
-  "En progreso": "bg-blue-50 text-blue-700 border-blue-200",
-  "Completada": "bg-emerald-50 text-emerald-700 border-emerald-200",
-  "Programada": "bg-slate-50 text-slate-600 border-slate-200",
-  "Cerrada": "bg-slate-200 text-slate-700 border-slate-300",
-  "Confirmada": "bg-emerald-50 text-emerald-700 border-emerald-200",
-  "En proceso": "bg-amber-50 text-amber-700 border-amber-200",
-  "Empaque": "bg-orange-50 text-orange-700 border-orange-200",
-  "Producto Terminado": "bg-cyan-50 text-cyan-700 border-cyan-200",
-  "Entrada": "bg-emerald-50 text-emerald-700 border-emerald-200",
-  "Salida": "bg-red-50 text-red-700 border-red-200",
-  "Traspaso": "bg-blue-50 text-blue-700 border-blue-200",
-  "Devolución": "bg-purple-50 text-purple-700 border-purple-200",
-  "Merma": "bg-amber-50 text-amber-700 border-amber-200",
+  "Activo": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
+  "Inactivo": "bg-slate-100/90 text-slate-600 border-slate-200",
+  "Creada": "bg-amber-100/80 text-amber-900 border-amber-200/80",
+  "Asignada": "bg-sky-100/90 text-sky-900 border-sky-200/80",
+  "Entregada": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
+  "Facturada": "bg-cyan-100/90 text-cyan-900 border-cyan-200/80",
+  "En progreso": "bg-sky-100/90 text-sky-900 border-sky-200/80",
+  "Completada": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
+  "Programada": "bg-slate-100/90 text-slate-700 border-slate-200/90",
+  "Cerrada": "bg-slate-200/80 text-slate-800 border-slate-300/80",
+  "Confirmada": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
+  "En proceso": "bg-amber-100/80 text-amber-900 border-amber-200/80",
+  "Empaque": "bg-orange-100/80 text-orange-900 border-orange-200/80",
+  "Producto Terminado": "bg-cyan-100/90 text-cyan-900 border-cyan-200/80",
+  "Entrada": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
+  "Salida": "bg-red-100/80 text-red-900 border-red-200/80",
+  "Traspaso": "bg-sky-100/90 text-sky-900 border-sky-200/80",
+  "Devolución": "bg-violet-100/80 text-violet-900 border-violet-200/80",
+  "Merma": "bg-amber-100/80 text-amber-900 border-amber-200/80",
 };
-const DEFAULT_STATUS_COLOR = "bg-slate-50 text-slate-600 border-slate-200";
+const DEFAULT_STATUS_COLOR = "bg-slate-100/90 text-slate-700 border-slate-200/90";
 export const StatusBadge = ({ status }) => (
-  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold border ${STATUS_COLORS[status] || DEFAULT_STATUS_COLOR}`}>
+  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] uppercase ${STATUS_COLORS[status] || DEFAULT_STATUS_COLOR}`}>
     {status}
   </span>
 );
@@ -56,20 +56,20 @@ export const DataTable = ({ columns, data, onRowClick, cardTitle, cardSubtitle }
       {data.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin datos</p>}
 
       {/* ── DESKTOP TABLE (hidden on mobile) ── */}
-      {data.length > 0 && <div className="hidden md:block overflow-x-auto">
+      {data.length > 0 && <div className="hidden overflow-x-auto rounded-[28px] border border-slate-200/80 bg-white/70 shadow-[0_14px_32px_rgba(8,20,27,0.06)] md:block">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-slate-100">
+            <tr className="border-b border-slate-200/80 bg-slate-900/[0.025]">
               {columns.map(col => (
-                <th key={col.key + col.label} className="text-left text-xs font-semibold text-slate-400 uppercase tracking-wider py-3 px-4">{col.label}</th>
+                <th key={col.key + col.label} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{col.label}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {data.map((row, i) => (
-              <tr key={i} onClick={() => onRowClick?.(row)} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors cursor-pointer group">
+              <tr key={i} onClick={() => onRowClick?.(row)} className="cursor-pointer border-b border-slate-100/90 transition-colors hover:bg-slate-900/[0.025] group">
                 {columns.map(col => (
-                  <td key={col.key + col.label} className="py-3.5 px-4 text-sm">
+                  <td key={col.key + col.label} className="px-4 py-3.5 text-sm">
                     {col.render ? col.render(row[col.key], row) : <span className={col.bold ? "font-semibold text-slate-800" : "text-slate-600"}>{row[col.key]}</span>}
                   </td>
                 ))}
@@ -84,7 +84,7 @@ export const DataTable = ({ columns, data, onRowClick, cardTitle, cardSubtitle }
         {data.map((row, i) => {
           const badgeCol = columns.find(c => c.badge);
           return (
-          <div key={i} onClick={() => onRowClick?.(row)} className="bg-white border border-slate-100 rounded-xl p-3.5 active:bg-slate-50 transition-colors cursor-pointer">
+          <div key={i} onClick={() => onRowClick?.(row)} className="cursor-pointer rounded-[22px] border border-slate-200/80 bg-white/78 p-3.5 shadow-[0_10px_24px_rgba(8,20,27,0.05)] transition-colors active:bg-slate-50">
             {/* Card header: primary value + badge top-right */}
             <div className="flex items-start justify-between gap-2 mb-1.5">
               <div className="min-w-0 flex-1">
@@ -124,15 +124,16 @@ export const DataTable = ({ columns, data, onRowClick, cardTitle, cardSubtitle }
 // Mobile: stacked, full-width action button
 // Desktop: row with inline button
 export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon, extraButtons }) => (
-  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
+  <div className="mb-5 flex flex-col justify-between gap-4 rounded-[30px] border border-slate-200/80 bg-white/62 px-4 py-4 shadow-[0_14px_30px_rgba(8,20,27,0.05)] backdrop-blur-xl sm:mb-6 sm:flex-row sm:items-center sm:px-5 sm:py-5">
     <div>
-      <h1 className="text-lg sm:text-xl font-bold text-slate-800 tracking-tight">{title}</h1>
-      {subtitle && <p className="text-xs sm:text-sm text-slate-400 mt-0.5">{subtitle}</p>}
+      <p className="erp-kicker text-slate-400">Modulo</p>
+      <h1 className="font-display text-xl font-bold tracking-[-0.04em] text-slate-900 sm:text-[1.7rem]">{title}</h1>
+      {subtitle && <p className="mt-1 text-xs text-slate-500 sm:text-sm">{subtitle}</p>}
     </div>
     <div className="flex flex-wrap items-center gap-2">
       {extraButtons}
       {action && (
-        <button onClick={action} className="inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-3 sm:py-2.5 rounded-xl transition-colors shadow-sm shadow-blue-200 min-h-[44px]">
+        <button onClick={action} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_28px_rgba(8,20,27,0.16)] transition-all hover:translate-y-[-1px] hover:bg-slate-800 sm:py-2.5">
           {actionIcon || <Icons.Plus />} {actionLabel}
         </button>
       )}
@@ -142,19 +143,19 @@ export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon, e
 
 // ─── STAT CARD ───
 export const StatCard = ({ label, value, unit, change, up, icon: IconComp }) => (
-  <div className="bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 hover:shadow-md hover:shadow-slate-100/50 transition-all">
+  <div className="rounded-[26px] border border-slate-200/80 bg-white/80 p-4 shadow-[0_14px_30px_rgba(8,20,27,0.06)] transition-all hover:translate-y-[-1px] hover:shadow-[0_18px_34px_rgba(8,20,27,0.1)] sm:p-5">
     <div className="flex items-start justify-between mb-2 sm:mb-3">
-      <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{label}</span>
-      <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-50 flex items-center justify-center text-blue-500">
+      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</span>
+      <div className="flex h-9 w-9 items-center justify-center rounded-[14px] bg-slate-900 text-cyan-200 sm:h-10 sm:w-10">
         <IconComp />
       </div>
     </div>
     <div className="flex items-baseline gap-1.5 sm:gap-2">
-      <span className="text-xl sm:text-2xl font-extrabold text-slate-800 tracking-tight">{value}</span>
-      <span className="text-xs text-slate-400 font-medium">{unit}</span>
+      <span className="font-display text-2xl font-bold tracking-[-0.05em] text-slate-900 sm:text-[2rem]">{value}</span>
+      <span className="text-xs font-medium text-slate-400">{unit}</span>
     </div>
     {change && (
-      <div className={`flex items-center gap-1 mt-1.5 sm:mt-2 text-xs font-semibold ${up ? "text-emerald-600" : "text-slate-400"}`}>
+      <div className={`mt-1.5 flex items-center gap-1 text-xs font-semibold sm:mt-2 ${up ? "text-emerald-700" : "text-slate-400"}`}>
         {up ? <Icons.ArrowUp /> : null}
         {change}
       </div>
@@ -164,7 +165,7 @@ export const StatCard = ({ label, value, unit, change, up, icon: IconComp }) => 
 
 // ─── CAPACITY BAR ───
 export const CapacityBar = ({ pct }) => (
-  <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
-    <div className={`h-full rounded-full transition-all ${pct > 80 ? "bg-amber-500" : pct > 50 ? "bg-blue-500" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, pct)}%` }} />
+  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200/80">
+    <div className={`h-full rounded-full transition-all ${pct > 80 ? "bg-amber-500" : pct > 50 ? "bg-sky-600" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, pct)}%` }} />
   </div>
 );

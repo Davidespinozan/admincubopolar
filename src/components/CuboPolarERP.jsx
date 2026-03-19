@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Icons } from './ui/Icons';
 import DashboardView from './views/DashboardView';
 import {
@@ -56,6 +56,32 @@ const AREAS = [
 
 const ALL_ITEMS = AREAS.flatMap(a => a.items);
 const BOTTOM_PRIMARY = ["dashboard", "ordenes", "produccion", "contabilidad"];
+const AREA_META = {
+  operacion: {
+    tagline: 'Cadena fria y despacho',
+    subtitle: 'planta, stock y rutas',
+    chip: 'border-cyan-200/80 bg-cyan-100/80 text-cyan-900',
+    glow: 'from-cyan-300/50 via-sky-200/40 to-transparent',
+  },
+  comercial: {
+    tagline: 'Ventas y relacion comercial',
+    subtitle: 'pedidos, clientes y pricing',
+    chip: 'border-emerald-200/80 bg-emerald-100/80 text-emerald-900',
+    glow: 'from-emerald-300/40 via-teal-200/30 to-transparent',
+  },
+  finanzas: {
+    tagline: 'Caja, cobranza y control',
+    subtitle: 'ingresos, egresos y conciliacion',
+    chip: 'border-amber-200/80 bg-amber-100/80 text-amber-900',
+    glow: 'from-amber-200/50 via-orange-200/30 to-transparent',
+  },
+  equipo: {
+    tagline: 'Gobierno operativo',
+    subtitle: 'personas, auditoria y ajustes',
+    chip: 'border-violet-200/80 bg-violet-100/80 text-violet-900',
+    glow: 'from-violet-200/40 via-slate-200/30 to-transparent',
+  },
+};
 
 export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }) {
   const [view, setView] = useState('dashboard');
@@ -70,6 +96,20 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       return !!msg && est !== 'resuelta' && est !== 'cerrada';
     });
   }, [data.alertas]);
+
+  useEffect(() => {
+    if (!alertasOpen && !moreOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setAlertasOpen(false);
+        setMoreOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [alertasOpen, moreOpen]);
 
   const renderView = () => {
     switch (view) {
@@ -100,30 +140,49 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
 
   const go = useCallback((id) => { setView(id); setMoreOpen(false); }, []);
   const current = ALL_ITEMS.find(n => n.id === view);
+  const currentArea = AREAS.find(area => area.items.some(item => item.id === view)) || AREAS[0];
+  const currentMeta = AREA_META[currentArea?.id] || AREA_META.operacion;
+  const AreaIcon = Icons[currentArea?.icon] || Icons.Dashboard;
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
+    <div className="min-h-screen text-slate-900">
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className={`absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br ${currentMeta.glow} blur-3xl`} />
+        <div className="absolute bottom-[-10%] right-[-6%] h-[22rem] w-[22rem] rounded-full bg-gradient-to-br from-slate-200/60 via-white/20 to-transparent blur-3xl" />
+      </div>
 
       {/* ═══ SIDEBAR — desktop ═══ */}
-      <aside className="hidden md:flex fixed top-0 left-0 h-full w-[240px] bg-white border-r border-slate-100 z-40 flex-col">
-        <div className="h-16 flex items-center gap-2.5 px-5 border-b border-slate-100 flex-shrink-0">
-          <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559988/icon-192_lknzb5.png" alt="CuboPolar" className="w-8 h-8" />
-          <div><span className="text-sm font-extrabold text-slate-800 tracking-tight">CUBOPOLAR</span><span className="text-[10px] text-slate-400 block -mt-0.5">ERP v2.0</span></div>
+      <aside className="fixed left-0 top-0 z-40 hidden h-full w-[280px] flex-col overflow-hidden border-r border-blue-200/60 bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 text-slate-100 shadow-[0_20px_50px_rgba(8,20,27,0.18)] md:flex">
+        <div className="flex-shrink-0 border-b border-white/8 px-6 pb-5 pt-6">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-white/10 bg-white/8 shadow-[0_18px_32px_rgba(2,10,15,0.28)]">
+              <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559988/icon-192_lknzb5.png" alt="CuboPolar" className="h-8 w-8" />
+            </div>
+            <div>
+              <span className="font-display text-lg font-bold tracking-[-0.05em] text-white">CUBOPOLAR</span>
+              <span className="block text-[11px] uppercase tracking-[0.22em] text-slate-400">ERP operativo</span>
+            </div>
+          </div>
         </div>
 
-        <nav className="flex-1 p-3 overflow-y-auto">
+        <nav className="flex-1 overflow-y-auto px-4 py-4">
           {AREAS.map(area => (
-            <div key={area.id} className="mb-3">
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 mb-1">{area.label}</p>
-              <div className="space-y-0.5">
+            <div key={area.id} className="mb-4">
+              <div className="mb-2 flex items-center gap-2 px-3">
+                <span className="h-2 w-2 rounded-full bg-white/28" />
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{area.label}</p>
+              </div>
+              <div className="space-y-1">
                 {area.items.map(item => {
                   const Ic = Icons[item.icon] || Icons.Package;
                   const active = view === item.id;
                   return (
                     <button key={item.id} onClick={() => go(item.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all ${active ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>
-                      <span className={`flex-shrink-0 ${active ? 'text-blue-600' : 'text-slate-400'}`}><Ic /></span>
+                      className={`w-full rounded-[18px] px-3 py-2.5 text-left text-sm transition-all ${active ? 'bg-blue-50 text-blue-900 shadow-[0_16px_28px_rgba(2,10,15,0.16)]' : 'text-slate-300/82 hover:bg-white/6 hover:text-white'}`}>
+                      <span className="flex items-center gap-3">
+                        <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[14px] ${active ? 'bg-blue-600 text-white' : 'bg-white/6 text-slate-300'}`}><Ic /></span>
                       <span className="truncate">{item.label}</span>
+                      </span>
                     </button>
                   );
                 })}
@@ -133,50 +192,67 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
         </nav>
 
         {onViewAs && (
-          <div className="flex-shrink-0 border-t border-slate-100 px-3 py-2">
-            <p className="text-[10px] font-bold text-purple-500 uppercase mb-1.5 px-1">👁 Ver como...</p>
+          <div className="flex-shrink-0 border-t border-white/8 px-4 py-4">
+            <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Ver como...</p>
             <div className="grid grid-cols-2 gap-1">
               {["Chofer","Ventas","Producción","Almacén Bolsas"].map(r => (
-                <button key={r} onClick={()=>onViewAs(r)} className="py-1.5 px-2 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-lg text-[10px] font-semibold text-purple-700 transition-all">{r}</button>
+                <button key={r} onClick={()=>onViewAs(r)} className="rounded-[14px] border border-white/10 bg-white/6 px-2 py-2 text-[11px] font-semibold text-white transition-all hover:bg-white/10">{r}</button>
               ))}
             </div>
           </div>
         )}
-        <div className="flex-shrink-0 h-[60px] border-t border-slate-100 flex items-center justify-between px-4">
+        <div className="flex h-[76px] flex-shrink-0 items-center justify-between border-t border-white/8 px-5">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600 flex-shrink-0">{user?.nombre?.[0] || "A"}</div>
-            <div className="min-w-0"><p className="text-xs font-semibold text-slate-700 truncate">{user?.nombre || "Admin"}</p><p className="text-xs text-slate-400 truncate">{user?.rol}</p></div>
+            <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-cyan-200 text-sm font-bold text-slate-950">{user?.nombre?.[0] || "A"}</div>
+            <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{user?.nombre || "Admin"}</p><p className="truncate text-xs text-slate-400">{user?.rol}</p></div>
           </div>
-          {onLogout && <button onClick={onLogout} className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600 flex-shrink-0" title="Cerrar sesión"><Icons.X /></button>}
+          {onLogout && <button onClick={onLogout} className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/8 hover:text-white" title="Cerrar sesión" aria-label="Cerrar sesión"><Icons.X /></button>}
         </div>
       </aside>
 
       {/* ═══ TOPBAR ═══ */}
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-100 md:ml-[240px]" style={{paddingTop: "env(safe-area-inset-top, 0px)"}}>
-        <div className="flex items-center justify-between h-14 md:h-16 px-4 md:px-6">
-          <div className="flex items-center gap-3">
-            <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559988/icon-192_lknzb5.png" alt="CuboPolar" className="md:hidden w-8 h-8 flex-shrink-0" />
-            <div className="md:hidden"><p className="text-sm font-bold text-slate-800">{current?.label || "Resumen"}</p></div>
-            <div className="hidden md:flex relative flex-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span>
-              <input type="text" placeholder="Buscar..." className="pl-10 pr-4 py-2.5 w-full max-w-md bg-slate-50 border border-slate-100 rounded-xl text-sm focus:outline-none focus:border-blue-300 focus:bg-white transition-all" />
+      <header className="sticky top-0 z-30 px-3 pt-3 md:ml-[280px] md:px-6 md:pt-4" style={{paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)"}}>
+        <div className="erp-panel erp-shell-blur flex items-center justify-between rounded-[30px] px-4 py-4 md:px-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[16px] bg-slate-900 text-cyan-200 shadow-[0_16px_28px_rgba(8,20,27,0.18)] md:hidden">
+              <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559988/icon-192_lknzb5.png" alt="CuboPolar" className="h-7 w-7" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${currentMeta.chip}`}>{currentArea?.label}</span>
+                <span className="hidden text-xs text-slate-400 md:inline">{currentMeta.tagline}</span>
+              </div>
+              <div className="mt-2 flex items-start gap-3">
+                <div className="hidden h-11 w-11 items-center justify-center rounded-[16px] bg-blue-600 text-white md:flex">
+                  <AreaIcon />
+                </div>
+                <div>
+                  <p className="font-display text-xl font-bold tracking-[-0.05em] text-slate-900 md:text-[1.8rem]">{current?.label || "Resumen"}</p>
+                  <p className="mt-1 text-xs text-slate-500 md:text-sm">{currentMeta.subtitle}</p>
+                </div>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2 relative">
-            <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative p-2.5 rounded-xl hover:bg-slate-100 transition-colors text-slate-500 min-w-[44px] min-h-[44px] flex items-center justify-center">
+            <div className="relative hidden md:flex flex-1">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span>
+              <input type="text" placeholder="Buscar módulo o dato" className="w-full max-w-sm rounded-[16px] border border-slate-200 bg-white/78 py-2.5 pl-10 pr-4 text-sm text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-cyan-600 focus:bg-white" />
+            </div>
+            <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[16px] border border-slate-200 bg-white/74 text-slate-500 transition-colors hover:bg-white hover:text-slate-800" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
               <Icons.Bell />{alertasActivas.length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />}
             </button>
             {alertasOpen && (
-              <div className="absolute top-12 right-0 bg-white border border-slate-100 rounded-xl shadow-lg w-[calc(100vw-32px)] sm:w-96 md:w-80 max-h-96 overflow-y-auto z-50">
-                <div className="p-3 border-b border-slate-100">
-                  <p className="text-sm font-bold text-slate-800">Alertas</p>
+              <div className="erp-panel absolute right-0 top-14 z-[70] max-h-96 w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] sm:w-96 md:w-[22rem]" role="dialog" aria-modal="false" aria-label="Alertas activas">
+                <div className="border-b border-slate-200/80 p-4">
+                  <p className="erp-kicker text-slate-400">Atención</p>
+                  <p className="mt-1 font-display text-lg font-bold tracking-[-0.04em] text-slate-900">Alertas</p>
                 </div>
                 {alertasActivas.length === 0 ? (
                   <div className="p-4 text-center text-sm text-slate-400">Sin alertas activas</div>
                 ) : (
-                  <div className="space-y-1">
+                  <div className="space-y-1 p-2">
                     {alertasActivas.map((a, i) => (
-                      <div key={i} className="px-4 py-3 border-b border-slate-50 last:border-0 hover:bg-slate-50 transition-colors">
+                      <div key={i} className="rounded-[18px] px-4 py-3 transition-colors hover:bg-slate-50">
                         <p className="text-sm font-semibold text-slate-800">{a.titulo || 'Alerta'}</p>
                         <p className="text-xs text-slate-500 mt-1">{a.msg || a.mensaje || a.detalle}</p>
                       </div>
@@ -185,9 +261,9 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                 )}
               </div>
             )}
-            {alertasOpen && <div className="fixed inset-0 z-40" onClick={() => setAlertasOpen(false)} />}
-            <div className="hidden md:flex items-center gap-2 ml-2 pl-3 border-l border-slate-100">
-              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-600">{user?.nombre?.[0] || "A"}</div>
+            {alertasOpen && <div className="fixed inset-0 z-[60]" onClick={() => setAlertasOpen(false)} aria-hidden="true" />}
+            <div className="hidden md:flex items-center gap-2 ml-2 pl-3 border-l border-slate-200">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-cyan-200">{user?.nombre?.[0] || "A"}</div>
               <span className="text-sm font-semibold text-slate-700">{user?.nombre || "Admin"}</span>
             </div>
           </div>
@@ -195,12 +271,15 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       </header>
 
       {/* ═══ MAIN ═══ */}
-      <main className="md:ml-[240px] px-3 py-4 sm:px-4 md:px-6 md:py-6 pb-24 md:pb-6">
-        {renderView()}
+      <main className="px-3 pb-24 pt-4 sm:px-4 md:ml-[280px] md:px-6 md:pb-6 md:pt-6">
+        <div className="relative">
+          <div className={`pointer-events-none absolute inset-x-0 top-0 h-24 rounded-[32px] bg-gradient-to-r ${currentMeta.glow} opacity-75 blur-3xl`} />
+          <div className="relative">{renderView()}</div>
+        </div>
       </main>
 
       {/* ═══ BOTTOM NAV — mobile ═══ */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-100" style={{paddingBottom: "env(safe-area-inset-bottom, 0px)"}}>
+      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-blue-200/60 bg-white/96 text-slate-900 backdrop-blur-xl md:hidden" style={{paddingBottom: "env(safe-area-inset-bottom, 0px)"}}>
         <div className="flex items-stretch">
           {BOTTOM_PRIMARY.map(id => {
             const item = ALL_ITEMS.find(n => n.id === id);
@@ -209,7 +288,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             const active = view === id && !moreOpen;
             return (
               <button key={id} onClick={() => go(id)}
-                className={`flex-1 flex flex-col items-center justify-center py-2 min-h-[56px] transition-colors ${active ? 'text-blue-600' : 'text-slate-400 active:text-slate-600'}`}>
+                className={`flex min-h-[60px] flex-1 flex-col items-center justify-center py-2 transition-colors ${active ? 'text-blue-600' : 'text-slate-400 active:text-slate-700'}`}>
                 <Ic />
                 <span className="text-[10px] font-semibold mt-0.5 leading-none truncate max-w-full px-0.5">{
                   id === "dashboard" ? "Inicio" :
@@ -221,7 +300,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             );
           })}
           <button onClick={() => setMoreOpen(!moreOpen)}
-            className={`flex-1 flex flex-col items-center justify-center py-2 min-h-[56px] transition-colors ${moreOpen || !BOTTOM_PRIMARY.includes(view) ? 'text-blue-600' : 'text-slate-400 active:text-slate-600'}`}>
+            className={`flex min-h-[60px] flex-1 flex-col items-center justify-center py-2 transition-colors ${moreOpen || !BOTTOM_PRIMARY.includes(view) ? 'text-blue-600' : 'text-slate-400 active:text-slate-700'}`}>
             <Icons.MoreH />
             <span className="text-[10px] font-semibold mt-0.5 leading-none">Más</span>
           </button>
@@ -230,21 +309,21 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
 
       {/* ═══ "MÁS" OVERFLOW — mobile ═══ */}
       {moreOpen && (
-        <div className="md:hidden fixed inset-0 z-50" onClick={() => setMoreOpen(false)}>
-          <div className="absolute inset-0 bg-black/30" />
-          <div className="absolute bottom-0 left-0 right-0 bg-white rounded-t-2xl safe-bottom max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <div className="w-10 h-1 bg-slate-200 rounded-full mx-auto mt-3 mb-2" />
+        <div className="md:hidden fixed inset-0 z-[80]" onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-0 bg-slate-950/38 backdrop-blur-sm" />
+          <div className="absolute bottom-0 left-0 right-0 max-h-[80vh] overflow-y-auto rounded-t-[30px] border-t border-blue-200/60 bg-white/98 text-slate-900 safe-bottom" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Más módulos">
+            <div className="mx-auto mb-2 mt-3 h-1 w-10 rounded-full bg-slate-200" />
             <div className="px-4 pb-4">
               {AREAS.map(area => (
                 <div key={area.id} className="mb-3">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">{area.label}</p>
+                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{area.label}</p>
                   <div className="grid grid-cols-3 gap-2">
                     {area.items.filter(i => !BOTTOM_PRIMARY.includes(i.id)).map(item => {
                       const Ic = Icons[item.icon] || Icons.Package;
                       const active = view === item.id;
                       return (
                         <button key={item.id} onClick={() => go(item.id)}
-                          className={`flex flex-col items-center justify-center py-3 rounded-xl min-h-[64px] transition-colors ${active ? 'bg-blue-50 text-blue-600' : 'text-slate-500 active:bg-slate-50'}`}>
+                          className={`flex min-h-[68px] flex-col items-center justify-center rounded-[18px] py-3 transition-colors ${active ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-slate-50 text-slate-600 active:bg-slate-100'}`}>
                           <Ic />
                           <span className="text-[10px] font-semibold mt-1.5 leading-tight text-center truncate max-w-full px-1">{item.label.split(" ")[0]}</span>
                         </button>
@@ -254,17 +333,17 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                 </div>
               ))}
               {onViewAs && (
-                <div className="border-t border-slate-100 pt-3 mt-1">
-                  <p className="text-[10px] font-bold text-purple-500 uppercase mb-2 px-1">👁 Ver como...</p>
+                <div className="mt-1 border-t border-white/8 pt-3">
+                  <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Ver como...</p>
                   <div className="grid grid-cols-2 gap-1.5">
                     {["Chofer","Ventas","Producción","Almacén Bolsas"].map(r => (
-                      <button key={r} onClick={()=>{onViewAs(r);setMoreOpen(false)}} className="py-2.5 px-2 bg-purple-50 active:bg-purple-100 border border-purple-200 rounded-xl text-xs font-semibold text-purple-700">{r}</button>
+                      <button key={r} onClick={()=>{onViewAs(r);setMoreOpen(false)}} className="rounded-[16px] border border-blue-200 bg-blue-50 px-2 py-2.5 text-xs font-semibold text-blue-700 active:bg-blue-100">{r}</button>
                     ))}
                   </div>
                 </div>
               )}
               {onLogout && (
-                <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-red-500 active:bg-red-50 mt-2 border border-red-100">
+                <button onClick={onLogout} className="mt-2 flex w-full items-center justify-center gap-2 rounded-[16px] border border-red-200 py-3 text-red-600 active:bg-red-50">
                   <Icons.X /><span className="text-xs font-semibold">Cerrar sesión</span>
                 </button>
               )}
@@ -353,7 +432,7 @@ function ComodatosView({ data, actions }) {
       </div>
     )) : <p className="text-sm text-slate-400 text-center py-8">Sin comodatos. Usa + Nuevo para registrar.</p>}
     {modal && (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={() => setModal(null)}>
+      <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/50" onClick={() => setModal(null)}>
         <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
           <h3 className="font-bold text-lg text-slate-800 mb-4">{modal === 'new' ? 'Nuevo comodato' : 'Editar comodato'}</h3>
           <div className="space-y-3">
@@ -440,7 +519,7 @@ function LeadsView({ data, actions }) {
       </div>
     )) : <p className="text-sm text-slate-400 text-center py-8">Sin leads. Usa + Nuevo para registrar uno manual.</p>}
     {modal && (
-      <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50" onClick={() => setModal(false)}>
+      <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/50" onClick={() => setModal(false)}>
         <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5" onClick={e => e.stopPropagation()}>
           <h3 className="font-bold text-lg text-slate-800 mb-4">Nuevo lead</h3>
           <div className="space-y-3">

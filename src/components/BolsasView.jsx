@@ -1,6 +1,8 @@
 import { useState, useMemo } from 'react';
 import { s, n } from '../utils/safe';
 
+const BOLSAS_SHELL = "min-h-screen max-w-[640px] mx-auto w-full bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] text-slate-900";
+
 export default function BolsasView({ user, data, actions, onLogout }) {
   const [modal, setModal] = useState(null); // "entrada" | "salida"
   const [form, setForm] = useState({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
@@ -66,14 +68,18 @@ export default function BolsasView({ user, data, actions, onLogout }) {
   const stockActual = (sku) => n(empaques.find(p => s(p.sku) === sku)?.stock || 0);
 
   return (
-    <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full">
-      <div className="bg-gradient-to-r from-amber-600 to-orange-600 text-white px-4 pb-4" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
+    <div className={BOLSAS_SHELL}>
+      <div className="bg-gradient-to-r from-amber-600 to-orange-600 px-4 pb-5 text-white shadow-[0_24px_48px_rgba(180,83,9,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h1 className="text-lg font-extrabold">Almacén de Bolsas</h1>
+            <p className="erp-kicker text-amber-200/70">Almacén</p>
+            <h1 className="font-display text-[1.8rem] font-bold tracking-[-0.05em]">Almacén de Bolsas</h1>
             <p className="text-xs text-amber-100">{s(user?.nombre)}</p>
           </div>
-          <button onClick={onLogout} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg">Salir</button>
+          <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs">Salir</button>
+        </div>
+        <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
+          <p className="text-sm text-amber-100">Registro táctico de entradas, salidas y presión de inventario de empaque.</p>
         </div>
       </div>
 
@@ -81,7 +87,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
         {empaques.map(p => {
           const mov = movHoy[s(p.sku)] || { entradas: 0, salidas: 0 };
           return (
-            <div key={p.id} className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
+            <div key={p.id} className="rounded-[24px] border border-stone-200/80 bg-white/78 p-5 shadow-[0_14px_28px_rgba(35,24,13,0.06)]">
               <div className="flex items-center justify-between mb-2">
                 <div>
                   <p className="text-sm font-bold text-slate-800">{s(p.nombre)}</p>
@@ -110,11 +116,11 @@ export default function BolsasView({ user, data, actions, onLogout }) {
 
         <div className="grid grid-cols-2 gap-3">
           <button onClick={() => { setModal("entrada"); setForm({ sku: "EMP-25", cantidad: "", destino: "", costo: "", proveedor: "", esCredito: false }); }}
-            className="py-5 bg-emerald-600 text-white font-extrabold rounded-2xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform">
+            className="rounded-[22px] bg-emerald-600 py-5 text-base font-extrabold text-white shadow-[0_20px_34px_rgba(5,150,105,0.16)] transition-transform active:scale-[0.98]">
             + Llegaron
           </button>
           <button onClick={() => { setModal("salida"); setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false }); }}
-            className="py-5 bg-red-500 text-white font-extrabold rounded-2xl text-base shadow-lg shadow-red-200 active:scale-[0.98] transition-transform">
+            className="rounded-[22px] bg-red-500 py-5 text-base font-extrabold text-white shadow-[0_16px_28px_rgba(239,68,68,0.16)] transition-transform active:scale-[0.98]">
             − Entregué a prod.
           </button>
         </div>
@@ -124,7 +130,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Movimientos de hoy</h3>
             <div className="space-y-2">
               {historial.map(h => (
-                <div key={h.id} className={`rounded-xl p-3 border ${h.tipo === "entrada" ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+                <div key={h.id} className={`rounded-[20px] p-3 border ${h.tipo === "entrada" ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
                   <div className="flex justify-between items-center">
                     <span className={`text-sm font-bold ${h.tipo === "entrada" ? "text-emerald-600" : "text-red-600"}`}>
                       {h.tipo === "entrada" ? "+" : "-"}{h.cantidad.toLocaleString()} {h.sku}
@@ -141,9 +147,10 @@ export default function BolsasView({ user, data, actions, onLogout }) {
 
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setModal(null)}>
-          <div className="bg-white w-full max-w-lg rounded-t-2xl p-5" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="w-full max-w-lg rounded-t-[30px] border border-white/60 bg-white/92 p-5 shadow-[0_30px_70px_rgba(35,24,13,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <h3 className="font-bold text-lg text-slate-800 mb-4">
+            <p className="erp-kicker text-slate-400">Movimiento</p>
+            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">
               {modal === "entrada" ? "¿Cuántas llegaron?" : "¿Cuántas entregaste a producción?"}
             </h3>
             <div className="space-y-3">
@@ -214,7 +221,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
       )}
 
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }}>
+        <div className="fixed top-4 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_32px_rgba(5,150,105,0.24)]" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }} role="status" aria-live="polite">
           {toast}
         </div>
       )}

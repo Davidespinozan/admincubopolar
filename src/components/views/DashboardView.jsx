@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Icons } from '../ui/Icons';
-import { StatusBadge, DataTable, CapacityBar } from '../ui/Components';
+import { StatusBadge, DataTable, CapacityBar, StatCard } from '../ui/Components';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, fmtDate, fmtDateTime } from '../../utils/safe';
 
@@ -255,38 +255,57 @@ export default function DashboardView({ data }) {
 
   return (
     <div>
-      <div className="mb-4 md:mb-5">
-        <h1 className="text-lg md:text-xl font-bold text-slate-800 tracking-tight">Buen día</h1>
-        <p className="text-xs md:text-sm text-slate-400 mt-0.5">{fechaStr} — {turno}</p>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
-        {stats.map((item, i) => (
-          <div key={i} className="bg-white border border-slate-100 rounded-2xl p-3.5 lg:p-5">
-            <div className="flex items-start justify-between mb-2 lg:mb-3">
-              <span className="text-[10px] lg:text-xs font-semibold text-slate-400 uppercase tracking-wider leading-tight">{item.label}</span>
-              <div className={`w-7 h-7 lg:w-9 lg:h-9 rounded-lg lg:rounded-xl ${item.bg} flex items-center justify-center ${item.txt} flex-shrink-0 ml-1`}><item.icon /></div>
-            </div>
-            <div className="flex items-baseline gap-1 lg:gap-2">
-              <span className="text-xl lg:text-2xl font-extrabold text-slate-800">{item.val}</span>
-              <span className="text-[10px] lg:text-xs text-slate-400">{item.unit}</span>
+      <div className="mb-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.25fr_0.85fr] md:mb-6">
+        <section className="relative overflow-hidden rounded-[34px] border border-slate-900/8 bg-[#07131a] px-5 py-6 text-white shadow-[0_28px_60px_rgba(3,14,19,0.22)] md:px-8 md:py-8">
+          <div className="absolute right-[-10%] top-[-14%] h-52 w-52 rounded-full bg-cyan-300/18 blur-3xl" />
+          <div className="absolute bottom-[-18%] left-[-4%] h-44 w-44 rounded-full bg-amber-200/14 blur-3xl" />
+          <div className="relative">
+            <p className="erp-kicker text-cyan-200/70">Centro de mando</p>
+            <h1 className="font-display mt-3 max-w-3xl text-3xl font-bold tracking-[-0.06em] text-white md:text-5xl">
+              Cadena fría, despacho y caja en una sola lectura.
+            </h1>
+            <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+              {fechaStr}. {turno}. La vista prioriza faltantes, liquidez y ritmo operativo para decidir sin ruido.
+            </p>
+            <div className="mt-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+              <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
+                <p className="erp-kicker text-white/40">Ventas hoy</p>
+                <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-white">${n(ventasResumen.dia).toLocaleString()}</p>
+              </div>
+              <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
+                <p className="erp-kicker text-white/40">Pendiente</p>
+                <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-white">{ordPend.toLocaleString()}</p>
+              </div>
+              <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
+                <p className="erp-kicker text-white/40">Liquidez</p>
+                <p className={`mt-2 text-2xl font-bold tracking-[-0.04em] ${balance.posicion >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>${balance.posicion.toLocaleString()}</p>
+              </div>
+              <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
+                <p className="erp-kicker text-white/40">Alertas</p>
+                <p className="mt-2 text-2xl font-bold tracking-[-0.04em] text-white">{alertasActivas.length}</p>
+              </div>
             </div>
           </div>
-        ))}
+        </section>
+
+        <div className="grid grid-cols-2 gap-3 md:gap-4">
+          {stats.map((item, i) => (
+            <StatCard key={i} label={item.label} value={item.val} unit={item.unit} icon={item.icon} />
+          ))}
+        </div>
       </div>
 
       {/* Resumen general */}
       <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5 mb-4 md:mb-6">
-        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.Dashboard /> Resumen general</h3>
+        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-700 md:mb-4"><Icons.Dashboard /> Resumen general</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {resumenGeneral.map((item, i) => (
-            <div key={i} className="rounded-xl border border-slate-100 p-3">
+            <div key={i} className="rounded-[20px] border border-slate-200/80 bg-white/72 p-3 shadow-[0_10px_24px_rgba(8,20,27,0.04)]">
               <div className="flex items-start justify-between mb-1.5">
-                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">{item.label}</p>
-                <span className={`w-7 h-7 rounded-lg ${item.bg} ${item.txt} flex items-center justify-center`}><item.icon /></span>
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.16em]">{item.label}</p>
+                <span className={`flex h-8 w-8 items-center justify-center rounded-[14px] ${item.bg} ${item.txt}`}><item.icon /></span>
               </div>
-              <p className="text-lg font-extrabold text-slate-800 leading-tight">{item.val}</p>
+              <p className="font-display text-[1.45rem] font-bold leading-tight tracking-[-0.04em] text-slate-900">{item.val}</p>
               <p className="text-[11px] text-slate-400">{item.sub}</p>
             </div>
           ))}
@@ -299,7 +318,7 @@ export default function DashboardView({ data }) {
         <div className="bg-white border border-slate-100 rounded-2xl p-4 md:p-5">
           <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Calculator /> Estado de Resultados</h3>
           <div className="flex gap-2 mb-3">
-            <button className="px-2 py-1 text-xs font-semibold bg-blue-100 text-blue-700 rounded-lg">Mes</button>
+            <button className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Mes</button>
           </div>
           <div className="space-y-2">
             <div className="flex justify-between py-1.5 border-b border-slate-100">
@@ -320,9 +339,9 @@ export default function DashboardView({ data }) {
               <span className="text-sm text-slate-600">Gastos operativos</span>
               <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.gastosOp.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between py-2 bg-blue-50 rounded-lg px-2 -mx-2">
-              <span className="text-sm font-bold text-slate-700">Utilidad</span>
-              <span className={`text-sm font-extrabold ${estadoResultados.mes.utilidad >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+            <div className="-mx-2 flex justify-between rounded-[16px] bg-slate-900 px-3 py-2 text-white">
+              <span className="text-sm font-bold text-white/82">Utilidad</span>
+              <span className={`text-sm font-extrabold ${estadoResultados.mes.utilidad >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>
                 ${estadoResultados.mes.utilidad.toLocaleString()}
               </span>
             </div>
@@ -345,9 +364,9 @@ export default function DashboardView({ data }) {
               <span className="text-sm text-slate-600">Cuentas por pagar</span>
               <span className="text-sm font-bold text-red-500">${balance.cxpTotal.toLocaleString()}</span>
             </div>
-            <div className="flex justify-between py-2 bg-blue-50 rounded-lg px-2 -mx-2">
-              <span className="text-sm font-bold text-slate-700">Posición financiera</span>
-              <span className={`text-sm font-extrabold ${balance.posicion >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+            <div className="-mx-2 flex justify-between rounded-[16px] bg-slate-900 px-3 py-2 text-white">
+              <span className="text-sm font-bold text-white/82">Posición financiera</span>
+              <span className={`text-sm font-extrabold ${balance.posicion >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>
                 ${balance.posicion.toLocaleString()}
               </span>
             </div>
@@ -381,7 +400,7 @@ export default function DashboardView({ data }) {
           {(data.cuartosFrios || []).length === 0 ? <EmptyState message="Sin cuartos fríos" /> :
           <div className="flex sm:grid sm:grid-cols-3 gap-3 overflow-x-auto sm:overflow-x-visible pb-1 sm:pb-0 snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0">
             {(data.cuartosFrios || []).map(cf => (
-              <div key={cf.id} className="min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink bg-slate-50 rounded-xl p-3.5 md:p-4 border border-slate-100 snap-start">
+              <div key={cf.id} className="min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink rounded-[22px] bg-slate-50 p-3.5 md:p-4 border border-slate-100 snap-start">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm font-bold text-slate-700">{s(cf.nombre)}</span>
                   <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg">{n(cf.temp, -50, 10)}°C</span>
@@ -398,7 +417,7 @@ export default function DashboardView({ data }) {
           {alertasActivas.length === 0 ? <EmptyState message="Sin alertas activas" /> :
           <div className="space-y-2 md:space-y-3">
             {alertasActivas.map((a, i) => (
-              <div key={a.id ?? i} className="flex items-start gap-2.5 md:gap-3 p-2.5 md:p-3 bg-slate-50 rounded-xl border border-slate-100">
+              <div key={a.id ?? i} className="flex items-start gap-2.5 md:gap-3 rounded-[20px] border border-slate-100 bg-slate-50 p-2.5 md:p-3">
                 <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${s(a.tipo)==="critica"?"bg-red-500":s(a.tipo)==="accionable"?"bg-amber-500":"bg-blue-400"}`} />
                 <div><p className="text-xs font-medium text-slate-700">{s(a.msg || a.mensaje || a.detalle)}</p><p className="text-xs text-slate-400 mt-0.5">{fmtDateTime(a.created_at)}</p></div>
               </div>
@@ -413,7 +432,7 @@ export default function DashboardView({ data }) {
         {(data.rutas || []).length === 0 ? <EmptyState message="Sin rutas programadas" /> :
         <div className="flex md:grid md:grid-cols-4 gap-3 overflow-x-auto md:overflow-x-visible pb-1 md:pb-0 snap-x snap-mandatory -mx-4 px-4 md:mx-0 md:px-0">
           {(data.rutas || []).map(r => (
-            <div key={r.id} className="min-w-[200px] md:min-w-0 snap-start border border-slate-100 rounded-xl p-3.5 md:p-4 hover:border-blue-200 transition-colors flex-shrink-0 md:flex-shrink">
+            <div key={r.id} className="min-w-[200px] md:min-w-0 snap-start rounded-[22px] border border-slate-100 p-3.5 md:p-4 transition-colors hover:border-cyan-300 flex-shrink-0 md:flex-shrink">
               <div className="flex items-center justify-between mb-2"><span className="text-sm font-bold text-slate-700">{s(r.nombre)}</span><StatusBadge status={r.estatus}/></div>
               <p className="text-xs text-slate-500 mb-2.5">{s(r.chofer)}</p>
               <div className="flex items-center justify-between text-xs mb-1"><span className="text-slate-400">{n(r.entregadas)}/{n(r.ordenes)}</span></div>

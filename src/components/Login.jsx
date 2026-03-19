@@ -7,7 +7,8 @@ export default function LoginScreen({ onLogin }) {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handle = async () => {
+  const handle = async (event) => {
+    event?.preventDefault();
     if (!email || !pass) { setErr("Ingresa correo y contraseña"); return; }
     setLoading(true);
     setErr("");
@@ -71,35 +72,49 @@ export default function LoginScreen({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 p-4 py-8 overflow-y-auto">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl" />
+    <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 px-4 py-6 text-white sm:px-6 sm:py-8">
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-cyan-300/14 blur-3xl" />
+        <div className="absolute bottom-[-6%] right-[-8%] h-[22rem] w-[22rem] rounded-full bg-amber-200/12 blur-3xl" />
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       </div>
-      <div className="relative w-full max-w-sm">
-        <div className="text-center mb-6 sm:mb-8">
-          <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559989/icon-512_ijp1nl.png" alt="CuboPolar" className="w-16 h-16 mx-auto mb-4 rounded-2xl shadow-xl shadow-blue-500/30" />
-          <h1 className="text-2xl font-extrabold text-white tracking-tight">CUBOPOLAR</h1>
-          <p className="text-sm text-blue-300/60 mt-1">Sistema ERP</p>
-        </div>
-        <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-blue-200/60 uppercase tracking-wider mb-1.5">Correo</label>
-              <input value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com" type="email" autoComplete="email"
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30" />
+      <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-md items-center justify-center">
+        <div className="relative w-full">
+          <div className="mb-6 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[22px] border border-white/12 bg-white/8 shadow-[0_18px_36px_rgba(3,14,19,0.36)] lg:mx-0">
+              <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559989/icon-512_ijp1nl.png" alt="CuboPolar" className="h-11 w-11 rounded-2xl" />
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-blue-200/60 uppercase tracking-wider mb-1.5">Contraseña</label>
-              <input value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="••••••" autoComplete="current-password"
-                className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none focus:border-blue-400 focus:ring-1 focus:ring-blue-400/30"
-                onKeyDown={e => e.key === "Enter" && handle()} />
+            <p className="erp-kicker text-cyan-200/70">CuboPolar ERP</p>
+            <h1 className="font-display mt-3 text-3xl font-bold tracking-[-0.04em] text-white">Acceso al sistema</h1>
+            <p className="mt-2 text-sm text-slate-300">Ingresa con tu cuenta para continuar.</p>
+          </div>
+
+          <div className="rounded-[32px] border border-white/10 bg-white/[0.08] p-6 shadow-[0_26px_60px_rgba(2,10,15,0.42)] backdrop-blur-2xl sm:p-7">
+            <div className="mb-5 flex items-center justify-between rounded-[22px] border border-white/8 bg-black/10 px-4 py-3">
+              <div>
+                <p className="erp-kicker text-white/45">Sesion segura</p>
+                <p className="mt-1 text-sm font-medium text-white">Supabase Auth</p>
+              </div>
+              <div className="h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(126,231,255,0.8)]" />
             </div>
-            {err && <p className="text-xs text-red-400 font-medium">{err}</p>}
-            <button onClick={handle} disabled={loading}
-              className="w-full py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-600/30 text-sm disabled:opacity-50">
-              {loading ? "Verificando..." : "Iniciar sesión"}
-            </button>
+
+            <form className="space-y-4" onSubmit={handle}>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/60">Correo</label>
+                <input value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com" type="email" autoComplete="email"
+                  className="w-full rounded-[18px] border border-white/10 bg-slate-950/24 px-4 py-3 text-sm text-white placeholder:text-white/28 focus:border-cyan-300/60 focus:outline-none focus:ring-2 focus:ring-cyan-200/10" />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/60">Contrasena</label>
+                <input value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="••••••" autoComplete="current-password"
+                  className="w-full rounded-[18px] border border-white/10 bg-slate-950/24 px-4 py-3 text-sm text-white placeholder:text-white/28 focus:border-cyan-300/60 focus:outline-none focus:ring-2 focus:ring-cyan-200/10" />
+              </div>
+              {err && <p className="rounded-2xl border border-red-400/20 bg-red-500/8 px-3 py-2 text-xs font-medium text-red-200" role="alert" aria-live="polite">{err}</p>}
+              <button type="submit" disabled={loading}
+                className="w-full rounded-[18px] bg-gradient-to-r from-[#0c708d] to-[#0f8fb2] py-3 text-sm font-bold text-white shadow-[0_20px_32px_rgba(12,112,141,0.28)] transition-all hover:translate-y-[-1px] hover:from-[#0f7d9d] hover:to-[#11a0c9] disabled:opacity-50">
+                {loading ? "Verificando..." : "Iniciar sesion"}
+              </button>
+            </form>
           </div>
         </div>
       </div>

@@ -8,6 +8,7 @@ const USOS_CFDI = [
   { val: "G03", label: "G03 — Gastos en general" },
   { val: "S01", label: "S01 — Sin efectos fiscales" },
 ];
+const VENTAS_SHELL = "min-h-screen max-w-[640px] mx-auto w-full bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f7_100%)] text-slate-900";
 
 export default function VentasStandaloneView({ user, data, actions, onLogout }) {
   const [tab, setTab] = useState("ventas");
@@ -161,28 +162,28 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const ventasHoy = useMemo(() => ordenesHoy.filter(o => o.estatus === "Entregada").reduce((s, o) => s + n(o.total), 0), [ordenesHoy]);
 
   return (
-    <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full">
-      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 text-white px-4 pb-4" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
+    <div className={VENTAS_SHELL}>
+      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-4 pb-5 text-white shadow-[0_24px_48px_rgba(5,150,105,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-1">
-          <div><h1 className="text-lg font-extrabold">Ventas</h1><p className="text-xs text-emerald-100">{s(user?.nombre)}</p></div>
-          <button onClick={onLogout} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg">Salir</button>
+          <div><p className="erp-kicker text-emerald-100/80">Ventas</p><h1 className="font-display text-[1.8rem] font-bold tracking-[-0.05em]">Mesa comercial</h1><p className="text-xs text-emerald-100">{s(user?.nombre)}</p></div>
+          <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs">Salir</button>
         </div>
-        <div className="grid grid-cols-2 gap-2 mt-3">
-          <div className="bg-white/10 rounded-xl p-3"><p className="text-xs text-emerald-200">Vendido hoy</p><p className="text-2xl font-extrabold">${ventasHoy.toLocaleString()}</p></div>
-          <div className="bg-white/10 rounded-xl p-3"><p className="text-xs text-emerald-200">Por cobrar</p><p className="text-2xl font-extrabold">{pendientes.length}</p><p className="text-xs text-emerald-200">órdenes</p></div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="erp-kicker text-amber-200/70">Vendido hoy</p><p className="mt-2 text-3xl font-extrabold">${ventasHoy.toLocaleString()}</p></div>
+          <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="erp-kicker text-amber-200/70">Por cobrar</p><p className="mt-2 text-3xl font-extrabold">{pendientes.length}</p><p className="text-xs text-stone-300">órdenes</p></div>
         </div>
       </div>
 
       <div className="px-4 pt-4 space-y-4">
         <button onClick={() => { setModal(true); setLines([{ sku: "", qty: 1, precio: 0 }]); setForm({ clienteId: "", requiereFactura: false }); setNuevoCliente(false); }}
-          className="w-full py-5 bg-emerald-600 text-white font-extrabold rounded-2xl text-lg shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform">
+          className="w-full rounded-[24px] bg-emerald-600 py-5 text-lg font-extrabold text-white shadow-[0_20px_34px_rgba(5,150,105,0.16)] transition-transform active:scale-[0.98]">
           + Nueva venta
         </button>
 
-        <div className="flex gap-1 bg-slate-100 rounded-xl p-1">
+        <div className="flex gap-1 rounded-[20px] border border-stone-200/80 bg-white/72 p-1.5 shadow-[0_14px_28px_rgba(22,18,15,0.05)]">
           {[{ k: "ventas", l: "📋 Por cobrar" }, { k: "hoy", l: "📅 Hoy" }, { k: "todas", l: "📊 Todas" }].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
-              className={`flex-1 py-3 text-sm font-semibold rounded-lg transition-all ${tab === t.k ? "bg-white text-slate-800 shadow-sm" : "text-slate-600"}`}>
+              className={`flex-1 rounded-[16px] py-3 text-sm font-semibold transition-all ${tab === t.k ? "bg-emerald-600 text-white shadow-[0_12px_22px_rgba(5,150,105,0.14)]" : "text-slate-600"}`}>
               {t.l}
             </button>
           ))}
@@ -190,7 +191,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
 
         <div className="space-y-2">
           {(tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : ordenesUsuario).map(o => (
-            <div key={o.id} className="bg-white rounded-xl p-4 border border-slate-100">
+            <div key={o.id} className="rounded-[24px] border border-stone-200/80 bg-white/78 p-4 shadow-[0_14px_28px_rgba(22,18,15,0.05)]">
               <div className="flex justify-between items-start">
                 <div>
                   <div className="flex items-center gap-2">
@@ -212,13 +213,13 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
               </div>
               {o.estatus === "Creada" && (
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => cobrar(o)} className="flex-1 py-3.5 bg-emerald-600 text-white text-sm font-bold rounded-xl active:scale-[0.98] transition-transform">💵 Cobrar</button>
+                  <button onClick={() => cobrar(o)} className="flex-1 rounded-[18px] bg-emerald-600 py-3.5 text-sm font-bold text-white transition-transform active:scale-[0.98]">💵 Cobrar</button>
                   <button onClick={() => { actions.updateOrdenEstatus(o.id, "Asignada"); showToast("Asignada a ruta"); }}
-                    className="flex-1 py-3.5 bg-blue-50 text-blue-600 text-sm font-bold rounded-xl border border-blue-200">🚚 A ruta</button>
+                    className="flex-1 rounded-[18px] border border-amber-200 bg-amber-50 py-3.5 text-sm font-bold text-amber-800">🚚 A ruta</button>
                 </div>
               )}
               {o.estatus === "Asignada" && (
-                <button onClick={() => cobrar(o)} className="w-full mt-3 py-3.5 bg-emerald-50 text-emerald-600 text-sm font-bold rounded-xl border border-emerald-200">💵 Cobrar entrega</button>
+                <button onClick={() => cobrar(o)} className="w-full mt-3 rounded-[18px] border border-emerald-200 bg-emerald-50 py-3.5 text-sm font-bold text-emerald-700">💵 Cobrar entrega</button>
               )}
             </div>
           ))}
@@ -232,9 +233,10 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       {/* ═══ MODAL NUEVA VENTA ═══ */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setModal(false)}>
-          <div className="bg-white w-full max-w-lg rounded-t-2xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="w-full max-w-lg rounded-t-[30px] border border-white/60 bg-white/92 p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(22,18,15,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <h3 className="font-bold text-lg text-slate-800 mb-4">Nueva venta</h3>
+            <p className="erp-kicker text-slate-400">Comercial</p>
+            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Nueva venta</h3>
             <div className="space-y-4">
 
               {/* ── CLIENTE ── */}
@@ -388,7 +390,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
             </div>
 
             <button onClick={crearOrden} disabled={!form.clienteId || !lines.some(l => l.sku)}
-              className="w-full py-3.5 bg-emerald-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">
+              className="w-full mt-4 rounded-[18px] bg-emerald-600 py-3.5 text-sm font-bold text-white disabled:opacity-40">
               {form.requiereFactura ? "Crear venta con factura" : "Crear venta"}
             </button>
           </div>
@@ -398,9 +400,10 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       {/* ═══ MODAL COBRO ═══ */}
       {pagoModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setPagoModal(null)}>
-          <div className="bg-white w-full max-w-lg rounded-t-2xl p-5" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="w-full max-w-lg rounded-t-[30px] border border-white/60 bg-white/92 p-5 shadow-[0_30px_70px_rgba(22,18,15,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <h3 className="font-bold text-lg text-slate-800 mb-1">Cobrar {s(pagoModal.folio)}</h3>
+            <p className="erp-kicker text-slate-400">Cobranza</p>
+            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-1">Cobrar {s(pagoModal.folio)}</h3>
             <p className="text-sm text-slate-500 mb-4">{s(pagoModal.cliente)} — <span className="font-bold text-slate-800">${n(pagoModal.total).toLocaleString()}</span>
               {pagoModal.requiereFactura && <span className="ml-2 text-xs bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded">FACTURA</span>}
             </p>
@@ -439,7 +442,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       )}
 
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }}>
+        <div className="fixed top-4 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_32px_rgba(5,150,105,0.24)]" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }} role="status" aria-live="polite">
           {toast}
         </div>
       )}

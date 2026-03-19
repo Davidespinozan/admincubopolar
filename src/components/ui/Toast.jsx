@@ -33,13 +33,13 @@ export function ToastProvider({ children }) {
   return (
     <ToastCtx.Provider value={toastRef.current}>
       {children}
-      <div className="fixed top-16 right-4 left-4 sm:left-auto z-[60] space-y-2 sm:w-72 pointer-events-none">
+      <div className="fixed top-16 right-4 left-4 sm:left-auto z-[60] space-y-2 sm:w-72 pointer-events-none" aria-live="polite" aria-atomic="true">
         {toasts.map(t => (
           <div key={t.id} className={`pointer-events-auto px-4 py-3 rounded-xl shadow-lg text-sm font-medium animate-slide-in ${
             t.type === "success" ? "bg-emerald-600 text-white" :
             t.type === "error" ? "bg-red-600 text-white" :
             "bg-slate-800 text-white"
-          }`}>
+          }`} role="status">
             {t.msg}
           </div>
         ))}

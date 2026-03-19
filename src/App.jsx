@@ -11,12 +11,13 @@ const VentasStandaloneView = lazy(() => import('./components/VentasStandaloneVie
 
 function RoleFallback() {
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center mx-auto mb-2 animate-pulse">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'linear-gradient(180deg, #f2f8fa 0%, #e7eff2 100%)' }}>
+      <div className="erp-panel erp-shell-blur w-full max-w-sm rounded-[30px] px-8 py-10 text-center">
+        <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-cyan-200 animate-pulse shadow-[0_16px_30px_rgba(8,20,27,0.22)]">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
         </div>
-        <p className="text-xs text-slate-400">Cargando vista...</p>
+        <p className="erp-kicker text-slate-400">Inicializando modulo</p>
+        <p className="mt-2 text-sm font-medium text-slate-600">Cargando vista...</p>
       </div>
     </div>
   )
@@ -110,12 +111,13 @@ function App() {
   if (!user) return <LoginScreen onLogin={setUser} />
 
   if (loading) return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center">
-      <div className="text-center">
-        <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white mx-auto mb-3 animate-pulse">
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'linear-gradient(180deg, #f2f8fa 0%, #e7eff2 100%)' }}>
+      <div className="erp-panel erp-shell-blur w-full max-w-sm rounded-[32px] px-8 py-10 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-[20px] bg-slate-900 text-cyan-200 animate-pulse shadow-[0_18px_34px_rgba(8,20,27,0.24)]">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
         </div>
-        <p className="text-sm text-slate-500 font-medium">Cargando datos...</p>
+        <p className="erp-kicker text-slate-400">Sincronizando datos</p>
+        <p className="mt-2 text-sm font-medium text-slate-600">Cargando datos...</p>
       </div>
     </div>
   )
@@ -125,9 +127,9 @@ function App() {
   const handleLogout = () => isAdmin && adminViewAs ? setAdminViewAs(null) : setUser(null)
 
   const adminBar = isAdmin && adminViewAs ? (
-    <div className="fixed top-0 left-0 right-0 z-[9999] bg-purple-600 text-white flex items-center justify-between px-4 py-2 shadow-lg">
-      <span className="text-xs font-bold">👁 Viendo como: {adminViewAs}</span>
-      <button onClick={() => setAdminViewAs(null)} className="text-xs bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg font-bold">
+    <div className="fixed top-0 left-0 right-0 z-[9999] flex items-center justify-between border-b border-white/10 bg-slate-950/92 px-4 py-2 text-cyan-50 erp-shell-blur shadow-[0_14px_30px_rgba(8,20,27,0.28)]">
+      <span className="text-xs font-bold tracking-[0.14em] uppercase">Viendo como: {adminViewAs}</span>
+      <button onClick={() => setAdminViewAs(null)} className="rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-white/14">
         ← Volver a Admin
       </button>
     </div>

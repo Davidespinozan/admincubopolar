@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { s, n } from '../utils/safe';
 
 const empaqueMap = { "HC-25K": "EMP-25", "HC-5K": "EMP-5", "HT-25K": "EMP-25", "BH-50K": null };
+const PRODUCCION_SHELL = "min-h-screen max-w-[640px] mx-auto w-full bg-[linear-gradient(180deg,#edf3f6_0%,#e5edf1_100%)] text-slate-900";
 
 export default function ProduccionStandaloneView({ user, data, actions, onLogout }) {
   const [tab, setTab] = useState("producir");
@@ -162,38 +163,39 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 max-w-[640px] mx-auto w-full">
+    <div className={PRODUCCION_SHELL}>
       {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white px-4 pb-4" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 px-4 pb-5 text-white shadow-[0_24px_48px_rgba(37,99,235,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-1">
           <div>
-            <h1 className="text-lg font-extrabold">Producción</h1>
-            <p className="text-xs text-blue-200">{s(user?.nombre)}</p>
+            <p className="erp-kicker text-cyan-200/70">Producción</p>
+            <h1 className="font-display text-[1.8rem] font-bold tracking-[-0.05em]">Planta y congelación</h1>
+            <p className="text-xs text-cyan-100/80">{s(user?.nombre)}</p>
           </div>
-          <button onClick={onLogout} className="text-xs bg-white/20 px-3 py-1.5 rounded-lg font-semibold">Salir</button>
+          <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold">Salir</button>
         </div>
-        <div className="grid grid-cols-2 gap-2 mt-3">
-          <div className="bg-white/10 rounded-xl p-2.5 text-center">
-            <p className="text-xs text-blue-200">Producido hoy</p>
-            <p className="text-xl font-extrabold">{totalHoy.toLocaleString()}</p>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="rounded-[24px] border border-white/10 bg-white/8 p-3 text-center backdrop-blur-xl">
+            <p className="erp-kicker text-cyan-200/70">Producido hoy</p>
+            <p className="mt-2 text-2xl font-extrabold">{totalHoy.toLocaleString()}</p>
           </div>
-          <div className="bg-white/10 rounded-xl p-2.5 text-center">
-            <p className="text-xs text-blue-200">En congeladores</p>
-            <p className="text-xl font-extrabold">{totalEnCuartos.toLocaleString()}</p>
+          <div className="rounded-[24px] border border-white/10 bg-white/8 p-3 text-center backdrop-blur-xl">
+            <p className="erp-kicker text-cyan-200/70">En congeladores</p>
+            <p className="mt-2 text-2xl font-extrabold">{totalEnCuartos.toLocaleString()}</p>
           </div>
-          <div className="bg-white/10 rounded-xl col-span-2 p-2.5 text-center">
-            <p className="text-xs text-blue-200">Merma hoy</p>
-            <p className="text-xl font-extrabold">{mermaHoy}</p>
+          <div className="col-span-2 rounded-[24px] border border-white/10 bg-white/8 p-3 text-center backdrop-blur-xl">
+            <p className="erp-kicker text-cyan-200/70">Merma hoy</p>
+            <p className="mt-2 text-2xl font-extrabold">{mermaHoy}</p>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="px-4 pt-3">
-        <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-4">
+        <div className="flex gap-1 rounded-[20px] border border-slate-200/80 bg-white/72 p-1.5 mb-4 shadow-[0_14px_28px_rgba(8,19,27,0.05)]">
           {[{ k: "producir", l: "🧊 Producción" }, { k: "cuartos", l: "❄️ Congeladores" }, { k: "mermas", l: "⚠️ Mermas" }].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
-              className={`flex-1 py-3 text-sm font-bold rounded-lg transition-all ${tab === t.k ? "bg-white text-slate-800 shadow-sm" : "text-slate-600"}`}>
+              className={`flex-1 py-3 text-sm font-bold rounded-[16px] transition-all ${tab === t.k ? "bg-blue-600 text-white shadow-[0_12px_22px_rgba(37,99,235,0.14)]" : "text-slate-600"}`}>
               {t.l}
             </button>
           ))}
@@ -205,7 +207,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         {/* ═══ TAB: PRODUCCIÓN ═══ */}
         {tab === "producir" && (<>
           <button onClick={() => setModal(true)}
-            className="w-full py-5 bg-blue-600 text-white font-extrabold rounded-2xl text-lg shadow-lg shadow-blue-200 active:scale-[0.98] transition-transform">
+            className="w-full py-5 bg-blue-600 text-white font-extrabold rounded-[24px] text-lg shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
             + Ya produje hielo
           </button>
 
@@ -213,7 +215,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             <div>
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Producido hoy</h3>
               {prodHoy.map(p => (
-                <div key={p.id} className="bg-emerald-50 rounded-xl p-3 border border-emerald-200 mb-2">
+                <div key={p.id} className="bg-emerald-50/90 rounded-[20px] p-3 border border-emerald-200 mb-2">
                   <div className="flex justify-between items-center">
                     <div>
                       <p className="text-sm font-bold text-slate-800">{n(p.cantidad).toLocaleString()} × {s(p.sku)}</p>
@@ -227,7 +229,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           )}
 
           {prodHoy.length === 0 && (
-            <div className="bg-white rounded-2xl p-8 text-center border border-slate-100">
+            <div className="bg-white/78 rounded-[28px] p-8 text-center border border-slate-200/80 shadow-[0_14px_28px_rgba(8,19,27,0.05)]">
               <p className="text-3xl mb-2">🧊</p>
               <p className="text-sm text-slate-400">Aún no has registrado producción hoy</p>
             </div>
@@ -237,16 +239,16 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         {/* ═══ TAB: CONGELADORES ═══ */}
         {tab === "cuartos" && (<>
           <button onClick={() => setTraspasoModal(true)}
-            className="w-full py-4 bg-blue-600 text-white font-extrabold rounded-2xl text-base shadow-lg shadow-blue-200 active:scale-[0.98] transition-transform">
+            className="w-full py-4 bg-blue-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
             ↔ Mover entre congeladores
           </button>
 
           {/* Cargas pendientes de chofers */}
           {cargasPendientes.filter(c => c.estatus === "Pendiente").length > 0 && (
-            <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200">
+            <div className="bg-amber-50/90 rounded-[24px] p-4 border border-amber-200 shadow-[0_14px_28px_rgba(8,19,27,0.05)]">
               <h3 className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-3">Cargas pendientes de chofer</h3>
               {cargasPendientes.filter(c => c.estatus === "Pendiente").map(cg => (
-                <div key={cg.id} className="bg-white rounded-xl p-3 mb-2">
+                <div key={cg.id} className="bg-white/84 rounded-[20px] p-3 mb-2 border border-white/80">
                   <div className="flex justify-between items-start mb-2">
                     <div>
                       <p className="text-sm font-bold text-slate-800">{cg.chofer}</p>
@@ -263,7 +265,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     setCargasPendientes(prev => prev.map(p => p.id === cg.id ? { ...p, estatus: "Entregado" } : p));
                     showToast("Carga entregada a " + cg.chofer + " ✓");
                   }}
-                    className="w-full py-3 bg-emerald-600 text-white font-bold rounded-xl text-sm active:scale-[0.98] transition-transform">
+                    className="w-full py-3 bg-emerald-600 text-white font-bold rounded-[18px] text-sm active:scale-[0.98] transition-transform">
                     ✓ Entregar carga — sale del congelador
                   </button>
                 </div>
@@ -275,7 +277,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             const stockEntries = cf.stock ? Object.entries(cf.stock) : [];
             const total = stockEntries.reduce((s, [, v]) => s + n(v), 0);
             return (
-              <div key={cf.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+              <div key={cf.id} className="bg-white/78 rounded-[24px] border border-slate-200/80 shadow-[0_14px_28px_rgba(8,19,27,0.05)] overflow-hidden">
                 <div className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
@@ -294,7 +296,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 {stockEntries.length > 0 ? (
                   <div className="px-4 pb-3 grid grid-cols-2 gap-2">
                     {stockEntries.map(([sku, qty]) => (
-                      <div key={sku} className="bg-slate-50 rounded-lg p-3">
+                      <div key={sku} className="bg-slate-50 rounded-[18px] p-3">
                         <p className="text-xs text-slate-400 font-mono">{sku}</p>
                         <p className="text-lg font-extrabold text-slate-800">{n(qty).toLocaleString()}</p>
                       </div>
@@ -320,9 +322,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ MODAL: Ya produje hielo ═══ */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setModal(false)}>
-          <div className="bg-white w-full max-w-lg rounded-t-2xl p-5 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <h3 className="font-bold text-lg text-slate-800 mb-4">¿Qué produjiste?</h3>
+            <p className="erp-kicker text-slate-400">Producción</p>
+            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">¿Qué produjiste?</h3>
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
@@ -395,9 +398,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ MODAL: Mover entre congeladores ═══ */}
       {traspasoModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setTraspasoModal(false)}>
-          <div className="bg-white w-full max-w-lg rounded-t-2xl p-5" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <h3 className="font-bold text-lg text-slate-800 mb-4">Mover entre congeladores</h3>
+            <p className="erp-kicker text-slate-400">Movimiento</p>
+            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Mover entre congeladores</h3>
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">De</label>
@@ -446,9 +450,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ MODAL: Sacar hielo ═══ */}
       {sacarModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSacarModal(null)}>
-          <div className="bg-white w-full max-w-lg rounded-t-2xl p-5" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <h3 className="font-bold text-lg text-slate-800 mb-1">Sacar hielo</h3>
+            <p className="erp-kicker text-slate-400">Salida</p>
+            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-1">Sacar hielo</h3>
             <p className="text-sm text-slate-500 mb-4">{sacarModal.cfNombre}</p>
             <div className="space-y-3">
               <div>
@@ -487,7 +492,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ TAB MERMAS ═══ */}
         {tab === "mermas" && (<>
           <button onClick={() => { setMermaModal(true); clearFotoMerma(); setMForm({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" }); }}
-            className="w-full py-5 bg-red-500 text-white font-extrabold rounded-2xl text-lg shadow-lg shadow-red-200 active:scale-[0.98] transition-transform">
+            className="w-full py-5 bg-[#8f2d22] text-white font-extrabold rounded-[24px] text-lg shadow-[0_20px_34px_rgba(143,45,34,0.18)] active:scale-[0.98] transition-transform">
             + Registrar merma
           </button>
 
@@ -495,7 +500,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             <div className="space-y-2">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Mermas de hoy ({mermasHoyList.length})</h3>
               {mermasHoyList.map(m => (
-                <div key={m.id} className="bg-red-50 rounded-xl p-3 border border-red-200">
+                <div key={m.id} className="bg-red-50/90 rounded-[20px] p-3 border border-red-200">
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="text-sm font-bold text-red-700">{m.cantidad}× {m.sku}</p>
@@ -514,9 +519,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ MODAL MERMA ═══ */}
       {mermaModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setMermaModal(false)}>
-          <div className="bg-white w-full max-w-lg rounded-t-2xl p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 max-h-[85vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <h3 className="font-bold text-lg text-slate-800 mb-4">Registrar merma</h3>
+            <p className="erp-kicker text-slate-400">Merma</p>
+            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Registrar merma</h3>
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
@@ -578,7 +584,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
       {/* Toast */}
       {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-lg" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }}>
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] bg-emerald-600 text-white px-4 py-2.5 rounded-full text-sm font-semibold shadow-[0_18px_32px_rgba(5,150,105,0.24)]" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }} role="status" aria-live="polite">
           {toast}
         </div>
       )}
