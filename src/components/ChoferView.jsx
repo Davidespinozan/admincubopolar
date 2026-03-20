@@ -10,7 +10,7 @@ const USOS_CFDI = ["G01", "G03", "S01", "P01"];
 const CHOFER_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf4f6_0%,#e3eef1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function ChoferView({ user, data, actions, onLogout }) {
-  const [step, setStep] = useState("cargar");
+  const [stepOverride, setStepOverride] = useState(null);
   const [confirmadoCarga, setConfirmadoCarga] = useState(false);
   const [mapaVisible, setMapaVisible] = useState(false);
   const [entregas, setEntregas] = useState([]);
@@ -62,6 +62,11 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }) || null;
   }, [data.rutas, user]);
 
+  // Derivar step desde el estado real de la ruta — si ya está "En progreso" saltar directo a ruta
+  const rutaEnProgreso = miRutaActiva && (s(miRutaActiva.estatus).toLowerCase() === 'en progreso' || s(miRutaActiva.estatus).toLowerCase() === 'en_progreso');
+  const step = stepOverride ?? (rutaEnProgreso ? 'ruta' : 'cargar');
+  const setStep = (v) => setStepOverride(v);
+
   // Carga autorizada por administración (SOLO LECTURA)
   const cargaAutorizada = useMemo(() => {
     if (!miRutaActiva) return {};
@@ -112,7 +117,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     if (!miRutaActiva) return [];
     return (data.ordenes || []).filter(o => {
       const est = s(o.estatus);
-      if (est !== "Asignada" && est !== "Creada") return false;
+      if (!["Asignada","Creada","Entregada"].includes(est)) return false;
       const rid = o.rutaId || o.ruta_id;
       return rid && (String(rid) === String(miRutaActiva.id));
     });
@@ -138,7 +143,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         });
       }
       const total = items.reduce((s, it) => s + it.cant * it.precio, 0);
-      const entregada = entregas.some(e => String(e.ordenId) === String(o.id));
+      const entregada = s(o.estatus) === 'Entregada' || entregas.some(e => String(e.ordenId) === String(o.id));
       const direccion = cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '';
       return { ...o, clienteNombre, items, totalCalc: total || n(o.total), entregada,
         latitud: cli?.latitud, longitud: cli?.longitud, direccion };
