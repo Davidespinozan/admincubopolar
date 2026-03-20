@@ -119,17 +119,9 @@ export default function DashboardView({ data }) {
     [data.alertas]
   );
 
-  const totalProdHoy = useMemo(
-    () => tableroDemanda.reduce((sum, row) => sum + n(row.producidoHoy), 0),
-    [tableroDemanda]
-  );
   const ordPend = useMemo(
     () => (data.ordenes || []).filter(o => estatusPendientes.has(s(o.estatus).toLowerCase())).length,
     [data.ordenes, estatusPendientes]
-  );
-  const totalInv = useMemo(
-    () => tableroDemanda.reduce((sum, row) => sum + n(row.stock), 0),
-    [tableroDemanda]
   );
 
   // ── FIX P7: .slice() inside JSX creates new array ref every render ──
@@ -159,15 +151,13 @@ export default function DashboardView({ data }) {
   );
 
   const stats = useMemo(() => [
-    { label: "Producido hoy", val: totalProdHoy.toLocaleString(), unit: "bolsas", bg: "bg-blue-50", txt: "text-blue-500", icon: Icons.Factory },
     { label: "Por entregar", val: ordPend, unit: "órdenes", bg: "bg-amber-50", txt: "text-amber-500", icon: Icons.ShoppingCart },
     { label: "Rutas activas", val: rutasAct, unit: "en calle", bg: "bg-emerald-50", txt: "text-emerald-500", icon: Icons.Truck },
-    { label: "Hielo disponible", val: totalInv.toLocaleString(), unit: "bolsas", bg: "bg-cyan-50", txt: "text-cyan-500", icon: Icons.Package },
     { label: "Ventas hoy", val: `$${n(ventasResumen.dia).toLocaleString()}`, unit: "pesos", bg: "bg-emerald-50", txt: "text-emerald-600", icon: Icons.DollarSign },
     { label: "Ventas semana", val: `$${n(ventasResumen.semana).toLocaleString()}`, unit: "pesos", bg: "bg-indigo-50", txt: "text-indigo-600", icon: Icons.Calculator },
     { label: "Ventas mes", val: `$${n(ventasResumen.mes).toLocaleString()}`, unit: "pesos", bg: "bg-blue-50", txt: "text-blue-600", icon: Icons.Wallet },
     { label: "Clientes activos", val: n(clientesActivos).toLocaleString(), unit: "clientes", bg: "bg-cyan-50", txt: "text-cyan-600", icon: Icons.Users },
-  ], [totalProdHoy, ordPend, rutasAct, totalInv, ventasResumen, clientesActivos]);
+  ], [ordPend, rutasAct, ventasResumen, clientesActivos]);
 
   // ── ESTADO DE RESULTADOS ──
   const estadoResultados = useMemo(() => {
