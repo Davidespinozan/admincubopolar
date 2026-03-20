@@ -575,7 +575,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       {/* Modal cobro */}
       {entregaModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setEntregaModal(null)}>
-          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Cobro</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900">Entregar a {entregaModal.clienteNombre}</h3>
@@ -621,7 +621,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       {/* Modal venta express */}
       {ventaModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setVentaModal(false)}>
-          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Venta rapida</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Venta exprés</h3>
@@ -701,7 +701,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       {/* Modal merma */}
       {mermaModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setMermaModal(false)}>
-          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Incidencia</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Registrar merma</h3>

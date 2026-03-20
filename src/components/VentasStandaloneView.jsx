@@ -233,7 +233,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       {/* ═══ MODAL NUEVA VENTA ═══ */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setModal(false)}>
-          <div className="w-full max-w-lg rounded-t-[30px] border border-white/60 bg-white/92 p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(22,18,15,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="w-full max-w-lg rounded-t-[30px] border border-slate-200/80 bg-white p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(22,18,15,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Comercial</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Nueva venta</h3>
@@ -400,7 +400,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       {/* ═══ MODAL COBRO ═══ */}
       {pagoModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setPagoModal(null)}>
-          <div className="w-full max-w-lg rounded-t-[30px] border border-white/60 bg-white/92 p-5 shadow-[0_30px_70px_rgba(22,18,15,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="w-full max-w-lg rounded-t-[30px] border border-slate-200/80 bg-white p-5 shadow-[0_30px_70px_rgba(22,18,15,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Cobranza</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-1">Cobrar {s(pagoModal.folio)}</h3>

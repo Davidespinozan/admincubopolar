@@ -8,14 +8,14 @@ export default function Modal({ open, onClose, title, wide, children }) {
     <div className="fixed inset-0 z-[90] flex items-end md:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" aria-hidden="true" />
       <div
-        className={`relative mx-3 mb-0 w-full max-h-[92vh] max-w-lg overflow-y-auto rounded-t-[28px] border border-white/60 bg-white/92 shadow-[0_24px_56px_rgba(3,14,19,0.16)] sm:max-h-[88vh] md:mx-4 md:mb-0 md:max-h-[85vh] md:rounded-[28px] ${wide ? "md:max-w-2xl lg:max-w-3xl" : "md:max-w-md lg:max-w-lg"}`}
+        className={`relative mx-3 mb-0 w-full max-h-[92vh] max-w-lg overflow-y-auto rounded-t-[28px] border border-slate-200/80 bg-white shadow-[0_24px_56px_rgba(3,14,19,0.16)] sm:max-h-[88vh] md:mx-4 md:mb-0 md:max-h-[85vh] md:rounded-[28px] ${wide ? "md:max-w-2xl lg:max-w-3xl" : "md:max-w-md lg:max-w-lg"}`}
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
         <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-slate-200 md:hidden" />
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 rounded-t-[28px] border-b border-slate-200/80 bg-white/92 px-4 py-3.5 backdrop-blur-xl">
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 rounded-t-[28px] border-b border-slate-200/80 bg-white px-4 py-3.5">
           <div className="min-w-0 flex-1">
             <h2 className="font-display truncate text-sm font-bold tracking-[-0.03em] text-slate-900 sm:text-base">{title}</h2>
           </div>
@@ -80,7 +80,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, message, confir
   return (
     <div className="fixed inset-0 z-[95] flex items-center justify-center p-4" onClick={onClose}>
       <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-md" aria-hidden="true" />
-      <div className="relative w-full max-w-sm rounded-[28px] border border-white/60 bg-white/92 p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} role="alertdialog" aria-modal="true" aria-label={title || '¿Estás seguro?'}>
+      <div className="relative w-full max-w-sm rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} role="alertdialog" aria-modal="true" aria-label={title || '¿Estás seguro?'}>
         <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 ${danger ? 'bg-red-100' : 'bg-amber-100'}`}>
           <span className="text-xl">{danger ? '🗑' : '⚠️'}</span>
         </div>

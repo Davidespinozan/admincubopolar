@@ -323,7 +323,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ MODAL: Ya produje hielo ═══ */}
       {modal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setModal(false)}>
-          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Producción</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">¿Qué produjiste?</h3>
@@ -399,7 +399,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ MODAL: Mover entre congeladores ═══ */}
       {traspasoModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setTraspasoModal(false)}>
-          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Movimiento</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Mover entre congeladores</h3>
@@ -451,7 +451,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ MODAL: Sacar hielo ═══ */}
       {sacarModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSacarModal(null)}>
-          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Salida</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-1">Sacar hielo</h3>
@@ -520,7 +520,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ MODAL MERMA ═══ */}
       {mermaModal && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setMermaModal(false)}>
-          <div className="bg-white/92 w-full max-w-lg rounded-t-[30px] border border-white/60 p-5 max-h-[85vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 max-h-[85vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Merma</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Registrar merma</h3>
