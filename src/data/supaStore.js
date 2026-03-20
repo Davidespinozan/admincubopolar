@@ -4,6 +4,7 @@ import { backendPost } from '../lib/backend';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio } from './ordenLogic';
+import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
 
 // ═══════════════════════════════════════════════════════════════
 // useSupaStore — fuente única de verdad para toda la app
@@ -411,13 +412,21 @@ export function useSupaStore(userId, userName) {
 
       // ── CLIENTES ──
       addCliente: async (c) => {
+        // Auto-geocodificar desde la dirección capturada
+        let latitud = null;
+        let longitud = null;
+        if (c.calle || c.colonia) {
+          const geo = await geocodeDireccion(buildDireccion(c)).catch(() => null);
+          if (geo) { latitud = geo.lat; longitud = geo.lng; }
+        }
+
         const { data: newCli, error } = await supabase.from('clientes').insert({
           nombre: c.nombre, rfc: c.rfc, regimen: c.regimen,
           uso_cfdi: c.usoCfdi || 'G03', cp: c.cp, correo: c.correo,
           tipo: c.tipo, contacto: c.contacto,
           calle: c.calle || null, colonia: c.colonia || null,
-          ciudad: c.ciudad || 'Hermosillo', zona: c.zona || null,
-          latitud: c.latitud || null, longitud: c.longitud || null,
+          ciudad: c.ciudad || null, zona: c.zona || null,
+          latitud, longitud,
         }).select('id').single();
         if (error) {
           console.error('[addCliente]', error.message, error.code);
@@ -426,7 +435,7 @@ export function useSupaStore(userId, userName) {
         }
         rf();
         log('Crear', 'Clientes', `${c.nombre}`);
-        return newCli; // { id } returned so callers can use real Supabase ID
+        return newCli;
       },
 
       updateCliente: async (id, c) => {
@@ -444,8 +453,11 @@ export function useSupaStore(userId, userName) {
         if (c.colonia  !== undefined) update.colonia  = c.colonia || null;
         if (c.ciudad   !== undefined) update.ciudad   = c.ciudad || null;
         if (c.zona     !== undefined) update.zona     = c.zona || null;
-        if (c.latitud  !== undefined) update.latitud  = c.latitud || null;
-        if (c.longitud !== undefined) update.longitud = c.longitud || null;
+        // Re-geocodificar automáticamente si cambió algún campo de dirección
+        if (c.calle !== undefined || c.colonia !== undefined || c.ciudad !== undefined) {
+          const geo = await geocodeDireccion(buildDireccion(c)).catch(() => null);
+          if (geo) { update.latitud = geo.lat; update.longitud = geo.lng; }
+        }
         const { error } = await supabase.from('clientes').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar cliente'); return error; }
         log('Editar', 'Clientes', `ID ${id}`);
