@@ -1,4 +1,7 @@
 -- Harden public access and enforce stronger payment idempotency where possible.
+-- NOTE: The DROP POLICY statements below targeted policy names that did not exist
+-- in production (policies were named "allow_all_*" not "anon_all").
+-- This section had no effect. The fix was applied in 016_fix_anon_policies.sql.
 
 -- 1) Remove anonymous full-access policies from core operational tables.
 DROP POLICY IF EXISTS "anon_all" ON usuarios;

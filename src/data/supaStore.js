@@ -61,6 +61,7 @@ const EMPTY = {
   nominaRecibos: [], movContables: [], mermas: [], cuentasPorCobrar: [],
   cuentasPorPagar: [], pagosProveedores: [],
   costosFijos: [], costosHistorial: [],
+  invoiceAttempts: [],
   contabilidad: { ingresos: [], egresos: [] },
 };
 
@@ -98,7 +99,7 @@ export function useSupaStore(userId, userName) {
       ]);
 
       // Tablas opcionales
-      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv] = await Promise.all([
+      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts] = await Promise.all([
         safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('empleados').select('*').order('id')),
@@ -111,6 +112,7 @@ export function useSupaStore(userId, userName) {
         safeRows(supabase.from('costos_historial').select('*').order('id', { ascending: false }).limit(200)),
         safeRows(supabase.from('cuentas_por_pagar').select('*').order('id', { ascending: false }).limit(500)),
         safeRows(supabase.from('pagos_proveedores').select('*').order('id', { ascending: false }).limit(200)),
+        safeRows(supabase.from('invoice_attempts').select('orden_id, provider_reference, status, created_at, request_payload').order('id', { ascending: false }).limit(300)),
       ]);
       const clientes  = cli;
       const productos = prod;
@@ -328,6 +330,7 @@ export function useSupaStore(userId, userName) {
           ...toCamel(p),
           monto: Number(p.monto),
         })),
+        invoiceAttempts: (invAttempts || []).map(toCamel),
         contabilidad: contabilidadObj,
       });
 
@@ -807,21 +810,31 @@ export function useSupaStore(userId, userName) {
             if (costoTotal > 0) {
               const hoy = new Date().toISOString().slice(0, 10);
               const periodo = hoy.slice(0, 7);
-              
+              const concepto = `Producción ${prod.folio || id}: ${cantidad}× ${prod.sku} (empaque: ${producto.empaque_sku})`;
+
               // Actualizar costo en la producción
               await supabase.from('produccion').update({
                 costo_empaque: costoUnitario,
                 costo_total: costoTotal,
               }).eq('id', id);
-              
+
               // Registrar costo de producción en historial
               await supabase.from('costos_historial').insert({
                 tipo: 'Producción',
                 categoria: 'Costo de Ventas',
-                concepto: `Producción ${prod.folio || id}: ${cantidad}× ${prod.sku} (empaque: ${producto.empaque_sku})`,
+                concepto,
                 monto: costoTotal,
                 periodo,
                 fecha: hoy,
+              });
+
+              // Registrar egreso contable para que aparezca en estado de resultados
+              await supabase.from('movimientos_contables').insert({
+                fecha: hoy,
+                tipo: 'Egreso',
+                categoria: 'Costo de Ventas',
+                concepto,
+                monto: costoTotal,
               });
             }
           }
@@ -1166,24 +1179,31 @@ export function useSupaStore(userId, userName) {
       cerrarRuta: async (rutaId, devolucion) => {
         // devolucion ahora es un objeto: {"HC-25K": 5, "HC-5K": 3, ...}
         const devolucionObj = (typeof devolucion === 'object') ? devolucion : { bolsas: devolucion || 0 };
-        await supabase.from('rutas').update({ 
-          estatus: 'Cerrada', 
-          devolucion: devolucionObj,
-        }).eq('id', rutaId);
-        
-        // Regresar devolución al primer cuarto frío
-        const { data: cuartos } = await supabase.from('cuartos_frios').select('id, stock').limit(1);
-        if (cuartos && cuartos.length > 0) {
-          const cf = cuartos[0];
-          const stockActual = cf.stock || {};
-          for (const [sku, qty] of Object.entries(devolucionObj)) {
-            if (qty > 0) {
-              stockActual[sku] = (stockActual[sku] || 0) + qty;
-            }
+
+        // Obtener primer cuarto frío para regresar devolución
+        const { data: cuartos } = await supabase.from('cuartos_frios').select('id').order('id').limit(1);
+        const cuartoId = cuartos?.[0]?.id;
+        if (!cuartoId) { t()?.error('No hay cuarto frío configurado'); return new Error('Sin cuarto frío'); }
+
+        // Usar RPC atómica: valida que no esté ya cerrada, regresa stock, marca Cerrada
+        const { error } = await supabase.rpc('cerrar_ruta_atomic', {
+          p_ruta_id: rutaId,
+          p_devoluciones: devolucionObj,
+          p_cuarto_frio_id: cuartoId,
+          p_entregas: [],
+          p_total_cobrado: 0,
+          p_total_credito: 0,
+          p_usuario: uname() || 'Admin',
+        });
+        if (error) {
+          if (error.message?.includes('ya está cerrada')) {
+            t()?.error('Esta ruta ya fue cerrada');
+          } else {
+            t()?.error('Error al cerrar la ruta');
           }
-          await supabase.from('cuartos_frios').update({ stock: stockActual }).eq('id', cf.id);
+          return error;
         }
-        
+
         const devTxt = Object.entries(devolucionObj).filter(([_,v]) => v > 0).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '0';
         log('Cerrar', 'Rutas', `Ruta #${rutaId} — devuelto: ${devTxt}`);
         rf();
@@ -1289,6 +1309,7 @@ export function useSupaStore(userId, userName) {
           .eq('id', cxcId)
           .single();
         if (e1 || !cxc) { t()?.error('Cuenta por cobrar no encontrada'); return e1; }
+        if (cxc.estatus === 'Pagada') { t()?.error('Esta cuenta ya fue liquidada'); return; }
 
         const nuevoMontoPagado = centavos(Number(cxc.monto_pagado) + montoNum);
         const nuevoSaldo = centavos(Number(cxc.monto_original) - nuevoMontoPagado);
@@ -1359,6 +1380,30 @@ export function useSupaStore(userId, userName) {
             }).eq('id', cxcId);
             t()?.error('Error al actualizar saldo del cliente');
             return saldoError;
+          }
+        }
+
+        // Generar Complemento de Pago (CFDI tipo P) si la orden tiene factura PPD timbrada
+        if (cxc.orden_id) {
+          const { data: ordenFacturada } = await supabase
+            .from('ordenes')
+            .select('facturama_uuid, metodo_pago')
+            .eq('id', cxc.orden_id)
+            .maybeSingle();
+          const esPPD = s(ordenFacturada?.metodo_pago).toLowerCase().includes('crédito');
+          if (ordenFacturada?.facturama_uuid && esPPD) {
+            try {
+              await backendPost('billing-create-complemento', {
+                cxcId,
+                monto: montoNum,
+                metodoPago: metodoPago || 'Efectivo',
+                saldoAntes: cxc.saldo_pendiente,
+                saldoDespues: Math.max(0, nuevoSaldo),
+              });
+            } catch (compErr) {
+              // No bloqueamos el cobro si falla el complemento — se puede timbrar manualmente
+              console.warn('[cobrarCxC] Complemento de pago no generado:', compErr.message);
+            }
           }
         }
 
@@ -1632,6 +1677,43 @@ export function useSupaStore(userId, userName) {
           usuario_id: uid() || null,
         });
         if (error) { t()?.error('Error al registrar merma'); return error; }
+
+        // Descontar del inventario en cuartos fríos
+        const qty = Number(cantidad);
+        if (qty > 0) {
+          const { data: cuartos } = await supabase.from('cuartos_frios').select('id, stock').order('id');
+          if (cuartos && cuartos.length > 0) {
+            const changes = [];
+            let remaining = qty;
+            for (const cf of cuartos) {
+              if (remaining <= 0) break;
+              const available = Number((cf.stock || {})[sku] || 0);
+              if (available > 0) {
+                const toTake = Math.min(available, remaining);
+                remaining -= toTake;
+                changes.push({ cuarto_id: cf.id, sku, delta: -toTake, tipo: 'Merma', origen: causa || origen || 'Merma', usuario: uname() });
+              }
+            }
+            if (changes.length > 0) {
+              await supabase.rpc('update_stocks_atomic', { p_changes: changes });
+            }
+          }
+
+          // Registrar egreso contable por el costo de la merma
+          const { data: prod } = await supabase.from('productos').select('costo_unitario, nombre').eq('sku', sku).maybeSingle();
+          const costoUnit = Number(prod?.costo_unitario || 0);
+          if (costoUnit > 0) {
+            const costoMerma = centavos(qty * costoUnit);
+            await supabase.from('movimientos_contables').insert({
+              fecha: new Date().toISOString().slice(0, 10),
+              tipo: 'Egreso',
+              categoria: 'Mermas',
+              concepto: `Merma ${qty}× ${sku}${prod?.nombre ? ` (${prod.nombre})` : ''} — ${causa || origen || 'Sin causa'}`,
+              monto: costoMerma,
+            });
+          }
+        }
+
         log('Registrar', 'Mermas', `${cantidad}×${sku} — ${causa}`);
         rf();
       },

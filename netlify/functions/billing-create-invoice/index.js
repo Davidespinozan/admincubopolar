@@ -248,6 +248,7 @@ export const handler = async (event) => {
         estatus: 'Facturada',
         facturama_id: invoice.Id || null,
         facturama_folio: invoice.Folio || null,
+        facturama_uuid: invoice.Uuid || invoice.uuid || null,
       })
       .eq('id', orden.id);
 
