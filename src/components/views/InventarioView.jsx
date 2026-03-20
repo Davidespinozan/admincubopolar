@@ -1,0 +1,224 @@
+import { useState, useMemo, Icons, StatusBadge, DataTable, CapacityBar, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtDateTime, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+
+export function InventarioView({ data, actions }) {
+  const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
+  const [pageExist, setPageExist] = useState(0);
+  const [pageKardex, setPageKardex] = useState(0);
+  const [traspasoModal, setTraspasoModal] = useState(false);
+  const [traspasoForm, setTraspasoForm] = useState({origen:"CF-1",destino:"CF-2",sku:"HC-25K",cantidad:""});
+  const [traspasoErrors, setTraspasoErrors] = useState({});
+  const [cfModal, setCfModal] = useState(null);
+  const [cfForm, setCfForm] = useState({nombre:"",temp:"-10",capacidad:"0"});
+  const [ajusteModal, setAjusteModal] = useState(null);
+  const [ajusteForm, setAjusteForm] = useState({ existencia: "", motivo: "" });
+  const [ajusteErrors, setAjusteErrors] = useState({});
+
+  const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
+
+    // Compute stock por producto sumando de todos los cuartos fríos + ubicaciones
+    const prodConStock = useMemo(() => {
+      return prodTerminados.map(p => {
+        let totalStock = 0;
+        const ubicaciones = [];
+        for (const cf of data.cuartosFrios) {
+          const qty = cf.stock ? cf.stock[s(p.sku)] : 0;
+          if (qty && qty > 0) {
+            totalStock += qty;
+            ubicaciones.push(`${s(cf.nombre)} (${qty})`);
+          }
+        }
+        return {
+          ...p,
+          stock: totalStock,
+          ubicacion: ubicaciones.length > 0 ? ubicaciones.join(', ') : 'Sin stock'
+        };
+      });
+    }, [prodTerminados, data.cuartosFrios]);
+
+    const paginatedProd = useMemo(() => prodConStock.slice(pageExist * PAGE_SIZE, (pageExist + 1) * PAGE_SIZE), [prodConStock, pageExist]);
+  const paginatedMov = useMemo(() => data.inventarioMov.slice(pageKardex * PAGE_SIZE, (pageKardex + 1) * PAGE_SIZE), [data.inventarioMov, pageKardex]);
+
+  const cfOptions = useMemo(() => data.cuartosFrios.map(cf => ({value: s(cf.id), label: s(cf.nombre)})), [data.cuartosFrios]);
+  const skuProd = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado").map(p => s(p.sku)), [data.productos]);
+
+  const hacerTraspaso = () => {
+    const e = {};
+    if (!traspasoForm.cantidad || n(traspasoForm.cantidad) <= 0) e.cantidad = "Requerido";
+    if (traspasoForm.origen === traspasoForm.destino) e.destino = "Debe ser diferente al origen";
+    const cfOrigen = data.cuartosFrios.find(cf => cf.id === traspasoForm.origen);
+    if (cfOrigen && cfOrigen.stock && (cfOrigen.stock[traspasoForm.sku] || 0) < n(traspasoForm.cantidad)) e.cantidad = "Stock insuficiente en origen";
+    if (Object.keys(e).length) { setTraspasoErrors(e); return; }
+    if (actions.traspasoEntreUbicaciones) {
+      actions.traspasoEntreUbicaciones(traspasoForm);
+    }
+    toast?.success(traspasoForm.cantidad + " " + traspasoForm.sku + " de " + traspasoForm.origen + " a " + traspasoForm.destino);
+    setTraspasoModal(false); setTraspasoForm({origen:"CF-1",destino:"CF-2",sku:"HC-25K",cantidad:""}); setTraspasoErrors({});
+  };
+
+  const totalStockByCF = useMemo(() => {
+    return data.cuartosFrios.map(cf => {
+      const stockEntries = cf.stock ? Object.entries(cf.stock) : [];
+      const total = stockEntries.reduce((s, [, v]) => s + n(v), 0);
+      return { ...cf, stockEntries, total };
+    });
+  }, [data.cuartosFrios]);
+
+  const abrirAjuste = (prod) => {
+    setAjusteModal(prod);
+    setAjusteForm({ existencia: String(n(prod.stock)), motivo: "" });
+    setAjusteErrors({});
+  };
+
+  const confirmarAjuste = async () => {
+    if (!ajusteModal) return;
+    const e = {};
+    const nueva = n(ajusteForm.existencia, -1);
+    if (nueva < 0) e.existencia = "Debe ser 0 o mayor";
+    if (!s(ajusteForm.motivo).trim()) e.motivo = "Motivo requerido";
+    if (Object.keys(e).length) { setAjusteErrors(e); return; }
+
+    const err = await actions.ajustarExistenciaManual?.({
+      sku: s(ajusteModal.sku),
+      nuevaExistencia: nueva,
+      motivo: s(ajusteForm.motivo).trim(),
+    });
+
+    if (err) {
+      toast?.error("No se pudo ajustar la existencia");
+      return;
+    }
+
+    toast?.success("Existencia ajustada");
+    setAjusteModal(null);
+  };
+
+  return (<div>
+    {ConfirmEl}
+    <div className="flex items-center justify-between mb-4">
+      <div><h2 className="text-lg font-bold text-slate-800">Inventario</h2><p className="text-xs text-slate-400">Cuartos fríos, existencias y movimientos</p></div>
+      <div className="flex gap-2">
+        <button onClick={()=>{setCfForm({nombre:"",temp:"-10",capacidad:"0"});setCfModal("new")}} className="px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Cuarto Frío</button>
+        <button onClick={()=>{setTraspasoModal(true);setTraspasoErrors({})}} className="px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl min-h-[44px]">Traspaso</button>
+      </div>
+    </div>
+    <div className="flex sm:grid sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6 overflow-x-auto sm:overflow-x-visible pb-1 sm:pb-0 snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0">
+      {totalStockByCF.length === 0 ? <EmptyState message="Sin cuartos fríos" /> :
+      totalStockByCF.map(cf=><div key={cf.id} className="min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 snap-start">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2 cursor-pointer" onClick={()=>{setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad:String(n(cf.capacidad))});setCfModal(cf)}}>
+            <h3 className="text-sm font-bold text-slate-700">{s(cf.nombre)}</h3>
+            <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">{n(cf.temp, -50, 10)}°C</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={e=>{e.stopPropagation();setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad:String(n(cf.capacidad))});setCfModal(cf);}} className="p-1 text-slate-500 hover:text-blue-600">
+              <Icons.Edit />
+            </button>
+            <button onClick={e=>{e.stopPropagation();askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cf.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cf.id); toast?.success('Cuarto frío eliminado');}, true)}} className="p-1 text-red-500 hover:text-red-700">
+              <Icons.X />
+            </button>
+          </div>
+        </div>
+        <CapacityBar pct={n(cf.capacidad)}/>
+        <p className="text-xs text-slate-400 mt-2">{n(cf.capacidad)}% capacidad</p>
+        <div className="mt-3 space-y-1">
+          {cf.stockEntries.map(([sku, qty]) => (
+            <div key={sku} className="flex justify-between text-xs">
+              <span className="font-mono text-slate-500">{sku}</span>
+              <span className="font-bold text-slate-700">{n(qty).toLocaleString()}</span>
+            </div>
+          ))}
+          {cf.stockEntries.length === 0 && <p className="text-xs text-slate-400">Vacío</p>}
+        </div>
+        <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between text-xs">
+          <span className="text-slate-400">Total</span>
+          <span className="font-extrabold text-slate-800">{cf.total.toLocaleString()} bolsas</span>
+        </div>
+      </div>)}
+    </div>
+    <div className="bg-white border border-slate-100 rounded-2xl p-5 mb-6">
+      <h3 className="text-sm font-bold text-slate-700 mb-4">Existencias</h3>
+      <DataTable columns={[
+        {key:"sku",label:"SKU",render:v=><span className="font-mono text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">{s(v)}</span>},
+        {key:"nombre",label:"Producto",bold:true},{key:"tipo",label:"Tipo",badge:true,render:v=><StatusBadge status={v}/>},
+        {key:"stock",label:"Existencia",render:(v,r)=><span className={`font-bold ${s(r.tipo)==="Empaque"&&n(v)<200?"text-red-600":"text-slate-800"}`}>{n(v).toLocaleString()}</span>},
+        {key:"ubicacion",label:"Ubicación"},
+        {key:"acciones",label:"Acciones",render:(_,r)=><button onClick={(e)=>{e.stopPropagation();abrirAjuste(r);}} className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 min-h-[36px]">Ajustar</button>},
+      ]} data={paginatedProd} />
+      <Paginator page={pageExist} total={prodConStock.length} onPage={setPageExist} />
+    </div>
+    <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
+      <h3 className="text-sm font-bold text-slate-700 mb-4">Kardex</h3>
+      <DataTable columns={[
+        {key:"fecha",label:"Fecha",render:v=>fmtDateTime(v)},{key:"tipo",label:"Tipo",badge:true,render:v=><StatusBadge status={v}/>},
+        {key:"producto",label:"Producto",bold:true},
+        {key:"cantidad",label:"Qty",render:v=>{const num=n(v,-999999);return<span className={`font-mono font-semibold ${num>0?"text-emerald-600":num<0?"text-red-500":"text-slate-600"}`}>{num>0?`+${num}`:num}</span>}},
+        {key:"origen",label:"Referencia"},{key:"usuario",label:"Usuario"},
+      ]} data={paginatedMov} />
+      <Paginator page={pageKardex} total={data.inventarioMov.length} onPage={setPageKardex} />
+    </div>
+
+    <Modal open={traspasoModal} onClose={()=>setTraspasoModal(false)} title="Traspaso entre ubicaciones">
+      <div className="space-y-3">
+        <FormSelect label="Origen *" options={cfOptions} value={traspasoForm.origen} onChange={e=>setTraspasoForm({...traspasoForm,origen:e.target.value})} />
+        <FormSelect label="Destino *" options={cfOptions} value={traspasoForm.destino} onChange={e=>setTraspasoForm({...traspasoForm,destino:e.target.value})} error={traspasoErrors.destino} />
+        <FormSelect label="Producto" options={skuProd} value={traspasoForm.sku} onChange={e=>setTraspasoForm({...traspasoForm,sku:e.target.value})} />
+        <FormInput label="Cantidad *" type="number" value={traspasoForm.cantidad} onChange={e=>setTraspasoForm({...traspasoForm,cantidad:e.target.value})} placeholder="Ej: 100" error={traspasoErrors.cantidad} />
+      </div>
+      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setTraspasoModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={hacerTraspaso}>Traspasar</FormBtn></div>
+    </Modal>
+
+    {/* Modal: Crear / Editar Cuarto Frío */}
+    <Modal open={!!cfModal} onClose={()=>setCfModal(null)} title={cfModal==="new"?"Nuevo cuarto frío":"Editar cuarto frío"}>
+      <div className="space-y-3">
+        <FormInput label="Nombre *" value={cfForm.nombre} onChange={e=>setCfForm({...cfForm,nombre:e.target.value})} />
+        <FormInput label="Temperatura (°C)" type="number" value={cfForm.temp} onChange={e=>setCfForm({...cfForm,temp:e.target.value})} />
+        <FormInput label="Capacidad (%)" type="number" value={cfForm.capacidad} onChange={e=>setCfForm({...cfForm,capacidad:e.target.value})} />
+      </div>
+      <div className="flex justify-between mt-5">
+        {cfModal && cfModal !== "new" && cfModal.id && <button onClick={()=> askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cfModal.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cfModal.id); toast?.success('Cuarto frío eliminado'); setCfModal(null);}, true)} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
+        <div className="flex gap-2 ml-auto">
+          <FormBtn onClick={()=>setCfModal(null)}>Cancelar</FormBtn>
+          <FormBtn primary onClick={async ()=>{
+            const e = {};
+            if (!cfForm.nombre || !cfForm.nombre.trim()) { toast?.error('Nombre requerido'); return; }
+            const payload = { nombre: cfForm.nombre, temp: Number(cfForm.temp), capacidad: Number(cfForm.capacidad) };
+            try {
+              if (cfModal === "new") { await actions.addCuartoFrio(payload); toast?.success('Cuarto frío creado'); }
+              else { await actions.updateCuartoFrio(cfModal.id, payload); toast?.success('Cuarto frío actualizado'); }
+              setCfModal(null);
+            } catch(ex) { toast?.error('Error: ' + (ex?.message || 'No se pudo guardar')); }
+          }}>Guardar</FormBtn>
+        </div>
+      </div>
+    </Modal>
+
+    {/* Modal: Ajuste manual de existencia */}
+    <Modal open={!!ajusteModal} onClose={()=>setAjusteModal(null)} title={"Ajustar existencia — " + s(ajusteModal?.sku)}>
+      <div className="space-y-3">
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
+          <p className="text-xs text-amber-700">Este ajuste corrige inventario cuando hay una diferencia operativa.</p>
+          <p className="text-xs text-amber-700 mt-1">Stock actual: <span className="font-bold">{n(ajusteModal?.stock).toLocaleString()}</span></p>
+        </div>
+        <FormInput
+          label="Nueva existencia total *"
+          type="number"
+          value={ajusteForm.existencia}
+          onChange={e=>setAjusteForm({...ajusteForm, existencia:e.target.value})}
+          error={ajusteErrors.existencia}
+        />
+        <FormInput
+          label="Motivo del ajuste *"
+          value={ajusteForm.motivo}
+          onChange={e=>setAjusteForm({...ajusteForm, motivo:e.target.value})}
+          error={ajusteErrors.motivo}
+          placeholder="Ej: Error de conteo de chofer en ruta norte"
+        />
+      </div>
+      <div className="flex justify-end gap-2 mt-5">
+        <FormBtn onClick={()=>setAjusteModal(null)}>Cancelar</FormBtn>
+        <FormBtn primary onClick={confirmarAjuste}>Guardar ajuste</FormBtn>
+      </div>
+    </Modal>
+  </div>);
+}

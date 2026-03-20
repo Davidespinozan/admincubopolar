@@ -1,12 +1,26 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
 import { Icons } from './ui/Icons';
 import DashboardView from './views/DashboardView';
-import {
-  ClientesView, ProductosView, PreciosView, ProduccionView,
-  InventarioView, OrdenesView, RutasView, FacturacionView,
-  ConciliacionView, AuditoriaView, ConfiguracionView, AlmacenBolsasView,
-  EmpleadosView, NominaView, ContabilidadView, CobrosView, CostosView, CuentasPorPagarView
-} from './views';
+
+// Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
+const ClientesView      = lazy(() => import('./views/ClientesView.jsx').then(m => ({ default: m.ClientesView })));
+const ProductosView     = lazy(() => import('./views/ProductosView.jsx').then(m => ({ default: m.ProductosView })));
+const PreciosView       = lazy(() => import('./views/PreciosView.jsx').then(m => ({ default: m.PreciosView })));
+const ProduccionView    = lazy(() => import('./views/ProduccionView.jsx').then(m => ({ default: m.ProduccionView })));
+const InventarioView    = lazy(() => import('./views/InventarioView.jsx').then(m => ({ default: m.InventarioView })));
+const OrdenesView       = lazy(() => import('./views/OrdenesView.jsx').then(m => ({ default: m.OrdenesView })));
+const RutasView         = lazy(() => import('./views/RutasView.jsx').then(m => ({ default: m.RutasView })));
+const FacturacionView   = lazy(() => import('./views/FacturacionView.jsx').then(m => ({ default: m.FacturacionView })));
+const ConciliacionView  = lazy(() => import('./views/ConciliacionView.jsx').then(m => ({ default: m.ConciliacionView })));
+const AuditoriaView     = lazy(() => import('./views/AuditoriaView.jsx').then(m => ({ default: m.AuditoriaView })));
+const ConfiguracionView = lazy(() => import('./views/ConfiguracionView.jsx').then(m => ({ default: m.ConfiguracionView })));
+const AlmacenBolsasView = lazy(() => import('./views/AlmacenBolsasView.jsx').then(m => ({ default: m.AlmacenBolsasView })));
+const EmpleadosView     = lazy(() => import('./views/EmpleadosView.jsx').then(m => ({ default: m.EmpleadosView })));
+const NominaView        = lazy(() => import('./views/NominaView.jsx').then(m => ({ default: m.NominaView })));
+const ContabilidadView  = lazy(() => import('./views/ContabilidadView.jsx').then(m => ({ default: m.ContabilidadView })));
+const CobrosView        = lazy(() => import('./views/CobrosView.jsx').then(m => ({ default: m.CobrosView })));
+const CostosView        = lazy(() => import('./views/CostosView.jsx').then(m => ({ default: m.CostosView })));
+const CuentasPorPagarView = lazy(() => import('./views/CuentasPorPagarView.jsx').then(m => ({ default: m.CuentasPorPagarView })));
 
 /*
   ADMIN: 4 áreas — Operación, Comercial, Finanzas, Equipo
@@ -268,7 +282,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       <main className="px-3 pb-24 pt-4 sm:px-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px]">
         <div className="relative">
           <div className={`pointer-events-none absolute inset-x-8 top-0 h-16 rounded-[32px] bg-gradient-to-r ${currentMeta.glow} opacity-45 blur-3xl`} />
-          <div className="relative">{renderView()}</div>
+          <div className="relative"><Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>{renderView()}</Suspense></div>
         </div>
       </main>
 

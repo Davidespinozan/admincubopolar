@@ -5,9 +5,10 @@ import { Icons } from '../ui/Icons';
 import { StatusBadge, DataTable, PageHeader, CapacityBar } from '../ui/Components';
 import Modal, { FormInput, FormSelect, FormBtn, useConfirm } from '../ui/Modal';
 import { EmptyState } from '../ui/Skeleton';
-import { s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today } from '../../utils/safe';
+import { s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today, centavos } from '../../utils/safe';
 import { useToast } from '../ui/Toast';
 import { reporteVentas, reporteProduccion, reporteInventario, reporteClientes, reporteRutas, reporteFinanciero } from '../../utils/exportReports';
+import { backendPost } from '../../lib/backend';
 
 // Re-export everything for views to consume
 export {
@@ -17,9 +18,10 @@ export {
   StatusBadge, DataTable, PageHeader, CapacityBar,
   Modal, FormInput, FormSelect, FormBtn, useConfirm,
   EmptyState,
-  s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today,
+  s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today, centavos,
   useToast,
-  reporteVentas, reporteProduccion, reporteInventario, reporteClientes, reporteRutas, reporteFinanciero
+  reporteVentas, reporteProduccion, reporteInventario, reporteClientes, reporteRutas, reporteFinanciero,
+  backendPost
 };
 
 export const PAGE_SIZE = 50;
