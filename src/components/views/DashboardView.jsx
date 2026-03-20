@@ -260,12 +260,12 @@ export default function DashboardView({ data }) {
           <div className="absolute right-[-10%] top-[-14%] h-44 w-44 rounded-full bg-cyan-300/14 blur-3xl" />
           <div className="absolute bottom-[-18%] left-[-4%] h-36 w-36 rounded-full bg-amber-200/10 blur-3xl" />
           <div className="relative">
-            <p className="erp-kicker text-cyan-200/70">Centro de mando</p>
+            <p className="erp-kicker text-cyan-200/70">Resumen operativo</p>
             <h1 className="font-display mt-2 max-w-2xl text-[2rem] font-bold tracking-[-0.05em] text-white sm:text-[2.35rem] md:text-[2.7rem]">
-              Cadena fría, despacho y caja en una sola lectura.
+              Estado general del día.
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300 md:text-[15px]">
-              {fechaStr}. {turno}. La vista prioriza faltantes, liquidez y ritmo operativo para decidir sin ruido.
+              {fechaStr}. {turno}. Revisa ventas, pendientes, liquidez y alertas activas.
             </p>
             <div className="mt-5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
               <div className="rounded-[20px] border border-white/10 bg-white/7 p-3.5 backdrop-blur-xl">
