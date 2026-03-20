@@ -136,7 +136,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       }
       const total = items.reduce((s, it) => s + it.cant * it.precio, 0);
       const entregada = entregas.some(e => String(e.ordenId) === String(o.id));
-      return { ...o, clienteNombre, items, totalCalc: total || n(o.total), entregada };
+      const direccion = cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '';
+      return { ...o, clienteNombre, items, totalCalc: total || n(o.total), entregada,
+        latitud: cli?.latitud, longitud: cli?.longitud, direccion };
     });
   }, [misOrdenes, data.clientes, entregas, getPrice]);
 
@@ -479,6 +481,22 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               <div className="flex flex-wrap gap-1 mb-3">
                 {o.items.map((it, i) => <span key={i} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{it.cant}× {it.sku} · ${it.precio}</span>)}
               </div>
+              {/* Botón de navegación */}
+              {(o.latitud && o.longitud) ? (
+                <a href={`https://www.google.com/maps/dir/?api=1&destination=${o.latitud},${o.longitud}&travelmode=driving`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="mb-2 flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 text-white font-semibold rounded-[14px] text-sm active:scale-[0.98] transition-transform">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+                  Navegar
+                </a>
+              ) : o.direccion ? (
+                <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.direccion)}`}
+                  target="_blank" rel="noopener noreferrer"
+                  className="mb-2 flex items-center justify-center gap-2 w-full py-2.5 bg-blue-500/80 text-white font-semibold rounded-[14px] text-sm active:scale-[0.98] transition-transform">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+                  Buscar dirección
+                </a>
+              ) : null}
               <button onClick={() => { setEntregaModal(o); setCobroMetodo("Efectivo"); setCobroRef(""); setCheckoutUrl(null); setShortUrl(null); }}
                 className="w-full py-3.5 bg-slate-900 text-white font-bold rounded-[18px] text-sm active:scale-[0.98] transition-transform shadow-[0_18px_30px_rgba(8,20,27,0.14)]">
                 Entregar y cobrar
@@ -506,6 +524,21 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
       {/* Bottom bar */}
       <div className="fixed bottom-0 left-1/2 z-40 -translate-x-1/2 w-full max-w-[640px] bg-slate-950/92 border-t border-white/10 px-4 py-3 backdrop-blur-xl md:max-w-3xl lg:max-w-5xl" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
+        {/* Ver ruta completa en Maps si hay pendientes con coords */}
+        {(() => {
+          const conCoords = pendientes.filter(o => o.latitud && o.longitud);
+          if (conCoords.length < 1) return null;
+          const dest = conCoords[conCoords.length - 1];
+          const waypts = conCoords.slice(0, -1).map(o => `${o.latitud},${o.longitud}`).join('|');
+          const url = `https://www.google.com/maps/dir/?api=1&destination=${dest.latitud},${dest.longitud}${waypts ? `&waypoints=${encodeURIComponent(waypts)}` : ''}&travelmode=driving`;
+          return (
+            <a href={url} target="_blank" rel="noopener noreferrer"
+              className="mb-2 flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 text-white font-semibold rounded-[16px] text-sm">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+              Ver ruta completa ({conCoords.length} paradas)
+            </a>
+          );
+        })()}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
           <button onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" }); }} className="w-full py-4 bg-cyan-200 text-slate-950 text-sm font-bold rounded-[18px]">Venta rápida</button>
           <button onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="w-full py-4 px-5 bg-white/10 text-amber-200 text-sm font-bold rounded-[18px]">Registrar merma</button>

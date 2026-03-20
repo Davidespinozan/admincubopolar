@@ -1,4 +1,5 @@
 import { useState, useMemo, Icons, StatusBadge, PageHeader, CapacityBar, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, useDebounce, useToast, reporteRutas } from './viewsCommon';
+import { ordenarPorProximidad } from '../../utils/geocoding';
 
 function AsignarOrdenesModal({ ruta, ordenes, onClose, onConfirm }) {
   const [selected, setSelected] = useState([]);
@@ -441,6 +442,20 @@ export function RutasView({ data, actions }) {
           {/* Clientes seleccionados */}
           {clientesSeleccionados.length > 0 && (
             <div className="mb-3 space-y-2">
+              {/* Optimizar orden por proximidad */}
+              {clientesSeleccionados.filter(c => c.latitud && c.longitud).length >= 2 && (
+                <button
+                  onClick={() => {
+                    const optimizados = ordenarPorProximidad(clientesSeleccionados);
+                    setForm(prev => ({ ...prev, clientesIds: optimizados.map(c => String(c.id)) }));
+                    toast.success(`Ruta optimizada — ${optimizados.filter(c => c.latitud && c.longitud).length} paradas reordenadas por distancia`);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-xl hover:bg-blue-100 transition-colors"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+                  Optimizar orden de visitas por distancia
+                </button>
+              )}
               {clientesSeleccionados.map((c, idx) => (
                 <div key={c.id} className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center justify-between">
                   <div className="flex items-center gap-3">
