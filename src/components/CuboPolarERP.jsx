@@ -256,10 +256,6 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             </div>
           </div>
           <div className="relative flex w-full items-center justify-end gap-2 sm:w-auto">
-            <div className="relative hidden min-w-[18rem] flex-1 lg:flex">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span>
-              <input type="text" placeholder="Buscar módulo o dato" className="w-full max-w-sm rounded-[16px] border border-slate-200 bg-white/78 py-2.5 pl-10 pr-4 text-sm text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-cyan-600 focus:bg-white" />
-            </div>
             <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[16px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
               <Icons.Bell />{alertasActivas.length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />}
             </button>
