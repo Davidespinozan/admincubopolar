@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
+import { useState, useCallback, useMemo, useEffect, lazy, Suspense, Component } from 'react';
 import { Icons } from './ui/Icons';
 import DashboardView from './views/DashboardView';
 
@@ -21,6 +21,20 @@ const ContabilidadView  = lazy(() => import('./views/ContabilidadView.jsx').then
 const CobrosView        = lazy(() => import('./views/CobrosView.jsx').then(m => ({ default: m.CobrosView })));
 const CostosView        = lazy(() => import('./views/CostosView.jsx').then(m => ({ default: m.CostosView })));
 const CuentasPorPagarView = lazy(() => import('./views/CuentasPorPagarView.jsx').then(m => ({ default: m.CuentasPorPagarView })));
+
+// Auto-reload when a lazy chunk can't load (stale deployment)
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', () => window.location.reload());
+}
+
+class ChunkErrorBoundary extends Component {
+  componentDidCatch(err) {
+    if (err?.message?.includes('MIME') || err?.message?.includes('Failed to fetch') || err?.message?.includes('dynamically imported')) {
+      window.location.reload();
+    }
+  }
+  render() { return this.props.children; }
+}
 
 /*
   ADMIN: 4 áreas — Operación, Comercial, Finanzas, Equipo
@@ -282,7 +296,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       <main className="px-3 pb-24 pt-4 sm:px-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px]">
         <div className="relative">
           <div className={`pointer-events-none absolute inset-x-8 top-0 h-16 rounded-[32px] bg-gradient-to-r ${currentMeta.glow} opacity-45 blur-3xl`} />
-          <div className="relative"><Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>{renderView()}</Suspense></div>
+          <div className="relative"><ChunkErrorBoundary><Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>{renderView()}</Suspense></ChunkErrorBoundary></div>
         </div>
       </main>
 
