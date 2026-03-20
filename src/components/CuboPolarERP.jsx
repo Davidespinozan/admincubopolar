@@ -246,12 +246,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
               <img src="/icon-192.png" alt="CuboPolar" className="h-7 w-7" />
             </div>
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${currentMeta.chip}`}>{currentArea?.label}</span>
-              </div>
-              <div className="mt-2 min-w-0">
-                <p className="font-display truncate text-lg font-bold tracking-[-0.04em] text-slate-900 sm:text-xl lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
-              </div>
+              <p className="font-display truncate text-lg font-bold tracking-[-0.04em] text-slate-900 sm:text-xl lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
             </div>
           </div>
           <div className="relative flex w-full items-center justify-end gap-2 sm:w-auto">
