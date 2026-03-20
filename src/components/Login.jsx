@@ -91,12 +91,12 @@ export default function LoginScreen({ onLogin }) {
               <div>
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/60 sm:tracking-[0.18em]">Correo</label>
                 <input value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com" type="email" autoComplete="email"
-                  className="w-full rounded-[18px] border border-white/10 bg-slate-950/24 px-4 py-3 text-sm text-white placeholder:text-white/28 focus:border-cyan-300/60 focus:outline-none focus:ring-2 focus:ring-cyan-200/10" />
+                  className="w-full rounded-[18px] border border-white/10 bg-slate-800 px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:border-cyan-300/60 focus:outline-none focus:ring-2 focus:ring-cyan-200/10" />
               </div>
               <div>
                 <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/60 sm:tracking-[0.18em]">Contrasena</label>
                 <input value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="••••••" autoComplete="current-password"
-                  className="w-full rounded-[18px] border border-white/10 bg-slate-950/24 px-4 py-3 text-sm text-white placeholder:text-white/28 focus:border-cyan-300/60 focus:outline-none focus:ring-2 focus:ring-cyan-200/10" />
+                  className="w-full rounded-[18px] border border-white/10 bg-slate-800 px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:border-cyan-300/60 focus:outline-none focus:ring-2 focus:ring-cyan-200/10" />
               </div>
               {err && <p className="rounded-2xl border border-red-400/20 bg-red-500/8 px-3 py-2 text-xs font-medium text-red-200" role="alert" aria-live="polite">{err}</p>}
               <button type="submit" disabled={loading}
