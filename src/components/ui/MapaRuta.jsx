@@ -3,6 +3,7 @@
 // Routing via OSRM público (gratis). Turn-by-turn abre Google Maps.
 import { useEffect, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
+import { navUrl, navUrlFallback } from '../../utils/navegacion';
 
 // Ícono numerado para cada parada
 const stopIcon = (L, num, entregada) => L.divIcon({
@@ -72,14 +73,16 @@ export default function MapaRuta({ paradas = [] }) {
           icon: stopIcon(L, i + 1, p.entregada),
         }).addTo(map);
 
-        const navUrl = `https://www.google.com/maps/dir/?api=1&destination=${p.latitud},${p.longitud}&travelmode=driving`;
+        const primary  = navUrl(p.latitud, p.longitud);
+        const fallback = navUrlFallback(p.latitud, p.longitud);
         marker.bindPopup(`
           <div style="min-width:170px;font-family:sans-serif">
             <p style="font-weight:700;margin:0 0 2px;font-size:14px">${p.nombre}</p>
             <p style="font-size:11px;color:#64748b;margin:0 0 10px">${p.direccion || '—'}</p>
             ${p.entregada
               ? `<p style="text-align:center;color:#10b981;font-weight:600;font-size:13px">✓ Entregada</p>`
-              : `<a href="${navUrl}" target="_blank" rel="noopener noreferrer"
+              : `<a href="${primary}"
+                   onclick="setTimeout(function(){window.location.href='${fallback}'},600);return true;"
                    style="display:block;text-align:center;background:#1e293b;color:white;
                    padding:7px 12px;border-radius:10px;text-decoration:none;
                    font-size:13px;font-weight:600">

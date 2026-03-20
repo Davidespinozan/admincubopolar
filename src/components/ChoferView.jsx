@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import { s, n } from '../utils/safe';
+import { abrirNavegacion } from '../utils/navegacion';
 const MapaRuta = lazy(() => import('./ui/MapaRuta'));
 
 const PAGOS = ["Efectivo", "Transferencia", "Tarjeta", "QR / Link de pago", "Crédito"];
@@ -509,19 +510,17 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               </div>
               {/* Botón de navegación */}
               {(o.latitud && o.longitud) ? (
-                <a href={`https://www.google.com/maps/dir/?api=1&destination=${o.latitud},${o.longitud}&travelmode=driving`}
-                  target="_blank" rel="noopener noreferrer"
+                <button onClick={() => abrirNavegacion(o.latitud, o.longitud)}
                   className="mb-2 flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 text-white font-semibold rounded-[14px] text-sm active:scale-[0.98] transition-transform">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
                   Navegar
-                </a>
+                </button>
               ) : o.direccion ? (
-                <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.direccion)}`}
-                  target="_blank" rel="noopener noreferrer"
+                <button onClick={() => window.location.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.direccion)}`}
                   className="mb-2 flex items-center justify-center gap-2 w-full py-2.5 bg-blue-500/80 text-white font-semibold rounded-[14px] text-sm active:scale-[0.98] transition-transform">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
                   Buscar dirección
-                </a>
+                </button>
               ) : null}
               <button onClick={() => { setEntregaModal(o); setCobroMetodo("Efectivo"); setCobroRef(""); setCheckoutUrl(null); setShortUrl(null); }}
                 className="w-full py-3.5 bg-slate-900 text-white font-bold rounded-[18px] text-sm active:scale-[0.98] transition-transform shadow-[0_18px_30px_rgba(8,20,27,0.14)]">
@@ -554,15 +553,16 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         {(() => {
           const conCoords = pendientes.filter(o => o.latitud && o.longitud);
           if (conCoords.length < 1) return null;
-          const dest = conCoords[conCoords.length - 1];
+          const dest   = conCoords[conCoords.length - 1];
           const waypts = conCoords.slice(0, -1).map(o => `${o.latitud},${o.longitud}`).join('|');
+          // Ruta completa — siempre usa Google Maps web (soporta waypoints múltiples)
           const url = `https://www.google.com/maps/dir/?api=1&destination=${dest.latitud},${dest.longitud}${waypts ? `&waypoints=${encodeURIComponent(waypts)}` : ''}&travelmode=driving`;
           return (
-            <a href={url} target="_blank" rel="noopener noreferrer"
-              className="mb-2 flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 text-white font-semibold rounded-[16px] text-sm">
+            <button onClick={() => window.open(url, '_blank')}
+              className="mb-2 flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 text-white font-semibold rounded-[16px] text-sm active:scale-[0.98] transition-transform">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
               Ver ruta completa ({conCoords.length} paradas)
-            </a>
+            </button>
           );
         })()}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
