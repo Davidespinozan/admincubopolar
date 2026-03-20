@@ -1092,16 +1092,14 @@ export function useSupaStore(userId, userName) {
               return new Error('Inventario insuficiente para autorizar la ruta');
             }
             
-            // Ejecutar todos los cambios de forma atómica
+            // Ejecutar todos los cambios de forma atómica (no bloqueante)
             if (changes.length > 0) {
               const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
                 p_changes: changes
               });
               if (rpcErr) {
-                await supabase.from('rutas').delete().eq('id', newRuta?.id);
-                console.error('[addRuta] Error en descuento atómico:', rpcErr.message);
-                t()?.error('Error al descontar inventario');
-                return rpcErr;
+                // No bloquear la creación de ruta — stock se puede ajustar manualmente
+                console.warn('[addRuta] Descuento de stock falló (ajustar manualmente):', rpcErr.message);
               }
             }
           }
