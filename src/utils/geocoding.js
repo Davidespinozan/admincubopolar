@@ -1,46 +1,39 @@
 /**
- * Servicio de Geocoding y Rutas usando Google Maps API
- * 
- * Requiere VITE_GOOGLE_MAPS_API_KEY en .env
- * Costos: ~$5/1,000 geocoding, ~$10/1,000 directions
+ * Geocoding con Nominatim (OpenStreetMap) — gratis, sin API key.
+ * Límite: 1 req/seg. Más que suficiente para guardar clientes.
  */
 
-const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
-
 /**
- * Convierte una dirección a coordenadas lat/lng
- * @param {string} direccion - "Calle 1 #123, Colonia Centro, Hermosillo, Sonora"
+ * Convierte una dirección a coordenadas lat/lng usando Nominatim.
+ * @param {string} direccion - "Calle 1 #123, Colonia Centro, Durango"
  * @returns {Promise<{lat: number, lng: number, formatted: string} | null>}
  */
 export async function geocodeDireccion(direccion) {
-  if (!GOOGLE_MAPS_API_KEY) {
-    console.warn('[Geocoding] No hay API key de Google Maps configurada');
-    return null;
-  }
+  if (!direccion?.trim()) return null;
 
   try {
-    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
-    url.searchParams.set('address', direccion);
-    url.searchParams.set('key', GOOGLE_MAPS_API_KEY);
-    url.searchParams.set('region', 'mx'); // Priorizar México
-    url.searchParams.set('language', 'es');
+    const url = new URL('https://nominatim.openstreetmap.org/search');
+    url.searchParams.set('q', direccion);
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('limit', '1');
+    url.searchParams.set('countrycodes', 'mx');
 
-    const res = await fetch(url.toString());
+    const res = await fetch(url.toString(), {
+      headers: { 'Accept-Language': 'es', 'User-Agent': 'CuboPolarERP/1.0' },
+      signal: AbortSignal.timeout(6000),
+    });
     const data = await res.json();
 
-    if (data.status === 'OK' && data.results.length > 0) {
-      const result = data.results[0];
+    if (data.length > 0) {
       return {
-        lat: result.geometry.location.lat,
-        lng: result.geometry.location.lng,
-        formatted: result.formatted_address,
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon),
+        formatted: data[0].display_name,
       };
     }
 
-    console.warn('[Geocoding] No se encontró dirección:', direccion, data.status);
     return null;
-  } catch (error) {
-    console.error('[Geocoding] Error:', error);
+  } catch {
     return null;
   }
 }
