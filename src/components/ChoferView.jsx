@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import { s, n } from '../utils/safe';
+const MapaRuta = lazy(() => import('./ui/MapaRuta'));
 
 const PAGOS = ["Efectivo", "Transferencia", "Tarjeta", "QR / Link de pago", "Crédito"];
 const MERMA_CAUSAS = ["Bolsa rota", "Hielo derretido", "Daño transporte", "Rechazo cliente"];
@@ -10,6 +11,7 @@ const CHOFER_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradi
 export default function ChoferView({ user, data, actions, onLogout }) {
   const [step, setStep] = useState("cargar");
   const [confirmadoCarga, setConfirmadoCarga] = useState(false);
+  const [mapaVisible, setMapaVisible] = useState(false);
   const [entregas, setEntregas] = useState([]);
   const [mermas, setMermas] = useState([]);
   const [entregaModal, setEntregaModal] = useState(null);
@@ -462,13 +464,37 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-2">
           <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.4rem] font-bold tracking-[-0.04em]">En ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
-          <div className="text-right"><p className="text-lg font-extrabold">${totalCobrado.toLocaleString()}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMapaVisible(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${mapaVisible ? 'bg-blue-500 text-white' : 'bg-white/15 text-cyan-200'}`}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><line x1="9" y1="4" x2="9" y2="17"/><line x1="15" y1="7" x2="15" y2="20"/></svg>
+              {mapaVisible ? 'Ocultar mapa' : 'Ver mapa'}
+            </button>
+            <div className="text-right"><p className="text-lg font-extrabold">${totalCobrado.toLocaleString()}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>
+          </div>
         </div>
         <div className="flex items-center gap-3 rounded-[18px] border border-white/10 bg-white/8 p-3">
           <div className="flex-1"><div className="h-2 bg-white/20 rounded-full overflow-hidden"><div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${ordenesConDetalle.length > 0 ? (entregadasList.length / ordenesConDetalle.length) * 100 : 0}%` }} /></div></div>
           <span className="text-sm font-bold">{entregadasList.length}/{ordenesConDetalle.length}</span>
         </div>
       </div>
+      {/* Mapa embebido — se monta una sola vez para no perder la posición */}
+      <div className={`px-4 pt-4 transition-all ${mapaVisible ? 'block' : 'hidden'}`}>
+        <Suspense fallback={<div className="h-[340px] rounded-[22px] bg-slate-100 flex items-center justify-center text-sm text-slate-400">Cargando mapa...</div>}>
+          <MapaRuta
+            paradas={ordenesConDetalle.map(o => ({
+              latitud:   o.latitud,
+              longitud:  o.longitud,
+              nombre:    o.clienteNombre,
+              direccion: o.direccion,
+              entregada: o.entregada,
+            }))}
+          />
+        </Suspense>
+      </div>
+
       <div className="px-4 pt-4 space-y-3">
         {pendientes.length > 0 && <div>
           <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Por entregar ({pendientes.length})</h3>
