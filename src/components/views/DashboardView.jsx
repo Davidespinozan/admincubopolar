@@ -151,11 +151,11 @@ export default function DashboardView({ data }) {
   );
 
   const stats = useMemo(() => [
-    { label: "Por entregar", val: ordPend, unit: "órdenes", bg: "bg-amber-50", txt: "text-amber-500", icon: Icons.ShoppingCart },
-    { label: "Rutas activas", val: rutasAct, unit: "en calle", bg: "bg-emerald-50", txt: "text-emerald-500", icon: Icons.Truck },
     { label: "Ventas hoy", val: `$${n(ventasResumen.dia).toLocaleString()}`, unit: "pesos", bg: "bg-emerald-50", txt: "text-emerald-600", icon: Icons.DollarSign },
     { label: "Ventas semana", val: `$${n(ventasResumen.semana).toLocaleString()}`, unit: "pesos", bg: "bg-indigo-50", txt: "text-indigo-600", icon: Icons.Calculator },
     { label: "Ventas mes", val: `$${n(ventasResumen.mes).toLocaleString()}`, unit: "pesos", bg: "bg-blue-50", txt: "text-blue-600", icon: Icons.Wallet },
+    { label: "Por entregar", val: ordPend, unit: "órdenes", bg: "bg-amber-50", txt: "text-amber-500", icon: Icons.ShoppingCart },
+    { label: "Rutas activas", val: rutasAct, unit: "en calle", bg: "bg-emerald-50", txt: "text-emerald-500", icon: Icons.Truck },
     { label: "Clientes activos", val: n(clientesActivos).toLocaleString(), unit: "clientes", bg: "bg-cyan-50", txt: "text-cyan-600", icon: Icons.Users },
   ], [ordPend, rutasAct, ventasResumen, clientesActivos]);
 
