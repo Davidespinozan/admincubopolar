@@ -64,6 +64,49 @@ export function RutasView({ data, actions }) {
     [data.productos]
   );
 
+  // Stock real en cuartos fríos por SKU
+  const stockPorSku = useMemo(() => {
+    const acc = {};
+    for (const p of prodTerminados) acc[s(p.sku)] = 0;
+    for (const cf of (data.cuartosFrios || [])) {
+      const st = (cf?.stock && typeof cf.stock === 'object') ? cf.stock : {};
+      for (const [sku, qty] of Object.entries(st)) {
+        const k = s(sku);
+        if (k) acc[k] = (acc[k] || 0) + n(qty);
+      }
+    }
+    return acc;
+  }, [data.cuartosFrios, prodTerminados]);
+
+  // Demanda calculada de los clientes seleccionados (sus órdenes pendientes)
+  const estatusPendientesSet = useMemo(() => new Set(["creada","asignada","pendiente","en proceso","en_proceso","enprogreso"]), []);
+  const demandaSeleccionados = useMemo(() => {
+    const acc = {};
+    for (const p of prodTerminados) acc[s(p.sku)] = 0;
+    for (const clienteId of form.clientesIds) {
+      const ordCliente = (data.ordenes || []).filter(o =>
+        String(o.clienteId || o.cliente_id) === String(clienteId) &&
+        estatusPendientesSet.has(s(o.estatus).toLowerCase())
+      );
+      for (const ord of ordCliente) {
+        if (Array.isArray(ord.preciosSnapshot) && ord.preciosSnapshot.length > 0) {
+          for (const ln of ord.preciosSnapshot) {
+            const sku = s(ln.sku);
+            if (sku in acc) acc[sku] += n(ln.qty || ln.cantidad);
+          }
+        } else {
+          s(ord.productos).split(',').forEach(part => {
+            const mt = part.trim().match(/(\d+)\s*[×x]\s*(\S+)/);
+            if (!mt) return;
+            const sku = s(mt[2]);
+            if (sku in acc) acc[sku] += Number(mt[1] || 0);
+          });
+        }
+      }
+    }
+    return acc;
+  }, [form.clientesIds, data.ordenes, prodTerminados, estatusPendientesSet]);
+
   // Clientes para asignar a ruta
   const clientesFiltrados = useMemo(() => {
     const q = searchCliente.toLowerCase();
@@ -131,8 +174,7 @@ export function RutasView({ data, actions }) {
         const extraQty = n(form.extraPorProducto[sku]);
         const totalReq = n(qty) + extraQty;
         if (totalReq > 0) {
-          const prod = prodTerminados.find(p => s(p.sku) === sku);
-          const stockDisp = prod ? n(prod.stock) : 0;
+          const stockDisp = n(stockPorSku[sku]);
           if (totalReq > stockDisp) {
             e.carga = `Stock insuficiente de ${sku} (disp: ${stockDisp}, sol: ${totalReq})`;
             break;
@@ -371,21 +413,42 @@ export function RutasView({ data, actions }) {
             Carga base autorizada
           </h4>
           {errors.carga && <p className="text-xs text-red-500 mb-2">{errors.carga}</p>}
+          {form.clientesIds.length > 0 && Object.values(demandaSeleccionados).some(v => v > 0) && (
+            <button
+              type="button"
+              onClick={() => setForm(prev => ({ ...prev, cargaPorProducto: {...prev.cargaPorProducto, ...Object.fromEntries(Object.entries(demandaSeleccionados).map(([k,v]) => [k, v]))} }))}
+              className="mb-3 w-full py-2 text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors"
+            >
+              Llenar con demanda de clientes seleccionados ({Object.values(demandaSeleccionados).reduce((a,b)=>a+b,0)} bolsas)
+            </button>
+          )}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {prodTerminados.map(p => (
-              <div key={p.sku} className="bg-slate-50 rounded-xl p-3">
-                <label className="text-xs font-semibold text-slate-600 block mb-1">{p.nombre}</label>
-                <span className="text-[10px] text-slate-400 block mb-2">{p.sku}</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.cargaPorProducto[p.sku] || ""}
-                  onChange={e => setForm({...form, cargaPorProducto: {...form.cargaPorProducto, [p.sku]: e.target.value}})}
-                  placeholder="0"
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm text-center focus:outline-none focus:border-blue-400"
-                />
-              </div>
-            ))}
+            {prodTerminados.map(p => {
+              const sku = s(p.sku);
+              const disp = n(stockPorSku[sku]);
+              const demanda = n(demandaSeleccionados[sku]);
+              const solicitado = n(form.cargaPorProducto[sku]) + n(form.extraPorProducto[sku]);
+              const sinStock = solicitado > disp;
+              return (
+                <div key={sku} className={`rounded-xl p-3 ${sinStock ? 'bg-red-50 border border-red-200' : 'bg-slate-50'}`}>
+                  <label className="text-xs font-semibold text-slate-600 block mb-0.5">{p.nombre}</label>
+                  <span className="text-[10px] text-slate-400 block">{sku}</span>
+                  <div className="flex justify-between text-[10px] mt-1 mb-2">
+                    <span className={`font-semibold ${disp === 0 ? 'text-red-500' : 'text-emerald-600'}`}>Disp: {disp}</span>
+                    {demanda > 0 && <span className="font-semibold text-blue-600">Dem: {demanda}</span>}
+                  </div>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.cargaPorProducto[sku] || ""}
+                    onChange={e => setForm({...form, cargaPorProducto: {...form.cargaPorProducto, [sku]: e.target.value}})}
+                    placeholder={demanda > 0 ? String(demanda) : "0"}
+                    className={`w-full px-3 py-2 border rounded-lg text-sm text-center focus:outline-none ${sinStock ? 'border-red-300 bg-white focus:border-red-400' : 'border-slate-200 focus:border-blue-400'}`}
+                  />
+                  {sinStock && <p className="text-[10px] text-red-500 text-center mt-1">Excede stock</p>}
+                </div>
+              );
+            })}
           </div>
         </div>
 

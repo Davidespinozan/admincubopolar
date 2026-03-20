@@ -13,9 +13,6 @@ import { s, n, fmtDate, fmtDateTime } from '../../utils/safe';
 // Also: inventarioMov.slice(0,5) created a new array ref every render,
 // causing DataTable to re-render even though the data was identical.
 
-// Static — no need to recreate on every render
-const DIAS = ["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
-const MESES = ["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
 
 export default function DashboardView({ data }) {
   const hoy = new Date();
@@ -24,15 +21,6 @@ export default function DashboardView({ data }) {
   const d = hoy.getDate();
 
   const inicioDia = useMemo(() => new Date(y, m, d), [y, m, d]);
-  const inicioSemana = useMemo(() => {
-    const base = new Date(y, m, d);
-    const dow = base.getDay();
-    const diff = (dow + 6) % 7;
-    base.setDate(base.getDate() - diff);
-    base.setHours(0, 0, 0, 0);
-    return base;
-  }, [y, m, d]);
-  const inicioMes = useMemo(() => new Date(y, m, 1), [y, m]);
 
   const productosHielo = useMemo(
     () => (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado"),
@@ -46,8 +34,6 @@ export default function DashboardView({ data }) {
   };
 
   const estatusPendientes = useMemo(() => new Set(["creada", "asignada", "pendiente", "en proceso", "en_proceso", "enprogreso"]), []);
-  const estatusVenta = useMemo(() => new Set(["entregada", "facturada"]), []);
-
   const pedidosPendPorSku = useMemo(() => {
     const acc = {};
     for (const p of productosHielo) acc[s(p.sku)] = 0;
@@ -123,26 +109,6 @@ export default function DashboardView({ data }) {
     });
   }, [productosHielo, pedidosPendPorSku, stockCuartosPorSku, producidoHoyPorSku]);
 
-  const ventasResumen = useMemo(() => {
-    let dia = 0, semana = 0, mes = 0;
-    for (const ord of (data.ordenes || [])) {
-      const est = s(ord.estatus).toLowerCase();
-      if (!estatusVenta.has(est)) continue;
-      const dt = parseFecha(ord.fecha);
-      if (!dt) continue;
-      const tot = n(ord.total);
-      if (dt >= inicioDia) dia += tot;
-      if (dt >= inicioSemana) semana += tot;
-      if (dt >= inicioMes) mes += tot;
-    }
-    return { dia, semana, mes };
-  }, [data.ordenes, estatusVenta, inicioDia, inicioSemana, inicioMes]);
-
-  const clientesActivos = useMemo(
-    () => (data.clientes || []).filter(c => s(c.estatus || 'Activo') === 'Activo').length,
-    [data.clientes]
-  );
-
   const rutasAct = useMemo(
     () => (data.rutas || []).filter(r => s(r.estatus).toLowerCase() === "en progreso").length,
     [data.rutas]
@@ -158,8 +124,8 @@ export default function DashboardView({ data }) {
     [tableroDemanda]
   );
   const ordPend = useMemo(
-    () => tableroDemanda.reduce((sum, row) => sum + n(row.pendientes), 0),
-    [tableroDemanda]
+    () => (data.ordenes || []).filter(o => estatusPendientes.has(s(o.estatus).toLowerCase())).length,
+    [data.ordenes, estatusPendientes]
   );
   const totalInv = useMemo(
     () => tableroDemanda.reduce((sum, row) => sum + n(row.stock), 0),
@@ -169,25 +135,39 @@ export default function DashboardView({ data }) {
   // ── FIX P7: .slice() inside JSX creates new array ref every render ──
   const recentMov = useMemo(() => data.inventarioMov.slice(0, 5), [data.inventarioMov]);
 
-  const fechaStr = `${DIAS[hoy.getDay()]}, ${hoy.getDate()} de ${MESES[hoy.getMonth()]} ${hoy.getFullYear()}`;
-  const turno = hoy.getHours() < 14 ? "Turno matutino" : "Turno vespertino";
+  const ventasResumen = useMemo(() => {
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    const sem = new Date(); sem.setDate(sem.getDate() - 7);
+    const semStr = sem.toISOString().slice(0, 10);
+    const mesStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    let dia = 0, semana = 0, mes = 0;
+    const estatusVenta = new Set(["entregada", "facturada"]);
+    for (const ord of (data.ordenes || [])) {
+      if (!estatusVenta.has(s(ord.estatus).toLowerCase())) continue;
+      const f = s(ord.fecha).slice(0, 10);
+      const tot = n(ord.total);
+      if (f === hoyStr) dia += tot;
+      if (f >= semStr) semana += tot;
+      if (f >= mesStr) mes += tot;
+    }
+    return { dia, semana, mes };
+  }, [data.ordenes]);
 
-  // ── FIX P8: stat card config was recreated every render as inline array literal ──
+  const clientesActivos = useMemo(
+    () => (data.clientes || []).filter(c => s(c.estatus || 'Activo') === 'Activo').length,
+    [data.clientes]
+  );
+
   const stats = useMemo(() => [
     { label: "Producido hoy", val: totalProdHoy.toLocaleString(), unit: "bolsas", bg: "bg-blue-50", txt: "text-blue-500", icon: Icons.Factory },
     { label: "Por entregar", val: ordPend, unit: "órdenes", bg: "bg-amber-50", txt: "text-amber-500", icon: Icons.ShoppingCart },
     { label: "Rutas activas", val: rutasAct, unit: "en calle", bg: "bg-emerald-50", txt: "text-emerald-500", icon: Icons.Truck },
     { label: "Hielo disponible", val: totalInv.toLocaleString(), unit: "bolsas", bg: "bg-cyan-50", txt: "text-cyan-500", icon: Icons.Package },
-  ], [totalProdHoy, ordPend, rutasAct, totalInv]);
-
-  const resumenGeneral = useMemo(() => [
-    { label: "Ventas hoy", val: `$${n(ventasResumen.dia).toLocaleString()}`, sub: "pesos", bg: "bg-emerald-50", txt: "text-emerald-600", icon: Icons.DollarSign },
-    { label: "Ventas semana", val: `$${n(ventasResumen.semana).toLocaleString()}`, sub: "pesos", bg: "bg-blue-50", txt: "text-blue-600", icon: Icons.Calculator },
-    { label: "Ventas mes", val: `$${n(ventasResumen.mes).toLocaleString()}`, sub: "pesos", bg: "bg-indigo-50", txt: "text-indigo-600", icon: Icons.Wallet },
-    { label: "Clientes activos", val: n(clientesActivos).toLocaleString(), sub: "clientes", bg: "bg-cyan-50", txt: "text-cyan-600", icon: Icons.Users },
-    { label: "Rutas en progreso", val: n(rutasAct).toLocaleString(), sub: "rutas", bg: "bg-amber-50", txt: "text-amber-600", icon: Icons.Truck },
-    { label: "Alertas", val: n(alertasActivas.length).toLocaleString(), sub: "activas", bg: "bg-red-50", txt: "text-red-600", icon: Icons.AlertTriangle },
-  ], [ventasResumen, clientesActivos, rutasAct, alertasActivas.length]);
+    { label: "Ventas hoy", val: `$${n(ventasResumen.dia).toLocaleString()}`, unit: "pesos", bg: "bg-emerald-50", txt: "text-emerald-600", icon: Icons.DollarSign },
+    { label: "Ventas semana", val: `$${n(ventasResumen.semana).toLocaleString()}`, unit: "pesos", bg: "bg-indigo-50", txt: "text-indigo-600", icon: Icons.Calculator },
+    { label: "Ventas mes", val: `$${n(ventasResumen.mes).toLocaleString()}`, unit: "pesos", bg: "bg-blue-50", txt: "text-blue-600", icon: Icons.Wallet },
+    { label: "Clientes activos", val: n(clientesActivos).toLocaleString(), unit: "clientes", bg: "bg-cyan-50", txt: "text-cyan-600", icon: Icons.Users },
+  ], [totalProdHoy, ordPend, rutasAct, totalInv, ventasResumen, clientesActivos]);
 
   // ── ESTADO DE RESULTADOS ──
   const estadoResultados = useMemo(() => {
@@ -255,61 +235,10 @@ export default function DashboardView({ data }) {
 
   return (
     <div>
-      <div className="mb-4 grid grid-cols-1 gap-4 md:mb-6 lg:grid-cols-[1.08fr_0.92fr]">
-        <section className="relative overflow-hidden rounded-[30px] border border-slate-900/8 bg-[#07131a] px-5 py-5 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)] md:px-7 md:py-7">
-          <div className="absolute right-[-10%] top-[-14%] h-44 w-44 rounded-full bg-cyan-300/14 blur-3xl" />
-          <div className="absolute bottom-[-18%] left-[-4%] h-36 w-36 rounded-full bg-amber-200/10 blur-3xl" />
-          <div className="relative">
-            <p className="erp-kicker text-cyan-200/70">Resumen operativo</p>
-            <h1 className="font-display mt-2 max-w-2xl text-[2rem] font-bold tracking-[-0.05em] text-white sm:text-[2.35rem] md:text-[2.7rem]">
-              Estado general del día.
-            </h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-300 md:text-[15px]">
-              {fechaStr}. {turno}. Revisa ventas, pendientes, liquidez y alertas activas.
-            </p>
-            <div className="mt-5 grid grid-cols-2 gap-2.5 md:grid-cols-4">
-              <div className="rounded-[20px] border border-white/10 bg-white/7 p-3.5 backdrop-blur-xl">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/45">Ventas hoy</p>
-                <p className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-white">${n(ventasResumen.dia).toLocaleString()}</p>
-              </div>
-              <div className="rounded-[20px] border border-white/10 bg-white/7 p-3.5 backdrop-blur-xl">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/45">Pendientes</p>
-                <p className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-white">{ordPend.toLocaleString()}</p>
-              </div>
-              <div className="rounded-[20px] border border-white/10 bg-white/7 p-3.5 backdrop-blur-xl">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/45">Liquidez</p>
-                <p className={`mt-1.5 text-xl font-bold tracking-[-0.03em] ${balance.posicion >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>${balance.posicion.toLocaleString()}</p>
-              </div>
-              <div className="rounded-[20px] border border-white/10 bg-white/7 p-3.5 backdrop-blur-xl">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-white/45">Alertas</p>
-                <p className="mt-1.5 text-xl font-bold tracking-[-0.03em] text-white">{alertasActivas.length}</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <div className="grid grid-cols-2 gap-3 md:gap-4">
-          {stats.map((item, i) => (
-            <StatCard key={i} label={item.label} value={item.val} unit={item.unit} icon={item.icon} />
-          ))}
-        </div>
-      </div>
-
-      {/* Resumen general */}
-      <div className="mb-4 rounded-2xl border border-slate-100 bg-white p-4 md:mb-6 md:p-5">
-        <h3 className="mb-3 flex items-center gap-2 text-sm font-bold text-slate-700 md:mb-4"><Icons.Dashboard /> Resumen general</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          {resumenGeneral.map((item, i) => (
-            <div key={i} className="rounded-[18px] border border-slate-200/80 bg-white p-3 shadow-[0_8px_20px_rgba(8,20,27,0.04)]">
-              <div className="flex items-start justify-between mb-1.5">
-                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.16em]">{item.label}</p>
-                <span className={`flex h-7 w-7 items-center justify-center rounded-[12px] ${item.bg} ${item.txt}`}><item.icon /></span>
-              </div>
-              <p className="font-display text-[1.45rem] font-bold leading-tight tracking-[-0.04em] text-slate-900">{item.val}</p>
-              <p className="text-[11px] text-slate-400">{item.sub}</p>
-            </div>
-          ))}
-        </div>
+      <div className="mb-4 grid grid-cols-2 gap-3 md:mb-6 md:grid-cols-4 md:gap-4">
+        {stats.map((item, i) => (
+          <StatCard key={i} label={item.label} value={item.val} unit={item.unit} icon={item.icon} />
+        ))}
       </div>
 
       {/* Estado de Resultados y Balance */}
