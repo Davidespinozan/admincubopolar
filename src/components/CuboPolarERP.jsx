@@ -251,7 +251,6 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
               </div>
               <div className="mt-2 min-w-0">
                 <p className="font-display truncate text-lg font-bold tracking-[-0.04em] text-slate-900 sm:text-xl lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
-                <p className="mt-1 max-w-2xl text-xs text-slate-500 sm:text-sm">{currentMeta.subtitle}</p>
               </div>
             </div>
           </div>
