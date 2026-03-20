@@ -5,7 +5,7 @@ const PAGOS = ["Efectivo", "Transferencia", "Tarjeta", "QR / Link de pago", "Cr�
 const MERMA_CAUSAS = ["Bolsa rota", "Hielo derretido", "Daño transporte", "Rechazo cliente"];
 const REGIMENES = ["Régimen General", "Régimen Simplificado", "Sin obligaciones"];
 const USOS_CFDI = ["G01", "G03", "S01", "P01"];
-const CHOFER_SHELL = "min-h-screen max-w-[640px] mx-auto w-full bg-[linear-gradient(180deg,#edf4f6_0%,#e3eef1_100%)] text-slate-900";
+const CHOFER_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf4f6_0%,#e3eef1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function ChoferView({ user, data, actions, onLogout }) {
   const [step, setStep] = useState("cargar");
@@ -335,20 +335,21 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   // ═══ STEP 1: CARGAR ═══
   if (step === "cargar") return (
     <div className={CHOFER_SHELL}>
-      <div className="bg-[#07131a] px-4 pb-6 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
+      <div className="bg-[#07131a] px-4 pb-5 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-4">
-          <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.7rem] font-bold tracking-[-0.05em]">Ruta del día</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
+          <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Ruta del día</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
           <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white">Salir</button>
         </div>
-        <div className="rounded-[28px] border border-white/10 bg-white/8 p-5 backdrop-blur-xl">
-          <p className="erp-kicker text-cyan-200/70">Paso 1 de 3</p>
-          <h2 className="font-display mt-2 text-[1.9rem] font-bold tracking-[-0.05em]">Carga autorizada</h2>
-          <p className="mt-2 text-sm text-slate-300">Confirma lo asignado al camión y arranca con lectura clara de ruta, visitas y stock disponible.</p>
+        <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">Paso 1 de 3</p>
+          <h2 className="font-display mt-2 text-[1.55rem] font-bold tracking-[-0.04em]">Revisa tu carga</h2>
+          <p className="mt-1.5 text-sm text-slate-300">Valida lo asignado antes de salir.</p>
         </div>
       </div>
       <div className="px-4 pt-4 space-y-3">
         <div className="rounded-[24px] border border-cyan-200/80 bg-cyan-50/90 p-4 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
-          <h3 className="text-xs font-bold text-cyan-800 uppercase tracking-[0.18em] mb-2">Tu ruta — {pendientes.length} entregas</h3>
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-cyan-800">Ruta asignada</h3>
+          <p className="mb-3 text-sm font-semibold text-slate-700">{pendientes.length} entregas pendientes</p>
           {productos.filter(p => necesitaPorSku[s(p.sku)] > 0).map(p => (
             <div key={p.sku} className="flex justify-between text-sm">
               <span className="text-slate-600">{s(p.nombre)}</span>
@@ -356,15 +357,16 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             </div>
           ))}
           {pendientes.length === 0 && <p className="text-xs text-blue-400">No hay órdenes asignadas</p>}
-          <p className="text-xs text-blue-500 mt-2">Carga extra para ventas en el camino</p>
+          <p className="mt-2 text-xs text-blue-500">Incluye carga extra disponible para venta rápida.</p>
         </div>
 
         {/* Clientes asignados a visitar */}
         {clientesAsignados.length > 0 && (
           <div className="rounded-[24px] border border-slate-200 bg-white/74 p-4 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
-            <h3 className="text-xs font-bold text-purple-600 uppercase tracking-wider mb-3">
-              📍 Clientes a visitar ({clientesAsignados.length})
+            <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-500">
+              Visitas del día
             </h3>
+            <p className="mb-3 text-sm font-semibold text-slate-700">{clientesAsignados.length} clientes asignados</p>
             <div className="space-y-2">
               {clientesAsignados.map((c, idx) => (
                 <div key={c.id} className="bg-slate-50/90 rounded-[20px] p-3 border border-slate-200 flex items-center gap-3">
@@ -375,7 +377,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                     <p className="text-sm font-semibold text-slate-800 truncate">{c.nombre}</p>
                     {c.contacto && (
                       <a href={`tel:${c.contacto.replace(/\D/g, '')}`} className="text-xs text-purple-600 flex items-center gap-1">
-                        📞 {c.contacto}
+                        {c.contacto}
                       </a>
                     )}
                   </div>
@@ -389,7 +391,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                     <a href={`https://www.google.com/maps/dir/?api=1&destination=${c.latitud},${c.longitud}`}
                        target="_blank" rel="noopener noreferrer"
                        className="px-3 py-1.5 bg-cyan-100 text-cyan-800 text-xs font-semibold rounded-full border border-cyan-200">
-                      🗺️ Maps
+                      Maps
                     </a>
                   )}
                 </div>
@@ -406,14 +408,14 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               })()}
                  target="_blank" rel="noopener noreferrer"
                  className="mt-3 block w-full text-center py-3 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-[18px] transition-colors">
-                🗺️ Ver ruta completa en Maps
+                Ver ruta completa en Maps
               </a>
             )}
           </div>
         )}
 
         {productos.map(p => (
-          <div key={p.sku} className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
+          <div key={p.sku} className="bg-white/78 rounded-[22px] border border-slate-200/80 p-4 shadow-[0_12px_24px_rgba(8,20,27,0.06)]">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-bold text-slate-800">{s(p.nombre)}</p>
@@ -422,10 +424,10 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               </div>
               {/* Cantidad autorizada por administración (SOLO LECTURA) */}
               <div className="text-center">
-                <div className="w-24 text-center text-2xl font-extrabold bg-slate-900 rounded-[18px] py-3 text-cyan-200">
+                <div className="w-20 rounded-[16px] bg-slate-900 py-2.5 text-center text-xl font-extrabold text-cyan-200">
                   {n(cargaTotal[s(p.sku)])}
                 </div>
-                <p className="text-xs text-green-600 font-medium mt-1">Autorizado</p>
+                <p className="mt-1 text-[11px] font-medium text-slate-500">Autorizado</p>
               </div>
             </div>
             {n(cargaAutorizada[s(p.sku)]) > 0 && n(extraAutorizado[s(p.sku)]) > 0 && (
@@ -439,8 +441,8 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           </div>
         ))}
         <button onClick={iniciarRuta} disabled={!miRutaActiva || !Object.values(cargaTotal).some(v => n(v) > 0)}
-          className="w-full py-5 bg-slate-900 text-white font-extrabold rounded-[22px] text-lg shadow-[0_20px_34px_rgba(8,20,27,0.16)] disabled:opacity-40 active:scale-[0.98] transition-transform mt-4">
-          {miRutaActiva ? "Confirmar carga e iniciar ruta →" : "Sin ruta asignada"}
+          className="mt-4 w-full rounded-[22px] bg-slate-900 py-5 text-lg font-extrabold text-white shadow-[0_20px_34px_rgba(8,20,27,0.16)] transition-transform active:scale-[0.98] disabled:opacity-40">
+          {miRutaActiva ? "Iniciar ruta" : "Sin ruta asignada"}
         </button>
         {!miRutaActiva && (
           <p className="text-center text-sm text-amber-600 font-medium mt-2">
@@ -457,10 +459,10 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     <div className={CHOFER_SHELL} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
       <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-2">
-          <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.5rem] font-bold tracking-[-0.05em]">En ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
+          <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.4rem] font-bold tracking-[-0.04em]">En ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
           <div className="text-right"><p className="text-lg font-extrabold">${totalCobrado.toLocaleString()}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>
         </div>
-        <div className="bg-white/8 rounded-[20px] border border-white/10 p-3 flex items-center gap-3">
+        <div className="flex items-center gap-3 rounded-[18px] border border-white/10 bg-white/8 p-3">
           <div className="flex-1"><div className="h-2 bg-white/20 rounded-full overflow-hidden"><div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${ordenesConDetalle.length > 0 ? (entregadasList.length / ordenesConDetalle.length) * 100 : 0}%` }} /></div></div>
           <span className="text-sm font-bold">{entregadasList.length}/{ordenesConDetalle.length}</span>
         </div>
@@ -503,10 +505,12 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       </div>
 
       {/* Bottom bar */}
-      <div className="fixed bottom-0 left-1/2 z-40 -translate-x-1/2 w-full max-w-[640px] bg-slate-950/92 border-t border-white/10 px-4 py-3 flex gap-2 backdrop-blur-xl" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
-        <button onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" }); }} className="flex-1 py-4 bg-cyan-200 text-slate-950 text-sm font-bold rounded-[18px]">+ Venta</button>
-        <button onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="py-4 px-5 bg-white/10 text-amber-200 text-sm font-bold rounded-[18px]">⚠️ Merma</button>
-        <button onClick={() => setStep("cierre")} className="py-4 px-5 bg-white text-slate-950 text-sm font-bold rounded-[18px]">🏁 Cerrar ruta</button>
+      <div className="fixed bottom-0 left-1/2 z-40 -translate-x-1/2 w-full max-w-[640px] bg-slate-950/92 border-t border-white/10 px-4 py-3 backdrop-blur-xl md:max-w-3xl lg:max-w-5xl" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+          <button onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" }); }} className="w-full py-4 bg-cyan-200 text-slate-950 text-sm font-bold rounded-[18px]">Venta rápida</button>
+          <button onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="w-full py-4 px-5 bg-white/10 text-amber-200 text-sm font-bold rounded-[18px]">Registrar merma</button>
+          <button onClick={() => setStep("cierre")} className="w-full py-4 px-5 bg-white text-slate-950 text-sm font-bold rounded-[18px]">Cerrar ruta</button>
+        </div>
       </div>
 
       {/* Modal cobro */}
@@ -519,7 +523,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <div className="flex flex-wrap gap-1 my-3">{entregaModal.items.map((it, i) => <span key={i} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{it.cant}× {it.sku} · ${it.precio}</span>)}</div>
             <p className="text-3xl font-extrabold text-slate-800 mb-4">${entregaModal.totalCalc.toLocaleString()}</p>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">¿Cómo paga?</label>
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {PAGOS.map(m => <button key={m} onClick={() => setCobroMetodo(m)} className={`py-3.5 rounded-xl text-sm font-bold border-2 transition-all ${cobroMetodo===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-600"}`}>{m==="Efectivo"?"💵 Efectivo":m==="Transferencia"?"📱 Transferencia":m==="Tarjeta"?"💳 Tarjeta":m==="QR / Link de pago"?"🔗 QR / Link":"📋 Crédito"}</button>)}
             </div>
             {cobroMetodo==="Transferencia" && <div className="mb-4 space-y-2">
@@ -626,7 +630,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 </div>
               )}
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pago</label>
-                <div className="grid grid-cols-3 gap-1.5">{PAGOS.map(m => <button key={m} onClick={() => setVForm(f=>({...f,pago:m}))} className={`py-2 rounded-lg text-[11px] font-bold border-2 ${vForm.pago===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-500"}`}>{m==="QR / Link de pago"?"🔗 QR/Link":m}</button>)}</div>
+                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">{PAGOS.map(m => <button key={m} onClick={() => setVForm(f=>({...f,pago:m}))} className={`py-2 rounded-lg text-[11px] font-bold border-2 ${vForm.pago===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-500"}`}>{m==="QR / Link de pago"?"🔗 QR/Link":m}</button>)}</div>
               </div>
 
             </div>
@@ -677,7 +681,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       <div className={CHOFER_SHELL}>
         <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
           <div className="flex items-center justify-between">
-            <div><p className="erp-kicker text-cyan-200/70">Paso 3 de 3</p><h1 className="font-display text-[1.7rem] font-bold tracking-[-0.05em]">Cierre de ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)} · {new Date().toLocaleDateString("es-MX")}</p></div>
+            <div><p className="erp-kicker text-cyan-200/70">Paso 3 de 3</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cierre de ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)} · {new Date().toLocaleDateString("es-MX")}</p></div>
             {!rutaCerrada && <button onClick={() => setStep("ruta")} className="text-xs bg-white/8 border border-white/10 px-3 py-1.5 rounded-full">← Volver</button>}
           </div>
         </div>

@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { s, n } from '../utils/safe';
 
 const empaqueMap = { "HC-25K": "EMP-25", "HC-5K": "EMP-5", "HT-25K": "EMP-25", "BH-50K": null };
-const PRODUCCION_SHELL = "min-h-screen max-w-[640px] mx-auto w-full bg-[linear-gradient(180deg,#edf3f6_0%,#e5edf1_100%)] text-slate-900";
+const PRODUCCION_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf3f6_0%,#e5edf1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function ProduccionStandaloneView({ user, data, actions, onLogout }) {
   const [tab, setTab] = useState("producir");
@@ -169,31 +169,31 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         <div className="flex items-center justify-between mb-1">
           <div>
             <p className="erp-kicker text-cyan-200/70">Producción</p>
-            <h1 className="font-display text-[1.8rem] font-bold tracking-[-0.05em]">Planta y congelación</h1>
+            <h1 className="font-display text-[1.6rem] font-bold tracking-[-0.04em]">Producción del día</h1>
             <p className="text-xs text-cyan-100/80">{s(user?.nombre)}</p>
           </div>
           <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold">Salir</button>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-[24px] border border-white/10 bg-white/8 p-3 text-center backdrop-blur-xl">
-            <p className="erp-kicker text-cyan-200/70">Producido hoy</p>
-            <p className="mt-2 text-2xl font-extrabold">{totalHoy.toLocaleString()}</p>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-[22px] border border-white/10 bg-white/8 p-3.5 text-center backdrop-blur-xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/70">Producido hoy</p>
+            <p className="mt-1.5 text-2xl font-extrabold">{totalHoy.toLocaleString()}</p>
           </div>
-          <div className="rounded-[24px] border border-white/10 bg-white/8 p-3 text-center backdrop-blur-xl">
-            <p className="erp-kicker text-cyan-200/70">En congeladores</p>
-            <p className="mt-2 text-2xl font-extrabold">{totalEnCuartos.toLocaleString()}</p>
+          <div className="rounded-[22px] border border-white/10 bg-white/8 p-3.5 text-center backdrop-blur-xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/70">En congeladores</p>
+            <p className="mt-1.5 text-2xl font-extrabold">{totalEnCuartos.toLocaleString()}</p>
           </div>
-          <div className="col-span-2 rounded-[24px] border border-white/10 bg-white/8 p-3 text-center backdrop-blur-xl">
-            <p className="erp-kicker text-cyan-200/70">Merma hoy</p>
-            <p className="mt-2 text-2xl font-extrabold">{mermaHoy}</p>
+          <div className="rounded-[22px] border border-white/10 bg-white/8 p-3.5 text-center backdrop-blur-xl sm:col-span-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/70">Merma hoy</p>
+            <p className="mt-1.5 text-2xl font-extrabold">{mermaHoy}</p>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
       <div className="px-4 pt-3">
-        <div className="flex gap-1 rounded-[20px] border border-slate-200/80 bg-white/72 p-1.5 mb-4 shadow-[0_14px_28px_rgba(8,19,27,0.05)]">
-          {[{ k: "producir", l: "🧊 Producción" }, { k: "cuartos", l: "❄️ Congeladores" }, { k: "mermas", l: "⚠️ Mermas" }].map(t => (
+        <div className="mb-4 grid grid-cols-1 gap-1 rounded-[20px] border border-slate-200/80 bg-white/72 p-1.5 shadow-[0_14px_28px_rgba(8,19,27,0.05)] sm:grid-cols-3">
+          {[{ k: "producir", l: "Producción" }, { k: "cuartos", l: "Congeladores" }, { k: "mermas", l: "Mermas" }].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
               className={`flex-1 py-3 text-sm font-bold rounded-[16px] transition-all ${tab === t.k ? "bg-blue-600 text-white shadow-[0_12px_22px_rgba(37,99,235,0.14)]" : "text-slate-600"}`}>
               {t.l}
@@ -207,7 +207,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         {/* ═══ TAB: PRODUCCIÓN ═══ */}
         {tab === "producir" && (<>
           <button onClick={() => setModal(true)}
-            className="w-full py-5 bg-blue-600 text-white font-extrabold rounded-[24px] text-lg shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
+            className="w-full py-4.5 bg-blue-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
             + Ya produje hielo
           </button>
 
@@ -240,13 +240,14 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         {tab === "cuartos" && (<>
           <button onClick={() => setTraspasoModal(true)}
             className="w-full py-4 bg-blue-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
-            ↔ Mover entre congeladores
+            Mover entre congeladores
           </button>
 
           {/* Cargas pendientes de chofers */}
           {cargasPendientes.filter(c => c.estatus === "Pendiente").length > 0 && (
             <div className="bg-amber-50/90 rounded-[24px] p-4 border border-amber-200 shadow-[0_14px_28px_rgba(8,19,27,0.05)]">
-              <h3 className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-3">Cargas pendientes de chofer</h3>
+              <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-600">Cargas pendientes</h3>
+              <p className="mb-3 text-sm font-semibold text-slate-700">Choferes listos para salida</p>
               {cargasPendientes.filter(c => c.estatus === "Pendiente").map(cg => (
                 <div key={cg.id} className="bg-white/84 rounded-[20px] p-3 mb-2 border border-white/80">
                   <div className="flex justify-between items-start mb-2">
@@ -266,7 +267,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     showToast("Carga entregada a " + cg.chofer + " ✓");
                   }}
                     className="w-full py-3 bg-emerald-600 text-white font-bold rounded-[18px] text-sm active:scale-[0.98] transition-transform">
-                    ✓ Entregar carga — sale del congelador
+                    Entregar carga
                   </button>
                 </div>
               ))}
@@ -294,7 +295,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   </div>
                 </div>
                 {stockEntries.length > 0 ? (
-                  <div className="px-4 pb-3 grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2 px-4 pb-3 sm:grid-cols-2 lg:grid-cols-3">
                     {stockEntries.map(([sku, qty]) => (
                       <div key={sku} className="bg-slate-50 rounded-[18px] p-3">
                         <p className="text-xs text-slate-400 font-mono">{sku}</p>
@@ -329,7 +330,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {skuOptions.map(p => (
                     <button key={p.sku} onClick={() => setForm(f => ({ ...f, sku: s(p.sku) }))}
                       className={`py-2.5 px-2 rounded-xl text-xs font-bold border-2 ${form.sku === s(p.sku) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
@@ -353,7 +354,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               )}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Máquina</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {["Máquina 30", "Máquina 20", "Máquina 15"].map(m => (
                     <button key={m} onClick={() => setForm(f => ({ ...f, maquina: m }))}
                       className={`py-2 rounded-xl text-xs font-semibold border-2 ${form.maquina === m ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
@@ -364,7 +365,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Turno</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {["Matutino", "Vespertino"].map(t => (
                     <button key={t} onClick={() => setForm(f => ({ ...f, turno: t }))}
                       className={`py-2 rounded-xl text-sm font-semibold border-2 ${form.turno === t ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
@@ -375,7 +376,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿A qué congelador va?</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {cuartos.map(cf => (
                     <button key={cf.id} onClick={() => setForm(f => ({ ...f, destino: s(cf.id) }))}
                       className={`py-3 rounded-xl text-xs font-bold border-2 ${form.destino === s(cf.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
@@ -405,7 +406,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">De</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {cuartos.map(cf => (
                     <button key={cf.id} onClick={() => setTForm(f => ({ ...f, origen: s(cf.id) }))}
                       className={`py-2.5 rounded-xl text-xs font-bold border-2 ${tForm.origen === s(cf.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
@@ -416,7 +417,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">A</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {cuartos.map(cf => (
                     <button key={cf.id} onClick={() => setTForm(f => ({ ...f, destino: s(cf.id) }))}
                       className={`py-2.5 rounded-xl text-xs font-bold border-2 ${tForm.destino === s(cf.id) ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"} ${tForm.origen === s(cf.id) ? "opacity-30" : ""}`}>
@@ -427,7 +428,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {skuOptions.map(p => (
                     <button key={p.sku} onClick={() => setTForm(f => ({ ...f, sku: s(p.sku) }))}
                       className={`py-2 rounded-xl text-xs font-bold border-2 ${tForm.sku === s(p.sku) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
@@ -458,7 +459,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {skuOptions.map(p => (
                     <button key={p.sku} onClick={() => setSacarForm(f => ({ ...f, sku: s(p.sku) }))}
                       className={`py-2.5 rounded-xl text-xs font-bold border-2 ${sacarForm.sku === s(p.sku) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
@@ -471,7 +472,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" autoFocus />
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Motivo</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {["Carga a ruta", "Venta directa", "Merma", "Otro"].map(m => (
                     <button key={m} onClick={() => setSacarForm(f => ({ ...f, motivo: m }))}
                       className={`py-2 rounded-xl text-xs font-semibold border-2 ${sacarForm.motivo === m ? "border-amber-500 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-500"}`}>
@@ -492,8 +493,8 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ TAB MERMAS ═══ */}
         {tab === "mermas" && (<>
           <button onClick={() => { setMermaModal(true); clearFotoMerma(); setMForm({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" }); }}
-            className="w-full py-5 bg-[#8f2d22] text-white font-extrabold rounded-[24px] text-lg shadow-[0_20px_34px_rgba(143,45,34,0.18)] active:scale-[0.98] transition-transform">
-            + Registrar merma
+            className="w-full py-4.5 bg-[#8f2d22] text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(143,45,34,0.18)] active:scale-[0.98] transition-transform">
+            Registrar merma
           </button>
 
           {mermasHoyList.length > 0 ? (
@@ -526,7 +527,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {["HC-25K", "HC-5K", "HT-25K", "BH-50K"].map(sku => (
                     <button key={sku} onClick={() => setMForm(f => ({ ...f, sku }))}
                       className={`py-2.5 rounded-xl text-xs font-bold border-2 ${mForm.sku === sku ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 text-slate-600"}`}>
@@ -542,7 +543,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Causa</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {MERMA_CAUSAS.map(c => (
                     <button key={c} onClick={() => setMForm(f => ({ ...f, causa: c }))}
                       className={`py-2 rounded-xl text-xs font-semibold border-2 ${mForm.causa === c ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 text-slate-500"}`}>
@@ -553,7 +554,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿De qué congelador?</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                   {cuartos.map(cf => (
                     <button key={cf.id} onClick={() => setMForm(f => ({ ...f, congelador: s(cf.id) }))}
                       className={`py-2 rounded-xl text-xs font-bold border-2 ${mForm.congelador === s(cf.id) ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 text-slate-600"}`}>

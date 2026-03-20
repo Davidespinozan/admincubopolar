@@ -6,21 +6,20 @@ export default function Modal({ open, onClose, title, wide, children }) {
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[90] flex items-end md:items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-slate-950/45 backdrop-blur-md" aria-hidden="true" />
+      <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" aria-hidden="true" />
       <div
-        className={`relative mx-3 mb-0 w-full max-h-[92vh] max-w-lg overflow-y-auto rounded-t-[30px] border border-white/60 bg-white/90 shadow-[0_30px_70px_rgba(3,14,19,0.18)] md:mx-4 md:mb-0 md:max-h-[85vh] md:rounded-[30px] ${wide ? "md:max-w-2xl" : "md:max-w-md"}`}
+        className={`relative mx-3 mb-0 w-full max-h-[92vh] max-w-lg overflow-y-auto rounded-t-[28px] border border-white/60 bg-white/92 shadow-[0_24px_56px_rgba(3,14,19,0.16)] sm:max-h-[88vh] md:mx-4 md:mb-0 md:max-h-[85vh] md:rounded-[28px] ${wide ? "md:max-w-2xl lg:max-w-3xl" : "md:max-w-md lg:max-w-lg"}`}
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-label={title}
       >
         <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-slate-200 md:hidden" />
-        <div className="sticky top-0 z-10 flex items-center justify-between rounded-t-[30px] border-b border-slate-200/80 bg-white/88 p-4 backdrop-blur-xl">
-          <div>
-            <p className="erp-kicker text-slate-400">Accion</p>
-            <h2 className="font-display max-w-[calc(100%-52px)] truncate text-base font-bold tracking-[-0.03em] text-slate-900">{title}</h2>
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 rounded-t-[28px] border-b border-slate-200/80 bg-white/92 px-4 py-3.5 backdrop-blur-xl">
+          <div className="min-w-0 flex-1">
+            <h2 className="font-display truncate text-sm font-bold tracking-[-0.03em] text-slate-900 sm:text-base">{title}</h2>
           </div>
-          <button onClick={onClose} className="flex min-h-[44px] min-w-[44px] flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700" aria-label="Cerrar modal" title="Cerrar modal">
+          <button onClick={onClose} className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 sm:h-11 sm:w-11" aria-label="Cerrar modal" title="Cerrar modal">
             <Icons.X />
           </button>
         </div>

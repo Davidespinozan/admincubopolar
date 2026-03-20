@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { s, n } from '../utils/safe';
 
-const BOLSAS_SHELL = "min-h-screen max-w-[640px] mx-auto w-full bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] text-slate-900";
+const BOLSAS_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function BolsasView({ user, data, actions, onLogout }) {
   const [modal, setModal] = useState(null); // "entrada" | "salida"
@@ -93,14 +93,14 @@ export default function BolsasView({ user, data, actions, onLogout }) {
                   <p className="text-sm font-bold text-slate-800">{s(p.nombre)}</p>
                   <p className="text-xs text-slate-500 font-mono">{s(p.sku)}</p>
                 </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-bold ${n(p.stock) < 200 ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700"}`}>
+                <div className={`min-w-[68px] rounded-full px-3 py-1.5 text-center text-xs font-bold ${n(p.stock) < 200 ? "bg-red-600 text-white" : "bg-emerald-600 text-white"}`}>
                   {n(p.stock) < 200 ? "BAJO" : "OK"}
                 </div>
               </div>
               <p className="text-4xl font-extrabold text-slate-800">{n(p.stock).toLocaleString()}</p>
               <p className="text-xs text-slate-500 mt-1">en almacén</p>
               {(mov.entradas > 0 || mov.salidas > 0) && (
-                <div className="grid grid-cols-2 gap-2 mt-3">
+                <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {mov.entradas > 0 && <div className="bg-emerald-50 rounded-xl p-2.5"><p className="text-xs text-emerald-600">Entradas hoy</p><p className="text-lg font-extrabold text-emerald-700">+{mov.entradas.toLocaleString()}</p></div>}
                   {mov.salidas > 0 && <div className="bg-red-50 rounded-xl p-2.5"><p className="text-xs text-red-500">Salidas hoy</p><p className="text-lg font-extrabold text-red-600">-{mov.salidas.toLocaleString()}</p></div>}
                 </div>
@@ -114,7 +114,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
           );
         })}
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <button onClick={() => { setModal("entrada"); setForm({ sku: "EMP-25", cantidad: "", destino: "", costo: "", proveedor: "", esCredito: false }); }}
             className="rounded-[22px] bg-emerald-600 py-5 text-base font-extrabold text-white shadow-[0_20px_34px_rgba(5,150,105,0.16)] transition-transform active:scale-[0.98]">
             + Llegaron
@@ -156,7 +156,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de bolsa</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {empaques.map(p => (
                     <button key={p.sku} onClick={() => setForm(f => ({ ...f, sku: s(p.sku) }))}
                       className={`py-3 px-3 rounded-xl text-sm font-semibold border-2 ${form.sku === s(p.sku) ? (modal === "entrada" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-red-500 bg-red-50 text-red-700") : "border-slate-200 text-slate-600"}`}>
@@ -187,7 +187,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
                   {n(form.costo) > 0 && (
                     <div>
                       <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Forma de pago</label>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <button onClick={() => setForm(f => ({ ...f, esCredito: false }))}
                           className={`py-3 rounded-xl text-sm font-semibold border-2 ${!form.esCredito ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
                           💵 Contado

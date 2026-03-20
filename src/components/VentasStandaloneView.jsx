@@ -8,7 +8,7 @@ const USOS_CFDI = [
   { val: "G03", label: "G03 — Gastos en general" },
   { val: "S01", label: "S01 — Sin efectos fiscales" },
 ];
-const VENTAS_SHELL = "min-h-screen max-w-[640px] mx-auto w-full bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f7_100%)] text-slate-900";
+const VENTAS_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function VentasStandaloneView({ user, data, actions, onLogout }) {
   const [tab, setTab] = useState("ventas");
@@ -165,23 +165,23 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
     <div className={VENTAS_SHELL}>
       <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-4 pb-5 text-white shadow-[0_24px_48px_rgba(5,150,105,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-1">
-          <div><p className="erp-kicker text-emerald-100/80">Ventas</p><h1 className="font-display text-[1.8rem] font-bold tracking-[-0.05em]">Mesa comercial</h1><p className="text-xs text-emerald-100">{s(user?.nombre)}</p></div>
+          <div><p className="erp-kicker text-emerald-100/80">Ventas</p><h1 className="font-display text-[1.6rem] font-bold tracking-[-0.04em]">Ventas del día</h1><p className="text-xs text-emerald-100">{s(user?.nombre)}</p></div>
           <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs">Salir</button>
         </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="erp-kicker text-amber-200/70">Vendido hoy</p><p className="mt-2 text-3xl font-extrabold">${ventasHoy.toLocaleString()}</p></div>
-          <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="erp-kicker text-amber-200/70">Por cobrar</p><p className="mt-2 text-3xl font-extrabold">{pendientes.length}</p><p className="text-xs text-stone-300">órdenes</p></div>
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200/70">Vendido hoy</p><p className="mt-1.5 text-[1.8rem] font-extrabold">${ventasHoy.toLocaleString()}</p></div>
+          <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200/70">Pendientes</p><p className="mt-1.5 text-[1.8rem] font-extrabold">{pendientes.length}</p><p className="text-xs text-stone-300">órdenes por cobrar</p></div>
         </div>
       </div>
 
       <div className="px-4 pt-4 space-y-4">
         <button onClick={() => { setModal(true); setLines([{ sku: "", qty: 1, precio: 0 }]); setForm({ clienteId: "", requiereFactura: false }); setNuevoCliente(false); }}
-          className="w-full rounded-[24px] bg-emerald-600 py-5 text-lg font-extrabold text-white shadow-[0_20px_34px_rgba(5,150,105,0.16)] transition-transform active:scale-[0.98]">
+          className="w-full rounded-[22px] bg-emerald-600 py-4.5 text-base font-extrabold text-white shadow-[0_20px_34px_rgba(5,150,105,0.16)] transition-transform active:scale-[0.98]">
           + Nueva venta
         </button>
 
-        <div className="flex gap-1 rounded-[20px] border border-stone-200/80 bg-white/72 p-1.5 shadow-[0_14px_28px_rgba(22,18,15,0.05)]">
-          {[{ k: "ventas", l: "📋 Por cobrar" }, { k: "hoy", l: "📅 Hoy" }, { k: "todas", l: "📊 Todas" }].map(t => (
+        <div className="grid grid-cols-1 gap-1 rounded-[20px] border border-stone-200/80 bg-white/72 p-1.5 shadow-[0_14px_28px_rgba(22,18,15,0.05)] sm:grid-cols-3">
+          {[{ k: "ventas", l: "Por cobrar" }, { k: "hoy", l: "Hoy" }, { k: "todas", l: "Todas" }].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
               className={`flex-1 rounded-[16px] py-3 text-sm font-semibold transition-all ${tab === t.k ? "bg-emerald-600 text-white shadow-[0_12px_22px_rgba(5,150,105,0.14)]" : "text-slate-600"}`}>
               {t.l}
@@ -213,13 +213,13 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
               </div>
               {o.estatus === "Creada" && (
                 <div className="flex gap-2 mt-3">
-                  <button onClick={() => cobrar(o)} className="flex-1 rounded-[18px] bg-emerald-600 py-3.5 text-sm font-bold text-white transition-transform active:scale-[0.98]">💵 Cobrar</button>
+                  <button onClick={() => cobrar(o)} className="flex-1 rounded-[18px] bg-emerald-600 py-3.5 text-sm font-bold text-white transition-transform active:scale-[0.98]">Cobrar</button>
                   <button onClick={() => { actions.updateOrdenEstatus(o.id, "Asignada"); showToast("Asignada a ruta"); }}
-                    className="flex-1 rounded-[18px] border border-amber-200 bg-amber-50 py-3.5 text-sm font-bold text-amber-800">🚚 A ruta</button>
+                    className="flex-1 rounded-[18px] border border-amber-200 bg-amber-50 py-3.5 text-sm font-bold text-amber-800">Enviar a ruta</button>
                 </div>
               )}
               {o.estatus === "Asignada" && (
-                <button onClick={() => cobrar(o)} className="w-full mt-3 rounded-[18px] border border-emerald-200 bg-emerald-50 py-3.5 text-sm font-bold text-emerald-700">💵 Cobrar entrega</button>
+                <button onClick={() => cobrar(o)} className="w-full mt-3 rounded-[18px] border border-emerald-200 bg-emerald-50 py-3.5 text-sm font-bold text-emerald-700">Cobrar entrega</button>
               )}
             </div>
           ))}
@@ -264,7 +264,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                       <input value={cliForm.nombre} onChange={e => setCliForm(f => ({ ...f, nombre: e.target.value }))}
                         className="w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm bg-white" placeholder="Nombre o razón social" autoFocus />
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <div>
                         <label className="block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Teléfono</label>
                         <input value={cliForm.contacto} onChange={e => setCliForm(f => ({ ...f, contacto: e.target.value }))}
@@ -305,7 +305,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                           <input value={cliForm.correo} onChange={e => setCliForm(f => ({ ...f, correo: e.target.value }))}
                             className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="correo@empresa.com" type="email" />
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <div>
                             <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Uso CFDI</label>
                             <select value={cliForm.usoCfdi} onChange={e => setCliForm(f => ({ ...f, usoCfdi: e.target.value }))}
@@ -342,7 +342,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                         <p className="text-sm font-bold text-slate-800">{s(cli.nombre)}</p>
                         <p className="text-xs text-slate-500">{tieneRfc ? s(cli.rfc) : "Sin RFC"} {cli.contacto && cli.contacto !== "—" ? " · " + s(cli.contacto) : ""}</p>
                       </div>
-                      {n(cli.saldo) > 0 && <span className="text-xs bg-amber-100 text-amber-700 font-bold px-2 py-1 rounded-lg">Debe ${n(cli.saldo).toLocaleString()}</span>}
+                      {n(cli.saldo) > 0 && <span className="min-w-[72px] rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white">Debe ${n(cli.saldo).toLocaleString()}</span>}
                     </div>
                     {/* Factura toggle for this order */}
                     {tieneRfc && (
@@ -408,7 +408,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
               {pagoModal.requiereFactura && <span className="ml-2 text-xs bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded">FACTURA</span>}
             </p>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Método de pago</label>
-            <div className="grid grid-cols-2 gap-2 mb-4">
+            <div className="grid grid-cols-1 gap-2 mb-4 sm:grid-cols-2">
               {PAGOS.map(m => (
                 <button key={m} onClick={() => setPagoForm(f => ({ ...f, metodo: m }))}
                   className={`py-3 px-3 rounded-xl text-xs font-semibold border-2 transition-all ${pagoForm.metodo === m ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
@@ -426,7 +426,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
               <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
                 <p className="text-xs font-bold text-emerald-700">✓ Link de pago generado</p>
                 <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
                   <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por $${n(pagoModal.total).toLocaleString()} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>
                 </div>

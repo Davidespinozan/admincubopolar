@@ -78,7 +78,7 @@ export default function LoginScreen({ onLogin }) {
         <div className="absolute bottom-[-6%] right-[-8%] h-[22rem] w-[22rem] rounded-full bg-amber-200/12 blur-3xl" />
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       </div>
-      <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-md items-center justify-center">
+      <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-md items-center justify-center md:max-w-lg">
         <div className="relative w-full">
           <div className="mb-6 text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[22px] border border-white/12 bg-white/8 shadow-[0_18px_36px_rgba(3,14,19,0.36)] lg:mx-0">
@@ -100,12 +100,12 @@ export default function LoginScreen({ onLogin }) {
 
             <form className="space-y-4" onSubmit={handle}>
               <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/60">Correo</label>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/60 sm:tracking-[0.18em]">Correo</label>
                 <input value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com" type="email" autoComplete="email"
                   className="w-full rounded-[18px] border border-white/10 bg-slate-950/24 px-4 py-3 text-sm text-white placeholder:text-white/28 focus:border-cyan-300/60 focus:outline-none focus:ring-2 focus:ring-cyan-200/10" />
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/60">Contrasena</label>
+                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/60 sm:tracking-[0.18em]">Contrasena</label>
                 <input value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="••••••" autoComplete="current-password"
                   className="w-full rounded-[18px] border border-white/10 bg-slate-950/24 px-4 py-3 text-sm text-white placeholder:text-white/28 focus:border-cyan-300/60 focus:outline-none focus:ring-2 focus:ring-cyan-200/10" />
               </div>

@@ -152,7 +152,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       </div>
 
       {/* ═══ SIDEBAR — desktop ═══ */}
-      <aside className="fixed left-0 top-0 z-40 hidden h-full w-[280px] flex-col overflow-hidden border-r border-blue-200/60 bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 text-slate-100 shadow-[0_20px_50px_rgba(8,20,27,0.18)] md:flex">
+      <aside className="fixed left-0 top-0 z-40 hidden h-full w-[300px] flex-col overflow-hidden border-r border-blue-200/60 bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 text-slate-100 shadow-[0_20px_50px_rgba(8,20,27,0.18)] lg:flex xl:w-[320px]">
         <div className="flex-shrink-0 border-b border-white/8 px-6 pb-5 pt-6">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-white/10 bg-white/8 shadow-[0_18px_32px_rgba(2,10,15,0.28)]">
@@ -211,50 +211,44 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       </aside>
 
       {/* ═══ TOPBAR ═══ */}
-      <header className="sticky top-0 z-30 px-3 pt-3 md:ml-[280px] md:px-6 md:pt-4" style={{paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)"}}>
-        <div className="erp-panel erp-shell-blur flex items-center justify-between rounded-[30px] px-4 py-4 md:px-5">
-          <div className="flex items-start gap-3">
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[16px] bg-slate-900 text-cyan-200 shadow-[0_16px_28px_rgba(8,20,27,0.18)] md:hidden">
+      <header className="sticky top-0 z-30 px-3 pt-3 lg:ml-[300px] lg:px-6 lg:pt-4 xl:ml-[320px]" style={{paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)"}}>
+        <div className="erp-panel erp-shell-blur flex flex-wrap items-start justify-between gap-3 rounded-[28px] px-4 py-3.5 sm:flex-nowrap lg:px-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[16px] bg-slate-900 text-cyan-200 shadow-[0_16px_28px_rgba(8,20,27,0.18)] lg:hidden">
               <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559988/icon-192_lknzb5.png" alt="CuboPolar" className="h-7 w-7" />
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] ${currentMeta.chip}`}>{currentArea?.label}</span>
-                <span className="hidden text-xs text-slate-400 md:inline">{currentMeta.tagline}</span>
               </div>
-              <div className="mt-2 flex items-start gap-3">
-                <div className="hidden h-11 w-11 items-center justify-center rounded-[16px] bg-blue-600 text-white md:flex">
-                  <AreaIcon />
-                </div>
-                <div>
-                  <p className="font-display text-xl font-bold tracking-[-0.05em] text-slate-900 md:text-[1.8rem]">{current?.label || "Resumen"}</p>
-                  <p className="mt-1 text-xs text-slate-500 md:text-sm">{currentMeta.subtitle}</p>
-                </div>
+              <div className="mt-2 min-w-0">
+                <p className="font-display truncate text-lg font-bold tracking-[-0.04em] text-slate-900 sm:text-xl lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
+                <p className="mt-1 max-w-2xl text-xs text-slate-500 sm:text-sm">{currentMeta.subtitle}</p>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 relative">
-            <div className="relative hidden md:flex flex-1">
+          <div className="relative flex w-full items-center justify-end gap-2 sm:w-auto">
+            <div className="relative hidden min-w-[18rem] flex-1 lg:flex">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span>
               <input type="text" placeholder="Buscar módulo o dato" className="w-full max-w-sm rounded-[16px] border border-slate-200 bg-white/78 py-2.5 pl-10 pr-4 text-sm text-slate-700 outline-none transition-all placeholder:text-slate-400 focus:border-cyan-600 focus:bg-white" />
             </div>
-            <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[16px] border border-slate-200 bg-white/74 text-slate-500 transition-colors hover:bg-white hover:text-slate-800" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
+            <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[16px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
               <Icons.Bell />{alertasActivas.length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />}
             </button>
             {alertasOpen && (
               <div className="erp-panel absolute right-0 top-14 z-[70] max-h-96 w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] sm:w-96 md:w-[22rem]" role="dialog" aria-modal="false" aria-label="Alertas activas">
-                <div className="border-b border-slate-200/80 p-4">
-                  <p className="erp-kicker text-slate-400">Atención</p>
-                  <p className="mt-1 font-display text-lg font-bold tracking-[-0.04em] text-slate-900">Alertas</p>
+                <div className="border-b border-slate-200/80 px-4 py-3.5">
+                  <p className="text-sm font-semibold text-slate-900">Alertas activas</p>
+                  <p className="mt-0.5 text-xs text-slate-500">Pendientes que requieren revisión.</p>
                 </div>
                 {alertasActivas.length === 0 ? (
                   <div className="p-4 text-center text-sm text-slate-400">Sin alertas activas</div>
                 ) : (
-                  <div className="space-y-1 p-2">
+                  <div className="space-y-2 p-3">
                     {alertasActivas.map((a, i) => (
-                      <div key={i} className="rounded-[18px] px-4 py-3 transition-colors hover:bg-slate-50">
+                      <div key={i} className="rounded-[18px] border border-slate-200/80 bg-white px-4 py-3">
                         <p className="text-sm font-semibold text-slate-800">{a.titulo || 'Alerta'}</p>
-                        <p className="text-xs text-slate-500 mt-1">{a.msg || a.mensaje || a.detalle}</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500">{a.msg || a.mensaje || a.detalle}</p>
                       </div>
                     ))}
                   </div>
@@ -262,7 +256,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
               </div>
             )}
             {alertasOpen && <div className="fixed inset-0 z-[60]" onClick={() => setAlertasOpen(false)} aria-hidden="true" />}
-            <div className="hidden md:flex items-center gap-2 ml-2 pl-3 border-l border-slate-200">
+            <div className="hidden lg:flex items-center gap-2 ml-2 pl-3 border-l border-slate-200">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-cyan-200">{user?.nombre?.[0] || "A"}</div>
               <span className="text-sm font-semibold text-slate-700">{user?.nombre || "Admin"}</span>
             </div>
@@ -271,15 +265,15 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       </header>
 
       {/* ═══ MAIN ═══ */}
-      <main className="px-3 pb-24 pt-4 sm:px-4 md:ml-[280px] md:px-6 md:pb-6 md:pt-6">
+      <main className="px-3 pb-24 pt-4 sm:px-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px]">
         <div className="relative">
-          <div className={`pointer-events-none absolute inset-x-0 top-0 h-24 rounded-[32px] bg-gradient-to-r ${currentMeta.glow} opacity-75 blur-3xl`} />
+          <div className={`pointer-events-none absolute inset-x-8 top-0 h-16 rounded-[32px] bg-gradient-to-r ${currentMeta.glow} opacity-45 blur-3xl`} />
           <div className="relative">{renderView()}</div>
         </div>
       </main>
 
       {/* ═══ BOTTOM NAV — mobile ═══ */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-blue-200/60 bg-white/96 text-slate-900 backdrop-blur-xl md:hidden" style={{paddingBottom: "env(safe-area-inset-bottom, 0px)"}}>
+      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-blue-200/60 bg-white/96 text-slate-900 backdrop-blur-xl lg:hidden" style={{paddingBottom: "env(safe-area-inset-bottom, 0px)"}}>
         <div className="flex items-stretch">
           {BOTTOM_PRIMARY.map(id => {
             const item = ALL_ITEMS.find(n => n.id === id);
@@ -288,9 +282,9 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             const active = view === id && !moreOpen;
             return (
               <button key={id} onClick={() => go(id)}
-                className={`flex min-h-[60px] flex-1 flex-col items-center justify-center py-2 transition-colors ${active ? 'text-blue-600' : 'text-slate-400 active:text-slate-700'}`}>
+                className={`flex min-h-[60px] flex-1 flex-col items-center justify-center px-1 py-2 transition-colors ${active ? 'text-blue-600' : 'text-slate-400 active:text-slate-700'}`}>
                 <Ic />
-                <span className="text-[10px] font-semibold mt-0.5 leading-none truncate max-w-full px-0.5">{
+                <span className="mt-0.5 max-w-full truncate px-0.5 text-[11px] font-semibold leading-none sm:text-xs">{
                   id === "dashboard" ? "Inicio" :
                   id === "contabilidad" ? "Dinero" :
                   id === "produccion" ? "Prod." :
@@ -300,18 +294,18 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             );
           })}
           <button onClick={() => setMoreOpen(!moreOpen)}
-            className={`flex min-h-[60px] flex-1 flex-col items-center justify-center py-2 transition-colors ${moreOpen || !BOTTOM_PRIMARY.includes(view) ? 'text-blue-600' : 'text-slate-400 active:text-slate-700'}`}>
+            className={`flex min-h-[60px] flex-1 flex-col items-center justify-center px-1 py-2 transition-colors ${moreOpen || !BOTTOM_PRIMARY.includes(view) ? 'text-blue-600' : 'text-slate-400 active:text-slate-700'}`}>
             <Icons.MoreH />
-            <span className="text-[10px] font-semibold mt-0.5 leading-none">Más</span>
+            <span className="mt-0.5 text-[11px] font-semibold leading-none sm:text-xs">Más</span>
           </button>
         </div>
       </nav>
 
       {/* ═══ "MÁS" OVERFLOW — mobile ═══ */}
       {moreOpen && (
-        <div className="md:hidden fixed inset-0 z-[80]" onClick={() => setMoreOpen(false)}>
-          <div className="absolute inset-0 bg-slate-950/38 backdrop-blur-sm" />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[80vh] overflow-y-auto rounded-t-[30px] border-t border-blue-200/60 bg-white/98 text-slate-900 safe-bottom" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Más módulos">
+        <div className="fixed inset-0 z-[80] lg:hidden" onClick={() => setMoreOpen(false)}>
+          <div className="absolute inset-0 bg-slate-950/68 backdrop-blur-md" />
+          <div className="absolute bottom-0 left-0 right-0 max-h-[80vh] overflow-y-auto rounded-t-[30px] border-t border-blue-200/80 bg-white text-slate-900 shadow-[0_-24px_60px_rgba(8,20,27,0.24)] safe-bottom" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Más módulos">
             <div className="mx-auto mb-2 mt-3 h-1 w-10 rounded-full bg-slate-200" />
             <div className="px-4 pb-4">
               {AREAS.map(area => (

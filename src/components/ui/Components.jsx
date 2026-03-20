@@ -80,15 +80,15 @@ export const DataTable = ({ columns, data, onRowClick, cardTitle, cardSubtitle }
       </div>}
 
       {/* ── MOBILE CARDS (hidden on desktop) ── */}
-      {data.length > 0 && <div className="md:hidden space-y-2">
+      {data.length > 0 && <div className="space-y-2 md:hidden">
         {data.map((row, i) => {
           const badgeCol = columns.find(c => c.badge);
           return (
-          <div key={i} onClick={() => onRowClick?.(row)} className="cursor-pointer rounded-[22px] border border-slate-200/80 bg-white/78 p-3.5 shadow-[0_10px_24px_rgba(8,20,27,0.05)] transition-colors active:bg-slate-50">
+          <div key={i} onClick={() => onRowClick?.(row)} className="cursor-pointer rounded-[20px] border border-slate-200/80 bg-white/78 p-3 shadow-[0_8px_20px_rgba(8,20,27,0.05)] transition-colors active:bg-slate-50 sm:p-4">
             {/* Card header: primary value + badge top-right */}
             <div className="flex items-start justify-between gap-2 mb-1.5">
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-bold text-slate-800 truncate">
+                <p className="truncate text-sm font-bold text-slate-800 sm:text-[15px]">
                   {cardTitle ? cardTitle(row) : (primaryCol.render ? primaryCol.render(row[primaryCol.key], row) : row[primaryCol.key])}
                 </p>
                 {cardSubtitle && <div className="mt-0.5">{cardSubtitle(row)}</div>}
@@ -100,14 +100,14 @@ export const DataTable = ({ columns, data, onRowClick, cardTitle, cardSubtitle }
               )}
             </div>
             {/* Card body: key-value pairs */}
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {secondaryCols.filter(c => !c.badge).map(col => {
                 const val = col.render ? col.render(row[col.key], row) : row[col.key];
                 if (val === undefined || val === null || val === "") return null;
                 return (
-                  <div key={col.key + col.label} className="flex items-center justify-between text-xs gap-2">
+                  <div key={col.key + col.label} className="flex items-start justify-between gap-2 text-xs sm:text-sm">
                     <span className="text-slate-400 flex-shrink-0">{col.label}</span>
-                    <span className="text-slate-700 font-medium text-right truncate min-w-0">{val}</span>
+                    <span className="min-w-0 break-words text-right font-medium text-slate-700">{val}</span>
                   </div>
                 );
               })}
@@ -124,16 +124,15 @@ export const DataTable = ({ columns, data, onRowClick, cardTitle, cardSubtitle }
 // Mobile: stacked, full-width action button
 // Desktop: row with inline button
 export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon, extraButtons }) => (
-  <div className="mb-5 flex flex-col justify-between gap-4 rounded-[30px] border border-slate-200/80 bg-white/62 px-4 py-4 shadow-[0_14px_30px_rgba(8,20,27,0.05)] backdrop-blur-xl sm:mb-6 sm:flex-row sm:items-center sm:px-5 sm:py-5">
+  <div className="mb-5 flex flex-col justify-between gap-4 rounded-[28px] border border-slate-200/80 bg-white/62 px-4 py-4 shadow-[0_12px_24px_rgba(8,20,27,0.05)] backdrop-blur-xl sm:mb-6 sm:flex-row sm:items-center sm:gap-3 sm:px-5 sm:py-4.5">
     <div>
-      <p className="erp-kicker text-slate-400">Modulo</p>
-      <h1 className="font-display text-xl font-bold tracking-[-0.04em] text-slate-900 sm:text-[1.7rem]">{title}</h1>
+      <h1 className="font-display text-xl font-bold tracking-[-0.04em] text-slate-900 sm:text-[1.6rem]">{title}</h1>
       {subtitle && <p className="mt-1 text-xs text-slate-500 sm:text-sm">{subtitle}</p>}
     </div>
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
       {extraButtons}
       {action && (
-        <button onClick={action} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[16px] bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_28px_rgba(8,20,27,0.16)] transition-all hover:translate-y-[-1px] hover:bg-slate-800 sm:py-2.5">
+        <button onClick={action} className="inline-flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[16px] bg-slate-900 px-3 py-3 text-sm font-semibold text-white shadow-[0_18px_28px_rgba(8,20,27,0.16)] transition-all hover:translate-y-[-1px] hover:bg-slate-800 sm:w-auto sm:px-4 sm:py-2.5">
           {actionIcon || <Icons.Plus />} {actionLabel}
         </button>
       )}
@@ -143,10 +142,10 @@ export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon, e
 
 // ─── STAT CARD ───
 export const StatCard = ({ label, value, unit, change, up, icon: IconComp }) => (
-  <div className="rounded-[26px] border border-slate-200/80 bg-white/80 p-4 shadow-[0_14px_30px_rgba(8,20,27,0.06)] transition-all hover:translate-y-[-1px] hover:shadow-[0_18px_34px_rgba(8,20,27,0.1)] sm:p-5">
+  <div className="rounded-[24px] border border-slate-200/80 bg-white/80 p-4 shadow-[0_12px_24px_rgba(8,20,27,0.06)] transition-all hover:translate-y-[-1px] hover:shadow-[0_16px_28px_rgba(8,20,27,0.08)] sm:p-5">
     <div className="flex items-start justify-between mb-2 sm:mb-3">
       <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</span>
-      <div className="flex h-9 w-9 items-center justify-center rounded-[14px] bg-slate-900 text-cyan-200 sm:h-10 sm:w-10">
+      <div className="flex h-8 w-8 items-center justify-center rounded-[12px] bg-slate-900 text-cyan-200 sm:h-9 sm:w-9">
         <IconComp />
       </div>
     </div>
