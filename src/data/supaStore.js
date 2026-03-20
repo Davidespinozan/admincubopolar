@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
+import { parseProductos, validateItems, buildLineas, formatFolio } from './ordenLogic';
 
 // ═══════════════════════════════════════════════════════════════
 // useSupaStore — fuente única de verdad para toda la app
@@ -527,49 +528,21 @@ export function useSupaStore(userId, userName) {
 
       // ── ÓRDENES ──
       addOrden: async (o) => {
-        const items = s(o.productos).split(',').map(x => x.trim()).filter(Boolean).map(item => {
-          const m = item.match(/^(\d+)\s*[×x]\s*(.+)$/i);
-          return m ? { qty: parseInt(m[1], 10), sku: m[2].trim() } : null;
-        }).filter(Boolean);
-        if (items.length === 0) return { message: 'Productos inválidos' };
-
-        // Validar cantidades positivas
-        if (items.some(i => i.qty <= 0)) {
-          return { message: 'Las cantidades deben ser positivas' };
-        }
+        const items = parseProductos(o.productos);
+        const itemsErr = validateItems(items);
+        if (itemsErr) return { message: itemsErr };
 
         const [{ data: prods }, { data: pes }] = await Promise.all([
           supabase.from('productos').select('sku, precio, stock'),
           supabase.from('precios_esp').select('sku, precio').eq('cliente_id', o.clienteId),
         ]);
 
-        for (const item of items) {
-          const p = (prods || []).find(x => x.sku === item.sku);
-          if (!p) return { message: `SKU ${item.sku} no existe` };
-          // Validar que el precio no es negativo
-          const pe = (pes || []).find(x => x.sku === item.sku);
-          const precio = pe ? Number(pe.precio) : Number(p?.precio || 0);
-          if (precio < 0) return { message: `Precio inválido para ${item.sku}` };
-        }
-
-        let total = 0;
-        const lineas = items.map(item => {
-          const p  = (prods || []).find(x => x.sku === item.sku);
-          const pe = (pes   || []).find(x => x.sku === item.sku);
-          const unitPrice = centavos(pe ? Number(pe.precio) : Number(p?.precio || 0));
-          const subtotal  = centavos(item.qty * unitPrice);
-          total += subtotal;
-          return { sku: item.sku, cantidad: item.qty, precio_unit: unitPrice, subtotal };
-        });
-        total = centavos(total);
-
-        // Validar que el total sea positivo
-        if (total <= 0) {
-          return { message: 'El total de la orden debe ser mayor a 0' };
-        }
+        const built = buildLineas(items, prods || [], pes || []);
+        if (built.error) return { message: built.error };
+        const { lineas, total } = built;
 
         const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
-        const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
+        const folio = formatFolio(seq || 42);
 
         // Build productos string from parsed items
         const productosStr = o.productos || items.map(i => `${i.qty}×${i.sku}`).join(', ');
