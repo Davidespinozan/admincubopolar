@@ -92,8 +92,8 @@ export default function LoginScreen({ onLogin }) {
           <div className="rounded-[32px] border border-white/10 bg-white/[0.08] p-6 shadow-[0_26px_60px_rgba(2,10,15,0.42)] backdrop-blur-2xl sm:p-7">
             <div className="mb-5 flex items-center justify-between rounded-[22px] border border-white/8 bg-black/10 px-4 py-3">
               <div>
-                <p className="erp-kicker text-white/45">Sesion segura</p>
-                <p className="mt-1 text-sm font-medium text-white">Supabase Auth</p>
+                <p className="erp-kicker text-white/45">Acceso</p>
+                <p className="mt-1 text-sm font-medium text-white">Ingresa con tus credenciales</p>
               </div>
               <div className="h-2.5 w-2.5 rounded-full bg-cyan-300 shadow-[0_0_18px_rgba(126,231,255,0.8)]" />
             </div>
