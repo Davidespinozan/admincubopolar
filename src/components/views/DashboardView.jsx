@@ -225,7 +225,7 @@ export default function DashboardView({ data }) {
 
   return (
     <div>
-      <div className="mb-4 grid grid-cols-2 gap-3 md:mb-6 md:grid-cols-4 md:gap-4">
+      <div className="mb-4 grid grid-cols-2 gap-3 md:mb-6 md:grid-cols-3 md:gap-4">
         {stats.map((item, i) => (
           <StatCard key={i} label={item.label} value={item.val} unit={item.unit} icon={item.icon} />
         ))}
