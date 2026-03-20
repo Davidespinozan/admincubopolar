@@ -1895,6 +1895,7 @@ export function useSupaStore(userId, userName) {
         const hoy = new Date().toISOString().slice(0, 10);
         const fechaVenc = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
         const createdOrderIds = [];
+        const updatedOrders = [];
         const createdPagoIds = [];
         const createdMovIds = [];
         const createdCxcIds = [];
@@ -1904,7 +1905,113 @@ export function useSupaStore(userId, userName) {
         try {
           for (const e of (entregas || [])) {
             const esVentaExpress = Boolean(e?.express) || !e?.ordenId;
-            if (!esVentaExpress) continue;
+
+            if (!esVentaExpress) {
+              const { data: existingOrd, error: existingOrdErr } = await supabase
+                .from('ordenes')
+                .select('id, folio, cliente_id, cliente_nombre, total, estatus, metodo_pago, ruta_id')
+                .eq('id', e.ordenId)
+                .single();
+              if (existingOrdErr || !existingOrd) throw existingOrdErr || new Error('No se pudo encontrar la orden asignada');
+
+              const metodoPago = s(e.pago || existingOrd.metodo_pago) || 'Efectivo';
+              const esCredito = metodoPago === 'Crédito';
+              const clienteNombre = s(e.cliente) || s(existingOrd.cliente_nombre) || 'Cliente';
+              const total = centavos(n(e.total || existingOrd.total));
+
+              const { error: updateOrdErr } = await supabase
+                .from('ordenes')
+                .update({
+                  estatus: 'Entregada',
+                  metodo_pago: metodoPago,
+                  ruta_id: rutaId || existingOrd.ruta_id || null,
+                })
+                .eq('id', existingOrd.id);
+              if (updateOrdErr) throw updateOrdErr;
+
+              updatedOrders.push({
+                id: existingOrd.id,
+                estatus: existingOrd.estatus,
+                metodo_pago: existingOrd.metodo_pago,
+                ruta_id: existingOrd.ruta_id,
+              });
+
+              if (total > 0) {
+                if (esCredito && existingOrd.cliente_id) {
+                  const { data: existingCxc } = await supabase
+                    .from('cuentas_por_cobrar')
+                    .select('id')
+                    .eq('orden_id', existingOrd.id)
+                    .maybeSingle();
+
+                  if (!existingCxc) {
+                    const { data: cxcRow, error: cxcErr } = await supabase.from('cuentas_por_cobrar').insert({
+                      cliente_id: existingOrd.cliente_id,
+                      orden_id: existingOrd.id,
+                      fecha_venta: hoy,
+                      fecha_vencimiento: fechaVenc,
+                      monto_original: total,
+                      monto_pagado: 0,
+                      saldo_pendiente: total,
+                      concepto: `${s(existingOrd.folio)} — ${clienteNombre}`,
+                      estatus: 'Pendiente',
+                    }).select('id').single();
+                    if (cxcErr || !cxcRow) throw cxcErr || new Error('No se pudo crear la cuenta por cobrar');
+                    createdCxcIds.push(cxcRow.id);
+
+                    const { error: saldoErr } = await supabase.rpc('increment_saldo', { p_cli: existingOrd.cliente_id, p_delta: total });
+                    if (saldoErr) throw saldoErr;
+                    saldoAdjustments.push({ clienteId: existingOrd.cliente_id, delta: total });
+                  }
+                } else {
+                  const referencia = s(e.referencia) || `${s(existingOrd.folio) || `ORD-${existingOrd.id}`}-${metodoPago}`;
+                  const { data: existingPago } = await supabase
+                    .from('pagos')
+                    .select('id')
+                    .eq('referencia', referencia)
+                    .maybeSingle();
+
+                  if (!existingPago) {
+                    const { data: pagoRow, error: pagoErr } = await supabase.from('pagos').insert({
+                      cliente_id: existingOrd.cliente_id || 0,
+                      orden_id: existingOrd.id,
+                      monto: total,
+                      metodo_pago: metodoPago,
+                      fecha: hoy,
+                      referencia,
+                      saldo_antes: 0,
+                      saldo_despues: 0,
+                      usuario_id: uid(),
+                    }).select('id').single();
+                    if (pagoErr || !pagoRow) throw pagoErr || new Error('No se pudo registrar el pago');
+                    createdPagoIds.push(pagoRow.id);
+                  }
+
+                  const { data: existingIngreso } = await supabase
+                    .from('movimientos_contables')
+                    .select('id')
+                    .eq('orden_id', existingOrd.id)
+                    .eq('tipo', 'Ingreso')
+                    .eq('categoria', 'Ventas')
+                    .maybeSingle();
+
+                  if (!existingIngreso) {
+                    const { data: movRow, error: movErr } = await supabase.from('movimientos_contables').insert({
+                      fecha: hoy,
+                      tipo: 'Ingreso',
+                      categoria: 'Ventas',
+                      concepto: `Cobro ${s(existingOrd.folio)} — ${clienteNombre} (${metodoPago})`,
+                      monto: total,
+                      orden_id: existingOrd.id,
+                    }).select('id').single();
+                    if (movErr || !movRow) throw movErr || new Error('No se pudo registrar el ingreso');
+                    createdMovIds.push(movRow.id);
+                  }
+                }
+              }
+
+              continue;
+            }
 
             const { data: seq, error: seqErr } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
             if (seqErr) throw seqErr;
@@ -2062,6 +2169,13 @@ export function useSupaStore(userId, userName) {
           await log('Cierre Ruta', 'Rutas', `Chofer: ${choferNombre}, Entregas: ${(entregas || []).length}, Mermas: ${(mermasArr || []).length}, Efectivo: $${cobros?.Efectivo || 0}`);
           rf();
         } catch (err) {
+          for (const ord of updatedOrders.reverse()) {
+            await supabase.from('ordenes').update({
+              estatus: ord.estatus,
+              metodo_pago: ord.metodo_pago,
+              ruta_id: ord.ruta_id,
+            }).eq('id', ord.id);
+          }
           for (const saldoAdj of saldoAdjustments.reverse()) {
             await supabase.rpc('increment_saldo', { p_cli: saldoAdj.clienteId, p_delta: -saldoAdj.delta });
           }

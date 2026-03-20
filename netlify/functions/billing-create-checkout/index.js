@@ -1,12 +1,17 @@
 import { Preference } from 'mercadopago';
 import { badRequest, methodNotAllowed, ok, readJsonBody, serverError } from '../_lib/http.js';
+import { canAccessOrden, getAuthenticatedProfile } from '../_lib/auth.js';
 import { getMercadoPagoClient, getStripeClient } from '../_lib/providers.js';
 import { upsertPaymentIntent } from '../_lib/persistence.js';
+import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   try {
+    const auth = await getAuthenticatedProfile(event);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const body = await readJsonBody(event);
     const { provider, ordenId, amount, currency = 'MXN', description, items, customer, successUrl, cancelUrl } = body;
 
@@ -14,10 +19,42 @@ export const handler = async (event) => {
       return badRequest('provider, ordenId and amount are required');
     }
 
+    const supabase = getSupabaseAdmin();
+    const { data: orden, error: ordenError } = await supabase
+      .from('ordenes')
+      .select('id, folio, total, cliente_id, cliente_nombre, vendedor_id, ruta_id, estatus')
+      .eq('id', ordenId)
+      .single();
+
+    if (ordenError || !orden) return badRequest('Orden no encontrada');
+    if (!(await canAccessOrden({ profile: auth.profile, orden, supabase }))) {
+      return badRequest('No tienes permiso para generar cobro de esta orden');
+    }
+    if (orden.estatus === 'Cancelada') return badRequest('No se puede cobrar una orden cancelada');
+
+    const canonicalAmount = Number(orden.total || 0);
+    if (canonicalAmount <= 0) return badRequest('La orden no tiene un total válido para cobro');
+    if (Math.abs(Number(amount) - canonicalAmount) > 0.01) {
+      return badRequest('El monto solicitado no coincide con el total de la orden');
+    }
+
+    const { data: lineas } = await supabase
+      .from('orden_lineas')
+      .select('sku, cantidad, precio_unit, subtotal')
+      .eq('orden_id', orden.id);
+
+    const canonicalItems = (lineas || []).map((linea) => ({
+      sku: linea.sku,
+      name: linea.sku,
+      quantity: Number(linea.cantidad || 0),
+      unitPrice: Number(linea.precio_unit || 0),
+      subtotal: Number(linea.subtotal || 0),
+    })).filter((linea) => linea.quantity > 0 && linea.unitPrice >= 0);
+
     // Build line items from order items or fallback to single line
     const buildStripeLineItems = () => {
-      if (items && items.length > 0) {
-        const lineItems = items.map(item => ({
+      if (canonicalItems.length > 0) {
+        const lineItems = canonicalItems.map(item => ({
           quantity: item.quantity || 1,
           price_data: {
             currency: currency.toLowerCase(),
@@ -26,14 +63,14 @@ export const handler = async (event) => {
           },
         }));
         // Add IVA line if totals don't match
-        const itemsTotal = items.reduce((s, i) => s + (i.quantity || 1) * Number(i.unitPrice || 0), 0);
-        const diff = Math.round((Number(amount) - itemsTotal) * 100);
+        const itemsTotal = canonicalItems.reduce((s, i) => s + (i.quantity || 1) * Number(i.unitPrice || 0), 0);
+        const diff = Math.round((canonicalAmount - itemsTotal) * 100);
         if (diff > 0) {
           lineItems.push({ quantity: 1, price_data: { currency: currency.toLowerCase(), unit_amount: diff, product_data: { name: 'IVA 16%' } } });
         }
         return lineItems;
       }
-      return [{ quantity: 1, price_data: { currency: currency.toLowerCase(), unit_amount: Math.round(Number(amount) * 100), product_data: { name: description || `Orden ${ordenId}` } } }];
+      return [{ quantity: 1, price_data: { currency: currency.toLowerCase(), unit_amount: Math.round(canonicalAmount * 100), product_data: { name: description || `Orden ${orden.folio || ordenId}` } } }];
     };
 
     if (provider === 'stripe') {
@@ -44,7 +81,7 @@ export const handler = async (event) => {
         success_url: successUrl,
         cancel_url: cancelUrl,
         payment_method_types: ['card'],
-        customer_email: customer?.email || undefined,
+        customer_email: customer?.email || auth.authUser?.email || undefined,
         metadata: { orden_id: String(ordenId) },
         line_items: buildStripeLineItems(),
       });
@@ -54,7 +91,7 @@ export const handler = async (event) => {
         provider: 'stripe',
         provider_reference: session.id,
         status: session.status || 'open',
-        amount,
+        amount: canonicalAmount,
         currency,
         checkout_url: session.url,
         raw_payload: session,
@@ -65,20 +102,20 @@ export const handler = async (event) => {
 
     if (provider === 'mercadopago') {
       const preference = new Preference(getMercadoPagoClient());
-      const mpItems = (items && items.length > 0)
-        ? items.map((item, i) => ({
+      const mpItems = canonicalItems.length > 0
+        ? canonicalItems.map((item, i) => ({
             id: `${ordenId}-${i}`,
             title: item.name || item.sku || 'Producto',
             quantity: item.quantity || 1,
             currency_id: currency,
             unit_price: Number(item.unitPrice || 0),
           }))
-        : [{ id: String(ordenId), title: description || `Orden ${ordenId}`, quantity: 1, currency_id: currency, unit_price: Number(amount) }];
+        : [{ id: String(ordenId), title: description || `Orden ${orden.folio || ordenId}`, quantity: 1, currency_id: currency, unit_price: canonicalAmount }];
 
       // Add IVA if items don't cover full amount
-      if (items && items.length > 0) {
+      if (canonicalItems.length > 0) {
         const itemsTotal = mpItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-        const diff = Number(amount) - itemsTotal;
+        const diff = canonicalAmount - itemsTotal;
         if (diff > 0.01) {
           mpItems.push({ id: `${ordenId}-iva`, title: 'IVA 16%', quantity: 1, currency_id: currency, unit_price: Math.round(diff * 100) / 100 });
         }
@@ -89,7 +126,7 @@ export const handler = async (event) => {
           external_reference: String(ordenId),
           items: mpItems,
           payer: {
-            email: customer?.email || 'pagos@cubopolar.local',
+            email: customer?.email || auth.authUser?.email || 'pagos@cubopolar.local',
           },
           back_urls: successUrl && cancelUrl ? {
             success: successUrl,
@@ -106,7 +143,7 @@ export const handler = async (event) => {
         provider: 'mercadopago',
         provider_reference: String(result.id),
         status: result.status || 'pending',
-        amount,
+        amount: canonicalAmount,
         currency,
         checkout_url: result.init_point || result.sandbox_init_point || null,
         raw_payload: result,

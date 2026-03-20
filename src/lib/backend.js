@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 const FUNCTIONS_BASE = '/.netlify/functions';
 
 async function parseJson(response) {
@@ -12,9 +14,13 @@ async function parseJson(response) {
 }
 
 async function request(path, options = {}) {
+  const session = supabase ? await supabase.auth.getSession() : null;
+  const accessToken = session?.data?.session?.access_token;
+
   const response = await fetch(`${FUNCTIONS_BASE}/${path}`, {
     headers: {
       'content-type': 'application/json',
+      ...(accessToken ? { authorization: `Bearer ${accessToken}` } : {}),
       ...(options.headers || {}),
     },
     ...options,

@@ -1,4 +1,5 @@
 import { methodNotAllowed, ok, readJsonBody, serverError, badRequest } from '../_lib/http.js';
+import { canAccessOrden, getAuthenticatedProfile } from '../_lib/auth.js';
 import { getFacturamaConfig } from '../_lib/providers.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 
@@ -10,17 +11,23 @@ export const handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   try {
+    const auth = await getAuthenticatedProfile(event);
+    if (auth.errorResponse) return auth.errorResponse;
+
     const { ordenId } = await readJsonBody(event);
     if (!ordenId) return badRequest('ordenId is required');
 
     const supabase = getSupabaseAdmin();
     const { data: orden, error: ordenErr } = await supabase
       .from('ordenes')
-      .select('id, facturama_id, estatus, total')
+      .select('id, facturama_id, estatus, total, vendedor_id, ruta_id')
       .eq('id', ordenId)
       .single();
 
     if (ordenErr || !orden) return badRequest('Orden no encontrada');
+    if (!(await canAccessOrden({ profile: auth.profile, orden, supabase }))) {
+      return badRequest('No tienes permiso para sincronizar esta orden');
+    }
     if (!orden.facturama_id) return ok({ synced: false, reason: 'No Facturama invoice linked' });
 
     // Update payment status in Facturama

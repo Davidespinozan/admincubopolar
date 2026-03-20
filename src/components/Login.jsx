@@ -36,15 +36,12 @@ export default function LoginScreen({ onLogin }) {
           authUserId: authData.user.id,
         });
       } else {
-        // First login or no profile yet — check if first user ever
-        const { data: allUsers } = await supabase.from('usuarios').select('id').limit(1);
-        const isFirst = !allUsers || allUsers.length === 0;
-        
         // Auto-create profile
         const profile = {
           nombre: email.split('@')[0],
           email: email.trim().toLowerCase(),
-          rol: isFirst ? 'Admin' : 'Sin asignar',
+          auth_id: authData.user.id,
+          rol: 'Sin asignar',
           estatus: 'Activo',
         };
         

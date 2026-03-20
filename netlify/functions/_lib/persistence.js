@@ -78,6 +78,62 @@ const syncCuentaPorCobrarPayment = async ({ orden, amount, referencia }) => {
   return { cxcId: cxc.id, saldoAntes, saldoDespues, referencia };
 };
 
+const getCuentaPorCobrarPaymentState = async ({ orden, amount }) => {
+  const supabase = getSupabaseAdmin();
+  const { data: cxc, error } = await supabase
+    .from('cuentas_por_cobrar')
+    .select('id, cliente_id, monto_original, monto_pagado, saldo_pendiente')
+    .eq('orden_id', orden.id)
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !cxc) {
+    return { cxcId: null, clienteId: null, saldoAntes: 0, saldoDespues: 0, nuevoMontoPagado: 0, nuevoEstatus: null };
+  }
+
+  const montoOriginal = Number(cxc.monto_original || 0);
+  const saldoAntes = Number(cxc.saldo_pendiente || 0);
+  const montoPagado = Number(cxc.monto_pagado || 0);
+  const nuevoMontoPagado = Math.min(montoOriginal, montoPagado + Number(amount || 0));
+  const saldoDespues = Math.max(0, montoOriginal - nuevoMontoPagado);
+  const nuevoEstatus = saldoDespues <= 0 ? 'Pagada' : (nuevoMontoPagado > 0 ? 'Parcial' : 'Pendiente');
+
+  return {
+    cxcId: cxc.id,
+    clienteId: cxc.cliente_id,
+    saldoAntes,
+    saldoDespues,
+    nuevoMontoPagado,
+    nuevoEstatus,
+  };
+};
+
+const applyCuentaPorCobrarPaymentState = async (cxcState) => {
+  if (!cxcState?.cxcId) return;
+
+  const supabase = getSupabaseAdmin();
+  const { error: updateError } = await supabase
+    .from('cuentas_por_cobrar')
+    .update({
+      monto_pagado: cxcState.nuevoMontoPagado,
+      saldo_pendiente: cxcState.saldoDespues,
+      estatus: cxcState.nuevoEstatus,
+    })
+    .eq('id', cxcState.cxcId);
+
+  if (updateError) throw updateError;
+
+  const deltaSaldo = Number(cxcState.saldoAntes || 0) - Number(cxcState.saldoDespues || 0);
+  if (cxcState.clienteId && deltaSaldo > 0) {
+    const { error: saldoError } = await supabase.rpc('increment_saldo', {
+      p_cli: cxcState.clienteId,
+      p_delta: -deltaSaldo,
+    });
+    if (saldoError) throw saldoError;
+  }
+};
+
 const syncOrderPayment = async ({ ordenId, provider, providerReference, amount, currency = 'MXN', metodoPago, rawPayload }) => {
   const supabase = getSupabaseAdmin();
 
@@ -109,19 +165,37 @@ const syncOrderPayment = async ({ ordenId, provider, providerReference, amount, 
     .maybeSingle();
 
   if (!pagoExistente) {
-    const cxcSync = await syncCuentaPorCobrarPayment({ orden, amount, referencia });
-    await supabase.from('pagos').insert({
-      cliente_id: orden.cliente_id || 0,
-      orden_id: orden.id,
-      cxc_id: cxcSync.cxcId,
-      monto: amount,
-      metodo_pago: metodoPago,
-      fecha: new Date().toISOString().slice(0, 10),
-      referencia,
-      saldo_antes: cxcSync.saldoAntes,
-      saldo_despues: cxcSync.saldoDespues,
-      usuario_id: null,
-    });
+    const cxcState = await getCuentaPorCobrarPaymentState({ orden, amount });
+    const { data: insertedPago, error: pagoError } = await supabase
+      .from('pagos')
+      .insert({
+        cliente_id: orden.cliente_id || 0,
+        orden_id: orden.id,
+        cxc_id: cxcState.cxcId,
+        monto: amount,
+        metodo_pago: metodoPago,
+        fecha: new Date().toISOString().slice(0, 10),
+        referencia,
+        saldo_antes: cxcState.saldoAntes,
+        saldo_despues: cxcState.saldoDespues,
+        usuario_id: null,
+      })
+      .select('id')
+      .single();
+
+    if (pagoError) {
+      if (pagoError.code === '23505') return intent;
+      throw pagoError;
+    }
+
+    try {
+      await applyCuentaPorCobrarPaymentState(cxcState);
+    } catch (error) {
+      if (insertedPago?.id) {
+        await supabase.from('pagos').delete().eq('id', insertedPago.id);
+      }
+      throw error;
+    }
   }
 
   if (orden.estatus !== 'Facturada') {
