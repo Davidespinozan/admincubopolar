@@ -156,7 +156,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
         <div className="flex-shrink-0 border-b border-white/8 px-6 pb-5 pt-6">
           <div className="flex items-center gap-3">
             <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-white/10 bg-white/8 shadow-[0_18px_32px_rgba(2,10,15,0.28)]">
-              <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559988/icon-192_lknzb5.png" alt="CuboPolar" className="h-8 w-8" />
+              <img src="/icon-192.png" alt="CuboPolar" className="h-8 w-8" />
             </div>
             <div>
               <span className="font-display text-lg font-bold tracking-[-0.05em] text-white">CUBOPOLAR</span>
@@ -215,7 +215,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
         <div className="erp-panel erp-shell-blur flex flex-wrap items-start justify-between gap-3 rounded-[28px] px-4 py-3.5 sm:flex-nowrap lg:px-5">
           <div className="flex min-w-0 items-start gap-3">
             <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[16px] bg-slate-900 text-cyan-200 shadow-[0_16px_28px_rgba(8,20,27,0.18)] lg:hidden">
-              <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559988/icon-192_lknzb5.png" alt="CuboPolar" className="h-7 w-7" />
+              <img src="/icon-192.png" alt="CuboPolar" className="h-7 w-7" />
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">

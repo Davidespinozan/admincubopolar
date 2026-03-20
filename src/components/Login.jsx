@@ -82,7 +82,7 @@ export default function LoginScreen({ onLogin }) {
         <div className="relative w-full">
           <div className="mb-6 text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[22px] border border-white/12 bg-white/8 shadow-[0_18px_36px_rgba(3,14,19,0.36)] lg:mx-0">
-              <img src="https://res.cloudinary.com/dp9l5i19b/image/upload/v1772559989/icon-512_ijp1nl.png" alt="CuboPolar" className="h-11 w-11 rounded-2xl" />
+              <img src="/icon-512.png" alt="CuboPolar" className="h-11 w-11 rounded-2xl" />
             </div>
             <p className="erp-kicker text-cyan-200/70">CuboPolar ERP</p>
             <h1 className="font-display mt-3 text-3xl font-bold tracking-[-0.04em] text-white">Acceso al sistema</h1>
