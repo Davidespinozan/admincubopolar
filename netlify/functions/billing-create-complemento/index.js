@@ -153,6 +153,20 @@ export const handler = async (event) => {
       return ok({ skipped: true, reason: 'La orden no tiene CFDI timbrado con UUID' });
     }
 
+    // Idempotency check
+    const { data: existingAttempt } = await supabase
+      .from('invoice_attempts')
+      .select('id, status, response_payload')
+      .eq('orden_id', orden.id)
+      .eq('provider', 'facturama-complemento')
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingAttempt?.status === 'success') {
+      return ok({ ...existingAttempt.response_payload, cached: true });
+    }
+
     // Obtener cliente para el receptor del CFDI
     const { data: cliente } = cxc.cliente_id
       ? await supabase.from('clientes').select('nombre, rfc, regimen, cp').eq('id', cxc.cliente_id).single()
@@ -179,7 +193,7 @@ export const handler = async (event) => {
 
     await insertInvoiceAttempt({
       orden_id: orden.id,
-      provider: 'facturama',
+      provider: 'facturama-complemento',
       provider_reference: complemento.Id || complemento.Uuid || `complemento-${cxcId}`,
       status: 'success',
       request_payload: payload,

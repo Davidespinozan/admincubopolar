@@ -90,11 +90,29 @@ export default function DashboardView({ data }) {
     return acc;
   }, [data.produccion, productosHielo, inicioDia]);
 
+  const reservadoEnRutasPorSku = useMemo(() => {
+    const acc = {};
+    for (const p of productosHielo) acc[s(p.sku)] = 0;
+    const rutasActivas = (data.rutas || []).filter(r => {
+      const est = s(r.estatus).toLowerCase();
+      return est === 'programada' || est === 'en progreso' || est === 'en_progreso';
+    });
+    for (const ruta of rutasActivas) {
+      const carga = ruta.carga_autorizada || ruta.cargaAutorizada || ruta.carga || {};
+      for (const [sku, qty] of Object.entries(carga)) {
+        acc[s(sku)] = (acc[s(sku)] || 0) + Number(qty || 0);
+      }
+    }
+    return acc;
+  }, [data.rutas, productosHielo]);
+
   const tableroDemanda = useMemo(() => {
     return productosHielo.map(p => {
       const sku = s(p.sku);
       const pendientes = n(pedidosPendPorSku[sku]);
-      const stock = n(stockCuartosPorSku[sku]);
+      const stockBruto = n(stockCuartosPorSku[sku]);
+      const reservado = n(reservadoEnRutasPorSku[sku]);
+      const stock = Math.max(0, stockBruto - reservado);
       const faltante = Math.max(0, pendientes - stock);
       const producidoHoy = n(producidoHoyPorSku[sku]);
       return {
@@ -107,7 +125,7 @@ export default function DashboardView({ data }) {
         producidoHoy,
       };
     });
-  }, [productosHielo, pedidosPendPorSku, stockCuartosPorSku, producidoHoyPorSku]);
+  }, [productosHielo, pedidosPendPorSku, stockCuartosPorSku, reservadoEnRutasPorSku, producidoHoyPorSku]);
 
   const rutasAct = useMemo(
     () => (data.rutas || []).filter(r => s(r.estatus).toLowerCase() === "en progreso").length,

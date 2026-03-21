@@ -150,6 +150,39 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     });
   }, [misOrdenes, data.clientes, entregas, getPrice]);
 
+  // Sync entregas from DB on load (so reloads don't lose delivered orders)
+  useEffect(() => {
+    const dbEntregas = ordenesConDetalle
+      .filter(o => s(o.estatus) === 'Entregada')
+      .map(o => ({
+        ordenId: o.id,
+        folio: s(o.folio),
+        cliente: o.clienteNombre,
+        items: o.items,
+        total: o.totalCalc,
+        pago: s(o.metodo_pago) || s(o.metodoPago) || 'Efectivo',
+        hora: '',
+      }));
+    if (dbEntregas.length > 0) {
+      setEntregas(prev => {
+        // Merge: keep local entries not in DB, add DB entries
+        const dbIds = new Set(dbEntregas.map(e => String(e.ordenId)));
+        const localOnly = prev.filter(e => e.ordenId && !dbIds.has(String(e.ordenId)));
+        return [...dbEntregas, ...localOnly];
+      });
+    }
+  }, [ordenesConDetalle]);
+
+  // Load mermas from localStorage on mount (persist across reloads)
+  useEffect(() => {
+    if (miRutaActiva?.id) {
+      const saved = localStorage.getItem('mermas_ruta_' + miRutaActiva.id);
+      if (saved) {
+        try { setMermas(JSON.parse(saved)); } catch {}
+      }
+    }
+  }, [miRutaActiva?.id]);
+
   const pendientes = ordenesConDetalle.filter(o => !o.entregada);
   const entregadasList = ordenesConDetalle.filter(o => o.entregada);
 
@@ -306,7 +339,14 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     if (actions.registrarMerma) {
       actions.registrarMerma(mForm.sku, n(mForm.cant), mForm.causa, s(user?.nombre), fotoMerma);
     }
-    setMermas(prev => [...prev, { ...mForm, id: Date.now(), cant: n(mForm.cant), foto: fotoMerma, hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) }]);
+    setMermas(prev => {
+      const nuevaMerma = { ...mForm, id: Date.now(), cant: n(mForm.cant), foto: fotoMerma, hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) };
+      const updated = [...prev, nuevaMerma];
+      if (miRutaActiva?.id) {
+        localStorage.setItem('mermas_ruta_' + miRutaActiva.id, JSON.stringify(updated));
+      }
+      return updated;
+    });
     showToast("Merma registrada");
     setMermaModal(false);
     setFotoMerma(null);
@@ -337,6 +377,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           showToast("No se pudo cerrar la ruta: " + result.message);
           return;
         }
+      }
+      if (miRutaActiva?.id) {
+        localStorage.removeItem('mermas_ruta_' + miRutaActiva.id);
       }
       setRutaCerrada(true);
       showToast("Reporte enviado ✓");
