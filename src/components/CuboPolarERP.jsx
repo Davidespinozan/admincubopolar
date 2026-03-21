@@ -239,22 +239,20 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       </aside>
 
       {/* ═══ TOPBAR ═══ */}
-      <header className="sticky top-0 z-30 px-3 pt-3 lg:ml-[300px] lg:px-6 lg:pt-4 xl:ml-[320px]" style={{paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)"}}>
-        <div className="erp-panel erp-shell-blur flex flex-wrap items-start justify-between gap-3 rounded-[28px] px-4 py-3.5 sm:flex-nowrap lg:px-5">
-          <div className="flex min-w-0 items-start gap-3">
-            <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[16px] bg-slate-900 text-cyan-200 shadow-[0_16px_28px_rgba(8,20,27,0.18)] lg:hidden">
-              <img src="/icon-192.png" alt="CuboPolar" className="h-7 w-7" />
+      <header className="sticky top-0 z-30 px-3 pt-2 lg:ml-[300px] lg:px-6 lg:pt-4 xl:ml-[320px]" style={{paddingTop: "max(env(safe-area-inset-top, 0px), 0.5rem)"}}>
+        <div className="erp-panel erp-shell-blur flex items-center justify-between gap-2 rounded-[22px] px-4 py-2.5 lg:rounded-[28px] lg:px-5 lg:py-3.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[12px] bg-slate-900 lg:hidden">
+              <img src="/icon-192.png" alt="CuboPolar" className="h-5 w-5" />
             </div>
-            <div className="min-w-0">
-              <p className="font-display truncate text-lg font-bold tracking-[-0.04em] text-slate-900 sm:text-xl lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
-            </div>
+            <p className="font-display truncate text-base font-bold tracking-[-0.04em] text-slate-900 lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
           </div>
-          <div className="relative flex w-full items-center justify-end gap-2 sm:w-auto">
-            <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative flex min-h-[44px] min-w-[44px] items-center justify-center rounded-[16px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
-              <Icons.Bell />{alertasActivas.length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full" />}
+          <div className="relative flex flex-shrink-0 items-center gap-2">
+            <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
+              <Icons.Bell />{alertasActivas.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />}
             </button>
             {alertasOpen && (
-              <div className="erp-panel absolute right-0 top-14 z-[70] max-h-96 w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] sm:w-96 md:w-[22rem]" role="dialog" aria-modal="false" aria-label="Alertas activas">
+              <div className="erp-panel absolute right-0 top-12 z-[70] max-h-96 w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] sm:w-96 md:w-[22rem]" role="dialog" aria-modal="false" aria-label="Alertas activas">
                 <div className="border-b border-slate-200/80 px-4 py-3.5">
                   <p className="text-sm font-semibold text-slate-900">Alertas activas</p>
                   <p className="mt-0.5 text-xs text-slate-500">Pendientes que requieren revisión.</p>
