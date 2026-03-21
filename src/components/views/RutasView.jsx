@@ -47,9 +47,9 @@ export function RutasView({ data, actions }) {
   const [modal, setModal] = useState(false);
   const [editingRuta, setEditingRuta] = useState(null);
   const [errors, setErrors] = useState({});
-  // Carga por producto: objeto con SKU como key; clientesIds: array de IDs de clientes
-  const [form, setForm] = useState({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},clientesIds:[]});
-  const [searchCliente, setSearchCliente] = useState("");
+  // Carga por producto: objeto con SKU como key; ordenesIds: array de IDs de órdenes seleccionadas
+  const [form, setForm] = useState({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});
+  const [searchOrden, setSearchOrden] = useState("");
   const [asignarModal, setAsignarModal] = useState(null);
   const [cierreModal, setCierreModal] = useState(null);
   const [detalleModal, setDetalleModal] = useState(null);
@@ -83,73 +83,64 @@ export function RutasView({ data, actions }) {
   const demandaSeleccionados = useMemo(() => {
     const acc = {};
     for (const p of prodTerminados) acc[s(p.sku)] = 0;
-    for (const clienteId of form.clientesIds) {
-      const ordCliente = (data.ordenes || []).filter(o =>
-        String(o.clienteId || o.cliente_id) === String(clienteId) &&
-        estatusPendientesSet.has(s(o.estatus).toLowerCase())
-      );
-      for (const ord of ordCliente) {
-        if (Array.isArray(ord.preciosSnapshot) && ord.preciosSnapshot.length > 0) {
-          for (const ln of ord.preciosSnapshot) {
-            const sku = s(ln.sku);
-            if (sku in acc) acc[sku] += n(ln.qty || ln.cantidad);
-          }
-        } else {
-          s(ord.productos).split(',').forEach(part => {
-            const mt = part.trim().match(/(\d+)\s*[×x]\s*(\S+)/);
-            if (!mt) return;
-            const sku = s(mt[2]);
-            if (sku in acc) acc[sku] += Number(mt[1] || 0);
-          });
+    for (const ordenId of form.ordenesIds) {
+      const ord = (data.ordenes || []).find(o => String(o.id) === String(ordenId));
+      if (!ord) continue;
+      if (Array.isArray(ord.preciosSnapshot) && ord.preciosSnapshot.length > 0) {
+        for (const ln of ord.preciosSnapshot) {
+          const sku = s(ln.sku);
+          if (sku in acc) acc[sku] += n(ln.qty || ln.cantidad);
         }
+      } else {
+        s(ord.productos).split(',').forEach(part => {
+          const mt = part.trim().match(/(\d+)\s*[×x]\s*(\S+)/);
+          if (!mt) return;
+          const sku = s(mt[2]);
+          if (sku in acc) acc[sku] += Number(mt[1] || 0);
+        });
       }
     }
     return acc;
-  }, [form.clientesIds, data.ordenes, prodTerminados, estatusPendientesSet]);
+  }, [form.ordenesIds, data.ordenes, prodTerminados]);
 
-  // Clientes para asignar a ruta
-  const clientesFiltrados = useMemo(() => {
-    const q = searchCliente.toLowerCase();
-    return (data.clientes || []).filter(c =>
-      !q || s(c.nombre).toLowerCase().includes(q) || s(c.contacto).toLowerCase().includes(q)
-    ).slice(0, 50);
-  }, [data.clientes, searchCliente]);
-
-  // Clientes seleccionados con su info
-  const clientesSeleccionados = useMemo(() => {
-    return form.clientesIds.map(id => {
-      const c = (data.clientes || []).find(cli => String(cli.id) === String(id));
-      return c || { id, nombre: `Cliente #${id}` };
+  // Órdenes disponibles para asignar (Creada o Asignada sin ruta, o ya en esta ruta al editar)
+  const ordenesDisponibles = useMemo(() => {
+    return (data.ordenes || []).filter(o => {
+      const est = s(o.estatus).toLowerCase();
+      const tieneRuta = o.rutaId || o.ruta_id;
+      // Al editar: incluir las que ya están en esta ruta
+      if (editingRuta && String(tieneRuta) === String(editingRuta.id)) return true;
+      return (est === 'creada' || est === 'asignada') && !tieneRuta;
     });
-  }, [form.clientesIds, data.clientes]);
+  }, [data.ordenes, editingRuta]);
 
-  // Agrupar clientes disponibles por zona para sugerencias inteligentes
-  const clientesPorZona = useMemo(() => {
-    const zonas = {};
-    (data.clientes || []).forEach(c => {
-      const zona = s(c.zona) || 'Sin zona';
-      if (!zonas[zona]) zonas[zona] = [];
-      zonas[zona].push(c);
+  // Con info de cliente y dirección
+  const ordenesConInfo = useMemo(() => {
+    return ordenesDisponibles.map(o => {
+      const cli = (data.clientes || []).find(c => String(c.id) === String(o.clienteId || o.cliente_id));
+      const dir = cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '';
+      return { ...o, clienteNombre: s(o.cliente || o.cliente_nombre || cli?.nombre), dir };
     });
-    return zonas;
-  }, [data.clientes]);
+  }, [ordenesDisponibles, data.clientes]);
 
-  // Sugerir clientes de la misma zona que los ya seleccionados
-  const zonasSeleccionadas = useMemo(() => {
-    const z = new Set();
-    clientesSeleccionados.forEach(c => { if (c.zona) z.add(c.zona); });
-    return Array.from(z);
-  }, [clientesSeleccionados]);
+  const ordenesFiltradas = useMemo(() => {
+    const q = s(searchOrden).toLowerCase();
+    if (!q) return ordenesConInfo;
+    return ordenesConInfo.filter(o =>
+      s(o.folio).toLowerCase().includes(q) ||
+      s(o.clienteNombre).toLowerCase().includes(q) ||
+      s(o.dir).toLowerCase().includes(q) ||
+      s(o.productos).toLowerCase().includes(q)
+    );
+  }, [ordenesConInfo, searchOrden]);
 
-  const [filterZona, setFilterZona] = useState('');
-
-  const toggleCliente = (clienteId) => {
-    const id = String(clienteId);
+  const toggleOrden = (ordenId) => {
+    const id = String(ordenId);
     setForm(prev => ({
       ...prev,
-      clientesIds: prev.clientesIds.includes(id)
-        ? prev.clientesIds.filter(cid => cid !== id)
-        : [...prev.clientesIds, id]
+      ordenesIds: prev.ordenesIds.includes(id)
+        ? prev.ordenesIds.filter(oid => oid !== id)
+        : [...prev.ordenesIds, id],
     }));
   };
 
@@ -199,8 +190,17 @@ export function RutasView({ data, actions }) {
       cargaTotal[sku] = (cargaAutorizada[sku] || 0) + (extraAutorizado[sku] || 0);
     }
 
-    // Preparar clientes asignados con orden
-    const clientesAsignados = form.clientesIds.map((id, idx) => ({ clienteId: Number(id), orden: idx + 1 }));
+    // Derivar clientes asignados de las órdenes seleccionadas (sin duplicados)
+    const clientesVistos = new Set();
+    const clientesAsignados = [];
+    form.ordenesIds.forEach((oid, idx) => {
+      const ord = (data.ordenes || []).find(o => String(o.id) === String(oid));
+      const cid = ord?.clienteId || ord?.cliente_id;
+      if (cid && !clientesVistos.has(String(cid))) {
+        clientesVistos.add(String(cid));
+        clientesAsignados.push({ clienteId: Number(cid), orden: clientesAsignados.length + 1 });
+      }
+    });
 
     let err;
     if (editingRuta) {
@@ -213,8 +213,11 @@ export function RutasView({ data, actions }) {
         extraAutorizado,
         clientesAsignados,
       });
+      if (!err && form.ordenesIds.length > 0) {
+        await actions.asignarOrdenesARuta(editingRuta.id, form.ordenesIds, 0);
+      }
     } else {
-      err = await actions.addRuta({
+      const result = await actions.addRuta({
         nombre: form.nombre,
         choferId: Number(form.choferId),
         ordenes: 0,
@@ -223,6 +226,11 @@ export function RutasView({ data, actions }) {
         extraAutorizado,
         clientesAsignados,
       });
+      err = result instanceof Error ? result : null;
+      // Link selected orders to the new route
+      if (!err && form.ordenesIds.length > 0 && result?.id) {
+        await actions.asignarOrdenesARuta(result.id, form.ordenesIds, 0);
+      }
     }
     if (err) {
       toast?.error(editingRuta ? "No se pudo actualizar la ruta" : "No se pudo crear la ruta");
@@ -231,8 +239,8 @@ export function RutasView({ data, actions }) {
     toast?.success(editingRuta ? "Ruta actualizada" : "Ruta creada y carga autorizada");
     setModal(false);
     setEditingRuta(null);
-    setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},clientesIds:[]});
-    setSearchCliente("");
+    setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});
+    setSearchOrden("");
     setErrors({});
   };
 
@@ -242,19 +250,19 @@ export function RutasView({ data, actions }) {
     const cargaObj = (ruta.carga && typeof ruta.carga === 'object') ? ruta.carga : {};
     const extraObj = (ruta.extraAutorizado && typeof ruta.extraAutorizado === 'object') ? ruta.extraAutorizado : {};
     const cargaAutObj = (ruta.cargaAutorizada && typeof ruta.cargaAutorizada === 'object') ? ruta.cargaAutorizada : cargaObj;
-    // Parsear clientes asignados
-    const clientesAsig = Array.isArray(ruta.clientesAsignados)
-      ? ruta.clientesAsignados.map(c => String(c.clienteId || c))
-      : [];
+    // Restaurar órdenes ya asignadas a esta ruta
+    const ordenesAsig = (data.ordenes || [])
+      .filter(o => String(o.rutaId || o.ruta_id) === String(ruta.id))
+      .map(o => String(o.id));
     setForm({
       nombre: s(ruta.nombre),
       choferId: String(ruta.choferId || ruta.chofer_id || ""),
       estatus: s(ruta.estatus) || "Programada",
       cargaPorProducto: cargaAutObj,
       extraPorProducto: extraObj,
-      clientesIds: clientesAsig,
+      ordenesIds: ordenesAsig,
     });
-    setSearchCliente("");
+    setSearchOrden("");
     setErrors({});
     setModal(true);
   };
@@ -338,7 +346,7 @@ export function RutasView({ data, actions }) {
 
   return (<div>
     {ConfirmEl}
-    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},clientesIds:[]});setSearchCliente("");setModal(true);setErrors({})}} actionLabel="Autorizar ruta" extraButtons={exportBtns} />
+    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});setSearchOrden("");setModal(true);setErrors({})}} actionLabel="Autorizar ruta" extraButtons={exportBtns} />
 
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
       <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar ruta, folio o chofer..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
@@ -413,7 +421,7 @@ export function RutasView({ data, actions }) {
             Carga base autorizada
           </h4>
           {errors.carga && <p className="text-xs text-red-500 mb-2">{errors.carga}</p>}
-          {form.clientesIds.length > 0 && Object.values(demandaSeleccionados).some(v => v > 0) && (
+          {form.ordenesIds.length > 0 && Object.values(demandaSeleccionados).some(v => v > 0) && (
             <button
               type="button"
               onClick={() => setForm(prev => ({ ...prev, cargaPorProducto: {...prev.cargaPorProducto, ...Object.fromEntries(Object.entries(demandaSeleccionados).map(([k,v]) => [k, v]))} }))}
@@ -495,105 +503,50 @@ export function RutasView({ data, actions }) {
           </div>
         )}
 
-        {/* Clientes asignados a la ruta */}
+        {/* Órdenes a entregar */}
         <div className="border-t pt-4">
           <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
             <span className="w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-xs">3</span>
-            Clientes a visitar <span className="text-xs font-normal text-slate-400">(opcional)</span>
+            Órdenes a entregar
+            {form.ordenesIds.length > 0 && <span className="text-xs font-normal text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">{form.ordenesIds.length} seleccionadas</span>}
           </h4>
 
-          {/* Clientes seleccionados */}
-          {clientesSeleccionados.length > 0 && (
-            <div className="mb-3 space-y-2">
-              {/* Optimizar orden por proximidad */}
-              {clientesSeleccionados.filter(c => c.latitud && c.longitud).length >= 2 && (
-                <button
-                  onClick={() => {
-                    const optimizados = ordenarPorProximidad(clientesSeleccionados);
-                    setForm(prev => ({ ...prev, clientesIds: optimizados.map(c => String(c.id)) }));
-                    toast.success(`Ruta optimizada — ${optimizados.filter(c => c.latitud && c.longitud).length} paradas reordenadas por distancia`);
-                  }}
-                  className="w-full flex items-center justify-center gap-2 py-2 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold rounded-xl hover:bg-blue-100 transition-colors"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
-                  Optimizar orden de visitas por distancia
-                </button>
-              )}
-              {clientesSeleccionados.map((c, idx) => (
-                <div key={c.id} className="bg-purple-50 border border-purple-200 rounded-xl p-3 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-content text-xs font-bold">{idx + 1}</span>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">{s(c.nombre)}</p>
-                      {s(c.zona) && <span className="inline-block text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full mr-1">📍 {s(c.zona)}</span>}
-                      {c.latitud && c.longitud && <span className="inline-block text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">🗺️ GPS</span>}
-                      {s(c.contacto) && <p className="text-xs text-purple-600 mt-0.5">📞 {s(c.contacto)}</p>}
-                    </div>
-                  </div>
-                  <button onClick={() => toggleCliente(c.id)} className="text-red-500 hover:text-red-700 p-1">
-                    <Icons.X />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+          <input
+            type="text"
+            value={searchOrden}
+            onChange={e => setSearchOrden(e.target.value)}
+            placeholder="Buscar por folio, cliente o dirección..."
+            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mb-2 focus:outline-none focus:border-purple-400"
+          />
 
-          {/* Buscar y agregar clientes */}
-          <div className="flex gap-2 items-center">
-            <div className="flex-1 relative">
-              <input
-                type="text"
-                value={searchCliente}
-                onChange={e => setSearchCliente(e.target.value)}
-                placeholder="Filtrar clientes..."
-                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-purple-400"
-              />
-            </div>
-            <select
-              value={filterZona}
-              onChange={e => setFilterZona(e.target.value)}
-              className="border border-slate-200 rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-purple-400"
-            >
-              <option value="">Todas zonas</option>
-              {Object.keys(clientesPorZona).sort().map(z => <option key={z} value={z}>{z} ({clientesPorZona[z].length})</option>)}
-            </select>
-          </div>
-          {zonasSeleccionadas.length > 0 && filterZona === '' && (
-            <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded-lg">
-              <p className="text-xs text-green-700 font-medium">Sugerencia: Clientes ya seleccionados están en zona {zonasSeleccionadas.join(', ')}</p>
-              <button
-                onClick={() => setFilterZona(zonasSeleccionadas[0])}
-                className="text-xs text-green-600 underline mt-1"
-              >
-                Filtrar por {zonasSeleccionadas[0]}
-              </button>
-            </div>
-          )}
-          {/* Lista de clientes disponibles - siempre visible */}
-          <div className="mt-2 max-h-48 overflow-y-auto border border-slate-200 rounded-lg bg-white">
-            {clientesFiltrados
-              .filter(c => !form.clientesIds.includes(String(c.id)))
-              .filter(c => !filterZona || s(c.zona) === filterZona)
-              .slice(0, 15).map(c => (
-              <button
-                key={c.id}
-                onClick={() => { toggleCliente(c.id); }}
-                className="w-full px-3 py-2 text-left hover:bg-purple-50 border-b border-slate-100 last:border-b-0 flex items-center gap-2"
-              >
-                <span className="w-5 h-5 border-2 border-slate-300 rounded flex items-center justify-center text-xs flex-shrink-0"></span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-slate-800 truncate">
-                    {s(c.nombre)}
-                    {s(c.zona) && <span className="ml-2 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">{s(c.zona)}</span>}
-                    {c.latitud && c.longitud && <span className="ml-1 text-xs">🗺️</span>}
-                  </p>
-                  <p className="text-xs text-slate-400 truncate">{s(c.tipo)} {s(c.contacto) ? `• ${s(c.contacto)}` : ""}</p>
-                </div>
-              </button>
-            ))}
-            {clientesFiltrados.filter(c => !form.clientesIds.includes(String(c.id))).filter(c => !filterZona || s(c.zona) === filterZona).length === 0 && (
-              <p className="px-3 py-2 text-xs text-slate-400">No hay más clientes disponibles</p>
+          <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-xl bg-white divide-y divide-slate-100">
+            {ordenesFiltradas.length === 0 && (
+              <p className="px-3 py-4 text-xs text-slate-400 text-center">No hay órdenes pendientes sin ruta asignada</p>
             )}
+            {ordenesFiltradas.map(o => {
+              const sel = form.ordenesIds.includes(String(o.id));
+              return (
+                <button
+                  key={o.id}
+                  onClick={() => toggleOrden(o.id)}
+                  className={`w-full px-3 py-2.5 text-left flex items-start gap-3 transition-colors ${sel ? 'bg-purple-50' : 'hover:bg-slate-50'}`}
+                >
+                  <span className={`mt-0.5 w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${sel ? 'border-purple-500 bg-purple-500 text-white' : 'border-slate-300'}`}>
+                    {sel ? '✓' : ''}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono text-xs font-bold text-blue-600">{s(o.folio)}</span>
+                      <span className="text-xs font-semibold text-slate-700">{s(o.clienteNombre)}</span>
+                      <span className="text-xs text-slate-400">{s(o.fecha)}</span>
+                    </div>
+                    {o.dir && <p className="text-xs text-slate-500 truncate mt-0.5">📍 {o.dir}</p>}
+                    <p className="text-xs text-slate-400 truncate">{s(o.productos)}</p>
+                  </div>
+                  <span className="text-xs font-bold text-slate-700 flex-shrink-0">${n(o.total).toLocaleString()}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>

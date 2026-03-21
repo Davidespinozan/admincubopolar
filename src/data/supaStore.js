@@ -1110,6 +1110,7 @@ export function useSupaStore(userId, userName) {
         const cargaTxt = Object.entries(cargaObj).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '—';
         log('Autorizar', 'Rutas', `${folio} — ${r.nombre} — Carga: ${cargaTxt}`);
         rf();
+        return { id: newRuta?.id, folio };
       },
 
       updateRutaEstatus: async (id, est) => {
