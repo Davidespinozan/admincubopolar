@@ -10,6 +10,9 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const [modal, setModal] = useState(false);
   const [traspasoModal, setTraspasoModal] = useState(false);
   const [sacarModal, setSacarModal] = useState(null); // { cfId, cfNombre }
+  const [transModal, setTransModal] = useState(false);
+  const [transForm, setTransForm] = useState({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", notas: "" });
+  const [guardandoTrans, setGuardandoTrans] = useState(false);
 
   // Producir form — includes destino (congelador)
   const [form, setForm] = useState({ turno: "Matutino", maquina: "Máquina 30", sku: "HC-25K", cantidad: "", destino: "CF-1" });
@@ -111,6 +114,33 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const mermaHoy = useMemo(() => mermasHoyList.reduce((sum, item) => sum + n(item.cantidad), 0), [mermasHoyList]);
   const skuOptions = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
+
+  const insumos = useMemo(() => data.productos.filter(p => {
+    const t = s(p.tipo).toLowerCase(); const sk = s(p.sku).toLowerCase();
+    return t.includes('barra') || t.includes('insumo') || t.includes('materia') || sk.includes('bh-') || sk.includes('barra');
+  }), [data.productos]);
+
+  const transformaciones = useMemo(() => (data.produccion || []).filter(p => p.tipo === 'Transformacion'), [data.produccion]);
+
+  const transInputKg  = Number(transForm.input_kg  || 0);
+  const transOutputKg = Number(transForm.output_kg || 0);
+  const transMermaKg  = Math.max(0, transInputKg - transOutputKg);
+  const transRendimiento = transInputKg > 0 ? Math.round((transOutputKg / transInputKg) * 100) : 0;
+  const transStockInput = useMemo(() => {
+    const p = data.productos.find(x => x.sku === transForm.input_sku);
+    return p ? Number(p.stock || 0) : null;
+  }, [data.productos, transForm.input_sku]);
+
+  const registrarTransformacion = async () => {
+    if (!transForm.input_sku || !transForm.output_sku || transInputKg <= 0 || transOutputKg <= 0) return;
+    setGuardandoTrans(true);
+    const err = await actions.addTransformacion({ ...transForm, input_kg: transInputKg, output_kg: transOutputKg });
+    setGuardandoTrans(false);
+    if (err && err.message) { showToast('Error: ' + err.message); return; }
+    showToast(`Transformación: ${transInputKg}kg ${transForm.input_sku} → ${transOutputKg}kg ${transForm.output_sku}`);
+    setTransModal(false);
+    setTransForm({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", notas: "" });
+  };
   const cuartos = data.cuartosFrios || [];
 
   const totalEnCuartos = useMemo(() => {
@@ -192,8 +222,8 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
       {/* Tabs */}
       <div className="px-4 pt-3">
-        <div className="mb-4 grid grid-cols-1 gap-1 rounded-[20px] border border-slate-200/80 bg-white/72 p-1.5 shadow-[0_14px_28px_rgba(8,19,27,0.05)] sm:grid-cols-3">
-          {[{ k: "producir", l: "Producción" }, { k: "cuartos", l: "Congeladores" }, { k: "mermas", l: "Mermas" }].map(t => (
+        <div className="mb-4 grid grid-cols-2 gap-1 rounded-[20px] border border-slate-200/80 bg-white/72 p-1.5 shadow-[0_14px_28px_rgba(8,19,27,0.05)] sm:grid-cols-4">
+          {[{ k: "producir", l: "Producción" }, { k: "cuartos", l: "Congeladores" }, { k: "mermas", l: "Mermas" }, { k: "trans", l: "🧊 Trans." }].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
               className={`flex-1 py-3 text-sm font-bold rounded-[16px] transition-all ${tab === t.k ? "bg-blue-600 text-white shadow-[0_12px_22px_rgba(37,99,235,0.14)]" : "text-slate-600"}`}>
               {t.l}
@@ -315,6 +345,53 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
             );
           })}
+        </>)}
+
+        {/* ═══ TAB: TRANSFORMACIONES ═══ */}
+        {tab === "trans" && (<>
+          <button onClick={() => setTransModal(true)}
+            className="w-full py-4 bg-cyan-700 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(14,116,144,0.16)] active:scale-[0.98] transition-transform">
+            + Nueva transformación
+          </button>
+
+          {transformaciones.length === 0 ? (
+            <div className="bg-white/78 rounded-[28px] p-8 text-center border border-slate-200/80">
+              <p className="text-3xl mb-2">🧊</p>
+              <p className="text-sm text-slate-400">Sin transformaciones registradas</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Historial ({transformaciones.length})</h3>
+              {transformaciones.slice().reverse().map(t => {
+                const rend = Number(t.rendimiento || 0);
+                const rendColor = rend >= 80 ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : rend >= 65 ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
+                return (
+                  <div key={t.id} className="bg-white/84 rounded-[22px] p-4 border border-slate-200/80 shadow-[0_8px_18px_rgba(8,19,27,0.04)]">
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-bold text-slate-500">{t.folio || t.id} · {s(t.fecha).slice(0, 10)}</p>
+                      <span className={`text-xs font-extrabold px-2 py-0.5 rounded-lg border ${rendColor}`}>{rend}%</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                      <div className="bg-slate-50 rounded-xl p-2">
+                        <p className="text-slate-400 mb-0.5">Entrada</p>
+                        <p className="font-extrabold text-slate-800">{Number(t.input_kg || 0)} kg</p>
+                        <p className="text-slate-500 font-mono">{t.input_sku}</p>
+                      </div>
+                      <div className="bg-red-50 rounded-xl p-2">
+                        <p className="text-red-400 mb-0.5">Merma</p>
+                        <p className="font-extrabold text-red-700">{Number(t.merma_kg || 0)} kg</p>
+                      </div>
+                      <div className="bg-emerald-50 rounded-xl p-2">
+                        <p className="text-emerald-600 mb-0.5">Salida</p>
+                        <p className="font-extrabold text-emerald-800">{Number(t.output_kg || 0)} kg</p>
+                        <p className="text-emerald-600 font-mono">{t.output_sku}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </>)}
 
         <div className="h-8" />
@@ -578,6 +655,69 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             <button onClick={registrarMerma} disabled={guardandoMerma || !mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMermaFile}
               className="w-full py-3.5 bg-red-500 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">
               {guardandoMerma ? 'Guardando...' : 'Registrar merma'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ MODAL: Transformación ═══ */}
+      {transModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setTransModal(false)}>
+          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
+            <p className="erp-kicker text-slate-400">Transformación</p>
+            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Barras → Hielo triturado</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿Qué entró? (Insumo)</label>
+                {insumos.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">Sin insumos registrados en el catálogo</p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    {insumos.map(p => (
+                      <button key={p.sku} onClick={() => setTransForm(f => ({ ...f, input_sku: s(p.sku) }))}
+                        className={`py-2.5 px-2 rounded-xl text-xs font-bold border-2 text-left ${transForm.input_sku === s(p.sku) ? "border-cyan-500 bg-cyan-50 text-cyan-700" : "border-slate-200 text-slate-600"}`}>
+                        <p>{s(p.nombre)}</p>
+                        <p className="font-mono text-[10px] opacity-70">{s(p.sku)} · {Number(p.stock || 0)} kg stock</p>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <input type="number" inputMode="decimal" value={transForm.input_kg} onChange={e => setTransForm(f => ({ ...f, input_kg: e.target.value }))}
+                  className="w-full mt-2 px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="kg a transformar" />
+                {transStockInput !== null && transInputKg > transStockInput && (
+                  <p className="text-xs text-red-600 font-semibold mt-1 text-center">Stock insuficiente ({transStockInput} kg disponibles)</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿Qué salió? (Producto)</label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {skuOptions.map(p => (
+                    <button key={p.sku} onClick={() => setTransForm(f => ({ ...f, output_sku: s(p.sku) }))}
+                      className={`py-2.5 px-2 rounded-xl text-xs font-bold border-2 text-left ${transForm.output_sku === s(p.sku) ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
+                      {s(p.nombre)}
+                    </button>
+                  ))}
+                </div>
+                <input type="number" inputMode="decimal" value={transForm.output_kg} onChange={e => setTransForm(f => ({ ...f, output_kg: e.target.value }))}
+                  className="w-full mt-2 px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="kg obtenidos" />
+              </div>
+              {transInputKg > 0 && transOutputKg > 0 && (
+                <div className={`rounded-[18px] p-3 border ${transRendimiento >= 80 ? 'bg-emerald-50 border-emerald-200' : transRendimiento >= 65 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
+                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                    <div><p className="text-slate-400">Entrada</p><p className="font-extrabold text-slate-800">{transInputKg} kg</p></div>
+                    <div><p className="text-red-400">Merma</p><p className="font-extrabold text-red-700">{transMermaKg.toFixed(1)} kg</p></div>
+                    <div><p className="text-slate-400">Rendimiento</p><p className={`font-extrabold ${transRendimiento >= 80 ? 'text-emerald-700' : transRendimiento >= 65 ? 'text-amber-700' : 'text-red-700'}`}>{transRendimiento}%</p></div>
+                  </div>
+                </div>
+              )}
+              <input type="text" value={transForm.notas} onChange={e => setTransForm(f => ({ ...f, notas: e.target.value }))}
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm" placeholder="Notas (opcional)" />
+            </div>
+            <button onClick={registrarTransformacion}
+              disabled={guardandoTrans || !transForm.input_sku || !transForm.output_sku || transInputKg <= 0 || transOutputKg <= 0 || transOutputKg > transInputKg || (transStockInput !== null && transInputKg > transStockInput)}
+              className="w-full py-4 bg-cyan-700 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40 active:scale-[0.98] transition-transform">
+              {guardandoTrans ? 'Guardando...' : 'Registrar transformación'}
             </button>
           </div>
         </div>
