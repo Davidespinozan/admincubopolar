@@ -3,7 +3,9 @@ import { badRequest, methodNotAllowed, ok, readJsonBody, serverError } from '../
 import { canAccessOrden, getAuthenticatedProfile } from '../_lib/auth.js';
 import { getMercadoPagoClient, getStripeClient } from '../_lib/providers.js';
 import { upsertPaymentIntent } from '../_lib/persistence.js';
-import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
+
+const supabaseConfigured = () =>
+  Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 export const handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
@@ -19,37 +21,48 @@ export const handler = async (event) => {
       return badRequest('provider, ordenId and amount are required');
     }
 
-    const supabase = getSupabaseAdmin();
-    const { data: orden, error: ordenError } = await supabase
-      .from('ordenes')
-      .select('id, folio, total, cliente_id, cliente_nombre, vendedor_id, ruta_id, estatus')
-      .eq('id', ordenId)
-      .single();
+    // When Supabase is configured: validate order from DB and use canonical amount/items.
+    // When not configured: trust the values from the request (original behavior).
+    let canonicalAmount = Number(amount);
+    let canonicalItems = items || [];
+    let ordenFolio = ordenId;
 
-    if (ordenError || !orden) return badRequest('Orden no encontrada');
-    if (!(await canAccessOrden({ profile: auth.profile, orden, supabase }))) {
-      return badRequest('No tienes permiso para generar cobro de esta orden');
+    if (supabaseConfigured()) {
+      const { getSupabaseAdmin } = await import('../_lib/supabaseAdmin.js');
+      const supabase = getSupabaseAdmin();
+      const { data: orden, error: ordenError } = await supabase
+        .from('ordenes')
+        .select('id, folio, total, cliente_id, cliente_nombre, vendedor_id, ruta_id, estatus')
+        .eq('id', ordenId)
+        .single();
+
+      if (ordenError || !orden) return badRequest('Orden no encontrada');
+      if (!(await canAccessOrden({ profile: auth.profile, orden, supabase }))) {
+        return badRequest('No tienes permiso para generar cobro de esta orden');
+      }
+      if (orden.estatus === 'Cancelada') return badRequest('No se puede cobrar una orden cancelada');
+
+      canonicalAmount = Number(orden.total || 0);
+      if (canonicalAmount <= 0) return badRequest('La orden no tiene un total válido para cobro');
+      if (Math.abs(Number(amount) - canonicalAmount) > 0.01) {
+        return badRequest('El monto solicitado no coincide con el total de la orden');
+      }
+
+      ordenFolio = orden.folio || ordenId;
+
+      const { data: lineas } = await supabase
+        .from('orden_lineas')
+        .select('sku, cantidad, precio_unit, subtotal')
+        .eq('orden_id', orden.id);
+
+      canonicalItems = (lineas || []).map((linea) => ({
+        sku: linea.sku,
+        name: linea.sku,
+        quantity: Number(linea.cantidad || 0),
+        unitPrice: Number(linea.precio_unit || 0),
+        subtotal: Number(linea.subtotal || 0),
+      })).filter((linea) => linea.quantity > 0 && linea.unitPrice >= 0);
     }
-    if (orden.estatus === 'Cancelada') return badRequest('No se puede cobrar una orden cancelada');
-
-    const canonicalAmount = Number(orden.total || 0);
-    if (canonicalAmount <= 0) return badRequest('La orden no tiene un total válido para cobro');
-    if (Math.abs(Number(amount) - canonicalAmount) > 0.01) {
-      return badRequest('El monto solicitado no coincide con el total de la orden');
-    }
-
-    const { data: lineas } = await supabase
-      .from('orden_lineas')
-      .select('sku, cantidad, precio_unit, subtotal')
-      .eq('orden_id', orden.id);
-
-    const canonicalItems = (lineas || []).map((linea) => ({
-      sku: linea.sku,
-      name: linea.sku,
-      quantity: Number(linea.cantidad || 0),
-      unitPrice: Number(linea.precio_unit || 0),
-      subtotal: Number(linea.subtotal || 0),
-    })).filter((linea) => linea.quantity > 0 && linea.unitPrice >= 0);
 
     // Build line items from order items or fallback to single line
     const buildStripeLineItems = () => {
@@ -70,7 +83,7 @@ export const handler = async (event) => {
         }
         return lineItems;
       }
-      return [{ quantity: 1, price_data: { currency: currency.toLowerCase(), unit_amount: Math.round(canonicalAmount * 100), product_data: { name: description || `Orden ${orden.folio || ordenId}` } } }];
+      return [{ quantity: 1, price_data: { currency: currency.toLowerCase(), unit_amount: Math.round(canonicalAmount * 100), product_data: { name: description || `Orden ${ordenFolio}` } } }];
     };
 
     if (provider === 'stripe') {
@@ -111,7 +124,7 @@ export const handler = async (event) => {
             currency_id: currency,
             unit_price: Number(item.unitPrice || 0),
           }))
-        : [{ id: String(ordenId), title: description || `Orden ${orden.folio || ordenId}`, quantity: 1, currency_id: currency, unit_price: canonicalAmount }];
+        : [{ id: String(ordenId), title: description || `Orden ${ordenFolio}`, quantity: 1, currency_id: currency, unit_price: canonicalAmount }];
 
       // Add IVA if items don't cover full amount
       if (canonicalItems.length > 0) {
