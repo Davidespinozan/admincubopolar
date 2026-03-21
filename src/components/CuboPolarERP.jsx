@@ -116,7 +116,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   const [moreOpen, setMoreOpen] = useState(false);
   const [alertasOpen, setAlertasOpen] = useState(false);
 
-  const vp = useMemo(() => ({ data, actions }), [data, actions]);
+  const vp = useMemo(() => ({ data, actions, user }), [data, actions, user]);
   const alertasActivas = useMemo(() => {
     return (data.alertas || []).filter(a => {
       const msg = (a?.msg || a?.mensaje || a?.detalle || a?.titulo || '').toString().trim();

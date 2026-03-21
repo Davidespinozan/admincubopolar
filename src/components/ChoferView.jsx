@@ -297,7 +297,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const registrarMerma = () => {
     if (!mForm.cant || n(mForm.cant) <= 0 || !fotoMerma) return;
     // Validar que no exceda stock disponible
-    const disponibleSku = disponible[mForm.sku] || 0;
+    const disponibleSku = restante[mForm.sku] || 0;
     if (n(mForm.cant) > disponibleSku) {
       showToast(`Solo tienes ${disponibleSku} disponibles de ${mForm.sku}`, "error");
       return;
@@ -323,8 +323,8 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       if (actions.cerrarRutaCompleta) {
         const cobrosPorMetodo = {};
         for (const e of entregas) cobrosPorMetodo[e.pago] = (cobrosPorMetodo[e.pago]||0) + n(e.total);
-        await actions.cerrarRutaCompleta({
-          rutaId: miRutaActiva?.id, // ID de la ruta activa
+        const result = await actions.cerrarRutaCompleta({
+          rutaId: miRutaActiva?.id,
           choferId: user?.id,
           choferNombre: s(user?.nombre),
           entregas,
@@ -332,10 +332,15 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           carga: cargaTotal,
           cobros: cobrosPorMetodo,
         });
+        // cerrarRutaCompleta returns the error object on failure instead of throwing
+        if (result && result.message) {
+          showToast("No se pudo cerrar la ruta: " + result.message);
+          return;
+        }
       }
       setRutaCerrada(true);
       showToast("Reporte enviado ✓");
-    } catch {
+    } catch (err) {
       showToast("No se pudo cerrar la ruta");
     } finally {
       setCerrandoRuta(false);

@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, eqId, fmtDate, useDebounce, useToast, reporteVentas, PAGE_SIZE, Paginator } from './viewsCommon';
 
-export function OrdenesView({ data, actions }) {
+export function OrdenesView({ data, actions, user }) {
   const toast = useToast();
   const [modal, setModal] = useState(false);
   const [search, setSearch] = useState("");
@@ -58,7 +58,7 @@ export function OrdenesView({ data, actions }) {
     }
     if (Object.keys(e).length) { setErrors(e); return; }
     const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
-    const err = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc});
+    const err = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc,usuarioId:user?.id||null});
     if (err) {
       toast?.error(err.message || "No se pudo crear la orden");
       return;

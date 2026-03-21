@@ -86,7 +86,8 @@ export const handler = async (event) => {
         line_items: buildStripeLineItems(),
       });
 
-      await upsertPaymentIntent({
+      // Non-blocking — don't let DB persistence failure block the checkout URL
+      upsertPaymentIntent({
         orden_id: ordenId,
         provider: 'stripe',
         provider_reference: session.id,
@@ -95,7 +96,7 @@ export const handler = async (event) => {
         currency,
         checkout_url: session.url,
         raw_payload: session,
-      });
+      }).catch(err => console.warn('[billing] upsertPaymentIntent failed (non-critical):', err?.message));
 
       return ok({ provider: 'stripe', checkoutUrl: session.url, reference: session.id });
     }
@@ -138,7 +139,7 @@ export const handler = async (event) => {
         },
       });
 
-      await upsertPaymentIntent({
+      upsertPaymentIntent({
         orden_id: ordenId,
         provider: 'mercadopago',
         provider_reference: String(result.id),
@@ -147,7 +148,7 @@ export const handler = async (event) => {
         currency,
         checkout_url: result.init_point || result.sandbox_init_point || null,
         raw_payload: result,
-      });
+      }).catch(err => console.warn('[billing] upsertPaymentIntent failed (non-critical):', err?.message));
 
       return ok({
         provider: 'mercadopago',

@@ -53,7 +53,9 @@ const canAccessOrden = async ({ profile, orden, supabase }) => {
   if (profile.rol === 'Admin') return true;
 
   if (profile.rol === 'Ventas') {
-    return String(orden.vendedor_id || '') === String(profile.id);
+    // Allow access if this Ventas rep owns the order, or if vendedor_id is not set (legacy orders)
+    if (!orden.vendedor_id) return true;
+    return String(orden.vendedor_id) === String(profile.id);
   }
 
   if (profile.rol === 'Chofer') {
