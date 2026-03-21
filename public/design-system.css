@@ -1,0 +1,458 @@
+/*
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║           DESIGN SYSTEM — by David Espinoza / CuboPolar          ║
+  ║   Copia este archivo a cualquier proyecto Tailwind y funciona.   ║
+  ╚══════════════════════════════════════════════════════════════════╝
+
+  REQUISITOS:
+  - Tailwind CSS v3
+  - Fuentes: IBM Plex Sans + Space Grotesk (ver sección @import abajo)
+  - En tailwind.config.js agrega: content: ["./src/**/*.{js,jsx,ts,tsx}"]
+
+  USO RÁPIDO:
+  - Panel/tarjeta:         class="ds-panel"
+  - Panel oscuro:          class="ds-panel-dark"
+  - Kicker/etiqueta:       class="ds-kicker"
+  - Botón primario:        class="ds-btn-primary"
+  - Botón secundario:      class="ds-btn-secondary"
+  - Botón destructivo:     class="ds-btn-danger"
+  - Input de formulario:   class="ds-input"
+  - Badge/chip:            class="ds-badge"
+  - Shell con blur:        class="ds-blur"
+  - Modal bottom sheet:    class="ds-sheet"
+  - Header de página:      class="ds-page-header"
+  - Stat card:             class="ds-stat"
+  - Separador sutil:       class="ds-hairline"
+*/
+
+/* ─── Fuentes ─────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap');
+
+/* ─── Tokens ──────────────────────────────────────────────────────── */
+:root {
+  /* Superficie */
+  --ds-bg:            #ebf2f4;
+  --ds-bg-deep:       #07131a;
+  --ds-panel:         rgba(255, 255, 255, 0.82);
+  --ds-panel-strong:  rgba(255, 255, 255, 0.94);
+
+  /* Texto */
+  --ds-ink:           #08141b;
+  --ds-muted:         #59707a;
+
+  /* Bordes */
+  --ds-line:          rgba(8, 20, 27, 0.08);
+  --ds-line-strong:   rgba(8, 20, 27, 0.14);
+
+  /* Sombras */
+  --ds-shadow:        0 18px 40px rgba(3, 14, 19, 0.08);
+  --ds-shadow-strong: 0 28px 60px rgba(3, 14, 19, 0.14);
+  --ds-shadow-up:     0 -12px 30px rgba(3, 14, 19, 0.10);
+
+  /* Acento — cambia estos 3 valores para adaptar a tu marca */
+  --ds-accent:        #0b7798;          /* color primario */
+  --ds-accent-light:  rgba(11,119,152,0.12);
+  --ds-accent-glow:   rgba(11,119,152,0.22);
+}
+
+
+/* ─── Body / Shell global ─────────────────────────────────────────── */
+/*
+  Aplica esto en tu <body> o en el wrapper raíz de la app.
+  Crea el fondo degradado característico con orbes de luz sutiles.
+*/
+.ds-shell {
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overscroll-behavior: none;
+  color: var(--ds-ink);
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at top left,  rgba(126, 231, 255, 0.38), transparent 34%),
+    radial-gradient(circle at 82% 18%,   rgba(255, 214, 170, 0.32), transparent 24%),
+    linear-gradient(180deg, #f4f8fa 0%,  var(--ds-bg) 46%, #e5eef1 100%);
+}
+
+/* Versión oscura del shell (ej. sidebars, navbars) */
+.ds-shell-dark {
+  background: linear-gradient(180deg, #07131a 0%, #09181f 100%);
+  color: #e8f2f5;
+}
+
+
+/* ─── Tipografía ──────────────────────────────────────────────────── */
+
+/* Fuente de display para títulos grandes */
+.ds-display {
+  font-family: 'Space Grotesk', 'IBM Plex Sans', system-ui, sans-serif;
+  letter-spacing: -0.03em;
+  font-weight: 700;
+}
+
+/*
+  Kicker: etiqueta pequeña encima de un título.
+  Uso: <p class="ds-kicker">Resumen del día</p>
+*/
+.ds-kicker {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
+}
+
+/* Número/dato destacado grande */
+.ds-number {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--ds-ink);
+}
+
+
+/* ─── Paneles y tarjetas ──────────────────────────────────────────── */
+
+/*
+  Panel estándar: fondo glass, borde sutil, sombra expresiva.
+  Uso: <div class="ds-panel rounded-[24px] p-4">...</div>
+  Tip: combina con rounded-[20px], rounded-[24px] o rounded-[28px]
+*/
+.ds-panel {
+  background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(247,251,252,0.80));
+  border: 1px solid var(--ds-line);
+  box-shadow: var(--ds-shadow);
+}
+
+/* Panel con blur — para overlays, dropdowns, navbars */
+.ds-panel.ds-blur,
+.ds-blur {
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+/* Panel fuerte — formularios, modales */
+.ds-panel-strong {
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,252,253,0.92));
+  border: 1px solid var(--ds-line);
+  box-shadow: var(--ds-shadow);
+}
+
+/* Panel oscuro — headers, navbars oscuras */
+.ds-panel-dark {
+  background: linear-gradient(180deg, rgba(7,19,26,0.96), rgba(9,24,32,0.92));
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: var(--ds-shadow-strong);
+  color: #e8f2f5;
+}
+
+/* Separador / hairline */
+.ds-hairline {
+  border-color: var(--ds-line);
+}
+
+
+/* ─── Botones ─────────────────────────────────────────────────────── */
+
+/* Base compartida — no usar solo */
+.ds-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 800;
+  font-size: 0.875rem;
+  border-radius: 18px;
+  padding: 14px 24px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.ds-btn:active { transform: scale(0.97); }
+.ds-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* Botón primario */
+.ds-btn-primary {
+  composes: ds-btn;
+  background: var(--ds-accent);
+  color: #fff;
+  box-shadow: 0 20px 34px var(--ds-accent-glow);
+}
+.ds-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Botón secundario / ghost */
+.ds-btn-secondary {
+  composes: ds-btn;
+  background: rgba(8,20,27,0.06);
+  color: var(--ds-ink);
+  border: 1px solid var(--ds-line-strong);
+}
+.ds-btn-secondary:hover:not(:disabled) {
+  background: rgba(8,20,27,0.10);
+}
+
+/* Botón destructivo */
+.ds-btn-danger {
+  composes: ds-btn;
+  background: #dc2626;
+  color: #fff;
+  box-shadow: 0 16px 28px rgba(220,38,38,0.20);
+}
+
+/* Botón ancho completo (mobile-first) */
+.ds-btn-full {
+  composes: ds-btn;
+  width: 100%;
+  border-radius: 22px;
+  padding: 16px 24px;
+  font-size: 1rem;
+}
+
+
+/* ─── Inputs ──────────────────────────────────────────────────────── */
+
+.ds-input {
+  width: 100%;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1.5px solid var(--ds-line-strong);
+  background: rgba(255,255,255,0.90);
+  color: var(--ds-ink);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ds-input::placeholder { color: var(--ds-muted); opacity: 0.7; }
+.ds-input:focus {
+  border-color: var(--ds-accent);
+  box-shadow: 0 0 0 3px var(--ds-accent-light);
+}
+
+.ds-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ds-muted);
+  margin-bottom: 6px;
+}
+
+.ds-select {
+  composes: ds-input;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2359707a' stroke-width='2.5'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+
+
+/* ─── Badges / chips ──────────────────────────────────────────────── */
+
+.ds-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.ds-badge-success { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
+.ds-badge-warning { background: #fffbeb; color: #d97706; border-color: #fde68a; }
+.ds-badge-danger  { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+.ds-badge-info    { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+.ds-badge-neutral { background: #f8fafc; color: #475569; border-color: #e2e8f0; }
+
+
+/* ─── Stat card ───────────────────────────────────────────────────── */
+/*
+  Uso:
+  <div class="ds-stat ds-panel rounded-[22px] p-4 text-center">
+    <p class="ds-kicker">Ventas hoy</p>
+    <p class="ds-number mt-2">$1,200</p>
+    <p class="ds-stat-sub">+12% vs ayer</p>
+  </div>
+*/
+.ds-stat-sub {
+  font-size: 0.75rem;
+  color: var(--ds-muted);
+  margin-top: 4px;
+}
+
+
+/* ─── Page header ─────────────────────────────────────────────────── */
+/*
+  Header con degradado de marca para la parte superior de cada página.
+  Uso:
+  <div class="ds-page-header">
+    <p class="ds-kicker" style="color:rgba(255,255,255,0.6)">Sección</p>
+    <h1 class="ds-display" style="color:#fff; font-size:1.6rem">Título</h1>
+  </div>
+*/
+.ds-page-header {
+  background: linear-gradient(135deg, var(--ds-accent) 0%, #065e78 100%);
+  padding: max(env(safe-area-inset-top, 44px), 44px) 16px 20px;
+  color: #fff;
+  box-shadow: 0 24px 48px var(--ds-accent-glow);
+}
+
+
+/* ─── Bottom sheet / modal ────────────────────────────────────────── */
+/*
+  Modal que sube desde abajo, estilo nativo iOS/Android.
+  Estructura:
+  <div class="ds-sheet-overlay">          ← fondo oscuro
+    <div class="ds-sheet">               ← panel que sube
+      <div class="ds-sheet-pill"></div>  ← pill drag indicator
+      ...contenido...
+    </div>
+  </div>
+*/
+.ds-sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0,0,0,0.50);
+}
+.ds-sheet {
+  background: #fff;
+  width: 100%;
+  max-width: 32rem;
+  border-radius: 28px 28px 0 0;
+  border: 1px solid var(--ds-line);
+  padding: 20px 20px calc(env(safe-area-inset-bottom, 0px) + 24px);
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: var(--ds-shadow-up);
+}
+.ds-sheet-pill {
+  width: 40px;
+  height: 4px;
+  background: #d1d5db;
+  border-radius: 999px;
+  margin: 0 auto 16px;
+}
+
+
+/* ─── Tab bar ─────────────────────────────────────────────────────── */
+/*
+  Selector de tabs con indicador activo.
+  Uso:
+  <div class="ds-tabs">
+    <button class="ds-tab ds-tab-active">Tab 1</button>
+    <button class="ds-tab">Tab 2</button>
+  </div>
+*/
+.ds-tabs {
+  display: flex;
+  gap: 4px;
+  background: rgba(255,255,255,0.72);
+  border: 1px solid var(--ds-line);
+  border-radius: 20px;
+  padding: 6px;
+  box-shadow: 0 14px 28px rgba(8,19,27,0.05);
+}
+.ds-tab {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  font-weight: 700;
+  border-radius: 14px;
+  color: var(--ds-muted);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+}
+.ds-tab-active {
+  background: var(--ds-accent);
+  color: #fff;
+  box-shadow: 0 12px 22px var(--ds-accent-glow);
+}
+
+
+/* ─── Toast / notificación ────────────────────────────────────────── */
+/*
+  Uso:
+  <div class="ds-toast ds-toast-success">Guardado correctamente</div>
+*/
+@keyframes ds-slide-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+.ds-toast {
+  position: fixed;
+  top: max(env(safe-area-inset-top, 16px), 52px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 10px 20px;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: 0 18px 32px rgba(5,150,105,0.24);
+  animation: ds-slide-in 0.2s ease-out;
+  white-space: nowrap;
+}
+.ds-toast-success { background: #059669; color: #fff; }
+.ds-toast-error   { background: #dc2626; color: #fff; }
+.ds-toast-info    { background: var(--ds-accent); color: #fff; }
+
+
+/* ─── Scrollbar (desktop) ─────────────────────────────────────────── */
+@media (min-width: 768px) {
+  ::-webkit-scrollbar         { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track   { background: transparent; }
+  ::-webkit-scrollbar-thumb   { background: rgba(8,20,27,0.14); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(8,20,27,0.22); }
+}
+
+/* ─── Ocultar scrollbar en scroll horizontal mobile ──────────────── */
+@media (max-width: 767px) {
+  .overflow-x-auto::-webkit-scrollbar { display: none; }
+  .overflow-x-auto { -ms-overflow-style: none; scrollbar-width: none; }
+}
+
+/* ─── Safe area iOS ───────────────────────────────────────────────── */
+.ds-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ─── Micro-interacciones globales ────────────────────────────────── */
+* { -webkit-tap-highlight-color: transparent; }
+html { -webkit-text-size-adjust: 100%; }
+html, body { overflow-x: hidden; max-width: 100vw; }
+
+button, input, select, textarea {
+  transition:
+    background-color 0.18s ease,
+    border-color     0.18s ease,
+    color            0.18s ease,
+    box-shadow       0.18s ease,
+    transform        0.18s ease;
+}
+
+*:focus-visible {
+  outline: 2px solid var(--ds-accent-glow);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+::selection {
+  background: var(--ds-accent-light);
+  color: var(--ds-ink);
+}
