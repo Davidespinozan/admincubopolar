@@ -1,5 +1,7 @@
+import { lazy, Suspense } from 'react';
 import { useState, useMemo, Icons, StatusBadge, PageHeader, CapacityBar, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, useDebounce, useToast, reporteRutas } from './viewsCommon';
 import { ordenarPorProximidad } from '../../utils/geocoding';
+const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 
 function AsignarOrdenesModal({ ruta, ordenes, onClose, onConfirm }) {
   const [selected, setSelected] = useState([]);
@@ -56,6 +58,7 @@ export function RutasView({ data, actions }) {
   const [cierreForm, setCierreForm] = useState({devolucionPorProducto:{}});
   const [search, setSearch] = useState("");
   const [filterEst, setFilterEst] = useState("");
+  const [mapaVisible, setMapaVisible] = useState(false);
   const dSearch = useDebounce(search);
 
   // Productos terminados para mostrar en formulario de carga
@@ -356,8 +359,39 @@ export function RutasView({ data, actions }) {
     {ordenesSinRuta.length > 0 && (
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center justify-between">
         <p className="text-xs text-amber-700 font-semibold">{ordenesSinRuta.length} órdenes sin asignar a ruta</p>
+        <button
+          onClick={() => setMapaVisible(v => !v)}
+          className="text-xs font-semibold text-amber-700 underline"
+        >
+          {mapaVisible ? 'Ocultar mapa' : 'Ver mapa de pedidos'}
+        </button>
       </div>
     )}
+
+    {mapaVisible && (() => {
+      const ordenesParaMapa = (data.ordenes || [])
+        .filter(o => {
+          const est = s(o.estatus).toLowerCase();
+          return est === 'creada' || est === 'asignada';
+        })
+        .map(o => {
+          const cli = (data.clientes || []).find(c => String(c.id) === String(o.clienteId || o.cliente_id));
+          return {
+            ...o,
+            clienteNombre: s(o.cliente || o.cliente_nombre || cli?.nombre),
+            dir: cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '',
+            latitud: cli?.latitud,
+            longitud: cli?.longitud,
+          };
+        });
+      return (
+        <div className="mb-5">
+          <Suspense fallback={<div className="h-48 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-center text-sm text-slate-400">Cargando mapa…</div>}>
+            <MapaPedidos ordenes={ordenesParaMapa} />
+          </Suspense>
+        </div>
+      );
+    })()}
 
     {filteredRutas.length === 0
       ? <EmptyState message="Sin rutas" />
