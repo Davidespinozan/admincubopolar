@@ -237,7 +237,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         {/* ═══ TAB: PRODUCCIÓN ═══ */}
         {tab === "producir" && (<>
           <button onClick={() => setModal(true)}
-            className="w-full py-4.5 bg-blue-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
+            className="w-full py-4 bg-blue-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
             + Ya produje hielo
           </button>
 
@@ -570,7 +570,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       {/* ═══ TAB MERMAS ═══ */}
         {tab === "mermas" && (<>
           <button onClick={() => { setMermaModal(true); clearFotoMerma(); setMForm({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" }); }}
-            className="w-full py-4.5 bg-[#8f2d22] text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(143,45,34,0.18)] active:scale-[0.98] transition-transform">
+            className="w-full py-4 bg-[#8f2d22] text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(143,45,34,0.18)] active:scale-[0.98] transition-transform">
             Registrar merma
           </button>
 
