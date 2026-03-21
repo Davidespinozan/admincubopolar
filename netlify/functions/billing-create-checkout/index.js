@@ -116,6 +116,6 @@ export const handler = async (event) => {
 
     return badRequest('Unsupported provider');
   } catch (error) {
-    return serverError('Could not create checkout', error.message);
+    return serverError(error.message || 'Could not create checkout', error.message);
   }
 };
