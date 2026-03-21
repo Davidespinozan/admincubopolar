@@ -3,6 +3,7 @@ import { badRequest, methodNotAllowed, ok, readJsonBody, serverError } from '../
 import { canAccessOrden, getAuthenticatedProfile } from '../_lib/auth.js';
 import { getMercadoPagoClient, getStripeClient } from '../_lib/providers.js';
 import { upsertPaymentIntent } from '../_lib/persistence.js';
+import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 
 const supabaseConfigured = () =>
   Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -28,7 +29,6 @@ export const handler = async (event) => {
     let ordenFolio = ordenId;
 
     if (supabaseConfigured()) {
-      const { getSupabaseAdmin } = await import('../_lib/supabaseAdmin.js');
       const supabase = getSupabaseAdmin();
       const { data: orden, error: ordenError } = await supabase
         .from('ordenes')

@@ -14,7 +14,19 @@ export function OrdenesView({ data, actions, user }) {
 
   const clienteOpts = useMemo(() => [{value:"",label:"Seleccionar..."},...(data.clientes || []).filter(c=>c.estatus==="Activo").map(c=>({value:String(c.id),label:s(c.nombre)}))], [data.clientes]);
   const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
-  const prodOpts = useMemo(() => [{value:"",label:"Seleccionar producto..."},...prodTerminados.map(p=>({value:s(p.sku),label:`${s(p.sku)} — ${s(p.nombre)} (${n(p.stock)} disp.)`}))], [prodTerminados]);
+
+  // Stock efectivo = suma de cuartos_frios (fuente de verdad), fallback a productos.stock
+  const cfStockMap = useMemo(() => {
+    const map = {};
+    for (const cf of data.cuartosFrios || []) {
+      for (const [sku, qty] of Object.entries(cf.stock || {})) {
+        map[sku] = (map[sku] || 0) + n(qty);
+      }
+    }
+    return map;
+  }, [data.cuartosFrios]);
+
+  const prodOpts = useMemo(() => [{value:"",label:"Seleccionar producto..."},...prodTerminados.map(p=>({value:s(p.sku),label:`${s(p.sku)} — ${s(p.nombre)} (${cfStockMap[p.sku] ?? n(p.stock)} disp.)`}))], [prodTerminados, cfStockMap]);
 
   const getPrice = useCallback((cId, sku) => {
     if (cId) { const esp = data.preciosEsp.find(p => eqId(p.clienteId, cId) && p.sku === sku); if (esp) return n(esp.precio); }
@@ -33,9 +45,10 @@ export function OrdenesView({ data, actions, user }) {
   const removeLine = (idx) => setLines(prev=>prev.filter((_,i)=>i!==idx));
   const getStock = useCallback((sku) => {
     if (!sku) return 0;
+    if (cfStockMap[sku] !== undefined) return cfStockMap[sku];
     const p = data.productos.find(x => s(x.sku) === s(sku));
     return p ? n(p.stock) : 0;
-  }, [data.productos]);
+  }, [data.productos, cfStockMap]);
 
   const subtotal = useMemo(()=>lines.reduce((s,l)=>s+(n(l.qty)*n(l.precio)),0),[lines]);
   const iva = useMemo(()=>Math.round(subtotal*16)/100,[subtotal]);
