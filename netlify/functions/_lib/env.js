@@ -1,6 +1,6 @@
 const requireEnv = (name) => {
   const value = process.env[name];
-  if (!value) throw new Error(`Missing environment variable: ${name}`);
+  if (!value) throw new Error(`Variable de entorno faltante en Netlify: ${name}`);
   return value;
 };
 

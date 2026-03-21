@@ -20,7 +20,7 @@ const getMercadoPagoClient = () => {
 };
 
 const getFacturamaConfig = () => ({
-  baseUrl: optionalEnv('FACTURAMA_API_URL', 'https://api.facturama.mx'),
+  baseUrl: optionalEnv('FACTURAMA_API_URL', 'https://apisandbox.facturama.mx'),
   username: requireEnv('FACTURAMA_USERNAME'),
   password: requireEnv('FACTURAMA_PASSWORD'),
 });
