@@ -841,6 +841,89 @@ export function useSupaStore(userId, userName) {
         if (!err && p.destino) await a.meterACuartoFrio(p.destino, p.sku, Number(p.cantidad));
       },
 
+      // ── TRANSFORMACIÓN: barra → hielo triturado/picado ──
+      // input_sku: SKU de la barra consumida (ej. BH-50K)
+      // input_kg: kg totales de barra consumidos
+      // output_sku: SKU del producto derivado (ej. HT-TRITURADO)
+      // output_kg: kg totales de producto obtenido
+      // merma_kg se calcula automáticamente como input_kg - output_kg
+      addTransformacion: async ({ input_sku, input_kg, output_sku, output_kg, notas }) => {
+        const inputKg  = Number(input_kg  || 0);
+        const outputKg = Number(output_kg || 0);
+        if (inputKg <= 0 || outputKg <= 0) return new Error('Cantidades inválidas');
+        if (outputKg > inputKg) return new Error('El output no puede ser mayor al input');
+
+        const mermaKg      = Math.max(0, inputKg - outputKg);
+        const rendimiento  = Math.round((outputKg / inputKg) * 10000) / 100; // e.g. 78.40
+
+        // Verificar stock del insumo (input_sku en productos.stock)
+        const { data: inputProd, error: inputErr } = await supabase
+          .from('productos').select('id, stock, nombre').eq('sku', input_sku).single();
+        if (inputErr || !inputProd) return new Error('Insumo no encontrado: ' + input_sku);
+        if (Number(inputProd.stock || 0) < inputKg) {
+          return new Error(`Stock insuficiente de ${input_sku}: tienes ${inputProd.stock} kg, necesitas ${inputKg}`);
+        }
+
+        const { data: outputProd, error: outputErr } = await supabase
+          .from('productos').select('id, stock, nombre').eq('sku', output_sku).single();
+        if (outputErr || !outputProd) return new Error('Producto derivado no encontrado: ' + output_sku);
+
+        const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_op_seq' });
+        const folio = `TR-${String(seq || 1).padStart(3, '0')}`;
+        const hoy   = new Date().toISOString().slice(0, 10);
+
+        // Registrar la transformación en produccion
+        const { error: insErr } = await supabase.from('produccion').insert({
+          folio,
+          fecha:          hoy,
+          turno:          'Transformación',
+          maquina:        'Manual',
+          sku:            output_sku,
+          cantidad:       Math.round(outputKg),
+          estatus:        'Confirmada',
+          tipo:           'Transformacion',
+          input_sku,
+          input_kg:       inputKg,
+          output_kg:      outputKg,
+          merma_kg:       mermaKg,
+          rendimiento,
+          destino:        notas || null,
+        });
+        if (insErr) { t()?.error('Error al registrar transformación'); return insErr; }
+
+        // Descontar insumo (barras)
+        await supabase.from('productos')
+          .update({ stock: Math.max(0, Number(inputProd.stock) - inputKg) })
+          .eq('id', inputProd.id);
+
+        // Incrementar producto derivado (triturado)
+        await supabase.from('productos')
+          .update({ stock: Number(outputProd.stock || 0) + outputKg })
+          .eq('id', outputProd.id);
+
+        // Movimientos de inventario
+        const now = new Date().toISOString();
+        await supabase.from('inventario_mov').insert([
+          { tipo: 'Salida',  producto: input_sku,  cantidad: inputKg,  origen: `Transformación ${folio}`, usuario: uname(), fecha: now },
+          { tipo: 'Entrada', producto: output_sku, cantidad: outputKg, origen: `Transformación ${folio}`, usuario: uname(), fecha: now },
+        ]);
+
+        // Registrar merma si la hay
+        if (mermaKg > 0) {
+          await supabase.from('mermas').insert({
+            sku:      input_sku,
+            cantidad: Math.round(mermaKg),
+            causa:    'Merma de proceso — transformación',
+            origen:   `Transformación ${folio}`,
+            foto_url: '',
+          });
+        }
+
+        log('Transformar', 'Producción', `${folio} — ${inputKg}kg ${input_sku} → ${outputKg}kg ${output_sku} (merma ${mermaKg}kg, rend. ${rendimiento}%)`);
+        rf();
+        return null;
+      },
+
       // ── CUARTOS FRÍOS — CRUD ──
       addCuartoFrio: async (cf) => {
         const { error } = await supabase.from('cuartos_frios').insert({
