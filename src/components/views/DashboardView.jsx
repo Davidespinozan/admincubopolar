@@ -113,9 +113,9 @@ export default function DashboardView({ data }) {
       const stockBruto = n(stockCuartosPorSku[sku]);
       const reservado = n(reservadoEnRutasPorSku[sku]);
       const stock = Math.max(0, stockBruto - reservado);
-      const faltante = Math.max(0, pendientes - stock);
       const producidoHoy = n(producidoHoyPorSku[sku]);
       const stockMinimo = n(p.stock_minimo);
+      const faltante = Math.max(0, pendientes + stockMinimo - stock);
       return {
         id: sku,
         sku,
