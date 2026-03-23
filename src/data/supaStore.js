@@ -63,6 +63,7 @@ const EMPTY = {
   nominaRecibos: [], movContables: [], mermas: [], cuentasPorCobrar: [],
   cuentasPorPagar: [], pagosProveedores: [],
   costosFijos: [], costosHistorial: [],
+  camiones: [],
   invoiceAttempts: [],
   contabilidad: { ingresos: [], egresos: [] },
 };
@@ -101,7 +102,7 @@ export function useSupaStore(userId, userName) {
       ]);
 
       // Tablas opcionales
-      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts] = await Promise.all([
+      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam] = await Promise.all([
         safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('empleados').select('*').order('id')),
@@ -115,6 +116,7 @@ export function useSupaStore(userId, userName) {
         safeRows(supabase.from('cuentas_por_pagar').select('*').order('id', { ascending: false }).limit(500)),
         safeRows(supabase.from('pagos_proveedores').select('*').order('id', { ascending: false }).limit(200)),
         safeRows(supabase.from('invoice_attempts').select('orden_id, provider_reference, status, created_at, request_payload').order('id', { ascending: false }).limit(300)),
+        safeRows(supabase.from('camiones').select('*').order('id')),
       ]);
       const clientes  = cli;
       const productos = prod;
@@ -165,11 +167,18 @@ export function useSupaStore(userId, userName) {
         const cargaTxt = (cargaRaw && typeof cargaRaw === 'object')
           ? Object.entries(cargaRaw).map(([sku, qty]) => `${qty}×${sku}`).join(', ')
           : (cargaRaw ?? '');
+        const ayudante = r.ayudante_id ? (emp || []).find(e => e.id === r.ayudante_id) : null;
+        const camion = r.camion_id ? (cam || []).find(c => c.id === r.camion_id) : null;
         return {
           ...r,
           chofer: choferLabel,
           cargaTxt,
           choferId: r.chofer_id,
+          ayudanteId: r.ayudante_id,
+          ayudanteNombre: ayudante?.nombre || '',
+          camionId: r.camion_id,
+          camionNombre: camion?.nombre || '',
+          camionPlacas: camion?.placas || '',
           ordenes: linked.length,
           entregadas: linked.filter(o => o.estatus === 'Entregada' || o.estatus === 'Facturada').length,
         };
@@ -361,6 +370,7 @@ export function useSupaStore(userId, userName) {
           monto: Number(p.monto),
         })),
         invoiceAttempts: (invAttempts || []).map(toCamel),
+        camiones: (cam || []).map(toCamel),
         contabilidad: contabilidadObj,
       });
 
@@ -1161,6 +1171,8 @@ export function useSupaStore(userId, userName) {
           folio, 
           nombre: r.nombre, 
           chofer_id: r.choferId || null,
+          ayudante_id: r.ayudanteId || null,
+          camion_id: r.camionId || null,
           estatus: 'Programada', 
           carga: cargaObj,                     // JSONB: {"HC-25K": 50, ...}
           carga_autorizada: r.cargaAutorizada || cargaObj,
@@ -1242,6 +1254,8 @@ export function useSupaStore(userId, userName) {
         if (r.nombre    !== undefined) update.nombre    = r.nombre;
         if (r.choferId  !== undefined) update.chofer_id = r.choferId;
         if (r.chofer_id !== undefined) update.chofer_id = r.chofer_id;
+        if (r.ayudanteId !== undefined) update.ayudante_id = r.ayudanteId || null;
+        if (r.camionId   !== undefined) update.camion_id   = r.camionId || null;
         if (r.estatus   !== undefined) update.estatus   = r.estatus;
         if (r.carga     !== undefined) update.carga     = r.carga;
         if (r.cargaAutorizada !== undefined) update.carga_autorizada = r.cargaAutorizada;
@@ -1308,6 +1322,22 @@ export function useSupaStore(userId, userName) {
 
         const devTxt = Object.entries(devolucionObj).filter(([_,v]) => v > 0).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '0';
         log('Cerrar', 'Rutas', `Ruta #${rutaId} — devuelto: ${devTxt}`);
+        rf();
+      },
+
+      // ── CAMIONES ──
+      addCamion: async (c) => {
+        const { error } = await supabase.from('camiones').insert({
+          nombre: c.nombre, placas: c.placas || '', modelo: c.modelo || '', estatus: 'Activo',
+        });
+        if (error) { t()?.error('Error al crear camión'); return error; }
+        log('Crear', 'Camiones', c.nombre);
+        rf();
+      },
+      updateCamion: async (id, c) => {
+        const { error } = await supabase.from('camiones').update(c).eq('id', id);
+        if (error) { t()?.error('Error al actualizar camión'); return error; }
+        log('Editar', 'Camiones', `#${id}`);
         rf();
       },
 

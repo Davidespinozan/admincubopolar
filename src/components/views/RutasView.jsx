@@ -50,7 +50,7 @@ export function RutasView({ data, actions }) {
   const [editingRuta, setEditingRuta] = useState(null);
   const [errors, setErrors] = useState({});
   // Carga por producto: objeto con SKU como key; ordenesIds: array de IDs de órdenes seleccionadas
-  const [form, setForm] = useState({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});
+  const [form, setForm] = useState({nombre:"",choferId:"",ayudanteId:"",camionId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});
   const [searchOrden, setSearchOrden] = useState("");
   const [asignarModal, setAsignarModal] = useState(null);
   const [cierreModal, setCierreModal] = useState(null);
@@ -153,6 +153,14 @@ export function RutasView({ data, actions }) {
     .filter(u => s(u.rol) === "Chofer")
     .map(u => ({ value: String(u.id), label: s(u.nombre) })), [data.usuarios]);
 
+  const ayudantes = useMemo(() => (data.empleados || [])
+    .filter(e => s(e.puesto).toLowerCase().includes('ayudante') && s(e.estatus) === 'Activo')
+    .map(e => ({ value: String(e.id), label: s(e.nombre) })), [data.empleados]);
+
+  const camiones = useMemo(() => (data.camiones || [])
+    .filter(c => s(c.estatus) === 'Activo')
+    .map(c => ({ value: String(c.id), label: s(c.nombre) + (c.placas ? ` (${c.placas})` : '') })), [data.camiones]);
+
   const save = async () => {
     const e = {};
     if (!form.nombre.trim()) e.nombre = "Requerido";
@@ -210,6 +218,8 @@ export function RutasView({ data, actions }) {
       err = await actions.updateRuta(editingRuta.id, {
         nombre: form.nombre,
         choferId: Number(form.choferId),
+        ayudanteId: form.ayudanteId ? Number(form.ayudanteId) : null,
+        camionId: form.camionId ? Number(form.camionId) : null,
         estatus: form.estatus,
         carga: cargaTotal,
         cargaAutorizada,
@@ -223,6 +233,8 @@ export function RutasView({ data, actions }) {
       const result = await actions.addRuta({
         nombre: form.nombre,
         choferId: Number(form.choferId),
+        ayudanteId: form.ayudanteId ? Number(form.ayudanteId) : null,
+        camionId: form.camionId ? Number(form.camionId) : null,
         ordenes: 0,
         carga: cargaTotal,
         cargaAutorizada,
@@ -242,7 +254,7 @@ export function RutasView({ data, actions }) {
     toast?.success(editingRuta ? "Ruta actualizada" : "Ruta creada y carga autorizada");
     setModal(false);
     setEditingRuta(null);
-    setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});
+    setForm({nombre:"",choferId:"",ayudanteId:"",camionId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});
     setSearchOrden("");
     setErrors({});
   };
@@ -260,6 +272,8 @@ export function RutasView({ data, actions }) {
     setForm({
       nombre: s(ruta.nombre),
       choferId: String(ruta.choferId || ruta.chofer_id || ""),
+      ayudanteId: String(ruta.ayudanteId || ruta.ayudante_id || ""),
+      camionId: String(ruta.camionId || ruta.camion_id || ""),
       estatus: s(ruta.estatus) || "Programada",
       cargaPorProducto: cargaAutObj,
       extraPorProducto: extraObj,
@@ -349,7 +363,7 @@ export function RutasView({ data, actions }) {
 
   return (<div>
     {ConfirmEl}
-    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});setSearchOrden("");setModal(true);setErrors({})}} actionLabel="Autorizar ruta" extraButtons={exportBtns} />
+    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",ayudanteId:"",camionId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});setSearchOrden("");setModal(true);setErrors({})}} actionLabel="Autorizar ruta" extraButtons={exportBtns} />
 
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
       <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar ruta, folio o chofer..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
@@ -413,7 +427,9 @@ export function RutasView({ data, actions }) {
             </div>
           </div>
           <h3 className="text-base font-bold text-slate-800 mb-1">{s(r.nombre)}</h3>
-          <p className="text-xs text-slate-500 mb-3 truncate">{choferLabel(r)} · {rutaOrdenes.length} órdenes · {cargaLabel(r)}</p>
+          <p className="text-xs text-slate-500 mb-1 truncate">{choferLabel(r)}{r.ayudanteNombre ? ` + ${r.ayudanteNombre}` : ''} · {rutaOrdenes.length} órdenes · {cargaLabel(r)}</p>
+          {r.camionNombre && <p className="text-xs text-slate-400 mb-2 truncate">🚛 {r.camionNombre}{r.camionPlacas ? ` — ${r.camionPlacas}` : ''}</p>}
+          {!r.camionNombre && <div className="mb-2" />}
           <div className="flex items-center justify-between text-xs mb-1"><span className="text-slate-400">Entregas</span><span className="font-semibold">{entregadas}/{rutaOrdenes.length}</span></div>
           <CapacityBar pct={rutaOrdenes.length>0?(entregadas/rutaOrdenes.length)*100:0}/>
 
@@ -445,6 +461,8 @@ export function RutasView({ data, actions }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <FormInput label="Nombre de ruta *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Ej: Ruta Norte" error={errors.nombre} />
           <FormSelect label="Chofer *" options={[{value:"",label:"Seleccionar..."}, ...choferes]} value={form.choferId} onChange={e=>setForm({...form,choferId:e.target.value})} error={errors.choferId} />
+          <FormSelect label="Ayudante" options={[{value:"",label:"Sin ayudante"}, ...ayudantes]} value={form.ayudanteId} onChange={e=>setForm({...form,ayudanteId:e.target.value})} />
+          <FormSelect label="Camión" options={[{value:"",label:"Seleccionar camión..."}, ...camiones]} value={form.camionId} onChange={e=>setForm({...form,camionId:e.target.value})} />
         </div>
         {editingRuta && <FormSelect label="Estatus" options={["Programada","En progreso","Completada","Cerrada","Cancelada"]} value={form.estatus} onChange={e=>setForm({...form,estatus:e.target.value})} />}
 
@@ -654,6 +672,8 @@ export function RutasView({ data, actions }) {
             <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Resumen de ruta</h4>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div><span className="text-slate-400">Chofer:</span> <span className="font-semibold">{choferLabel(detalleModal)}</span></div>
+              <div><span className="text-slate-400">Ayudante:</span> <span className="font-semibold">{detalleModal.ayudanteNombre || '—'}</span></div>
+              <div><span className="text-slate-400">Camión:</span> <span className="font-semibold">{detalleModal.camionNombre ? `${detalleModal.camionNombre}${detalleModal.camionPlacas ? ` (${detalleModal.camionPlacas})` : ''}` : '—'}</span></div>
               <div><span className="text-slate-400">Carga:</span> <span className="font-semibold">{cargaLabel(detalleModal)}</span></div>
               <div><span className="text-slate-400">Órdenes:</span> <span className="font-semibold">{n(detalleModal.ordenes)}</span></div>
               <div><span className="text-slate-400">Entregadas:</span> <span className="font-semibold">{n(detalleModal.entregadas)}</span></div>
