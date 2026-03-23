@@ -115,6 +115,10 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   const [view, setView] = useState('dashboard');
   const [moreOpen, setMoreOpen] = useState(false);
   const [alertasOpen, setAlertasOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+
+  const notifNoLeidas = useMemo(() => (data.notificaciones || []).filter(n => !n.leida), [data.notificaciones]);
+  const notifRecientes = useMemo(() => (data.notificaciones || []).slice(0, 30), [data.notificaciones]);
 
   const vp = useMemo(() => ({ data, actions, user }), [data, actions, user]);
   const alertasActivas = useMemo(() => {
@@ -126,18 +130,19 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   }, [data.alertas]);
 
   useEffect(() => {
-    if (!alertasOpen && !moreOpen) return undefined;
+    if (!alertasOpen && !moreOpen && !notifOpen) return undefined;
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         setAlertasOpen(false);
         setMoreOpen(false);
+        setNotifOpen(false);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [alertasOpen, moreOpen]);
+  }, [alertasOpen, moreOpen, notifOpen]);
 
   const renderView = () => {
     switch (view) {
@@ -248,7 +253,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             <p className="font-display truncate text-base font-bold tracking-[-0.04em] text-slate-900 lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
           </div>
           <div className="relative flex flex-shrink-0 items-center gap-2">
-            <button onClick={() => setAlertasOpen(!alertasOpen)} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
+            <button onClick={() => { setAlertasOpen(!alertasOpen); setNotifOpen(false); }} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
               <Icons.Bell />{alertasActivas.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />}
             </button>
             {alertasOpen && (
@@ -272,6 +277,40 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
               </div>
             )}
             {alertasOpen && <div className="fixed inset-0 z-[60]" onClick={() => setAlertasOpen(false)} aria-hidden="true" />}
+            {/* Notification bell */}
+            <button onClick={() => { setNotifOpen(!notifOpen); setAlertasOpen(false); }} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Notificaciones" aria-label="Notificaciones">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+              {notifNoLeidas.length > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-blue-600 text-white text-[10px] font-bold rounded-full px-1">{notifNoLeidas.length > 9 ? '9+' : notifNoLeidas.length}</span>}
+            </button>
+            {notifOpen && (
+              <div className="erp-panel absolute right-0 top-12 z-[70] max-h-[28rem] w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] sm:w-96 md:w-[24rem]" role="dialog" aria-modal="false" aria-label="Notificaciones">
+                <div className="border-b border-slate-200/80 px-4 py-3.5 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">Notificaciones</p>
+                    <p className="mt-0.5 text-xs text-slate-500">{notifNoLeidas.length > 0 ? `${notifNoLeidas.length} sin leer` : 'Al día'}</p>
+                  </div>
+                  {notifNoLeidas.length > 0 && <button onClick={() => actions.marcarTodasLeidas()} className="text-xs text-blue-600 font-semibold hover:text-blue-800">Marcar todas</button>}
+                </div>
+                {notifRecientes.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-slate-400">Sin notificaciones</div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {notifRecientes.map(nt => (
+                      <div key={nt.id} className={`px-4 py-3 flex gap-3 items-start cursor-pointer hover:bg-slate-50 transition-colors ${!nt.leida ? 'bg-blue-50/50' : ''}`} onClick={() => !nt.leida && actions.marcarNotifLeida(nt.id)}>
+                        <span className="text-lg flex-shrink-0 mt-0.5">{nt.icono || '🔔'}</span>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-sm ${!nt.leida ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>{nt.titulo}</p>
+                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{nt.mensaje}</p>
+                          <p className="text-[10px] text-slate-400 mt-1">{nt.createdAt ? new Date(nt.createdAt).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                        </div>
+                        {!nt.leida && <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-2" />}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {notifOpen && <div className="fixed inset-0 z-[60]" onClick={() => setNotifOpen(false)} aria-hidden="true" />}
             <div className="hidden lg:flex items-center gap-2 ml-2 pl-3 border-l border-slate-200">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-cyan-200">{user?.nombre?.[0] || "A"}</div>
               <span className="text-sm font-semibold text-slate-700">{user?.nombre || "Admin"}</span>

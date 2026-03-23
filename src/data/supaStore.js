@@ -65,6 +65,7 @@ const EMPTY = {
   costosFijos: [], costosHistorial: [],
   camiones: [],
   invoiceAttempts: [],
+  notificaciones: [],
   contabilidad: { ingresos: [], egresos: [] },
 };
 
@@ -102,7 +103,7 @@ export function useSupaStore(userId, userName) {
       ]);
 
       // Tablas opcionales
-      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam] = await Promise.all([
+      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam, notif] = await Promise.all([
         safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('empleados').select('*').order('id')),
@@ -117,6 +118,7 @@ export function useSupaStore(userId, userName) {
         safeRows(supabase.from('pagos_proveedores').select('*').order('id', { ascending: false }).limit(200)),
         safeRows(supabase.from('invoice_attempts').select('orden_id, provider_reference, status, created_at, request_payload').order('id', { ascending: false }).limit(300)),
         safeRows(supabase.from('camiones').select('*').order('id')),
+        safeRows(supabase.from('notificaciones').select('*').order('id', { ascending: false }).limit(100)),
       ]);
       const clientes  = cli;
       const productos = prod;
@@ -282,6 +284,40 @@ export function useSupaStore(userId, userName) {
         }
       }
 
+      // ── Alertas de complemento pendiente (PPD sin complemento) ──
+      const complementoMap = {};
+      for (const a of (invAttempts || [])) {
+        const payload = a.request_payload || {};
+        if (payload.CfdiType === 'P' && a.orden_id && a.status === 'success') {
+          complementoMap[a.orden_id] = true;
+        }
+      }
+      for (const o of ordenes) {
+        if (o.facturama_id && s(o.metodo_pago).toLowerCase().includes('crédito') && !complementoMap[o.id]) {
+          alertas.push({
+            id: `comp-${o.id}`,
+            tipo: 'accionable',
+            msg: `Complemento pendiente — ${s(o.folio)} (PPD)`,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      // ── Alertas de CxC próximas a vencer ──
+      const hoyStr = new Date().toISOString().slice(0, 10);
+      for (const c of (cxc || [])) {
+        if (c.estatus === 'Pagada') continue;
+        const venc = s(c.fecha_vencimiento);
+        if (venc && venc <= hoyStr) {
+          alertas.push({
+            id: `cxc-${c.id}`,
+            tipo: 'critica',
+            msg: `CxC vencida — ${s(c.concepto)} — $${Number(c.saldo_pendiente).toLocaleString()}`,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+
       // ── Map auditoria (usa "usuario" como texto directo) ──
       const auditoria = (aud || []).map(a => ({
         ...a,
@@ -371,6 +407,7 @@ export function useSupaStore(userId, userName) {
         })),
         invoiceAttempts: (invAttempts || []).map(toCamel),
         camiones: (cam || []).map(toCamel),
+        notificaciones: (notif || []).map(toCamel),
         contabilidad: contabilidadObj,
       });
 
@@ -445,6 +482,10 @@ export function useSupaStore(userId, userName) {
     const t     = () => toastRef.current;
     const log   = (accion, modulo, detalle) =>
       supabase.from('auditoria').insert({ usuario: uname(), accion, modulo, detalle }).then(() => {});
+
+    // Helper: insert notification (fire-and-forget, never blocks caller)
+    const notify = (tipo, titulo, mensaje, icono, referencia) =>
+      supabase.from('notificaciones').insert({ tipo, titulo, mensaje, icono, referencia }).then(() => {});
 
     const a = actionsRef.current = {
 
@@ -632,6 +673,7 @@ export function useSupaStore(userId, userName) {
         );
 
         await log('Crear', 'Órdenes', `${folio} — $${total}`);
+        notify('venta', 'Nueva orden creada', `${folio} — ${clienteNombre} — $${total.toLocaleString()}`, '🧾', folio);
 
         if (!e2) rf();
         if (e2) return e2;
@@ -702,6 +744,7 @@ export function useSupaStore(userId, userName) {
                 if (cxcError) {
                   downstreamError = cxcError;
                 } else {
+                  notify('credito', 'Venta a crédito', `${s(ord.folio)} — ${cli?.nombre || 'Cliente'} — $${n(ord.total).toLocaleString()} a 30 días`, '💳', s(ord.folio));
                   const { error: saldoError } = await supabase.rpc('increment_saldo', {
                     p_cli: ord.cliente_id,
                     p_delta: centavos(n(ord.total)),
@@ -772,6 +815,7 @@ export function useSupaStore(userId, userName) {
         });
         if (error) { t()?.error('Error al registrar producción'); return error; }
         log('Producir', 'Producción', `${folio} — ${p.sku} x${Number(p.cantidad)}`);
+        notify('produccion', 'Producción registrada', `${folio} — ${Number(p.cantidad).toLocaleString()} ${p.sku}`, '🏭', folio);
 
         const qty = Number(p.cantidad || 0);
         if (qty > 0) {
@@ -870,6 +914,7 @@ export function useSupaStore(userId, userName) {
         }
         
         log('Confirmar', 'Producción', `ID ${id}`);
+        notify('produccion', 'Producción confirmada', `Orden ${prod?.folio || id} confirmada`, '✅', prod?.folio || String(id));
         rf();
       },
 
@@ -1426,6 +1471,40 @@ export function useSupaStore(userId, userName) {
         }
         // Backend already updates estatus to 'Facturada' and saves facturama_id
         log('Timbrar', 'Facturación', `${folio}`);
+        notify('factura', 'Factura timbrada', `CFDI generado para ${folio}`, '📄', folio);
+        rf();
+      },
+
+      generarComplementoManual: async (ordenId) => {
+        const { data: ord } = await supabase.from('ordenes').select('facturama_uuid, folio').eq('id', ordenId).single();
+        if (!ord?.facturama_uuid) { t()?.error('La orden no tiene UUID de factura'); return { message: 'Sin UUID' }; }
+        // Find the latest CxC for this order
+        const { data: cxc } = await supabase.from('cuentas_por_cobrar').select('*').eq('orden_id', ordenId).order('id', { ascending: false }).limit(1).single();
+        if (!cxc) { t()?.error('No se encontró cuenta por cobrar para esta orden'); return { message: 'Sin CxC' }; }
+        try {
+          await backendPost('billing-create-complemento', {
+            cxcId: cxc.id,
+            monto: Number(cxc.monto_pagado || cxc.monto_original),
+            metodoPago: 'Transferencia',
+            saldoAntes: Number(cxc.monto_original),
+            saldoDespues: Number(cxc.saldo_pendiente),
+          });
+          notify('complemento', 'Complemento generado', `Complemento de pago para ${s(ord.folio)}`, '📎', s(ord.folio));
+          log('Complemento', 'Facturación', `Orden ${ordenId}`);
+          rf();
+        } catch (err) {
+          t()?.error('Error al generar complemento: ' + (err.message || ''));
+          return err;
+        }
+      },
+
+      // ── NOTIFICACIONES ──
+      marcarNotifLeida: async (id) => {
+        await supabase.from('notificaciones').update({ leida: true }).eq('id', id);
+        rf();
+      },
+      marcarTodasLeidas: async () => {
+        await supabase.from('notificaciones').update({ leida: true }).eq('leida', false);
         rf();
       },
 
@@ -1551,6 +1630,7 @@ export function useSupaStore(userId, userName) {
         }
 
         log('Cobrar', 'Cuentas por Cobrar', `CxC #${cxcId} — $${monto} — ${nuevoEstatus}`);
+        notify('cobro', 'Cobro registrado', `$${n(monto).toLocaleString()} cobrado — ${nuevoEstatus}`, '💰', String(cxcId));
         rf();
       },
 
@@ -2392,6 +2472,7 @@ export function useSupaStore(userId, userName) {
           }
 
           await log('Cierre Ruta', 'Rutas', `Chofer: ${choferNombre}, Entregas: ${(entregas || []).length}, Mermas: ${(mermasArr || []).length}, Efectivo: $${cobros?.Efectivo || 0}`);
+          notify('venta', 'Ruta cerrada', `${choferNombre} cerró ruta — ${(entregas || []).length} entregas, $${(cobros?.Efectivo || 0).toLocaleString()} efectivo`, '🚛', String(rutaId));
           rf();
         } catch (err) {
           for (const ord of updatedOrders.reverse()) {
