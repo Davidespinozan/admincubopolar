@@ -245,6 +245,34 @@ export function useSupaStore(userId, userName) {
         return null;
       }).filter(Boolean);
 
+      // ── Alertas de producción por stock mínimo ──
+      const estatusPend = new Set(["creada", "asignada", "pendiente", "en proceso", "en_proceso", "enprogreso"]);
+      const pendPorSku = {};
+      for (const o of ordenesMapped) {
+        if (!estatusPend.has(s(o.estatus).toLowerCase())) continue;
+        for (const ln of (o.preciosSnapshot || [])) {
+          const sku = s(ln.sku);
+          if (sku) pendPorSku[sku] = (pendPorSku[sku] || 0) + Number(ln.qty || ln.cantidad || 0);
+        }
+      }
+      const prodTerminados = productos.filter(p => s(p.tipo) === 'Producto Terminado');
+      for (const p of prodTerminados) {
+        const minimo = Number(p.stock_minimo) || 0;
+        if (minimo <= 0) continue;
+        const sku = s(p.sku);
+        const stock = cfStockMap[sku] !== undefined ? cfStockMap[sku] : Number(p.stock);
+        const pend = pendPorSku[sku] || 0;
+        const faltante = pend + minimo - stock;
+        if (faltante > 0) {
+          alertas.push({
+            id: `prod-min-${sku}`,
+            tipo: 'accionable',
+            msg: `Producir ${faltante.toLocaleString()} ${p.nombre} — stock ${stock}, mín ${minimo}, pedidos ${pend}`,
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+
       // ── Map auditoria (usa "usuario" como texto directo) ──
       const auditoria = (aud || []).map(a => ({
         ...a,
