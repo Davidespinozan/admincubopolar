@@ -1475,22 +1475,23 @@ export function useSupaStore(userId, userName) {
         rf();
       },
 
-      generarComplementoManual: async (ordenId) => {
+      reintentarComplemento: async (ordenId) => {
         const { data: ord } = await supabase.from('ordenes').select('facturama_uuid, folio').eq('id', ordenId).single();
         if (!ord?.facturama_uuid) { t()?.error('La orden no tiene UUID de factura'); return { message: 'Sin UUID' }; }
-        // Find the latest CxC for this order
         const { data: cxc } = await supabase.from('cuentas_por_cobrar').select('*').eq('orden_id', ordenId).order('id', { ascending: false }).limit(1).single();
         if (!cxc) { t()?.error('No se encontró cuenta por cobrar para esta orden'); return { message: 'Sin CxC' }; }
+        if (Number(cxc.monto_pagado) <= 0) { t()?.error('No hay pagos registrados para generar complemento'); return { message: 'Sin pagos' }; }
         try {
           await backendPost('billing-create-complemento', {
             cxcId: cxc.id,
-            monto: Number(cxc.monto_pagado || cxc.monto_original),
+            monto: Number(cxc.monto_pagado),
             metodoPago: 'Transferencia',
             saldoAntes: Number(cxc.monto_original),
             saldoDespues: Number(cxc.saldo_pendiente),
           });
-          notify('complemento', 'Complemento generado', `Complemento de pago para ${s(ord.folio)}`, '📎', s(ord.folio));
-          log('Complemento', 'Facturación', `Orden ${ordenId}`);
+          notify('complemento', 'Complemento generado', `Complemento de pago para ${s(ord.folio)} (reintento)`, '📎', String(ordenId));
+          t()?.success('Complemento de pago generado exitosamente');
+          log('Complemento', 'Facturación', `Reintento orden ${ordenId}`);
           rf();
         } catch (err) {
           t()?.error('Error al generar complemento: ' + (err.message || ''));
@@ -1605,11 +1606,11 @@ export function useSupaStore(userId, userName) {
           }
         }
 
-        // Generar Complemento de Pago (CFDI tipo P) si la orden tiene factura PPD timbrada
+        // Generar Complemento de Pago (CFDI tipo P) automáticamente si la orden tiene factura PPD timbrada
         if (cxc.orden_id) {
           const { data: ordenFacturada } = await supabase
             .from('ordenes')
-            .select('facturama_uuid, metodo_pago')
+            .select('facturama_uuid, metodo_pago, folio')
             .eq('id', cxc.orden_id)
             .maybeSingle();
           const esPPD = s(ordenFacturada?.metodo_pago).toLowerCase().includes('crédito');
@@ -1622,9 +1623,12 @@ export function useSupaStore(userId, userName) {
                 saldoAntes: cxc.saldo_pendiente,
                 saldoDespues: Math.max(0, nuevoSaldo),
               });
+              notify('complemento', 'Complemento generado', `Complemento de pago automático para ${s(ordenFacturada.folio)}`, '📎', String(cxc.orden_id));
+              t()?.success('Complemento de pago generado automáticamente');
             } catch (compErr) {
-              // No bloqueamos el cobro si falla el complemento — se puede timbrar manualmente
-              console.warn('[cobrarCxC] Complemento de pago no generado:', compErr.message);
+              // El cobro ya se registró — notificamos el fallo para reintento manual
+              notify('complemento_error', 'Error en complemento', `No se pudo generar complemento para ${s(ordenFacturada.folio)}: ${compErr.message || 'Error desconocido'}`, '⚠️', String(cxc.orden_id));
+              t()?.error('Cobro registrado, pero falló el complemento. Puede reintentarse desde Facturación.');
             }
           }
         }

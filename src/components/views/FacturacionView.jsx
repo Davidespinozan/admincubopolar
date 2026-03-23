@@ -18,11 +18,9 @@ export function FacturacionView({ data, actions }) {
     setPreviewOrden(null);
   }, [actions, toast]);
 
-  const handleComplemento = useCallback(async (ordenId) => {
-    const err = await actions.generarComplementoManual?.(ordenId);
-    if (!err) toast?.success('Complemento de pago generado');
-    else toast?.error('Error al generar complemento');
-  }, [actions, toast]);
+const handleReintento = useCallback(async (ordenId) => {
+      await actions.reintentarComplemento?.(ordenId);
+    }, [actions]);
 
   // Órdenes ya timbradas
   const ordenesTimbradas = useMemo(() => (data.ordenes || []).filter(o => o.facturama_id), [data.ordenes]);
@@ -108,8 +106,8 @@ export function FacturacionView({ data, actions }) {
                   {esPPD && (
                     tieneComplemento ?
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">✓ Complemento</span> :
-                      <button onClick={() => handleComplemento(o.id)} className="text-[10px] font-bold px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
-                        ⚠ Generar complemento
+                        <button onClick={() => handleReintento(o.id)} className="text-[10px] font-bold px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
+                          ⚠ Reintentar complemento
                       </button>
                   )}
                   {!esPPD && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">✓ Pagado</span>}
