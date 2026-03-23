@@ -248,7 +248,7 @@ export function useSupaStore(userId, userName) {
       // ── Alertas de producción por stock mínimo ──
       const estatusPend = new Set(["creada", "asignada", "pendiente", "en proceso", "en_proceso", "enprogreso"]);
       const pendPorSku = {};
-      for (const o of ordenesMapped) {
+      for (const o of ordenes) {
         if (!estatusPend.has(s(o.estatus).toLowerCase())) continue;
         for (const ln of (o.preciosSnapshot || [])) {
           const sku = s(ln.sku);
