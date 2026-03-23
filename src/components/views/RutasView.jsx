@@ -58,6 +58,8 @@ export function RutasView({ data, actions }) {
   const [cierreForm, setCierreForm] = useState({devolucionPorProducto:{}});
   const [search, setSearch] = useState("");
   const [filterEst, setFilterEst] = useState("");
+  const [nuevoCamion, setNuevoCamion] = useState(false);
+  const [camionForm, setCamionForm] = useState({nombre:"",placas:"",modelo:""});
   const [mapaVisible, setMapaVisible] = useState(false);
   const dSearch = useDebounce(search);
 
@@ -462,7 +464,30 @@ export function RutasView({ data, actions }) {
           <FormInput label="Nombre de ruta *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Ej: Ruta Norte" error={errors.nombre} />
           <FormSelect label="Chofer *" options={[{value:"",label:"Seleccionar..."}, ...choferes]} value={form.choferId} onChange={e=>setForm({...form,choferId:e.target.value})} error={errors.choferId} />
           <FormSelect label="Ayudante" options={[{value:"",label:"Sin ayudante"}, ...ayudantes]} value={form.ayudanteId} onChange={e=>setForm({...form,ayudanteId:e.target.value})} />
-          <FormSelect label="Camión" options={[{value:"",label:"Seleccionar camión..."}, ...camiones]} value={form.camionId} onChange={e=>setForm({...form,camionId:e.target.value})} />
+          <div>
+            <FormSelect label="Camión" options={[{value:"",label:"Seleccionar camión..."}, ...camiones]} value={form.camionId} onChange={e=>setForm({...form,camionId:e.target.value})} />
+            {!nuevoCamion && <button type="button" onClick={()=>setNuevoCamion(true)} className="text-xs text-blue-600 font-semibold mt-1">+ Nuevo camión</button>}
+            {nuevoCamion && (
+              <div className="mt-2 bg-blue-50 rounded-xl p-3 space-y-2">
+                <p className="text-xs font-bold text-blue-700">Registrar camión</p>
+                <input value={camionForm.nombre} onChange={e=>setCamionForm({...camionForm,nombre:e.target.value})} placeholder="Nombre (ej: Camión 1)" className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input value={camionForm.placas} onChange={e=>setCamionForm({...camionForm,placas:e.target.value})} placeholder="Placas" className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white" />
+                  <input value={camionForm.modelo} onChange={e=>setCamionForm({...camionForm,modelo:e.target.value})} placeholder="Modelo" className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white" />
+                </div>
+                <div className="flex gap-2">
+                  <button type="button" onClick={async()=>{
+                    if(!camionForm.nombre.trim()){toast?.error('Nombre requerido');return;}
+                    await actions.addCamion(camionForm);
+                    toast?.success('Camión registrado');
+                    setCamionForm({nombre:"",placas:"",modelo:""});
+                    setNuevoCamion(false);
+                  }} className="flex-1 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg">Guardar</button>
+                  <button type="button" onClick={()=>{setNuevoCamion(false);setCamionForm({nombre:"",placas:"",modelo:""})}} className="flex-1 py-2 bg-slate-200 text-slate-600 text-xs font-semibold rounded-lg">Cancelar</button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
         {editingRuta && <FormSelect label="Estatus" options={["Programada","En progreso","Completada","Cerrada","Cancelada"]} value={form.estatus} onChange={e=>setForm({...form,estatus:e.target.value})} />}
 
