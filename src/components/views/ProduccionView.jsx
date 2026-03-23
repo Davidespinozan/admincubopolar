@@ -9,6 +9,39 @@ export function ProduccionView({ data, actions }) {
   const [errors, setErrors] = useState({});
   const [form, setForm] = useState({turno:"Matutino",maquina:"Máquina 30",sku:"HC-25K",cantidad:""});
 
+  // ── Editar / Eliminar ──
+  const [editModal, setEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({id:null,turno:"",maquina:"",sku:"",cantidad:"",estatus:""});
+  const [editErrors, setEditErrors] = useState({});
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // id to delete
+
+  const openEdit = (r) => {
+    setEditForm({id:r.id, turno:r.turno||"Matutino", maquina:r.maquina||"Máquina 30", sku:r.sku||"HC-25K", cantidad:String(r.cantidad||""), estatus:r.estatus||"En proceso"});
+    setEditErrors({});
+    setEditModal(true);
+  };
+
+  const saveEdit = async () => {
+    const e = {};
+    if (!editForm.cantidad || n(editForm.cantidad) <= 0) e.cantidad = "Cantidad debe ser mayor a 0";
+    if (Object.keys(e).length) { setEditErrors(e); return; }
+    const err = await actions.updateProduccion(editForm.id, {
+      turno: editForm.turno, maquina: editForm.maquina,
+      sku: editForm.sku, cantidad: editForm.cantidad, estatus: editForm.estatus,
+    });
+    if (err) { toast?.error("No se pudo actualizar la orden"); return; }
+    toast?.success("Orden actualizada");
+    setEditModal(false);
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm) return;
+    const err = await actions.deleteProduccion(deleteConfirm);
+    if (err) { toast?.error("No se pudo eliminar la orden"); return; }
+    toast?.success("Orden eliminada");
+    setDeleteConfirm(null);
+  };
+
   const empaqueMap = {"HC-25K":"EMP-25","HC-5K":"EMP-5","HT-25K":"EMP-25","BH-50K":null};
   const bolsaNecesaria = empaqueMap[form.sku] || null;
   const stockBolsa = useMemo(() => {
@@ -160,10 +193,18 @@ export function ProduccionView({ data, actions }) {
           {key:"sku",label:"SKU",render:v=><span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded-md">{s(v)}</span>},
           {key:"cantidad",label:"Qty",render:v=><span className="font-semibold">{n(v).toLocaleString()}</span>},
           {key:"estatus",label:"Estatus",badge:true,render:(v,r)=><div className="flex items-center gap-2"><StatusBadge status={v}/><span className="hidden md:inline">{v==="En proceso"&&<button onClick={(e)=>{e.stopPropagation();actions.confirmarProduccion(r.id)}} className="text-xs text-blue-600 font-semibold hover:text-blue-800 px-2.5 py-0.5">Confirmar ✓</button>}</span></div>},
+          {key:"_actions",label:"",render:(_,r)=><div className="flex items-center gap-1">
+            <button onClick={(e)=>{e.stopPropagation();openEdit(r)}} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
+            <button onClick={(e)=>{e.stopPropagation();setDeleteConfirm(r.id)}} title="Eliminar" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
+          </div>},
         ]} data={prodNormal}
         cardSubtitle={r => <div>
           <span className="text-xs text-slate-400">{fmtDate(r.fecha)} · {s(r.turno)} · {s(r.sku)}</span>
-          {r.estatus==="En proceso"&&<button onClick={(e)=>{e.stopPropagation();actions.confirmarProduccion(r.id)}} className="mt-2 w-full text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-2.5 rounded-lg min-h-[44px]">Confirmar producción ✓</button>}
+          <div className="flex gap-2 mt-2">
+            {r.estatus==="En proceso"&&<button onClick={(e)=>{e.stopPropagation();actions.confirmarProduccion(r.id)}} className="flex-1 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-2.5 rounded-lg min-h-[44px]">Confirmar ✓</button>}
+            <button onClick={(e)=>{e.stopPropagation();openEdit(r)}} className="text-xs font-semibold text-slate-600 bg-slate-50 px-3 py-2.5 rounded-lg min-h-[44px]">Editar</button>
+            <button onClick={(e)=>{e.stopPropagation();setDeleteConfirm(r.id)}} className="text-xs font-semibold text-red-600 bg-red-50 px-3 py-2.5 rounded-lg min-h-[44px]">Eliminar</button>
+          </div>
         </div>}
         />
       </div>
@@ -346,6 +387,27 @@ export function ProduccionView({ data, actions }) {
       <div className="flex justify-end gap-2 mt-5">
         <FormBtn onClick={() => setTModal(false)}>Cancelar</FormBtn>
         <FormBtn primary onClick={saveTransformacion}>Registrar transformación</FormBtn>
+      </div>
+    </Modal>
+
+    {/* ═══ MODAL: Editar orden de producción ═══ */}
+    <Modal open={editModal} onClose={()=>setEditModal(false)} title="Editar orden de producción">
+      <div className="space-y-3">
+        <FormSelect label="Estatus" options={["En proceso","Confirmada","Cancelada"]} value={editForm.estatus} onChange={e=>setEditForm({...editForm,estatus:e.target.value})} />
+        <FormSelect label="Turno" options={["Matutino","Vespertino"]} value={editForm.turno} onChange={e=>setEditForm({...editForm,turno:e.target.value})} />
+        <FormSelect label="Máquina" options={["Máquina 30","Máquina 20","Máquina 15"]} value={editForm.maquina} onChange={e=>setEditForm({...editForm,maquina:e.target.value})} />
+        <FormSelect label="SKU" options={skuOptions} value={editForm.sku} onChange={e=>setEditForm({...editForm,sku:e.target.value})} />
+        <FormInput label="Cantidad *" type="number" value={editForm.cantidad} onChange={e=>setEditForm({...editForm,cantidad:e.target.value})} placeholder="Ej: 500" error={editErrors.cantidad} />
+      </div>
+      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setEditModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={saveEdit}>Guardar cambios</FormBtn></div>
+    </Modal>
+
+    {/* ═══ MODAL: Confirmar eliminación ═══ */}
+    <Modal open={!!deleteConfirm} onClose={()=>setDeleteConfirm(null)} title="Eliminar orden de producción">
+      <p className="text-sm text-slate-600">¿Estás seguro de que deseas eliminar esta orden? Esta acción no se puede deshacer.</p>
+      <div className="flex justify-end gap-2 mt-5">
+        <FormBtn onClick={()=>setDeleteConfirm(null)}>Cancelar</FormBtn>
+        <FormBtn primary onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Eliminar</FormBtn>
       </div>
     </Modal>
   </div>);

@@ -873,6 +873,17 @@ export function useSupaStore(userId, userName) {
         rf();
       },
 
+      updateProduccion: async (id, fields) => {
+        const allowed = ['turno','maquina','sku','cantidad','estatus'];
+        const upd = {};
+        for (const k of allowed) if (fields[k] !== undefined) upd[k] = fields[k];
+        if (upd.cantidad) upd.cantidad = Number(upd.cantidad);
+        const { error } = await supabase.from('produccion').update(upd).eq('id', id);
+        if (error) { t()?.error('Error al actualizar producción'); return error; }
+        log('Editar', 'Producción', `ID ${id}`);
+        rf();
+      },
+
       deleteProduccion: async (id) => {
         const { error } = await supabase.from('produccion').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar registro de producción'); return error; }
