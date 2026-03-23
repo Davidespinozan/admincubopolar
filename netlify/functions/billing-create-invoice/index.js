@@ -69,8 +69,8 @@ const buildFacturamaPayload = ({ orden, cliente, lineas }) => {
     const unitPrice = Number(linea.precio_unit || 0);
     const quantity = Number(linea.cantidad || 0);
     const subtotal = Number(linea.subtotal || unitPrice * quantity);
-    // Prices in DB are already before tax (precio_unit * qty = subtotal, orden.total = subtotal * 1.16)
-    const taxAmount = Number((subtotal * 0.16).toFixed(2));
+    // Hielo: IVA tasa 0% (Art. 2-A LIVA)
+    const taxAmount = 0;
 
     const catalog = PRODUCT_CATALOG[linea.sku] || {};
     return {
@@ -86,13 +86,13 @@ const buildFacturamaPayload = ({ orden, cliente, lineas }) => {
       Taxes: [
         {
           Name: 'IVA',
-          Rate: 0.16,
-          Total: taxAmount,
+          Rate: 0.0,
+          Total: 0,
           Base: subtotal,
           IsRetention: false,
         },
       ],
-      Total: Number((subtotal + taxAmount).toFixed(2)),
+      Total: subtotal, // IVA tasa 0%
     };
   });
 

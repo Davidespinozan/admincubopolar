@@ -104,13 +104,12 @@ describe('isPPD', () => {
 
 // ─── calcIVA ──────────────────────────────────────────────────
 describe('calcIVA', () => {
-  it('calcula 16% de IVA correctamente', () => {
-    expect(calcIVA(1000)).toBe(160);
+  it('devuelve 0 — hielo tasa 0%', () => {
+    expect(calcIVA(1000)).toBe(0);
   });
 
-  it('redondea a 2 decimales (sin drift de float)', () => {
-    // 86.21 × 0.16 = 13.7936 → 13.79
-    expect(calcIVA(86.21)).toBe(13.79);
+  it('devuelve 0 para cualquier subtotal', () => {
+    expect(calcIVA(86.21)).toBe(0);
   });
 
   it('devuelve 0 para subtotal 0', () => {
@@ -132,15 +131,15 @@ describe('buildCfdiItem', () => {
     nombre_producto: 'Bolsa de hielo 5kg',
   };
 
-  it('calcula Total = Subtotal + IVA', () => {
+  it('calcula Total = Subtotal (IVA tasa 0%)', () => {
     const item = buildCfdiItem(linea, catalog);
-    expect(item.Total).toBe(580); // 500 + 80
+    expect(item.Total).toBe(500); // 500 + 0
   });
 
-  it('incluye IVA 16% en Taxes', () => {
+  it('incluye IVA tasa 0% en Taxes', () => {
     const item = buildCfdiItem(linea, catalog);
-    expect(item.Taxes[0].Rate).toBe(0.16);
-    expect(item.Taxes[0].Total).toBe(80);
+    expect(item.Taxes[0].Rate).toBe(0.0);
+    expect(item.Taxes[0].Total).toBe(0);
     expect(item.Taxes[0].Base).toBe(500);
   });
 

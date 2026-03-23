@@ -38,10 +38,10 @@ const buildComplementoPayload = ({ orden, cliente, monto, metodoPago, saldoAntes
   const rawRegime = cliente?.regimen || '';
   const fiscalRegime = REGIME_CODE_MAP[rawRegime] || (/^\d{3}$/.test(rawRegime) ? rawRegime : '616');
 
-  // IVA breakdown within the payment
+  // Hielo: IVA tasa 0% — el monto completo es base
   const montoNum = Number(monto);
-  const base = Number((montoNum / 1.16).toFixed(6));
-  const iva  = Number((montoNum - base).toFixed(2));
+  const base = montoNum;
+  const iva  = 0;
 
   const paymentDate = new Date().toISOString().replace('Z', '');
 
@@ -75,9 +75,9 @@ const buildComplementoPayload = ({ orden, cliente, monto, metodoPago, saldoAntes
             Taxes: [
               {
                 Name: 'IVA',
-                Rate: 0.16,
+                Rate: 0.0,
                 Base: base,
-                Total: iva,
+                Total: 0,
                 IsRetention: false,
               },
             ],

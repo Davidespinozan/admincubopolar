@@ -63,12 +63,13 @@ export function isPPD(metodoPago) {
 }
 
 /**
- * Calcula el IVA (16%) de un subtotal.
+ * Calcula el IVA de un subtotal.
+ * Hielo y agua no gasificada: tasa 0% (Art. 2-A LIVA).
  * @param {number} subtotal — precio sin impuesto
  * @returns {number}
  */
 export function calcIVA(subtotal) {
-  return Number((Number(subtotal) * 0.16).toFixed(2));
+  return 0; // Hielo: IVA tasa 0%
 }
 
 /**
@@ -96,11 +97,11 @@ export function buildCfdiItem(linea, catalog = {}) {
     TaxObject:            '02',
     Taxes: [{
       Name:        'IVA',
-      Rate:        0.16,
-      Total:       taxAmount,
+      Rate:        0.0,
+      Total:       0,
       Base:        subtotal,
       IsRetention: false,
     }],
-    Total: Number((subtotal + taxAmount).toFixed(2)),
+    Total: subtotal, // IVA tasa 0% — total = subtotal
   };
 }

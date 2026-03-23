@@ -303,14 +303,13 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }
     const precio = getPrice(clienteNombre, sku);
     const subtotal = n(vForm.cant) * precio;
-    const iva = Math.round(subtotal * 16) / 100;
-    const total = subtotal + iva;
+    const total = subtotal; // Hielo: IVA tasa 0%
     const venta = {
       id: Date.now(), folio: "EX-" + String(Date.now()).slice(-4),
       clienteId: vForm.clienteId || clienteExpressSel?.id || null,
       cliente: clienteNombre,
       items: [{ sku, cant: n(vForm.cant), precio }],
-      subtotal, iva,
+      subtotal, iva: 0,
       total, pago: vForm.pago,
       hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
       express: true,
@@ -322,7 +321,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       cp: vForm.factura ? vForm.cp : "",
     };
     setEntregas(prev => [...prev, venta]);
-    showToast("Venta exprés: $" + total.toLocaleString() + " (incluye IVA)" + (vForm.factura ? " (factura)" : ""));
+    showToast("Venta exprés: $" + total.toLocaleString() + (vForm.factura ? " (factura)" : ""));
     setVentaModal(false);
     setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
   };

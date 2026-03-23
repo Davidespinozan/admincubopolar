@@ -76,8 +76,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const removeLine = (idx) => setLines(prev => prev.filter((_, i) => i !== idx));
 
   const subtotal = useMemo(() => lines.reduce((s, l) => s + (n(l.qty) * n(l.precio)), 0), [lines]);
-  const iva = useMemo(() => Math.round(subtotal * 16) / 100, [subtotal]);
-  const totalCalc = subtotal + iva;
+  const totalCalc = subtotal; // Hielo: IVA tasa 0%
   const productosStr = useMemo(() => lines.filter(l => l.sku && l.qty > 0).map(l => `${l.qty}×${l.sku}`).join(", "), [lines]);
 
   // Register new client and select it using the real Supabase-assigned ID
@@ -382,10 +381,8 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
 
               {/* ── TOTALES ── */}
               <div className="bg-slate-50 rounded-xl p-3 space-y-1">
-                <div className="flex justify-between text-sm text-slate-500"><span>Subtotal</span><span>${subtotal.toLocaleString()}</span></div>
-                {form.requiereFactura && <div className="flex justify-between text-sm text-slate-500"><span>IVA 16%</span><span>${iva.toLocaleString()}</span></div>}
-                {!form.requiereFactura && <div className="flex justify-between text-xs text-slate-400"><span>Sin factura — sin IVA</span></div>}
-                <div className="flex justify-between text-base font-bold text-slate-800 border-t border-slate-200 pt-1"><span>Total</span><span>${totalCalc.toLocaleString()}</span></div>
+                <div className="flex justify-between text-base font-bold text-slate-800"><span>Total</span><span>${totalCalc.toLocaleString()}</span></div>
+                <div className="flex justify-between text-xs text-slate-400"><span>IVA 0% (hielo)</span></div>
               </div>
             </div>
 

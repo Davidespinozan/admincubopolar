@@ -28,11 +28,7 @@ export const handler = async (event) => {
             product_data: { name: item.name || item.sku || 'Producto' },
           },
         }));
-        const itemsTotal = canonicalItems.reduce((s, i) => s + (i.quantity || 1) * Number(i.unitPrice || 0), 0);
-        const diff = Math.round((canonicalAmount - itemsTotal) * 100);
-        if (diff > 0) {
-          lineItems.push({ quantity: 1, price_data: { currency: currency.toLowerCase(), unit_amount: diff, product_data: { name: 'IVA 16%' } } });
-        }
+        // IVA tasa 0% para hielo — no se agrega línea de impuesto
         return lineItems;
       }
       return [{ quantity: 1, price_data: { currency: currency.toLowerCase(), unit_amount: Math.round(canonicalAmount * 100), product_data: { name: description || `Orden ${ordenId}` } } }];
@@ -78,11 +74,7 @@ export const handler = async (event) => {
         : [{ id: String(ordenId), title: description || `Orden ${ordenId}`, quantity: 1, currency_id: currency, unit_price: canonicalAmount }];
 
       if (canonicalItems.length > 0) {
-        const itemsTotal = mpItems.reduce((s, i) => s + i.quantity * i.unit_price, 0);
-        const diff = canonicalAmount - itemsTotal;
-        if (diff > 0.01) {
-          mpItems.push({ id: `${ordenId}-iva`, title: 'IVA 16%', quantity: 1, currency_id: currency, unit_price: Math.round(diff * 100) / 100 });
-        }
+        // IVA tasa 0% para hielo — no se agrega línea de impuesto
       }
 
       const result = await preference.create({
