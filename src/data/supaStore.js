@@ -513,6 +513,12 @@ export function useSupaStore(userId, userName) {
         rf();
       },
 
+      updateStockMinimo: async (id, stockMinimo) => {
+        const { error } = await supabase.from('productos').update({ stock_minimo: stockMinimo }).eq('id', id);
+        if (error) { t()?.error('Error al actualizar stock mínimo'); return error; }
+        rf();
+      },
+
       deleteDemoProducts: async () => {
         const demoSkus = ['DEMO-HC-10K', 'DEMO-HT-10K'];
         const { error } = await supabase.from('productos').delete().in('sku', demoSkus);

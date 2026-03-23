@@ -115,12 +115,14 @@ export default function DashboardView({ data }) {
       const stock = Math.max(0, stockBruto - reservado);
       const faltante = Math.max(0, pendientes - stock);
       const producidoHoy = n(producidoHoyPorSku[sku]);
+      const stockMinimo = n(p.stock_minimo);
       return {
         id: sku,
         sku,
         producto: s(p.nombre),
         pendientes,
         stock,
+        stockMinimo,
         faltante,
         producidoHoy,
       };
@@ -320,13 +322,17 @@ export default function DashboardView({ data }) {
               { key: "sku", label: "SKU", render: v => <span className="font-mono text-xs font-bold text-blue-600">{s(v)}</span> },
               { key: "producto", label: "Producto", bold: true },
               { key: "pendientes", label: "Pedidos pendientes", render: v => n(v).toLocaleString() },
-              { key: "stock", label: "Stock disponible", render: v => n(v).toLocaleString() },
+              { key: "stock", label: "Stock disponible", render: (v, r) => {
+                const bajo = n(r.stockMinimo) > 0 && n(v) < n(r.stockMinimo);
+                return <span className={`font-bold ${bajo ? 'text-red-600' : ''}`}>{n(v).toLocaleString()}{bajo && <span className="text-[10px] text-red-400 ml-1">▼ bajo mín</span>}</span>;
+              }},
+              { key: "stockMinimo", label: "Stock mínimo", render: v => n(v) > 0 ? <span className="text-xs text-slate-500">{n(v).toLocaleString()}</span> : <span className="text-xs text-slate-300">—</span> },
               { key: "faltante", label: "Faltante por producir", render: v => <span className={`font-bold ${n(v) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{n(v).toLocaleString()}</span> },
               { key: "producidoHoy", label: "Producido hoy", render: v => n(v).toLocaleString() },
             ]}
             data={tableroDemanda}
             cardTitle={r => `${s(r.sku)} · ${s(r.producto)}`}
-            cardSubtitle={r => <span className="text-xs text-slate-500">Pend: {n(r.pendientes)} · Stock: {n(r.stock)} · Faltante: {n(r.faltante)} · Hoy: {n(r.producidoHoy)}</span>}
+            cardSubtitle={r => <span className="text-xs text-slate-500">Pend: {n(r.pendientes)} · Stock: {n(r.stock)}{n(r.stockMinimo) > 0 ? ` (mín ${n(r.stockMinimo)})` : ''} · Faltante: {n(r.faltante)} · Hoy: {n(r.producidoHoy)}</span>}
           />}
       </div>
 

@@ -13,6 +13,8 @@ export function InventarioView({ data, actions }) {
   const [ajusteModal, setAjusteModal] = useState(null);
   const [ajusteForm, setAjusteForm] = useState({ existencia: "", motivo: "" });
   const [ajusteErrors, setAjusteErrors] = useState({});
+  const [editMinId, setEditMinId] = useState(null);
+  const [editMinVal, setEditMinVal] = useState('');
 
   const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
 
@@ -141,7 +143,15 @@ export function InventarioView({ data, actions }) {
       <DataTable columns={[
         {key:"sku",label:"SKU",render:v=><span className="font-mono text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">{s(v)}</span>},
         {key:"nombre",label:"Producto",bold:true},{key:"tipo",label:"Tipo",badge:true,render:v=><StatusBadge status={v}/>},
-        {key:"stock",label:"Existencia",render:(v,r)=><span className={`font-bold ${s(r.tipo)==="Empaque"&&n(v)<200?"text-red-600":"text-slate-800"}`}>{n(v).toLocaleString()}</span>},
+        {key:"stock",label:"Existencia",render:(v,r)=>{
+          const min = n(r.stock_minimo);
+          const bajo = min > 0 && n(v) < min;
+          return <span className={`font-bold ${bajo ? 'text-red-600' : s(r.tipo)==="Empaque"&&n(v)<200?"text-red-600":"text-slate-800"}`}>{n(v).toLocaleString()}{bajo && <span className="text-[10px] text-red-400 ml-1">▼</span>}</span>;
+        }},
+        {key:"stock_minimo",label:"Mín.",render:(_,r)=>{
+          if (editMinId === r.id) return <div className="flex items-center gap-1"><input type="number" min="0" className="w-16 px-1.5 py-0.5 text-xs border border-slate-200 rounded-md" value={editMinVal} onChange={e=>setEditMinVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){actions.updateStockMinimo?.(r.id,Math.max(0,Number(editMinVal)||0));setEditMinId(null);toast?.success('Mínimo actualizado');}if(e.key==='Escape')setEditMinId(null);}} autoFocus /><button onClick={()=>{actions.updateStockMinimo?.(r.id,Math.max(0,Number(editMinVal)||0));setEditMinId(null);toast?.success('Mínimo actualizado');}} className="text-emerald-600 hover:text-emerald-800"><Icons.Check /></button><button onClick={()=>setEditMinId(null)} className="text-slate-400 hover:text-slate-600"><Icons.X /></button></div>;
+          return <button onClick={(e)=>{e.stopPropagation();setEditMinId(r.id);setEditMinVal(String(n(r.stock_minimo)));}} className="text-xs text-slate-500 hover:text-blue-600 font-mono">{n(r.stock_minimo) > 0 ? n(r.stock_minimo).toLocaleString() : <span className="text-slate-300">—</span>}</button>;
+        }},
         {key:"ubicacion",label:"Ubicación"},
         {key:"acciones",label:"Acciones",render:(_,r)=><button onClick={(e)=>{e.stopPropagation();abrirAjuste(r);}} className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 min-h-[36px]">Ajustar</button>},
       ]} data={paginatedProd} />
