@@ -721,11 +721,11 @@ export function useSupaStore(userId, userName) {
 
         let error;
         if (nuevoEst === 'Asignada') {
-          ({ error } = await supabase.rpc('asignar_orden', { p_id: id, p_ruta: null, p_uid: uid() }));
+          ({ error } = await supabase.rpc('asignar_orden', { p_orden_id: id, p_ruta_id: null, p_usuario_id: uid() }));
         } else if (nuevoEst === 'Cancelada') {
           const { data: ord } = await supabase.from('ordenes').select('estatus').eq('id', id).single();
           if (ord?.estatus === 'Asignada') {
-            ({ error } = await supabase.rpc('cancelar_orden_asignada', { p_id: id, p_uid: uid() }));
+            ({ error } = await supabase.rpc('cancelar_orden_asignada', { p_orden_id: id, p_usuario_id: uid() }));
           } else {
             ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id));
           }
@@ -902,7 +902,7 @@ export function useSupaStore(userId, userName) {
         const { data: prod } = await supabase.from('produccion').select('*').eq('id', id).single();
         
         // Confirmar en backend (actualiza productos.stock)
-        const { error } = await supabase.rpc('confirmar_produccion', { p_id: id, p_uid: uid() });
+        const { error } = await supabase.rpc('confirmar_produccion', { p_produccion_id: id, p_usuario_id: uid() });
         if (error) { t()?.error('Error al confirmar producción'); return error; }
 
         // Añadir el producto al cuarto frío para que esté disponible en rutas
@@ -1564,8 +1564,8 @@ export function useSupaStore(userId, userName) {
       // ── PAGOS ──
       registrarPago: async (clienteId, monto, referencia) => {
         const { error } = await supabase.rpc('registrar_pago', {
-          p_cli: clienteId, p_monto: centavos(monto),
-          p_ref: referencia, p_uid: uid(),
+          p_cliente_id: clienteId, p_monto: centavos(monto),
+          p_referencia: referencia, p_usuario_id: uid(),
         });
         if (error) { t()?.error('Error al registrar pago'); return error; }
         log('Registrar', 'Pagos', `Cliente #${clienteId} — $${monto} — ${referencia || 'Sin ref'}`);
