@@ -506,6 +506,8 @@ export function useSupaStore(userId, userName) {
           calle: c.calle || null, colonia: c.colonia || null,
           ciudad: c.ciudad || null, zona: c.zona || null,
           latitud, longitud,
+          credito_autorizado: c.creditoAutorizado ?? false,
+          limite_credito: Number(c.limiteCredito) || 0,
         }).select('id').single();
         if (error) {
           console.error('[addCliente]', error.message, error.code);
@@ -531,7 +533,9 @@ export function useSupaStore(userId, userName) {
         if (c.calle    !== undefined) update.calle    = c.calle || null;
         if (c.colonia  !== undefined) update.colonia  = c.colonia || null;
         if (c.ciudad   !== undefined) update.ciudad   = c.ciudad || null;
-        if (c.zona     !== undefined) update.zona     = c.zona || null;
+        if (c.zona               !== undefined) update.zona               = c.zona || null;
+        if (c.creditoAutorizado  !== undefined) update.credito_autorizado = c.creditoAutorizado;
+        if (c.limiteCredito      !== undefined) update.limite_credito     = Number(c.limiteCredito) || 0;
         // Re-geocodificar automáticamente si cambió algún campo de dirección
         if (c.calle !== undefined || c.colonia !== undefined || c.ciudad !== undefined) {
           const geo = await geocodeDireccion(buildDireccion(c)).catch(() => null);
@@ -663,6 +667,7 @@ export function useSupaStore(userId, userName) {
           estatus: 'Creada',
           metodo_pago: o.metodoPago || 'Efectivo',
           vendedor_id: o.usuarioId || null,
+          tipo_cobro: o.tipoCobro || 'Contado',
         };
 
         const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id, folio, cliente_nombre, productos, total, estatus, fecha, metodo_pago, cliente_id, requiere_factura').single();

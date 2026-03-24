@@ -9,13 +9,13 @@ export function ClientesView({ data, actions }) {
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
   const [geocoding, setGeocoding] = useState(false);
-  const empty = { nombre:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",cp:"",correo:"",tipo:"Tienda",contacto:"",calle:"",colonia:"",ciudad:"Hermosillo",zona:"",latitud:"",longitud:"" };
+  const empty = { nombre:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",cp:"",correo:"",tipo:"Tienda",contacto:"",calle:"",colonia:"",ciudad:"Hermosillo",zona:"",latitud:"",longitud:"",creditoAutorizado:false,limiteCredito:"" };
   const [form, setForm] = useState(empty);
 
   const dSearch = useDebounce(search);
 
   const openNew = () => { setForm(empty); setErrors({}); setModal("new"); };
-  const openEdit = (c) => { setForm({ nombre:s(c.nombre),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Hermosillo",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"" }); setErrors({}); setModal(c); };
+  const openEdit = (c) => { setForm({ nombre:s(c.nombre),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Hermosillo",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"",creditoAutorizado:c.credito_autorizado||false,limiteCredito:c.limite_credito||"" }); setErrors({}); setModal(c); };
 
     const save = async () => {
     const e = {};
@@ -65,6 +65,7 @@ export function ClientesView({ data, actions }) {
         {key:"rfc",label:"RFC",render:v=><span className="font-mono text-xs text-slate-500">{s(v)}</span>},
         {key:"tipo",label:"Tipo"},{key:"contacto",label:"Contacto"},
         {key:"saldo",label:"Saldo",bold:true,render:v=>v?`$${n(v).toLocaleString()}`:"$0"},
+        {key:"credito_autorizado",label:"Crédito",render:(_,row)=>row.credito_autorizado?<span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">✓ ${n(row.limite_credito).toLocaleString()}</span>:<span className="text-xs text-slate-400">—</span>},
         {key:"estatus",label:"Estatus",badge:true,render:v=><StatusBadge status={v}/>},
       ]} data={paginated} onRowClick={r=>openEdit(r)} />
       <Paginator page={page} total={filtered.length} onPage={setPage} />
@@ -93,6 +94,19 @@ export function ClientesView({ data, actions }) {
           <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded">{form.latitud && form.longitud ? `${form.latitud}, ${form.longitud}` : "Sin geocodificar"}</span>
           {form.calle && form.colonia && <button type="button" disabled={geocoding} onClick={async()=>{ setGeocoding(true); const geo=await import('../../utils/geocoding.js').then(m=>m.geocodeDireccion(`${form.calle}, ${form.colonia}, ${form.ciudad||'Hermosillo'}, Sonora, México`)); if(geo){ setForm(f=>({...f,latitud:geo.lat,longitud:geo.lng})); toast?.success('Ubicación obtenida'); } else { toast?.error('No se pudo geocodificar'); } setGeocoding(false); }} className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg disabled:opacity-50">{geocoding?'Buscando...':'📍 Obtener ubicación'}</button>}
         </div>
+      </div>
+      <div className="border-t border-slate-200 pt-4 mt-4">
+        <h4 className="text-sm font-semibold text-slate-700 mb-3">💳 Crédito</h4>
+        <div className="flex items-center justify-between bg-slate-50 rounded-xl p-3 border border-slate-200 mb-3">
+          <div><p className="text-sm font-semibold text-slate-700">Crédito autorizado</p><p className="text-xs text-slate-400">Permite marcar pedidos "a crédito" sin cobro inmediato</p></div>
+          <button type="button" onClick={()=>setForm(f=>({...f,creditoAutorizado:!f.creditoAutorizado}))}
+            className={`w-12 h-7 rounded-full transition-all relative flex-shrink-0 ${form.creditoAutorizado?"bg-emerald-500":"bg-slate-300"}`}>
+            <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-all ${form.creditoAutorizado?"left-[22px]":"left-0.5"}`} />
+          </button>
+        </div>
+        {form.creditoAutorizado && (
+          <FormInput label="Límite de crédito ($)" type="number" value={form.limiteCredito} onChange={e=>setForm({...form,limiteCredito:e.target.value})} placeholder="0.00" />
+        )}
       </div>
       <div className="space-y-3 border-t border-slate-200 pt-4 mt-5">
         {modal !== "new" && (

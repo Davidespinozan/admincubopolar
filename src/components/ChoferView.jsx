@@ -145,8 +145,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       const total = items.reduce((s, it) => s + it.cant * it.precio, 0);
       const entregada = s(o.estatus) === 'Entregada' || entregas.some(e => String(e.ordenId) === String(o.id));
       const direccion = cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '';
+      const esCredito = s(o.tipo_cobro || o.tipoCobro) === 'Credito';
       return { ...o, clienteNombre, items, totalCalc: total || n(o.total), entregada,
-        latitud: cli?.latitud, longitud: cli?.longitud, direccion };
+        latitud: cli?.latitud, longitud: cli?.longitud, direccion, esCredito };
     });
   }, [misOrdenes, data.clientes, entregas, getPrice]);
 
@@ -554,7 +555,14 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           {pendientes.map(o => (
             <div key={o.id} className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)] mb-2">
               <div className="flex justify-between items-start mb-2">
-                <div><span className="font-mono text-xs text-slate-400">#{s(o.folio)}</span><p className="text-base font-bold text-slate-800">{o.clienteNombre}</p></div>
+                <div>
+                  <span className="font-mono text-xs text-slate-400">#{s(o.folio)}</span>
+                  <p className="text-base font-bold text-slate-800">{o.clienteNombre}</p>
+                  {o.esCredito
+                    ? <span className="inline-block text-[10px] font-bold text-purple-700 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-full mt-0.5">📋 A crédito</span>
+                    : <span className="inline-block text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full mt-0.5">💵 Cobrar</span>
+                  }
+                </div>
                 <p className="text-lg font-extrabold text-slate-800">${o.totalCalc.toLocaleString()}</p>
               </div>
               <div className="flex flex-wrap gap-1 mb-3">
@@ -574,7 +582,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                   Buscar dirección
                 </button>
               ) : null}
-              <button onClick={() => { setEntregaModal(o); setCobroMetodo("Efectivo"); setCobroRef(""); setCheckoutUrl(null); setShortUrl(null); }}
+              <button onClick={() => { setEntregaModal(o); setCobroMetodo(o.esCredito ? "Crédito" : "Efectivo"); setCobroRef(""); setCheckoutUrl(null); setShortUrl(null); }}
                 className="w-full py-3.5 bg-slate-900 text-white font-bold rounded-[18px] text-sm active:scale-[0.98] transition-transform shadow-[0_18px_30px_rgba(8,20,27,0.14)]">
                 Entregar y cobrar
               </button>

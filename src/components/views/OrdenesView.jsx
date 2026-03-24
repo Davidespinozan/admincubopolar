@@ -7,7 +7,7 @@ export function OrdenesView({ data, actions, user }) {
   const [filterEst, setFilterEst] = useState("");
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({clienteId:"",fecha:""});
+  const [form, setForm] = useState({clienteId:"",fecha:"",tipoCobro:"Contado"});
   const [lines, setLines] = useState([]);
 
   const dSearch = useDebounce(search);
@@ -34,7 +34,12 @@ export function OrdenesView({ data, actions, user }) {
     return prod ? n(prod.precio) : 0;
   }, [data.preciosEsp, data.productos]);
 
-  const handleClientChange = (cId) => { setForm(f=>({...f,clienteId:cId})); setLines(prev=>prev.map(l=>({...l,precio:getPrice(cId,l.sku)}))); };
+  const handleClientChange = (cId) => {
+    const cli = data.clientes.find(c => String(c.id) === String(cId));
+    const tipoCobro = cli?.credito_autorizado ? "Credito" : "Contado";
+    setForm(f=>({...f,clienteId:cId,tipoCobro}));
+    setLines(prev=>prev.map(l=>({...l,precio:getPrice(cId,l.sku)})));
+  };
   const addLine = () => setLines(prev=>[...prev,{sku:"",qty:1,precio:0}]);
   const updateLine = (idx, field, val) => setLines(prev=>prev.map((l,i)=>{
     if(i!==idx) return l;
@@ -70,7 +75,7 @@ export function OrdenesView({ data, actions, user }) {
     }
     if (Object.keys(e).length) { setErrors(e); return; }
     const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
-    const err = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc,usuarioId:user?.id||null});
+    const err = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc,usuarioId:user?.id||null,tipoCobro:form.tipoCobro||"Contado"});
     if (err) {
       toast?.error(err.message || "No se pudo crear la orden");
       return;
@@ -78,7 +83,7 @@ export function OrdenesView({ data, actions, user }) {
     toast?.success("Orden creada");
     setModal(false); setForm({clienteId:"",fecha:""}); setLines([]); setErrors({});
   };
-  const openModal = () => { setModal(true); setErrors({}); setLines([{sku:"",qty:1,precio:0}]); };
+  const openModal = () => { setModal(true); setErrors({}); setForm({clienteId:"",fecha:"",tipoCobro:"Contado"}); setLines([{sku:"",qty:1,precio:0}]); };
 
   const [pagoModal, setPagoModal] = useState(null);
   const [pagoForm, setPagoForm] = useState({metodo:"Efectivo",referencia:""});
@@ -163,6 +168,24 @@ export function OrdenesView({ data, actions, user }) {
     <Modal open={modal} onClose={()=>setModal(false)} title="Nueva orden de venta" wide>
       <div className="space-y-3">
         <FormSelect label="Cliente *" options={clienteOpts} value={form.clienteId} onChange={e=>handleClientChange(e.target.value)} error={errors.clienteId} />
+        {form.clienteId && (() => {
+          const cli = data.clientes.find(c => String(c.id) === String(form.clienteId));
+          if (!cli?.credito_autorizado) return null;
+          return <div className="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-xl px-3 py-2 text-xs text-purple-700 font-semibold">💳 Crédito autorizado · Límite ${n(cli.limite_credito).toLocaleString()} · Saldo pendiente ${n(cli.saldo).toLocaleString()}</div>;
+        })()}
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">Tipo de cobro</label>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={()=>setForm(f=>({...f,tipoCobro:"Contado"}))}
+              className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${form.tipoCobro==="Contado"?"border-emerald-500 bg-emerald-50 text-emerald-700":"border-slate-200 text-slate-500"}`}>
+              💵 Cobrar al entregar
+            </button>
+            <button type="button" onClick={()=>setForm(f=>({...f,tipoCobro:"Credito"}))}
+              className={`py-2.5 rounded-xl text-sm font-bold border-2 transition-all ${form.tipoCobro==="Credito"?"border-purple-500 bg-purple-50 text-purple-700":"border-slate-200 text-slate-500"}`}>
+              📋 A crédito
+            </button>
+          </div>
+        </div>
         <FormInput label="Fecha entrega" type="date" value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})} />
         <div>
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Productos *</label>
