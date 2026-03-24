@@ -809,7 +809,7 @@ export function useSupaStore(userId, userName) {
                 estatus: ordenPrev?.estatus || 'Creada',
                 metodo_pago: ordenPrev?.metodo_pago || ord.metodo_pago,
               }).eq('id', id);
-              t()?.error('No se pudo sincronizar el cobro de la orden');
+              t()?.error('No se pudo sincronizar el cobro: ' + (downstreamError?.message || String(downstreamError)));
               return downstreamError;
             }
           }
@@ -819,7 +819,7 @@ export function useSupaStore(userId, userName) {
             try {
               await backendPost('billing-sync-payment', { ordenId: ord.id });
             } catch (syncErr) {
-              console.warn('[syncFacturama]', syncErr.message);
+              notify('advertencia', 'Sincronización Facturama', `No se pudo sincronizar el pago de ${s(ord.folio)} con Facturama`, '⚠️', s(ord.folio));
             }
           }
         }
@@ -855,42 +855,39 @@ export function useSupaStore(userId, userName) {
 
         const qty = Number(p.cantidad || 0);
         if (qty > 0) {
-          const fallbackEmpaque = {
-            'HC-25K': 'EMP-25',
-            'HC-5K': 'EMP-5',
-            'HT-25K': 'EMP-25',
-            'BH-50K': null,
-          };
-
-          let empaqueSku = fallbackEmpaque[p.sku] || null;
-          try {
-            const { data: prodRow, error: prodErr } = await supabase
-              .from('productos')
-              .select('empaque_sku')
-              .eq('sku', p.sku)
-              .single();
-            if (!prodErr && prodRow?.empaque_sku) empaqueSku = prodRow.empaque_sku;
-          } catch (e) {
+          // Siempre buscar en DB — nunca usar fallback hardcoded para SKUs
+          let empaqueSku = null;
+          const { data: prodRow, error: prodErr } = await supabase
+            .from('productos').select('empaque_sku').eq('sku', p.sku).maybeSingle();
+          if (prodErr) {
+            notify('advertencia', 'Advertencia producción', `No se pudo leer el empaque de ${p.sku}`, '⚠️', folio);
+          } else if (prodRow?.empaque_sku) {
+            empaqueSku = prodRow.empaque_sku;
           }
 
           if (empaqueSku) {
             const { data: empaqueProd, error: empaqueErr } = await supabase
-              .from('productos')
-              .select('id,stock')
-              .eq('sku', empaqueSku)
-              .single();
+              .from('productos').select('id, stock').eq('sku', empaqueSku).single();
 
             if (!empaqueErr && empaqueProd) {
-              const newStock = Math.max(0, Number(empaqueProd.stock || 0) - qty);
-              await supabase.from('productos').update({ stock: newStock }).eq('id', empaqueProd.id);
+              const stockOriginal = Number(empaqueProd.stock || 0);
+              const newStock = Math.max(0, stockOriginal - qty);
+              const { error: updateErr } = await supabase.from('productos')
+                .update({ stock: newStock }).eq('id', empaqueProd.id);
 
-              await supabase.from('inventario_mov').insert({
-                tipo: 'Salida',
-                producto: empaqueSku,
-                cantidad: qty,
-                origen: `Producción ${folio}`,
-                usuario: uname(),
-              });
+              if (updateErr) {
+                notify('advertencia', 'Error empaque', `No se pudo decrementar ${empaqueSku} en producción ${folio}`, '⚠️', folio);
+              } else {
+                const { error: movErr } = await supabase.from('inventario_mov').insert({
+                  tipo: 'Salida', producto: empaqueSku, cantidad: qty,
+                  origen: `Producción ${folio}`, usuario: uname(),
+                });
+                if (movErr) {
+                  // Revertir el decremento de stock si falla el movimiento
+                  await supabase.from('productos').update({ stock: stockOriginal }).eq('id', empaqueProd.id);
+                  notify('advertencia', 'Error empaque', `No se pudo registrar movimiento de ${empaqueSku} — stock revertido`, '⚠️', folio);
+                }
+              }
             }
           }
         }
