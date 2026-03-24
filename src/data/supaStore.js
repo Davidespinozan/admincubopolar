@@ -487,6 +487,32 @@ export function useSupaStore(userId, userName) {
     const notify = (tipo, titulo, mensaje, icono, referencia) =>
       supabase.from('notificaciones').insert({ tipo, titulo, mensaje, icono, referencia }).then(() => {});
 
+    // Helper: dispara alerta si algún SKU cae por debajo de su stock_minimo
+    const checkStockBajo = async (skus) => {
+      if (!skus || !skus.length) return;
+      const uniqueSkus = [...new Set(skus.filter(Boolean))];
+      if (!uniqueSkus.length) return;
+      const [{ data: prods }, { data: cfs }] = await Promise.all([
+        supabase.from('productos').select('sku, nombre, stock_minimo').in('sku', uniqueSkus),
+        supabase.from('cuartos_frios').select('stock'),
+      ]);
+      if (!prods || !cfs) return;
+      const stockTotal = {};
+      for (const cf of cfs) {
+        for (const [sku, qty] of Object.entries(cf.stock || {})) {
+          stockTotal[sku] = (stockTotal[sku] || 0) + Number(qty);
+        }
+      }
+      for (const p of prods) {
+        const minimo = Number(p.stock_minimo || 0);
+        if (minimo <= 0) continue;
+        const actual = stockTotal[p.sku] || 0;
+        if (actual < minimo) {
+          notify('stock_bajo', 'Stock bajo', `${p.nombre || p.sku}: ${actual} disponibles (mínimo: ${minimo})`, '⚠️', p.sku);
+        }
+      }
+    };
+
     const a = actionsRef.current = {
 
       // ── CLIENTES ──
@@ -798,6 +824,11 @@ export function useSupaStore(userId, userName) {
           }
         }
 
+        if (nuevoEst === 'Facturada') {
+          const { data: ordFact } = await supabase.from('ordenes').select('folio, cliente_nombre').eq('id', id).maybeSingle();
+          notify('factura', 'Orden facturada', `${s(ordFact?.folio)} — ${s(ordFact?.cliente_nombre)}`, '🧾', s(ordFact?.folio));
+        }
+
         await log('Cambiar estatus', 'Órdenes', `Orden #${id} → ${nuevoEst}`);
 
         rf();
@@ -870,10 +901,23 @@ export function useSupaStore(userId, userName) {
         // Obtener datos de la producción antes de confirmar
         const { data: prod } = await supabase.from('produccion').select('*').eq('id', id).single();
         
-        // Confirmar en backend
+        // Confirmar en backend (actualiza productos.stock)
         const { error } = await supabase.rpc('confirmar_produccion', { p_id: id, p_uid: uid() });
         if (error) { t()?.error('Error al confirmar producción'); return error; }
-        
+
+        // Añadir el producto al cuarto frío para que esté disponible en rutas
+        if (prod) {
+          const qty = Number(prod.cantidad || 0);
+          if (qty > 0 && prod.sku) {
+            const { data: cfsConf } = await supabase.from('cuartos_frios').select('id').order('id').limit(1);
+            if (cfsConf && cfsConf.length > 0) {
+              await supabase.rpc('update_stocks_atomic', {
+                p_changes: [{ cuarto_id: cfsConf[0].id, sku: prod.sku, delta: qty, tipo: 'Entrada', origen: `Producción ${prod.folio || id}`, usuario: uname() }],
+              });
+            }
+          }
+        }
+
         // Calcular costo de producción (costo del empaque consumido)
         if (prod) {
           const cantidad = Number(prod.cantidad || 0);
@@ -1296,6 +1340,9 @@ export function useSupaStore(userId, userName) {
           }
         }
         
+        // Verificar stock bajo después de descontar la carga
+        await checkStockBajo(Object.keys(cargaObj));
+
         // Log con detalle de carga
         const cargaTxt = Object.entries(cargaObj).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '—';
         log('Autorizar', 'Rutas', `${folio} — ${r.nombre} — Carga: ${cargaTxt}`);
@@ -1946,7 +1993,9 @@ export function useSupaStore(userId, userName) {
           }
         }
 
+        notify('merma', 'Merma registrada', `${cantidad}× ${sku} — ${causa || origen || 'Sin causa'}`, '⚠️', sku);
         log('Registrar', 'Mermas', `${cantidad}×${sku} — ${causa}`);
+        await checkStockBajo([sku]);
         rf();
       },
 
@@ -2215,6 +2264,7 @@ export function useSupaStore(userId, userName) {
         const createdCxcIds = [];
         const createdMermaIds = [];
         const saldoAdjustments = [];
+        const mermaStockReversal = [];
 
         try {
           for (const e of (entregas || [])) {
@@ -2426,6 +2476,55 @@ export function useSupaStore(userId, userName) {
             createdMermaIds.push(mermaRow.id);
           }
 
+          // Descontar mermas del stock en cuartos fríos (BUG FIX: antes no se descontaba)
+          if (mermasArr && mermasArr.length > 0) {
+            const { data: cuartosMerma, error: cfMermaErr } = await supabase
+              .from('cuartos_frios').select('id, stock').order('id');
+            if (cfMermaErr) throw cfMermaErr;
+            if (cuartosMerma && cuartosMerma.length > 0) {
+              const mermaChanges = [];
+              for (const m of mermasArr) {
+                let remaining = Number(m.cant || 0);
+                for (const cf of cuartosMerma) {
+                  if (remaining <= 0) break;
+                  const available = Number((cf.stock || {})[m.sku] || 0);
+                  if (available > 0) {
+                    const toTake = Math.min(available, remaining);
+                    remaining -= toTake;
+                    mermaChanges.push({
+                      cuarto_id: cf.id, sku: m.sku, delta: -toTake,
+                      tipo: 'Merma', origen: `Merma ruta ${choferNombre}`,
+                      usuario: choferNombre || uname(),
+                    });
+                  }
+                }
+              }
+              if (mermaChanges.length > 0) {
+                const { error: mermaStockErr } = await supabase.rpc('update_stocks_atomic', { p_changes: mermaChanges });
+                if (mermaStockErr) throw mermaStockErr;
+                // Guardar reversal para rollback
+                mermaStockReversal.push(...mermaChanges.map(c => ({ ...c, delta: -c.delta, tipo: 'Entrada', origen: 'Rollback merma ruta' })));
+              }
+              // Egreso contable por costo de cada merma
+              for (const m of mermasArr) {
+                const cant = Number(m.cant || 0);
+                if (cant <= 0) continue;
+                const { data: prodMerma } = await supabase.from('productos')
+                  .select('costo_unitario, nombre').eq('sku', m.sku).maybeSingle();
+                const costoUnit = Number(prodMerma?.costo_unitario || 0);
+                if (costoUnit > 0) {
+                  const { data: egresoRow, error: egresoErr } = await supabase.from('movimientos_contables').insert({
+                    fecha: hoy, tipo: 'Egreso', categoria: 'Mermas',
+                    concepto: `Merma ruta ${choferNombre}: ${cant}× ${m.sku}${prodMerma?.nombre ? ` (${prodMerma.nombre})` : ''} — ${m.causa || 'Sin causa'}`,
+                    monto: centavos(cant * costoUnit),
+                  }).select('id').single();
+                  if (!egresoErr && egresoRow) createdMovIds.push(egresoRow.id);
+                }
+              }
+              await checkStockBajo(mermasArr.map(m => m.sku));
+            }
+          }
+
           if (carga && typeof carga === 'object') {
             const entregadoPorSku = {};
             for (const e of (entregas || [])) {
@@ -2494,6 +2593,7 @@ export function useSupaStore(userId, userName) {
           for (const saldoAdj of saldoAdjustments.reverse()) {
             await supabase.rpc('increment_saldo', { p_cli: saldoAdj.clienteId, p_delta: -saldoAdj.delta });
           }
+          if (mermaStockReversal.length) await supabase.rpc('update_stocks_atomic', { p_changes: mermaStockReversal });
           if (createdMermaIds.length) await supabase.from('mermas').delete().in('id', createdMermaIds);
           if (createdMovIds.length) await supabase.from('movimientos_contables').delete().in('id', createdMovIds);
           if (createdPagoIds.length) await supabase.from('pagos').delete().in('id', createdPagoIds);
