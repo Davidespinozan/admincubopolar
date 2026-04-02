@@ -10,6 +10,14 @@ import 'jspdf-autotable';
 // EXCEL EXPORT
 // ══════════════════════════════════════════════════════════════
 
+// Sanitizar valores para prevenir formula injection en Excel
+// Celdas que empiezan con =, +, -, @ son interpretadas como fórmulas
+const sanitizeCell = (v) => {
+  if (typeof v !== 'string') return v;
+  if (/^[=+\-@\t\r]/.test(v)) return "'" + v;
+  return v;
+};
+
 /**
  * Exporta datos a un archivo Excel
  * @param {Object[]} data - Array de objetos a exportar
@@ -31,10 +39,15 @@ export function exportToExcel(data, filename, sheetName = 'Datos', options = {})
   if (options.columns) {
     const headers = options.columns.map(c => c.header);
     const keys = options.columns.map(c => c.key);
-    const rows = data.map(row => keys.map(k => row[k] ?? ''));
+    const rows = data.map(row => keys.map(k => sanitizeCell(row[k] ?? '')));
     ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
   } else {
-    ws = XLSX.utils.json_to_sheet(data);
+    const sanitized = data.map(row => {
+      const out = {};
+      for (const [k, v] of Object.entries(row)) out[k] = sanitizeCell(v);
+      return out;
+    });
+    ws = XLSX.utils.json_to_sheet(sanitized);
   }
 
   // Ajustar anchos de columna

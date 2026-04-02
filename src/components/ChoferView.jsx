@@ -28,6 +28,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [mForm, setMForm] = useState({ sku: "", cant: "", causa: "Bolsa rota" });
   const [fotoMerma, setFotoMerma] = useState(null);
   const [fotoTransf, setFotoTransf] = useState(null);
+  const [fotoEntrega, setFotoEntrega] = useState(null);
   const [folioNota, setFolioNota] = useState("");
   const [rutaCerrada, setRutaCerrada] = useState(false);
   const [cerrandoRuta, setCerrandoRuta] = useState(false);
@@ -267,6 +268,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       pago: cobroMetodo,
       referencia: cobroRef,
       foto: cobroMetodo === "Transferencia" ? fotoTransf : null,
+      fotoEntrega: fotoEntrega || null,
       hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
     };
     // Update order status in store
@@ -596,7 +598,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                   Buscar dirección
                 </button>
               ) : null}
-              <button onClick={() => { setEntregaModal(o); setCobroMetodo(o.esCredito ? "Crédito" : "Efectivo"); setCobroRef(""); setFolioNota(""); setCheckoutUrl(null); setShortUrl(null); }}
+              <button onClick={() => { setEntregaModal(o); setCobroMetodo(o.esCredito ? "Crédito" : "Efectivo"); setCobroRef(""); setFolioNota(""); setFotoEntrega(null); setCheckoutUrl(null); setShortUrl(null); }}
                 className="w-full py-3.5 bg-slate-900 text-white font-bold rounded-[18px] text-sm active:scale-[0.98] transition-transform shadow-[0_18px_30px_rgba(8,20,27,0.14)]">
                 Entregar y cobrar
               </button>
@@ -609,7 +611,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <div key={e.ordenId || e.id} className="bg-emerald-50/90 rounded-[20px] p-3 border border-emerald-200 mb-2">
               <div className="flex justify-between items-center">
                 <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="text-[10px] text-slate-400 ml-1">Nota: {e.folioNota}</span>}<span className="text-sm font-semibold text-slate-700 ml-2">{s(e.cliente)}</span>{e.express && <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded ml-1">Exprés</span>}{e.factura && <span className="text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded ml-1">Factura</span>}</div>
-                <div className="text-right"><p className="text-sm font-bold">${n(e.total).toLocaleString()}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div>
+                <div className="text-right flex items-center gap-2">{e.fotoEntrega && <span className="text-emerald-500 text-xs">📷</span>}<div><p className="text-sm font-bold">${n(e.total).toLocaleString()}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div></div>
               </div>
             </div>
           ))}
@@ -691,6 +693,17 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               </div>
             )}
             {cobroMetodo==="Crédito" && <div className="bg-amber-50 rounded-xl p-3 mb-4"><p className="text-xs text-amber-700 font-semibold">Se agrega a la cuenta del cliente</p></div>}
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Evidencia de entrega (opcional)</label>
+              {fotoEntrega ? (
+                <div><img src={fotoEntrega} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoEntrega(null)} className="text-xs text-slate-400 mt-1">Tomar otra</button></div>
+              ) : (
+                <label className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
+                  <span className="text-lg">📷</span> Foto de nota o entrega
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f=e.target.files?.[0]; if(f){const r=new FileReader();r.onload=ev=>setFotoEntrega(ev.target.result);r.readAsDataURL(f)}}} />
+                </label>
+              )}
+            </div>
             {!checkoutUrl && <button onClick={confirmarEntrega} disabled={generandoLink} className={`w-full py-4 text-white font-extrabold rounded-xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform ${generandoLink ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : cobroMetodo === "QR / Link de pago" ? "Generar link de pago" : "✓ Confirmar entrega"}</button>}
           </div>
         </div>
