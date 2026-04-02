@@ -529,6 +529,7 @@ export function useSupaStore(userId, userName) {
           nombre: c.nombre, rfc: c.rfc, regimen: c.regimen,
           uso_cfdi: c.usoCfdi || 'G03', cp: c.cp, correo: c.correo,
           tipo: c.tipo, contacto: c.contacto,
+          nombre_comercial: c.nombreComercial || null,
           calle: c.calle || null, colonia: c.colonia || null,
           ciudad: c.ciudad || null, zona: c.zona || null,
           latitud, longitud,
@@ -556,6 +557,7 @@ export function useSupaStore(userId, userName) {
         if (c.tipo     !== undefined) update.tipo     = c.tipo;
         if (c.contacto !== undefined) update.contacto = c.contacto;
         if (c.estatus  !== undefined) update.estatus  = c.estatus;
+        if (c.nombreComercial !== undefined) update.nombre_comercial = c.nombreComercial || null;
         if (c.calle    !== undefined) update.calle    = c.calle || null;
         if (c.colonia  !== undefined) update.colonia  = c.colonia || null;
         if (c.ciudad   !== undefined) update.ciudad   = c.ciudad || null;
@@ -694,6 +696,7 @@ export function useSupaStore(userId, userName) {
           metodo_pago: o.metodoPago || 'Efectivo',
           vendedor_id: o.usuarioId || null,
           tipo_cobro: o.tipoCobro || 'Contado',
+          folio_nota: o.folioNota || null,
         };
 
         const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id, folio, cliente_nombre, productos, total, estatus, fecha, metodo_pago, cliente_id, requiere_factura').single();
@@ -712,7 +715,7 @@ export function useSupaStore(userId, userName) {
         return { orden: { ...newOrd, cliente: newOrd.cliente_nombre } };
       },
 
-      updateOrdenEstatus: async (id, nuevoEst, metodoPago = null) => {
+      updateOrdenEstatus: async (id, nuevoEst, metodoPago = null, extra = {}) => {
         const { data: ordenPrev } = await supabase
           .from('ordenes')
           .select('estatus, metodo_pago')
@@ -732,6 +735,7 @@ export function useSupaStore(userId, userName) {
         } else {
           const updateObj = { estatus: nuevoEst };
           if (metodoPago) updateObj.metodo_pago = metodoPago;
+          if (extra.folioNota) updateObj.folio_nota = extra.folioNota;
           ({ error } = await supabase.from('ordenes').update(updateObj).eq('id', id));
         }
         if (error) { t()?.error('Error al actualizar orden'); return error; }

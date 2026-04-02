@@ -1,7 +1,8 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, useDebounce, useToast, reporteInventario, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, useDebounce, useToast, useConfirm, reporteInventario, PAGE_SIZE, Paginator } from './viewsCommon';
 
 export function ProductosView({ data, actions }) {
   const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(null);
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
@@ -64,6 +65,7 @@ export function ProductosView({ data, actions }) {
   </>;
 
   return (<div>
+    {ConfirmEl}
     <PageHeader title="Catálogo de Productos" subtitle="Empaque y producto terminado" action={openNew} actionLabel="Nuevo producto" extraButtons={exportBtns} />
     {hasDemoProducts && (
       <div className="mb-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
@@ -112,7 +114,17 @@ export function ProductosView({ data, actions }) {
           </>
         )}
       </div>
-      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Guardar</FormBtn></div>
+      {modal !== "new" && (
+        <button onClick={() => askConfirm("Eliminar producto", `¿Eliminar "${s(modal.nombre)}" (${s(modal.sku)})? Esta acción no se puede deshacer.`, async () => {
+            const err = await actions.deleteProducto(modal.id);
+            if (err) { toast?.error("No se pudo eliminar — puede tener órdenes o inventario asociado"); return; }
+            toast?.success("Producto eliminado");
+            setModal(null);
+          }, true)} className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200 transition-colors mt-4">
+          Eliminar producto
+        </button>
+      )}
+      <div className="flex justify-end gap-2 mt-3"><FormBtn onClick={()=>setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Guardar</FormBtn></div>
     </Modal>
   </div>);
 }

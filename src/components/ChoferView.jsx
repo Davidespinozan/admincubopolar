@@ -28,6 +28,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [mForm, setMForm] = useState({ sku: "", cant: "", causa: "Bolsa rota" });
   const [fotoMerma, setFotoMerma] = useState(null);
   const [fotoTransf, setFotoTransf] = useState(null);
+  const [folioNota, setFolioNota] = useState("");
   const [rutaCerrada, setRutaCerrada] = useState(false);
   const [cerrandoRuta, setCerrandoRuta] = useState(false);
   const [toast, setToast] = useState("");
@@ -259,6 +260,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     const entrega = {
       ordenId: entregaModal.id,
       folio: s(entregaModal.folio),
+      folioNota: folioNota || null,
       cliente: entregaModal.clienteNombre,
       items: entregaModal.items,
       total: entregaModal.totalCalc,
@@ -269,7 +271,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     };
     // Update order status in store
     const err = actions.updateOrdenEstatus
-      ? await actions.updateOrdenEstatus(entregaModal.id, "Entregada", cobroMetodo)
+      ? await actions.updateOrdenEstatus(entregaModal.id, "Entregada", cobroMetodo, { folioNota: folioNota || null })
       : null;
     if (err) {
       showToast("No se pudo registrar la entrega");
@@ -582,7 +584,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                   Buscar dirección
                 </button>
               ) : null}
-              <button onClick={() => { setEntregaModal(o); setCobroMetodo(o.esCredito ? "Crédito" : "Efectivo"); setCobroRef(""); setCheckoutUrl(null); setShortUrl(null); }}
+              <button onClick={() => { setEntregaModal(o); setCobroMetodo(o.esCredito ? "Crédito" : "Efectivo"); setCobroRef(""); setFolioNota(""); setCheckoutUrl(null); setShortUrl(null); }}
                 className="w-full py-3.5 bg-slate-900 text-white font-bold rounded-[18px] text-sm active:scale-[0.98] transition-transform shadow-[0_18px_30px_rgba(8,20,27,0.14)]">
                 Entregar y cobrar
               </button>
@@ -594,7 +596,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           {entregas.map(e => (
             <div key={e.ordenId || e.id} className="bg-emerald-50/90 rounded-[20px] p-3 border border-emerald-200 mb-2">
               <div className="flex justify-between items-center">
-                <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span><span className="text-sm font-semibold text-slate-700 ml-2">{s(e.cliente)}</span>{e.express && <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded ml-1">Exprés</span>}{e.factura && <span className="text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded ml-1">Factura</span>}</div>
+                <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="text-[10px] text-slate-400 ml-1">Nota: {e.folioNota}</span>}<span className="text-sm font-semibold text-slate-700 ml-2">{s(e.cliente)}</span>{e.express && <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded ml-1">Exprés</span>}{e.factura && <span className="text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded ml-1">Factura</span>}</div>
                 <div className="text-right"><p className="text-sm font-bold">${n(e.total).toLocaleString()}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div>
               </div>
             </div>
@@ -641,6 +643,10 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900">Entregar a {entregaModal.clienteNombre}</h3>
             <div className="flex flex-wrap gap-1 my-3">{entregaModal.items.map((it, i) => <span key={i} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{it.cant}× {it.sku} · ${it.precio}</span>)}</div>
             <p className="text-3xl font-extrabold text-slate-800 mb-4">${entregaModal.totalCalc.toLocaleString()}</p>
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Folio de nota (opcional)</label>
+              <input value={folioNota} onChange={e=>setFolioNota(e.target.value)} className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Ej: N-0001" />
+            </div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">¿Cómo paga?</label>
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {PAGOS.map(m => <button key={m} onClick={() => setCobroMetodo(m)} className={`py-3.5 rounded-xl text-sm font-bold border-2 transition-all ${cobroMetodo===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-600"}`}>{m==="Efectivo"?"💵 Efectivo":m==="Transferencia"?"📱 Transferencia":m==="Tarjeta"?"💳 Tarjeta":m==="QR / Link de pago"?"🔗 QR / Link":"📋 Crédito"}</button>)}
@@ -807,15 +813,25 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         <div className="px-4 pt-4 space-y-4">
           <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Cuadre de bolsas</h3>
-            <div className="grid grid-cols-4 gap-1 text-[10px] font-bold text-slate-400 uppercase mb-1"><span>Producto</span><span className="text-center">Cargó</span><span className="text-center">Salió</span><span className="text-center">Devuelve</span></div>
+            <div className="grid grid-cols-5 gap-1 text-[10px] font-bold text-slate-400 uppercase mb-1"><span>Producto</span><span className="text-center">Cargó</span><span className="text-center">Entregó</span><span className="text-center">Merma</span><span className="text-center">Devuelve</span></div>
             {productos.filter(p => cargaTotal[s(p.sku)] > 0).map(p => { const sku = s(p.sku); return (
-              <div key={sku} className="grid grid-cols-4 gap-1 text-sm items-center py-1">
+              <div key={sku} className="grid grid-cols-5 gap-1 text-sm items-center py-1">
                 <span className="font-semibold text-slate-700 text-xs">{s(p.nombre)}</span>
                 <span className="text-center text-slate-500">{cargaTotal[sku]}</span>
-                <span className="text-center text-slate-500">{(entregadoTotal[sku]||0)+(mermaTotal[sku]||0)}</span>
+                <span className="text-center text-slate-500">{entregadoTotal[sku]||0}</span>
+                <span className={`text-center ${(mermaTotal[sku]||0)>0?"text-amber-600 font-semibold":"text-slate-500"}`}>{mermaTotal[sku]||0}</span>
                 <span className={`text-center font-bold ${devuelto[sku]===0?"text-emerald-600":devuelto[sku]>0?"text-blue-600":"text-red-600"}`}>{devuelto[sku]}</span>
               </div>
             );})}
+            {(() => { const totalCarga = Object.values(cargaTotal).reduce((a,b)=>a+b,0); const totalEntr = Object.values(entregadoTotal).reduce((a,b)=>a+b,0); const totalMerma = Object.values(mermaTotal).reduce((a,b)=>a+b,0); const totalDev = Object.values(devuelto).reduce((a,b)=>a+b,0); return (
+              <div className="grid grid-cols-5 gap-1 text-xs items-center py-1.5 border-t border-slate-200 mt-1 font-bold text-slate-700">
+                <span>Total</span>
+                <span className="text-center">{totalCarga}</span>
+                <span className="text-center">{totalEntr}</span>
+                <span className="text-center text-amber-600">{totalMerma}</span>
+                <span className={`text-center ${totalDev===0?"text-emerald-600":totalDev>0?"text-blue-600":"text-red-600"}`}>{totalDev}</span>
+              </div>
+            );})()}
           </div>
           <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Cobros</h3>

@@ -7,7 +7,7 @@ export function OrdenesView({ data, actions, user }) {
   const [filterEst, setFilterEst] = useState("");
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({clienteId:"",fecha:"",tipoCobro:"Contado"});
+  const [form, setForm] = useState({clienteId:"",fecha:"",tipoCobro:"Contado",folioNota:""});
   const [lines, setLines] = useState([]);
 
   const dSearch = useDebounce(search);
@@ -75,15 +75,15 @@ export function OrdenesView({ data, actions, user }) {
     }
     if (Object.keys(e).length) { setErrors(e); return; }
     const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
-    const err = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc,usuarioId:user?.id||null,tipoCobro:form.tipoCobro||"Contado"});
+    const err = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc,usuarioId:user?.id||null,tipoCobro:form.tipoCobro||"Contado",folioNota:form.folioNota||null});
     if (err) {
       toast?.error(err.message || "No se pudo crear la orden");
       return;
     }
     toast?.success("Orden creada");
-    setModal(false); setForm({clienteId:"",fecha:""}); setLines([]); setErrors({});
+    setModal(false); setForm({clienteId:"",fecha:"",tipoCobro:"Contado",folioNota:""}); setLines([]); setErrors({});
   };
-  const openModal = () => { setModal(true); setErrors({}); setForm({clienteId:"",fecha:"",tipoCobro:"Contado"}); setLines([{sku:"",qty:1,precio:0}]); };
+  const openModal = () => { setModal(true); setErrors({}); setForm({clienteId:"",fecha:"",tipoCobro:"Contado",folioNota:""}); setLines([{sku:"",qty:1,precio:0}]); };
 
   const [pagoModal, setPagoModal] = useState(null);
   const [pagoForm, setPagoForm] = useState({metodo:"Efectivo",referencia:""});
@@ -145,7 +145,7 @@ export function OrdenesView({ data, actions, user }) {
     </div>
     <div className="bg-white border border-slate-100 rounded-2xl p-4 sm:p-5">
       <DataTable columns={[
-        {key:"folio",label:"Folio",render:v=><span className="font-mono text-xs font-bold text-blue-600">{s(v)}</span>},
+        {key:"folio",label:"Folio",render:(_,row)=><div><span className="font-mono text-xs font-bold text-blue-600">{s(row.folio)}</span>{row.folio_nota&&<span className="block text-[10px] text-slate-400">Nota: {s(row.folio_nota)}</span>}</div>},
         {key:"cliente",label:"Cliente",bold:true},{key:"fecha",label:"Fecha",render:v=>fmtDate(v),hideOnMobile:true},
         {key:"productos",label:"Productos",render:v=><span className="text-xs text-slate-500 font-mono">{s(v)}</span>,hideOnMobile:true},
         {key:"total",label:"Total",bold:true,render:v=>`$${n(v).toLocaleString()}`},
@@ -187,6 +187,7 @@ export function OrdenesView({ data, actions, user }) {
           </div>
         </div>
         <FormInput label="Fecha entrega" type="date" value={form.fecha} onChange={e=>setForm({...form,fecha:e.target.value})} />
+        <FormInput label="Folio de nota (opcional)" value={form.folioNota} onChange={e=>setForm({...form,folioNota:e.target.value})} placeholder="Ej: N-0001" />
         <div>
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Productos *</label>
           {lines.map((l,i)=>(
