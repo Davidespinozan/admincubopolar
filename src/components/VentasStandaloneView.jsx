@@ -45,7 +45,8 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
     return false;
   }, [user]);
 
-  const ordenesUsuario = useMemo(() => (data.ordenes || []).filter(o => isOwnedBy(o)), [data.ordenes, isOwnedBy]);
+  const isAdminPreview = user?.rol === 'Admin';
+  const ordenesUsuario = useMemo(() => isAdminPreview ? (data.ordenes || []) : (data.ordenes || []).filter(o => isOwnedBy(o)), [data.ordenes, isOwnedBy, isAdminPreview]);
   const clientes = useMemo(() => (data.clientes || []).filter(c => c.estatus === "Activo"), [data.clientes]);
   const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
 

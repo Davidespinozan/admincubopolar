@@ -53,17 +53,20 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   }, [data.preciosEsp, data.clientes, data.productos]);
 
   // ── MI RUTA ACTIVA (asignada por administración) ──
+  const isAdminPreview = user?.rol === 'Admin';
   const miRutaActiva = useMemo(() => {
     const hoyStr = new Date().toISOString().slice(0, 10);
     return (data.rutas || []).find(r => {
-      const choferId = r.choferId || r.chofer_id;
-      const esDelChofer = choferId && (String(choferId) === String(user?.id) || s(r.choferNombre) === s(user?.nombre));
       const estatus = s(r.estatus).toLowerCase();
       const estaActiva = estatus === 'programada' || estatus === 'en progreso' || estatus === 'en_progreso';
       const esFechaHoy = !r.fecha || s(r.fecha).startsWith(hoyStr);
-      return esDelChofer && estaActiva && esFechaHoy;
+      if (!estaActiva || !esFechaHoy) return false;
+      // Admin preview: mostrar primera ruta activa (sin filtrar por chofer)
+      if (isAdminPreview) return true;
+      const choferId = r.choferId || r.chofer_id;
+      return choferId && (String(choferId) === String(user?.id) || s(r.choferNombre) === s(user?.nombre));
     }) || null;
-  }, [data.rutas, user]);
+  }, [data.rutas, user, isAdminPreview]);
 
   // Derivar step desde el estado real de la ruta — si ya está "En progreso" saltar directo a ruta
   const rutaEnProgreso = miRutaActiva && (s(miRutaActiva.estatus).toLowerCase() === 'en progreso' || s(miRutaActiva.estatus).toLowerCase() === 'en_progreso');
