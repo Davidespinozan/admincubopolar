@@ -127,16 +127,19 @@ function App() {
   const handleLogout = () => isAdmin && adminViewAs ? setAdminViewAs(null) : setUser(null)
 
   const adminBar = isAdmin && adminViewAs ? (
-    <div className="fixed top-0 left-0 right-0 z-[9999] flex items-center justify-between border-b border-white/10 bg-slate-950/92 px-4 py-2 text-cyan-50 erp-shell-blur shadow-[0_14px_30px_rgba(8,20,27,0.28)]">
-      <span className="text-xs font-bold tracking-[0.14em] uppercase">Viendo como: {adminViewAs}</span>
-      <button onClick={() => setAdminViewAs(null)} className="rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-white/14">
-        ← Volver a Admin
-      </button>
+    <div className="fixed top-0 left-0 right-0 z-[9999] border-b border-white/10 bg-slate-950/92 px-4 py-2 text-cyan-50 erp-shell-blur shadow-[0_14px_30px_rgba(8,20,27,0.28)]">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-bold tracking-[0.14em] uppercase">Vista previa: {adminViewAs}</span>
+        <button onClick={() => setAdminViewAs(null)} className="rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-white/14">
+          ← Volver a Admin
+        </button>
+      </div>
+      <p className="text-[10px] text-amber-300 mt-1">Estás viendo TODOS los datos como Admin. Cada usuario real solo ve lo suyo.</p>
     </div>
   ) : null
 
   const withAdminBar = (view) => adminBar
-    ? <>{adminBar}<div style={{ paddingTop: '44px' }}>{view}</div></>
+    ? <>{adminBar}<div style={{ paddingTop: '56px' }}>{view}</div></>
     : view
 
   const roleUser = { ...user, id: usuarioActualId || user?.id, auth_id: authUserId || user?.auth_id }
