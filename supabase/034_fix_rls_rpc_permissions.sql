@@ -14,7 +14,10 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION increment_saldo TO authenticated;
 
--- move_stock: usado por Producción al confirmar
+-- move_stock: eliminar versiones anteriores y recrear con SECURITY DEFINER
+DROP FUNCTION IF EXISTS move_stock(VARCHAR, INTEGER, tipo_movimiento, TEXT, BIGINT);
+DROP FUNCTION IF EXISTS move_stock(VARCHAR, INTEGER, TEXT, TEXT, BIGINT);
+
 CREATE OR REPLACE FUNCTION move_stock(
   p_sku VARCHAR(20), p_cantidad INTEGER,
   p_tipo TEXT, p_origen TEXT, p_usuario_id BIGINT DEFAULT NULL
