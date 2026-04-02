@@ -358,6 +358,18 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const cerrarRuta = async () => {
     if (cerrandoRuta || rutaCerrada) return;
 
+    // Validar que no haya inventario negativo (entregó más de lo que cargó)
+    for (const p of productos) {
+      const sku = s(p.sku);
+      const carga = cargaTotal[sku] || 0;
+      if (carga <= 0) continue;
+      const dev = carga - (entregadoTotal[sku] || 0) - (mermaTotal[sku] || 0);
+      if (dev < 0) {
+        showToast(`Error: ${s(p.nombre)} tiene ${Math.abs(dev)} unidades de más (entregó más de lo cargado)`);
+        return;
+      }
+    }
+
     setCerrandoRuta(true);
 
     // Save complete route report to store

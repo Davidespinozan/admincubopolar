@@ -15,12 +15,8 @@ export default defineConfig(({ mode }) => ({
     rollupOptions: {
       output: {
         manualChunks: {
-          // Separar React y otras dependencias core
           'vendor-react': ['react', 'react-dom'],
-          // Supabase en su propio chunk
           'vendor-supabase': ['@supabase/supabase-js'],
-          // DOMPurify
-          'vendor-security': ['dompurify'],
         }
       }
     },

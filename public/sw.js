@@ -1,4 +1,4 @@
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3; // Bump on each deploy
 const CACHE_NAME = `cubopolar-v${CACHE_VERSION}`;
 const SHELL_ASSETS = [
   '/',

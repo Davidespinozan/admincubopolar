@@ -96,7 +96,7 @@ export function ProductosView({ data, actions }) {
       <div className="space-y-3">
         <FormInput label="SKU *" value={form.sku} onChange={e=>setForm({...form,sku:e.target.value.toUpperCase()})} placeholder="Ej: HC-25K" error={errors.sku} />
         <FormInput label="Nombre *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} error={errors.nombre} />
-        <FormSelect label="Tipo" options={["Producto Terminado","Empaque"]} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} />
+        <FormSelect label="Tipo" options={["Producto Terminado","Empaque"]} value={form.tipo} onChange={e=>{const t=e.target.value;setForm({...form,tipo:t,precio:t==="Empaque"?0:form.precio,costoUnitario:t==="Producto Terminado"?0:form.costoUnitario,empaqueSku:t==="Empaque"?"":form.empaqueSku})}} />
         <FormInput label="Stock inicial" type="number" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} />
         <FormSelect label="Ubicación" options={["CF-1","CF-2","CF-3","Almacén"]} value={form.ubicacion} onChange={e=>setForm({...form,ubicacion:e.target.value})} />
         {form.tipo==="Producto Terminado" && (

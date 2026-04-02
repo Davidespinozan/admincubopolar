@@ -1042,21 +1042,29 @@ export function useSupaStore(userId, userName) {
         if (insErr) { t()?.error('Error al registrar transformación'); return insErr; }
 
         // Descontar insumo (barras)
-        await supabase.from('productos')
+        const { error: e2 } = await supabase.from('productos')
           .update({ stock: Math.max(0, Number(inputProd.stock) - inputKg) })
           .eq('id', inputProd.id);
+        if (e2) { t()?.error('Error al descontar insumo'); return e2; }
 
         // Incrementar producto derivado (triturado)
-        await supabase.from('productos')
+        const { error: e3 } = await supabase.from('productos')
           .update({ stock: Number(outputProd.stock || 0) + outputKg })
           .eq('id', outputProd.id);
+        if (e3) {
+          // Rollback: restaurar stock del insumo
+          await supabase.from('productos').update({ stock: Number(inputProd.stock) }).eq('id', inputProd.id);
+          t()?.error('Error al incrementar producto derivado');
+          return e3;
+        }
 
         // Movimientos de inventario
         const now = new Date().toISOString();
-        await supabase.from('inventario_mov').insert([
+        const { error: e4 } = await supabase.from('inventario_mov').insert([
           { tipo: 'Salida',  producto: input_sku,  cantidad: inputKg,  origen: `Transformación ${folio}`, usuario: uname(), fecha: now },
           { tipo: 'Entrada', producto: output_sku, cantidad: outputKg, origen: `Transformación ${folio}`, usuario: uname(), fecha: now },
         ]);
+        if (e4) { t()?.error('Error al registrar movimientos de inventario'); }
 
         // Registrar merma si la hay
         if (mermaKg > 0) {
@@ -1158,24 +1166,35 @@ export function useSupaStore(userId, userName) {
 
       traspasoEntreUbicaciones: async ({ origen, destino, sku, cantidad }) => {
         const qty = Number(cantidad);
-        if (qty <= 0) return;
+        if (qty <= 0) return { message: 'Cantidad inválida' };
+        if (origen === destino) return { message: 'Origen y destino deben ser diferentes' };
 
-        const [{ data: rowOrig }, { data: rowDest }] = await Promise.all([
+        const [{ data: rowOrig, error: errO }, { data: rowDest, error: errD }] = await Promise.all([
           supabase.from('cuartos_frios').select('stock').eq('id', origen).single(),
           supabase.from('cuartos_frios').select('stock').eq('id', destino).single(),
         ]);
+        if (errO || errD || !rowOrig || !rowDest) { t()?.error('Error al leer cuartos fríos'); return errO || errD; }
 
         const stockOrig = (rowOrig?.stock && typeof rowOrig.stock === 'object') ? rowOrig.stock : {};
         const stockDest = (rowDest?.stock && typeof rowDest.stock === 'object') ? rowDest.stock : {};
+        const disponible = Number(stockOrig[sku] || 0);
+        if (disponible < qty) { t()?.error(`Stock insuficiente: ${disponible} disponible, se requieren ${qty}`); return { message: 'Stock insuficiente' }; }
 
-        await Promise.all([
-          supabase.from('cuartos_frios').update({
-            stock: { ...stockOrig, [sku]: Math.max(0, Number(stockOrig[sku] || 0) - qty) },
-          }).eq('id', origen),
-          supabase.from('cuartos_frios').update({
-            stock: { ...stockDest, [sku]: Number(stockDest[sku] || 0) + qty },
-          }).eq('id', destino),
-        ]);
+        // Actualizar origen primero
+        const { error: e1 } = await supabase.from('cuartos_frios').update({
+          stock: { ...stockOrig, [sku]: disponible - qty },
+        }).eq('id', origen);
+        if (e1) { t()?.error('Error al descontar de origen'); return e1; }
+
+        const { error: e2 } = await supabase.from('cuartos_frios').update({
+          stock: { ...stockDest, [sku]: Number(stockDest[sku] || 0) + qty },
+        }).eq('id', destino);
+        if (e2) {
+          // Rollback origen
+          await supabase.from('cuartos_frios').update({ stock: stockOrig }).eq('id', origen);
+          t()?.error('Error al incrementar destino — traspaso revertido');
+          return e2;
+        }
 
         await supabase.from('inventario_mov').insert({
           tipo: 'Traspaso', producto: sku, cantidad: qty,
@@ -1251,15 +1270,17 @@ export function useSupaStore(userId, userName) {
           }
         }
 
-        await supabase.from('productos').update({ stock: target }).eq('sku', sku);
+        const { error: prodErr } = await supabase.from('productos').update({ stock: target }).eq('sku', sku);
+        if (prodErr) { t()?.error('Error al actualizar stock de producto'); return prodErr; }
 
-        await supabase.from('inventario_mov').insert({
+        const { error: movErr } = await supabase.from('inventario_mov').insert({
           tipo: delta >= 0 ? 'Entrada' : 'Salida',
           producto: sku,
           cantidad: Math.abs(delta),
           origen: `Ajuste manual: ${motivo || 'Sin motivo'}`,
           usuario: uname(),
         });
+        if (movErr) { t()?.error('Error al registrar movimiento de inventario'); }
 
         await log('Ajustar', 'Inventario', `${sku}: ${actual} → ${target}. Motivo: ${motivo || 'Sin motivo'}`);
 

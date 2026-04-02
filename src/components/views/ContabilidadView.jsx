@@ -1,8 +1,9 @@
-import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, useToast, today, reporteFinanciero } from './viewsCommon';
+import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, useToast, today, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
 
 export function ContabilidadView({ data, actions }) {
   const toast = useToast();
   const [askConfirm, ConfirmEl] = useConfirm();
+  const [showAll, setShowAll] = useState(false);
   const [modal, setModal] = useState(null);
   const empty = { tipo: "Egreso", categoria: "Proveedores", concepto: "", monto: "", fecha: today() };
   const [form, setForm] = useState(empty);
@@ -81,7 +82,7 @@ export function ContabilidadView({ data, actions }) {
       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Movimientos recientes</h3>
       {todos.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin movimientos. Usa los botones + Ingreso o + Gasto para registrar.</p>}
       <div className="space-y-1.5">
-        {todos.slice(0, 30).map(m => (
+        {(showAll ? todos : todos.slice(0, PAGE_SIZE)).map(m => (
           <div key={m.id} className={`rounded-lg p-3 border overflow-hidden ${m._tipo === "Ingreso" ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100"}`}>
             <div className="flex justify-between gap-2">
               <span className="text-sm font-semibold text-slate-700 min-w-0 truncate">{s(m.concepto)}</span>
@@ -97,6 +98,7 @@ export function ContabilidadView({ data, actions }) {
           </div>
         ))}
       </div>
+      {!showAll && todos.length > PAGE_SIZE && <button onClick={() => setShowAll(true)} className="mt-2 w-full text-center text-xs text-blue-600 font-semibold py-2">Ver todos ({todos.length} movimientos)</button>}
     </div>
 
     <Modal open={!!modal} onClose={() => setModal(null)} title={form.tipo === "Ingreso" ? "Registrar ingreso" : "Registrar gasto"}>
