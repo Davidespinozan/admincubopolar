@@ -90,24 +90,27 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION cancelar_orden_asignada(BIGINT, BIGINT) TO authenticated;
 
--- registrar_pago
+-- registrar_pago: recrear la versión original CON SECURITY DEFINER (misma firma de 4 params)
 CREATE OR REPLACE FUNCTION registrar_pago(
-  p_cliente_id BIGINT, p_monto NUMERIC, p_metodo TEXT,
-  p_referencia TEXT, p_usuario_id BIGINT
+  p_cliente_id BIGINT, p_monto NUMERIC(12,2), p_referencia TEXT, p_usuario_id BIGINT DEFAULT NULL
 ) RETURNS BIGINT LANGUAGE plpgsql SECURITY DEFINER AS $$
-DECLARE
-  v_saldo_antes NUMERIC;
-  v_pago_id BIGINT;
+DECLARE v_cli RECORD; v_pago_efectivo NUMERIC(12,2); v_pago_id BIGINT;
 BEGIN
-  SELECT COALESCE(saldo, 0) INTO v_saldo_antes FROM clientes WHERE id = p_cliente_id;
-  INSERT INTO pagos (cliente_id, monto, metodo_pago, referencia, usuario_id, saldo_antes, saldo_despues)
-    VALUES (p_cliente_id, p_monto, p_metodo, p_referencia, p_usuario_id, v_saldo_antes, v_saldo_antes - p_monto)
-    RETURNING id INTO v_pago_id;
-  UPDATE clientes SET saldo = GREATEST(0, COALESCE(saldo, 0) - p_monto) WHERE id = p_cliente_id;
+  SELECT * INTO v_cli FROM clientes WHERE id = p_cliente_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Cliente no encontrado'; END IF;
+  IF p_monto <= 0 THEN RAISE EXCEPTION 'Monto debe ser positivo'; END IF;
+  v_pago_efectivo := LEAST(p_monto, v_cli.saldo);
+  IF v_pago_efectivo <= 0 THEN RAISE EXCEPTION 'Sin saldo pendiente'; END IF;
+  INSERT INTO pagos (cliente_id, monto, referencia, saldo_antes, saldo_despues, usuario_id)
+  VALUES (p_cliente_id, v_pago_efectivo, p_referencia, v_cli.saldo, v_cli.saldo - v_pago_efectivo, p_usuario_id)
+  RETURNING id INTO v_pago_id;
+  UPDATE clientes SET saldo = saldo - v_pago_efectivo WHERE id = p_cliente_id;
+  INSERT INTO auditoria (usuario, accion, modulo, detalle)
+  VALUES (COALESCE(p_usuario_id::TEXT, 'sistema'), 'Pago', 'Cobranza', '$' || v_pago_efectivo || ' de ' || v_cli.nombre || ' Ref: ' || p_referencia);
   RETURN v_pago_id;
 END;
 $$;
-GRANT EXECUTE ON FUNCTION registrar_pago(BIGINT, NUMERIC, TEXT, TEXT, BIGINT) TO authenticated;
+GRANT EXECUTE ON FUNCTION registrar_pago(BIGINT, NUMERIC, TEXT, BIGINT) TO authenticated;
 
 -- ═══════════════════════════════════════════════════════════
 -- 2. Políticas faltantes (con DROP IF EXISTS para re-ejecución segura)
