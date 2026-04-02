@@ -28,6 +28,14 @@ const pinIcon = (L, label, tipo) => {
   });
 };
 
+// Inyectar keyframes una sola vez al documento
+if (typeof document !== 'undefined' && !document.getElementById('chofer-pulse-css')) {
+  const style = document.createElement('style');
+  style.id = 'chofer-pulse-css';
+  style.textContent = '@keyframes chofer-pulse{0%,100%{box-shadow:0 0 0 4px rgba(16,185,129,0.3),0 2px 10px rgba(0,0,0,0.3)}50%{box-shadow:0 0 0 10px rgba(16,185,129,0.1),0 2px 10px rgba(0,0,0,0.3)}}';
+  document.head.appendChild(style);
+}
+
 const choferIcon = (L, nombre) => L.divIcon({
   html: `<div style="
     background:${COLORS.chofer.bg};border:3px solid ${COLORS.chofer.border};
@@ -35,9 +43,8 @@ const choferIcon = (L, nombre) => L.divIcon({
     display:flex;align-items:center;justify-content:center;
     font-weight:700;font-size:10px;padding:0 6px;
     box-shadow:0 0 0 4px rgba(16,185,129,0.3),0 2px 10px rgba(0,0,0,0.3);
-    animation:pulse 2s infinite;white-space:nowrap;
-  ">🚛 ${nombre}</div>
-  <style>@keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(16,185,129,0.3)}50%{box-shadow:0 0 0 8px rgba(16,185,129,0.15)}}</style>`,
+    animation:chofer-pulse 2s infinite;white-space:nowrap;
+  ">🚛 ${nombre}</div>`,
   className: '',
   iconSize: null,
   iconAnchor: [14, 14],
