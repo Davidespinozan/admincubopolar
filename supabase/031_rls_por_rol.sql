@@ -1,16 +1,21 @@
 -- 031: Row Level Security por rol
 -- Protege datos a nivel fila según el rol del usuario autenticado
 
--- Helper: obtener rol del usuario actual desde auth.uid()
+-- Helper: obtener rol del usuario actual
+-- Busca por email del JWT de Supabase Auth (la tabla usuarios no tiene auth_id)
 CREATE OR REPLACE FUNCTION get_my_rol()
 RETURNS TEXT AS $$
-  SELECT rol::TEXT FROM usuarios WHERE auth_id = auth.uid() LIMIT 1;
+  SELECT rol::TEXT FROM usuarios
+  WHERE lower(email) = lower(auth.jwt() ->> 'email')
+  LIMIT 1;
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 -- Helper: obtener id del usuario actual
 CREATE OR REPLACE FUNCTION get_my_user_id()
 RETURNS BIGINT AS $$
-  SELECT id FROM usuarios WHERE auth_id = auth.uid() LIMIT 1;
+  SELECT id FROM usuarios
+  WHERE lower(email) = lower(auth.jwt() ->> 'email')
+  LIMIT 1;
 $$ LANGUAGE sql SECURITY DEFINER STABLE;
 
 GRANT EXECUTE ON FUNCTION get_my_rol TO authenticated;
@@ -47,7 +52,7 @@ ALTER TABLE usuarios ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "admin_all" ON usuarios FOR ALL TO authenticated
   USING (get_my_rol() = 'Admin') WITH CHECK (get_my_rol() = 'Admin');
 CREATE POLICY "self_read" ON usuarios FOR SELECT TO authenticated
-  USING (auth_id = auth.uid());
+  USING (lower(email) = lower(auth.jwt() ->> 'email'));
 
 -- ═══════════════════════════════════════════════════════════
 -- CLIENTES — Admin/Ventas/Facturación escriben, todos leen
