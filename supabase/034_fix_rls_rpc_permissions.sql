@@ -6,6 +6,7 @@
 -- ═══════════════════════════════════════════════════════════
 
 -- increment_saldo
+DROP FUNCTION IF EXISTS increment_saldo(BIGINT, NUMERIC);
 CREATE OR REPLACE FUNCTION increment_saldo(p_cli BIGINT, p_delta NUMERIC)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
@@ -68,7 +69,8 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION confirmar_produccion(BIGINT, BIGINT) TO authenticated;
 
--- asignar_orden
+-- asignar_orden: DROP primero porque params originales tienen nombres diferentes
+DROP FUNCTION IF EXISTS asignar_orden(BIGINT, BIGINT, BIGINT);
 CREATE OR REPLACE FUNCTION asignar_orden(p_orden_id BIGINT, p_ruta_id BIGINT, p_usuario_id BIGINT)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
@@ -80,6 +82,7 @@ $$;
 GRANT EXECUTE ON FUNCTION asignar_orden(BIGINT, BIGINT, BIGINT) TO authenticated;
 
 -- cancelar_orden_asignada
+DROP FUNCTION IF EXISTS cancelar_orden_asignada(BIGINT, BIGINT);
 CREATE OR REPLACE FUNCTION cancelar_orden_asignada(p_orden_id BIGINT, p_usuario_id BIGINT)
 RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
@@ -90,7 +93,8 @@ END;
 $$;
 GRANT EXECUTE ON FUNCTION cancelar_orden_asignada(BIGINT, BIGINT) TO authenticated;
 
--- registrar_pago: recrear la versión original CON SECURITY DEFINER (misma firma de 4 params)
+-- registrar_pago
+DROP FUNCTION IF EXISTS registrar_pago(BIGINT, NUMERIC, TEXT, BIGINT);
 CREATE OR REPLACE FUNCTION registrar_pago(
   p_cliente_id BIGINT, p_monto NUMERIC(12,2), p_referencia TEXT, p_usuario_id BIGINT DEFAULT NULL
 ) RETURNS BIGINT LANGUAGE plpgsql SECURITY DEFINER AS $$
