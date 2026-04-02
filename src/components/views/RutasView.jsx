@@ -403,7 +403,19 @@ export function RutasView({ data, actions }) {
       return (
         <div className="mb-5">
           <Suspense fallback={<div className="h-48 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-center text-sm text-slate-400">Cargando mapa…</div>}>
-            <MapaPedidos ordenes={ordenesParaMapa} />
+            <MapaPedidos ordenes={ordenesParaMapa} choferUbicaciones={(() => {
+              const ubicaciones = data.choferUbicaciones || [];
+              const seen = new Set();
+              return ubicaciones.filter(u => {
+                if (seen.has(u.rutaId || u.ruta_id)) return false;
+                seen.add(u.rutaId || u.ruta_id);
+                return true;
+              }).map(u => {
+                const usr = (data.usuarios || []).find(x => String(x.id) === String(u.choferId || u.chofer_id));
+                const ruta = (data.rutas || []).find(r => String(r.id) === String(u.rutaId || u.ruta_id));
+                return { ...u, chofer_nombre: s(usr?.nombre), ruta_folio: s(ruta?.folio) };
+              });
+            })()} />
           </Suspense>
         </div>
       );

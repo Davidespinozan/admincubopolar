@@ -1,5 +1,6 @@
-import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { s, n } from '../utils/safe';
+import { supabase } from '../lib/supabase';
 import { abrirNavegacion } from '../utils/navegacion';
 const MapaRuta = lazy(() => import('./ui/MapaRuta'));
 
@@ -185,6 +186,32 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       }
     }
   }, [miRutaActiva?.id]);
+
+  // GPS tracking: enviar ubicación cada 30s cuando step = "ruta"
+  useEffect(() => {
+    const esEnRuta = step === 'ruta' && miRutaActiva?.id && user?.id;
+    if (!esEnRuta || !navigator.geolocation || !supabase) return;
+
+    const enviarUbicacion = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          supabase.from('chofer_ubicaciones').insert({
+            ruta_id: miRutaActiva.id,
+            chofer_id: user.id,
+            latitud: pos.coords.latitude,
+            longitud: pos.coords.longitude,
+            precision_m: pos.coords.accuracy,
+          }).then(() => {});
+        },
+        () => {}, // Error silencioso — GPS no disponible
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    };
+
+    enviarUbicacion(); // Enviar inmediatamente
+    const interval = setInterval(enviarUbicacion, 30000); // Cada 30s
+    return () => clearInterval(interval);
+  }, [step, miRutaActiva?.id, user?.id]);
 
   const pendientes = ordenesConDetalle.filter(o => !o.entregada);
   const entregadasList = ordenesConDetalle.filter(o => o.entregada);

@@ -7,6 +7,7 @@ import 'leaflet/dist/leaflet.css';
 const COLORS = {
   sinRuta:   { bg: '#f97316', border: '#ea580c', text: 'white' }, // naranja
   conRuta:   { bg: '#3b82f6', border: '#2563eb', text: 'white' }, // azul
+  chofer:    { bg: '#10b981', border: '#059669', text: 'white' }, // verde
 };
 
 const pinIcon = (L, label, tipo) => {
@@ -27,10 +28,27 @@ const pinIcon = (L, label, tipo) => {
   });
 };
 
+const choferIcon = (L, nombre) => L.divIcon({
+  html: `<div style="
+    background:${COLORS.chofer.bg};border:3px solid ${COLORS.chofer.border};
+    color:white;min-width:28px;height:28px;border-radius:14px;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:10px;padding:0 6px;
+    box-shadow:0 0 0 4px rgba(16,185,129,0.3),0 2px 10px rgba(0,0,0,0.3);
+    animation:pulse 2s infinite;white-space:nowrap;
+  ">🚛 ${nombre}</div>
+  <style>@keyframes pulse{0%,100%{box-shadow:0 0 0 4px rgba(16,185,129,0.3)}50%{box-shadow:0 0 0 8px rgba(16,185,129,0.15)}}</style>`,
+  className: '',
+  iconSize: null,
+  iconAnchor: [14, 14],
+  popupAnchor: [0, -18],
+});
+
 /**
  * @param {Array} ordenes - órdenes con { id, folio, clienteNombre, dir, productos, total, latitud, longitud, rutaId }
+ * @param {Array} choferUbicaciones - [{ chofer_nombre, latitud, longitud, ruta_folio, created_at }]
  */
-export default function MapaPedidos({ ordenes = [] }) {
+export default function MapaPedidos({ ordenes = [], choferUbicaciones = [] }) {
   const mapRef  = useRef(null);
   const mapInst = useRef(null);
   const [loading, setLoading] = useState(true);
@@ -85,7 +103,27 @@ export default function MapaPedidos({ ordenes = [] }) {
         `, { maxWidth: 240 });
       });
 
-      if (conCoords.length >= 2) {
+      // Marcadores de choferes en tiempo real
+      choferUbicaciones.forEach(ch => {
+        if (!ch.latitud || !ch.longitud) return;
+        const marker = L.marker([ch.latitud, ch.longitud], { icon: choferIcon(L, ch.chofer_nombre || 'Chofer') }).addTo(map);
+        const hace = ch.created_at ? new Date(ch.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '';
+        marker.bindPopup(`
+          <div style="min-width:140px;font-family:sans-serif;line-height:1.4">
+            <p style="margin:0 0 2px;font-weight:700;font-size:13px;color:#065f46">🚛 ${ch.chofer_nombre || 'Chofer'}</p>
+            <p style="margin:0;font-size:11px;color:#64748b">Ruta: ${ch.ruta_folio || '—'}</p>
+            <p style="margin:0;font-size:10px;color:#94a3b8">Última señal: ${hace}</p>
+          </div>
+        `);
+      });
+
+      const allCoords = [
+        ...conCoords.map(o => [o.latitud, o.longitud]),
+        ...choferUbicaciones.filter(c => c.latitud && c.longitud).map(c => [c.latitud, c.longitud]),
+      ];
+      if (allCoords.length >= 2) {
+        map.fitBounds(allCoords, { padding: [40, 40] });
+      } else if (conCoords.length >= 2) {
         map.fitBounds(conCoords.map(o => [o.latitud, o.longitud]), { padding: [40, 40] });
       }
 
@@ -135,6 +173,10 @@ export default function MapaPedidos({ ordenes = [] }) {
             <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: '#3b82f6' }} />
             <span className="text-slate-600">Asignadas ({ordenes.filter(o => (o.rutaId||o.ruta_id) && o.latitud).length})</span>
           </div>
+          {choferUbicaciones.length > 0 && <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: '#10b981' }} />
+            <span className="text-slate-600">Choferes ({choferUbicaciones.length})</span>
+          </div>}
         </div>
       )}
     </div>

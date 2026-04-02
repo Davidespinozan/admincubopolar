@@ -66,6 +66,7 @@ const EMPTY = {
   camiones: [],
   invoiceAttempts: [],
   notificaciones: [],
+  choferUbicaciones: [],
   contabilidad: { ingresos: [], egresos: [] },
 };
 
@@ -103,7 +104,7 @@ export function useSupaStore(userId, userName) {
       ]);
 
       // Tablas opcionales
-      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam, notif] = await Promise.all([
+      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam, notif, chUbi] = await Promise.all([
         safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('empleados').select('*').order('id')),
@@ -119,6 +120,7 @@ export function useSupaStore(userId, userName) {
         safeRows(supabase.from('invoice_attempts').select('orden_id, provider_reference, status, created_at, request_payload').order('id', { ascending: false }).limit(300)),
         safeRows(supabase.from('camiones').select('*').order('id')),
         safeRows(supabase.from('notificaciones').select('*').order('id', { ascending: false }).limit(100)),
+        safeRows(supabase.from('chofer_ubicaciones').select('*').order('created_at', { ascending: false }).limit(50)),
       ]);
       const clientes  = cli;
       const productos = prod;
@@ -408,6 +410,7 @@ export function useSupaStore(userId, userName) {
         invoiceAttempts: (invAttempts || []).map(toCamel),
         camiones: (cam || []).map(toCamel),
         notificaciones: (notif || []).map(toCamel),
+        choferUbicaciones: (chUbi || []).map(toCamel),
         contabilidad: contabilidadObj,
       });
 

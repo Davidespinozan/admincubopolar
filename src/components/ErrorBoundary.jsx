@@ -1,6 +1,31 @@
 import { Component } from 'react';
+import { supabase } from '../lib/supabase';
 
 const isDev = import.meta.env.DEV;
+
+// Enviar error a Supabase error_log (fire-and-forget)
+function logErrorToDb(tipo, mensaje, stack, componente) {
+  if (!supabase) return;
+  supabase.from('error_log').insert({
+    tipo,
+    mensaje: String(mensaje).slice(0, 2000),
+    stack: String(stack || '').slice(0, 5000),
+    componente: componente || null,
+    url: typeof window !== 'undefined' ? window.location.href : null,
+  }).then(() => {}).catch(() => {});
+}
+
+// Listener global para errores de Supabase (dispatched por safeRows)
+if (typeof window !== 'undefined') {
+  window.addEventListener('supabase-error', (e) => {
+    const { operation, error, code } = e.detail || {};
+    logErrorToDb('supabase', `${operation}: ${error}`, `code: ${code}`, operation);
+  });
+  // Capturar errores no manejados
+  window.addEventListener('unhandledrejection', (e) => {
+    logErrorToDb('unhandled', e.reason?.message || String(e.reason), e.reason?.stack);
+  });
+}
 
 export default class ErrorBoundary extends Component {
   constructor(props) {
@@ -14,10 +39,11 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, errorInfo) {
     this.setState({ errorInfo });
-    // Log to console in dev, could send to error tracking service in production
     if (isDev) {
       console.error('ErrorBoundary caught:', error, errorInfo);
     }
+    // Enviar a error_log en Supabase (producción y desarrollo)
+    logErrorToDb('boundary', error?.message, error?.stack, errorInfo?.componentStack?.slice(0, 500));
   }
 
   handleCopyError = () => {
