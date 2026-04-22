@@ -608,14 +608,17 @@ export function useSupaStore(userId, userName) {
       },
 
       updateProducto: async (id, p) => {
-        const { error } = await supabase.from('productos').update({
+        const update = {
           nombre: p.nombre, tipo: p.tipo, ubicacion: p.ubicacion,
           precio: Number(p.precio) || 0,
           costo_unitario: Number(p.costo_unitario || p.costoUnitario) || 0,
           proveedor: p.proveedor || null,
           empaque_sku: p.empaque_sku || p.empaqueSku || null,
-        }).eq('id', id);
-        if (error) { t()?.error('Error al actualizar producto'); return error; }
+        };
+        if (p.sku !== undefined && p.sku !== null && String(p.sku).trim() !== '') update.sku = String(p.sku).trim();
+        if (p.stock !== undefined && p.stock !== null && p.stock !== '') update.stock = Number(p.stock) || 0;
+        const { error } = await supabase.from('productos').update(update).eq('id', id);
+        if (error) { t()?.error('Error al actualizar producto: ' + error.message); return error; }
         log('Editar', 'Productos', `ID ${id} — ${p.nombre}`);
         rf();
       },
