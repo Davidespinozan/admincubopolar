@@ -24,7 +24,7 @@ const STATUS_COLORS = {
 };
 const DEFAULT_STATUS_COLOR = "bg-slate-100/90 text-slate-700 border-slate-200/90";
 export const StatusBadge = ({ status }) => (
-  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-[0.08em] uppercase ${STATUS_COLORS[status] || DEFAULT_STATUS_COLOR}`}>
+  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${STATUS_COLORS[status] || DEFAULT_STATUS_COLOR}`}>
     {status}
   </span>
 );

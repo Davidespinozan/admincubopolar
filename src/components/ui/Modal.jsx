@@ -32,7 +32,7 @@ export default function Modal({ open, onClose, title, wide, children }) {
 export function FormInput({ label, error, ...props }) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</label>
+      <label className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label>
       <input className={`min-h-[44px] w-full rounded-[16px] border px-3.5 py-3 text-sm transition-all focus:outline-none focus:ring-2 md:py-2.5 ${
         error ? "border-red-300 focus:border-red-400 focus:ring-red-50" : "border-slate-200 bg-white/80 focus:border-cyan-600 focus:ring-cyan-50"
       }`} {...props} />
@@ -44,7 +44,7 @@ export function FormInput({ label, error, ...props }) {
 export function FormSelect({ label, error, options, ...props }) {
   return (
     <div>
-      <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{label}</label>
+      <label className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label>
       <select className={`min-h-[44px] w-full rounded-[16px] border bg-white/80 px-3.5 py-3 text-sm focus:outline-none md:py-2.5 ${
         error ? "border-red-300 focus:border-red-400" : "border-slate-200 focus:border-cyan-600"
       }`} {...props}>
@@ -55,12 +55,29 @@ export function FormSelect({ label, error, options, ...props }) {
   );
 }
 
-export function FormBtn({ children, primary, danger, onClick, disabled, loading, className = "" }) {
+export function FormTextarea({ label, error, rows = 3, ...props }) {
+  return (
+    <div>
+      <label className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label>
+      <textarea
+        rows={rows}
+        className={`w-full rounded-[16px] border px-3.5 py-3 text-sm transition-all focus:outline-none focus:ring-2 ${
+          error ? "border-red-300 focus:border-red-400 focus:ring-red-50" : "border-slate-200 bg-white/80 focus:border-cyan-600 focus:ring-cyan-50"
+        }`}
+        {...props}
+      />
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  );
+}
+
+export function FormBtn({ children, primary, danger, ghost, onClick, disabled, loading, className = "" }) {
   return (
     <button onClick={onClick} disabled={disabled || loading}
       className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-[16px] px-5 py-3 text-sm font-semibold transition-all md:py-2.5 ${
         primary ? "bg-slate-900 text-white shadow-[0_18px_28px_rgba(8,20,27,0.16)] hover:bg-slate-800" :
         danger ? "bg-red-600 text-white hover:bg-red-700" :
+        ghost ? "bg-slate-100 text-slate-700 hover:bg-slate-200" :
         "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-50"
       } ${(disabled || loading) ? "opacity-50 cursor-not-allowed" : ""} ${className}`}>
       {loading ? <><BtnSpinner /> Guardando...</> : children}
