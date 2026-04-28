@@ -59,8 +59,8 @@ export function ProduccionView({ data, actions }) {
     if (bolsaNecesaria && n(form.cantidad) > stockBolsa) e.cantidad = "Stock insuficiente de " + bolsaNecesaria + " (" + stockBolsa + " disp.)";
     if (Object.keys(e).length) { setErrors(e); return; }
     const err = await actions.addProduccion(form);
-    if (err) { toast?.error("No se pudo crear la orden de producción"); return; }
-    toast?.success("Orden creada: " + form.cantidad + " " + form.sku);
+    if (err) { toast?.error("No se pudo registrar la producción"); return; }
+    toast?.success("Producción registrada: " + form.cantidad + " " + form.sku);
     setModal(false); setForm({turno:"Matutino",maquina:"Máquina 30",sku:"",cantidad:""}); setErrors({});
   };
 
@@ -167,7 +167,7 @@ export function ProduccionView({ data, actions }) {
         if (tab === 'transformaciones') { setTModal(true); setTErrors({}); }
         else { setForm(f => ({...f, sku: f.sku || skuOptions[0] || ""})); setModal(true); setErrors({}); }
       }}
-      actionLabel={tab === 'transformaciones' ? "Registrar transformación" : "Nueva orden"}
+      actionLabel={tab === 'transformaciones' ? "Registrar transformación" : "Registrar producción"}
       extraButtons={exportBtns}
     />
 
@@ -310,8 +310,8 @@ export function ProduccionView({ data, actions }) {
       )}
     </>}
 
-    {/* ═══ MODAL: Nueva orden de producción ═══ */}
-    <Modal open={modal} onClose={()=>setModal(false)} title="Nueva orden de producción">
+    {/* ═══ MODAL: Registrar producción ═══ */}
+    <Modal open={modal} onClose={()=>setModal(false)} title="Registrar producción">
       <div className="space-y-3">
         <FormSelect label="Turno" options={["Matutino","Vespertino"]} value={form.turno} onChange={e=>setForm({...form,turno:e.target.value})} />
         <FormSelect label="Máquina" options={["Máquina 30","Máquina 20","Máquina 15"]} value={form.maquina} onChange={e=>setForm({...form,maquina:e.target.value})} />
@@ -326,7 +326,7 @@ export function ProduccionView({ data, actions }) {
           </div>
         )}
       </div>
-      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Crear orden</FormBtn></div>
+      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Registrar</FormBtn></div>
     </Modal>
 
     {/* ═══ MODAL: Registrar transformación ═══ */}
@@ -418,8 +418,8 @@ export function ProduccionView({ data, actions }) {
       </div>
     </Modal>
 
-    {/* ═══ MODAL: Editar orden de producción ═══ */}
-    <Modal open={editModal} onClose={()=>setEditModal(false)} title="Editar orden de producción">
+    {/* ═══ MODAL: Editar producción ═══ */}
+    <Modal open={editModal} onClose={()=>setEditModal(false)} title="Editar producción">
       <div className="space-y-3">
         <FormSelect label="Estatus" options={["En proceso","Confirmada","Cancelada"]} value={editForm.estatus} onChange={e=>setEditForm({...editForm,estatus:e.target.value})} />
         <FormSelect label="Turno" options={["Matutino","Vespertino"]} value={editForm.turno} onChange={e=>setEditForm({...editForm,turno:e.target.value})} />
@@ -431,7 +431,7 @@ export function ProduccionView({ data, actions }) {
     </Modal>
 
     {/* ═══ MODAL: Confirmar eliminación ═══ */}
-    <Modal open={!!deleteConfirm} onClose={()=>setDeleteConfirm(null)} title="Eliminar orden de producción">
+    <Modal open={!!deleteConfirm} onClose={()=>setDeleteConfirm(null)} title="Eliminar producción">
       <p className="text-sm text-slate-600">¿Estás seguro de que deseas eliminar esta orden? Esta acción no se puede deshacer.</p>
       <div className="flex justify-end gap-2 mt-5">
         <FormBtn onClick={()=>setDeleteConfirm(null)}>Cancelar</FormBtn>
