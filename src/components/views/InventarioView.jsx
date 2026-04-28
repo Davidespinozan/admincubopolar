@@ -1,10 +1,9 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, CapacityBar, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtDateTime, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, CapacityBar, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 
 export function InventarioView({ data, actions }) {
   const toast = useToast();
   const [askConfirm, ConfirmEl] = useConfirm();
   const [pageExist, setPageExist] = useState(0);
-  const [pageKardex, setPageKardex] = useState(0);
   const [traspasoModal, setTraspasoModal] = useState(false);
   const [traspasoForm, setTraspasoForm] = useState({origen:"",destino:"",sku:"",cantidad:""});
   const [traspasoErrors, setTraspasoErrors] = useState({});
@@ -39,7 +38,6 @@ export function InventarioView({ data, actions }) {
     }, [prodTerminados, data.cuartosFrios]);
 
     const paginatedProd = useMemo(() => prodConStock.slice(pageExist * PAGE_SIZE, (pageExist + 1) * PAGE_SIZE), [prodConStock, pageExist]);
-  const paginatedMov = useMemo(() => data.inventarioMov.slice(pageKardex * PAGE_SIZE, (pageKardex + 1) * PAGE_SIZE), [data.inventarioMov, pageKardex]);
 
   const cfOptions = useMemo(() => data.cuartosFrios.map(cf => ({value: s(cf.id), label: s(cf.nombre)})), [data.cuartosFrios]);
   const skuProd = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado").map(p => s(p.sku)), [data.productos]);
@@ -171,16 +169,6 @@ export function InventarioView({ data, actions }) {
         {key:"acciones",label:"Acciones",render:(_,r)=><button onClick={(e)=>{e.stopPropagation();abrirAjuste(r);}} className="px-2.5 py-1.5 text-xs font-semibold rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 min-h-[36px]">Ajustar</button>},
       ]} data={paginatedProd} />
       <Paginator page={pageExist} total={prodConStock.length} onPage={setPageExist} />
-    </div>
-    <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
-      <h3 className="text-sm font-bold text-slate-700 mb-4">Kardex</h3>
-      <DataTable columns={[
-        {key:"fecha",label:"Fecha",render:v=>fmtDateTime(v)},{key:"tipo",label:"Tipo",badge:true,render:v=><StatusBadge status={v}/>},
-        {key:"producto",label:"Producto",bold:true},
-        {key:"cantidad",label:"Qty",render:v=>{const num=n(v,-999999);return<span className={`font-mono font-semibold ${num>0?"text-emerald-600":num<0?"text-red-500":"text-slate-600"}`}>{num>0?`+${num}`:num}</span>}},
-        {key:"origen",label:"Referencia"},{key:"usuario",label:"Usuario"},
-      ]} data={paginatedMov} />
-      <Paginator page={pageKardex} total={data.inventarioMov.length} onPage={setPageKardex} />
     </div>
 
     <Modal open={traspasoModal} onClose={()=>setTraspasoModal(false)} title="Traspaso entre ubicaciones">

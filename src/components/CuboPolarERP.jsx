@@ -13,6 +13,7 @@ const RutasView         = lazy(() => import('./views/RutasView.jsx').then(m => (
 const FacturacionView   = lazy(() => import('./views/FacturacionView.jsx').then(m => ({ default: m.FacturacionView })));
 const ConciliacionView  = lazy(() => import('./views/ConciliacionView.jsx').then(m => ({ default: m.ConciliacionView })));
 const AuditoriaView     = lazy(() => import('./views/AuditoriaView.jsx').then(m => ({ default: m.AuditoriaView })));
+const KardexView        = lazy(() => import('./views/KardexView.jsx').then(m => ({ default: m.KardexView })));
 const ConfiguracionView = lazy(() => import('./views/ConfiguracionView.jsx').then(m => ({ default: m.ConfiguracionView })));
 const AlmacenBolsasView = lazy(() => import('./views/AlmacenBolsasView.jsx').then(m => ({ default: m.AlmacenBolsasView })));
 const EmpleadosView     = lazy(() => import('./views/EmpleadosView.jsx').then(m => ({ default: m.EmpleadosView })));
@@ -76,7 +77,8 @@ const AREAS = [
   { id: "equipo", label: "Equipo", icon: "Users", color: "purple",
     items: [
       { id: "empleados", label: "Empleados", icon: "UserCheck" },
-      { id: "auditoria", label: "Historial", icon: "Shield" },
+      { id: "kardex", label: "Historial inventario", icon: "ClipboardCheck" },
+      { id: "auditoria", label: "Historial sistema", icon: "Shield" },
       { id: "configuracion", label: "Ajustes", icon: "Settings" },
     ]
   },
@@ -197,6 +199,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       case 'configuracion': return <ConfiguracionView {...vp} />;
       case 'comodatos': return <ComodatosView {...vp} />;
       case 'leads': return <LeadsView {...vp} />;
+      case 'kardex': return <KardexView data={data} />;
       default: return <DashboardView data={data} />;
     }
   };
