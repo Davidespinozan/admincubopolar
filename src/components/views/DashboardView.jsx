@@ -134,10 +134,32 @@ export default function DashboardView({ data }) {
     [data.rutas]
   );
 
-  const alertasActivas = useMemo(
-    () => (data.alertas || []).filter(a => !!s(a.msg || a.mensaje || a.detalle)),
-    [data.alertas]
-  );
+  const alertasActivas = useMemo(() => {
+    const raw = (data.alertas || []).filter(a => !!s(a.msg || a.mensaje || a.detalle));
+    const grupos = new Map();
+    for (const a of raw) {
+      const msg = s(a.msg || a.mensaje || a.detalle);
+      // Extrae cliente y monto si la alerta es tipo "CxC vencida"
+      const matchCxC = msg.match(/CxC vencida.*?—\s*(.+?)\s*—\s*\$(\d+(?:[.,]\d+)?)/);
+      if (matchCxC) {
+        const cliente = matchCxC[1].trim();
+        const monto = parseFloat(matchCxC[2].replace(',', ''));
+        const key = `cxc:${cliente}`;
+        if (!grupos.has(key)) {
+          grupos.set(key, { ...a, _cliente: cliente, _total: 0, _count: 0, _tipo: 'cxc' });
+        }
+        const g = grupos.get(key);
+        g._total += monto;
+        g._count += 1;
+        g.msg = `${cliente} te debe $${g._total.toLocaleString()} (${g._count} ${g._count === 1 ? 'factura vencida' : 'facturas vencidas'})`;
+        g.tipo = 'critica';
+      } else {
+        // Alertas que no son de CxC pasan tal cual
+        grupos.set(`other:${a.id || msg}`, a);
+      }
+    }
+    return Array.from(grupos.values());
+  }, [data.alertas]);
 
   const ordPend = useMemo(
     () => (data.ordenes || []).filter(o => estatusPendientes.has(s(o.estatus).toLowerCase())).length,
@@ -174,8 +196,8 @@ export default function DashboardView({ data }) {
     { label: "Ventas hoy", val: `$${n(ventasResumen.dia).toLocaleString()}`, unit: "pesos", bg: "bg-emerald-50", txt: "text-emerald-600", icon: Icons.DollarSign },
     { label: "Ventas semana", val: `$${n(ventasResumen.semana).toLocaleString()}`, unit: "pesos", bg: "bg-indigo-50", txt: "text-indigo-600", icon: Icons.Calculator },
     { label: "Ventas mes", val: `$${n(ventasResumen.mes).toLocaleString()}`, unit: "pesos", bg: "bg-blue-50", txt: "text-blue-600", icon: Icons.Wallet },
-    { label: "Por entregar", val: ordPend, unit: "órdenes", bg: "bg-amber-50", txt: "text-amber-500", icon: Icons.ShoppingCart },
-    { label: "Rutas activas", val: rutasAct, unit: "en calle", bg: "bg-emerald-50", txt: "text-emerald-500", icon: Icons.Truck },
+    { label: "Entregas pendientes", val: ordPend, unit: "hoy", bg: "bg-amber-50", txt: "text-amber-500", icon: Icons.ShoppingCart },
+    { label: "Rutas en calle", val: rutasAct, unit: "ahora", bg: "bg-emerald-50", txt: "text-emerald-500", icon: Icons.Truck },
     { label: "Clientes activos", val: n(clientesActivos).toLocaleString(), unit: "clientes", bg: "bg-cyan-50", txt: "text-cyan-600", icon: Icons.Users },
   ], [ordPend, rutasAct, ventasResumen, clientesActivos]);
 
@@ -255,7 +277,7 @@ export default function DashboardView({ data }) {
       <div className="mb-4 grid grid-cols-1 gap-4 md:mb-6 md:grid-cols-2">
         {/* Estado de Resultados */}
         <div className="rounded-2xl border border-slate-100 bg-white p-4 md:p-5">
-          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Calculator /> Estado de Resultados</h3>
+          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Calculator /> Cómo va el mes</h3>
           <div className="flex gap-2 mb-3">
             <button className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Mes</button>
           </div>
@@ -265,21 +287,21 @@ export default function DashboardView({ data }) {
               <span className="text-sm font-bold text-emerald-600">+${estadoResultados.mes.ventasTot.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Costo de ventas</span>
+              <span className="text-sm text-slate-600">Costo del hielo</span>
               <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.costoDeVentas.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100 bg-slate-50 rounded-lg px-2 -mx-2">
-              <span className="text-sm font-semibold text-slate-700">Utilidad bruta</span>
+              <span className="text-sm font-semibold text-slate-700">Ganancia antes de gastos</span>
               <span className={`text-sm font-bold ${estadoResultados.mes.utilidadBruta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                 ${estadoResultados.mes.utilidadBruta.toLocaleString()}
               </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Gastos operativos</span>
+              <span className="text-sm text-slate-600">Otros gastos</span>
               <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.gastosOp.toLocaleString()}</span>
             </div>
             <div className="-mx-2 flex justify-between rounded-[16px] bg-slate-900 px-3 py-2 text-white">
-              <span className="text-sm font-bold text-white/82">Utilidad</span>
+              <span className="text-sm font-bold text-white/82">Ganancia</span>
               <span className={`text-sm font-extrabold ${estadoResultados.mes.utilidad >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>
                 ${estadoResultados.mes.utilidad.toLocaleString()}
               </span>
@@ -289,22 +311,22 @@ export default function DashboardView({ data }) {
 
         {/* Balance Simplificado */}
         <div className="rounded-2xl border border-slate-100 bg-white p-4 md:p-5">
-          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Wallet /> Balance Financiero</h3>
+          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Wallet /> Tu dinero</h3>
           <div className="space-y-2">
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Efectivo cobrado hoy</span>
+              <span className="text-sm text-slate-600">Cobrado hoy en efectivo</span>
               <span className="text-sm font-bold text-emerald-600">${balance.efectivoHoy.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Cuentas por cobrar</span>
+              <span className="text-sm text-slate-600">Te deben</span>
               <span className="text-sm font-bold text-amber-600">${balance.cxcTotal.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Cuentas por pagar</span>
+              <span className="text-sm text-slate-600">Debes</span>
               <span className="text-sm font-bold text-red-500">${balance.cxpTotal.toLocaleString()}</span>
             </div>
             <div className="-mx-2 flex justify-between rounded-[16px] bg-slate-900 px-3 py-2 text-white">
-              <span className="text-sm font-bold text-white/82">Posición financiera</span>
+              <span className="text-sm font-bold text-white/82">Saldo a favor</span>
               <span className={`text-sm font-extrabold ${balance.posicion >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>
                 ${balance.posicion.toLocaleString()}
               </span>
@@ -315,20 +337,20 @@ export default function DashboardView({ data }) {
 
       {/* Demanda vs Producción */}
       <div className="mb-4 rounded-2xl border border-slate-100 bg-white p-4 md:mb-6 md:p-5">
-        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.Factory /> Demanda vs producción</h3>
+        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.Factory /> Qué necesitas producir</h3>
         {tableroDemanda.length === 0 ? <EmptyState message="Sin productos de hielo" /> :
           <DataTable
             columns={[
               { key: "sku", label: "SKU", render: v => <span className="font-mono text-xs font-bold text-blue-600">{s(v)}</span> },
               { key: "producto", label: "Producto", bold: true },
-              { key: "pendientes", label: "Pedidos pendientes", render: v => n(v).toLocaleString() },
-              { key: "stock", label: "Stock disponible", render: (v, r) => {
+              { key: "pendientes", label: "Pedidos", render: v => n(v).toLocaleString() },
+              { key: "stock", label: "Tienes en stock", render: (v, r) => {
                 const bajo = n(r.stockMinimo) > 0 && n(v) < n(r.stockMinimo);
                 return <span className={`font-bold ${bajo ? 'text-red-600' : ''}`}>{n(v).toLocaleString()}{bajo && <span className="text-[10px] text-red-400 ml-1">▼ bajo mín</span>}</span>;
               }},
-              { key: "stockMinimo", label: "Stock mínimo", render: v => n(v) > 0 ? <span className="text-xs text-slate-500">{n(v).toLocaleString()}</span> : <span className="text-xs text-slate-300">—</span> },
-              { key: "faltante", label: "Faltante por producir", render: v => <span className={`font-bold ${n(v) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{n(v).toLocaleString()}</span> },
-              { key: "producidoHoy", label: "Producido hoy", render: v => n(v).toLocaleString() },
+              { key: "stockMinimo", label: "Mínimo", render: v => n(v) > 0 ? <span className="text-xs text-slate-500">{n(v).toLocaleString()}</span> : <span className="text-xs text-slate-300">—</span> },
+              { key: "faltante", label: "Por producir", render: v => <span className={`font-bold ${n(v) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{n(v).toLocaleString()}</span> },
+              { key: "producidoHoy", label: "Hecho hoy", render: v => n(v).toLocaleString() },
             ]}
             data={tableroDemanda}
             cardTitle={r => `${s(r.sku)} · ${s(r.producto)}`}
