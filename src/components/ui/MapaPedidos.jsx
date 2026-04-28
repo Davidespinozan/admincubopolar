@@ -75,9 +75,9 @@ export default function MapaPedidos({ ordenes = [], choferUbicaciones = [] }) {
         shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       });
 
-      // Centro: primera orden con coords, o Hermosillo
+      // Centro: primera orden con coords, o Durango (capital)
       const first = conCoords[0];
-      const center = first ? [first.latitud, first.longitud] : [29.0892, -110.9611];
+      const center = first ? [first.latitud, first.longitud] : [24.0277, -104.6532];
 
       const map = L.map(mapRef.current, { zoomControl: true }).setView(center, 12);
       mapInst.current = map;

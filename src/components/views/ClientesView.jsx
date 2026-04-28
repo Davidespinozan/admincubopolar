@@ -9,14 +9,14 @@ export function ClientesView({ data, actions }) {
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
   const [geocoding, setGeocoding] = useState(false);
-  const empty = { nombre:"",nombreComercial:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",cp:"",correo:"",tipo:"Tienda",contacto:"",calle:"",colonia:"",ciudad:"Hermosillo",zona:"",latitud:"",longitud:"",creditoAutorizado:false,limiteCredito:"" };
+  const empty = { nombre:"",nombreComercial:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",cp:"",correo:"",tipo:"Tienda",contacto:"",calle:"",colonia:"",ciudad:"Durango",zona:"",latitud:"",longitud:"",creditoAutorizado:false,limiteCredito:"" };
   const [form, setForm] = useState(empty);
   const [step, setStep] = useState(1);
 
   const dSearch = useDebounce(search);
 
   const openNew = () => { setForm(empty); setErrors({}); setStep(1); setModal("new"); };
-  const openEdit = (c) => { setForm({ nombre:s(c.nombre),nombreComercial:s(c.nombreComercial||c.nombre_comercial),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Hermosillo",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"",creditoAutorizado:c.credito_autorizado||false,limiteCredito:c.limite_credito||"" }); setErrors({}); setStep(1); setModal(c); };
+  const openEdit = (c) => { setForm({ nombre:s(c.nombre),nombreComercial:s(c.nombreComercial||c.nombre_comercial),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Durango",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"",creditoAutorizado:c.credito_autorizado||false,limiteCredito:c.limite_credito||"" }); setErrors({}); setStep(1); setModal(c); };
 
   const validateStep = (currentStep) => {
     const e = {};
@@ -161,7 +161,7 @@ export function ClientesView({ data, actions }) {
             {form.calle && form.colonia && (
               <button type="button" disabled={geocoding} onClick={async()=>{
                 setGeocoding(true);
-                const geo=await import('../../utils/geocoding.js').then(m=>m.geocodeDireccion(`${form.calle}, ${form.colonia}, ${form.ciudad||'Hermosillo'}, Sonora, México`));
+                const geo=await import('../../utils/geocoding.js').then(m=>m.geocodeDireccion(`${form.calle}, ${form.colonia}, ${form.ciudad||'Durango'}, Durango, México`));
                 if(geo){ setForm(f=>({...f,latitud:geo.lat,longitud:geo.lng})); toast?.success('Ubicación obtenida'); }
                 else { toast?.error('No se pudo geocodificar'); }
                 setGeocoding(false);
