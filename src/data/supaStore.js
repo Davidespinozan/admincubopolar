@@ -520,10 +520,10 @@ export function useSupaStore(userId, userName) {
 
       // ── CLIENTES ──
       addCliente: async (c) => {
-        // Auto-geocodificar desde la dirección capturada
-        let latitud = null;
-        let longitud = null;
-        if (c.calle || c.colonia) {
+        // Si el form ya trae coords (desde autocomplete), úsalas. Si no, geocodificar.
+        let latitud = c.latitud != null && c.latitud !== '' ? Number(c.latitud) : null;
+        let longitud = c.longitud != null && c.longitud !== '' ? Number(c.longitud) : null;
+        if ((latitud == null || longitud == null) && (c.calle || c.colonia)) {
           const geo = await geocodeDireccion(buildDireccion(c)).catch(() => null);
           if (geo) { latitud = geo.lat; longitud = geo.lng; }
         }
@@ -567,8 +567,11 @@ export function useSupaStore(userId, userName) {
         if (c.zona               !== undefined) update.zona               = c.zona || null;
         if (c.creditoAutorizado  !== undefined) update.credito_autorizado = c.creditoAutorizado;
         if (c.limiteCredito      !== undefined) update.limite_credito     = Number(c.limiteCredito) || 0;
-        // Re-geocodificar automáticamente si cambió algún campo de dirección
-        if (c.calle !== undefined || c.colonia !== undefined || c.ciudad !== undefined) {
+        // Si el form trae coords explícitas (desde autocomplete), usarlas. Si no, re-geocodificar.
+        if (c.latitud != null && c.latitud !== '' && c.longitud != null && c.longitud !== '') {
+          update.latitud = Number(c.latitud);
+          update.longitud = Number(c.longitud);
+        } else if (c.calle !== undefined || c.colonia !== undefined || c.ciudad !== undefined) {
           const geo = await geocodeDireccion(buildDireccion(c)).catch(() => null);
           if (geo) { update.latitud = geo.lat; update.longitud = geo.lng; }
         }

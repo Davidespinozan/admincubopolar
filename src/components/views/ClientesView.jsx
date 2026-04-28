@@ -52,11 +52,18 @@ export function ClientesView({ data, actions }) {
     if (form.rfc.trim() && (form.rfc.length < 12 || form.rfc.length > 13)) e.rfc = "RFC debe tener 12-13 caracteres";
     if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
     if (form.cp.trim() && !/^\d{5}$/.test(form.cp)) e.cp = "CP debe ser 5 dígitos";
-    if (Object.keys(e).length) { setErrors(e); return; }
+    if (Object.keys(e).length) {
+      // Si hay error en un campo de otro paso, regresar al paso correcto con el campo en rojo
+      if (e.nombre || e.rfc || e.correo) setStep(1);
+      else if (e.cp) setStep(2);
+      setErrors(e);
+      toast?.error('Revisa los campos marcados en rojo');
+      return;
+    }
     const err = modal === "new"
       ? await actions.addCliente(form)
       : await actions.updateCliente(modal.id, form);
-    if (err) {
+    if (err && (err.message || err.code)) {
       toast?.error(modal === "new" ? "No se pudo crear el cliente" : "No se pudo actualizar el cliente");
       return;
     }
@@ -178,7 +185,7 @@ export function ClientesView({ data, actions }) {
 
           <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
             <span className="text-xs text-slate-500">📍 Ubicación GPS:</span>
-            <span className="text-xs font-mono bg-white px-2 py-1 rounded">{form.latitud && form.longitud ? `${form.latitud.toFixed(5)}, ${form.longitud.toFixed(5)}` : "Sin coordenadas"}</span>
+            <span className="text-xs font-mono bg-white px-2 py-1 rounded">{form.latitud && form.longitud ? `${Number(form.latitud).toFixed(5)}, ${Number(form.longitud).toFixed(5)}` : "Sin coordenadas"}</span>
             {form.calle && form.colonia && !form.latitud && (
               <button type="button" disabled={geocoding} onClick={async()=>{
                 setGeocoding(true);

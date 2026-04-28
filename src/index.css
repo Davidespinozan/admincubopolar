@@ -151,7 +151,7 @@ textarea {
 @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 .animate-slide-in { animation: slide-in 0.2s ease-out; }
 
-/* ── Google Places Autocomplete dropdown — sobre los modales ── */
+/* ── Google Places Autocomplete (legacy y nuevo Web Component) ── */
 .pac-container {
   z-index: 999999 !important;
   border-radius: 12px;
@@ -161,3 +161,15 @@ textarea {
 }
 .pac-item { padding: 8px 12px; cursor: pointer; }
 .pac-item:hover { background: rgba(126, 231, 255, 0.12); }
+
+/* PlaceAutocompleteElement (nuevo web component) */
+gmp-place-autocomplete {
+  width: 100%;
+  display: block;
+}
+gmp-place-autocomplete::part(container) {
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.8);
+  min-height: 44px;
+}
