@@ -190,7 +190,15 @@ export function ProduccionView({ data, actions }) {
           {key:"fecha",label:"Fecha",render:v=>fmtDate(v),hideOnMobile:true},
           {key:"turno",label:"Turno",hideOnMobile:true},
           {key:"maquina",label:"Máquina",bold:true},
-          {key:"sku",label:"SKU",render:v=><span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded-md">{s(v)}</span>},
+          {key:"sku",label:"Producto",render:v=>{
+            const prod = (data.productos || []).find(p => s(p.sku) === s(v));
+            return (
+              <div>
+                <div className="text-sm font-medium text-slate-700">{prod ? s(prod.nombre) : s(v)}</div>
+                <div className="font-mono text-[11px] text-slate-400 mt-0.5">{s(v)}</div>
+              </div>
+            );
+          }},
           {key:"cantidad",label:"Qty",render:v=><span className="font-semibold">{n(v).toLocaleString()}</span>},
           {key:"estatus",label:"Estatus",badge:true,render:(v,r)=><div className="flex items-center gap-2"><StatusBadge status={v}/><span className="hidden md:inline">{v==="En proceso"&&<button onClick={(e)=>{e.stopPropagation();actions.confirmarProduccion(r.id)}} className="text-xs text-blue-600 font-semibold hover:text-blue-800 px-2.5 py-0.5">Confirmar ✓</button>}</span></div>},
           {key:"_actions",label:"",render:(_,r)=><div className="flex items-center gap-1">
@@ -261,7 +269,12 @@ export function ProduccionView({ data, actions }) {
                   <div className="bg-slate-50 rounded-lg p-2.5">
                     <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Entrada</p>
                     <p className="text-sm font-bold text-slate-800">{n(t.input_kg)} kg</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5 font-mono">{s(t.input_sku)}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      {(() => {
+                        const p = (data.productos || []).find(x => s(x.sku) === s(t.input_sku));
+                        return p ? s(p.nombre) : s(t.input_sku);
+                      })()}
+                    </p>
                   </div>
                   <div className="bg-orange-50 rounded-lg p-2.5">
                     <p className="text-[10px] font-semibold text-red-400 uppercase mb-1">Merma</p>
@@ -271,7 +284,12 @@ export function ProduccionView({ data, actions }) {
                   <div className="bg-emerald-50 rounded-lg p-2.5">
                     <p className="text-[10px] font-semibold text-emerald-500 uppercase mb-1">Salida</p>
                     <p className="text-sm font-bold text-emerald-700">{n(t.output_kg)} kg</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5 font-mono">{s(t.sku)}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      {(() => {
+                        const p = (data.productos || []).find(x => s(x.sku) === s(t.sku));
+                        return p ? s(p.nombre) : s(t.sku);
+                      })()}
+                    </p>
                   </div>
                 </div>
                 {s(t.destino) && <p className="text-xs text-slate-400 mt-2">Notas: {s(t.destino)}</p>}

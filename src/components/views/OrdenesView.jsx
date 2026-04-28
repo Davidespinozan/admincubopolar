@@ -147,7 +147,19 @@ export function OrdenesView({ data, actions, user }) {
       <DataTable columns={[
         {key:"folio",label:"Folio",render:(_,row)=><div><span className="font-mono text-xs font-bold text-blue-600">{s(row.folio)}</span>{row.folio_nota&&<span className="block text-[10px] text-slate-400">Nota: {s(row.folio_nota)}</span>}</div>},
         {key:"cliente",label:"Cliente",bold:true},{key:"fecha",label:"Fecha",render:v=>fmtDate(v),hideOnMobile:true},
-        {key:"productos",label:"Productos",render:v=><span className="text-xs text-slate-500 font-mono">{s(v)}</span>,hideOnMobile:true},
+        {key:"productos",label:"Productos",hideOnMobile:true,render:v=>{
+          const raw = s(v);
+          if (!raw) return <span className="text-xs text-slate-400">—</span>;
+          const partes = raw.split(',').map(part => {
+            const mt = part.trim().match(/(\d+)\s*[×x]\s*(\S+)/);
+            if (!mt) return part.trim();
+            const qty = mt[1];
+            const sku = mt[2];
+            const prod = (data.productos || []).find(p => s(p.sku) === s(sku));
+            return prod ? `${qty}× ${s(prod.nombre)}` : `${qty}× ${sku}`;
+          });
+          return <span className="text-xs text-slate-600">{partes.join(', ')}</span>;
+        }},
         {key:"total",label:"Total",bold:true,render:v=>`$${n(v).toLocaleString()}`},
         {key:"estatus",label:"Estatus",badge:true,render:(v,r)=><div className="flex items-center gap-2 flex-wrap"><StatusBadge status={v}/><span className="hidden md:inline">{v==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">Asignar ruta</button></>}{v==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"entrega")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar entrega</button>}{v==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">→ Facturar</button>}</span></div>},
         {key:"ruta",label:"Ruta",hideOnMobile:true},

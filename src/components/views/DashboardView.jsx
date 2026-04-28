@@ -474,8 +474,12 @@ export default function DashboardView({ data, user, onNavigate }) {
         {tableroDemanda.length === 0 ? <EmptyState message="Sin productos de hielo" /> :
           <DataTable
             columns={[
-              { key: "sku", label: "SKU", render: v => <span className="font-mono text-xs font-bold text-blue-600">{s(v)}</span> },
-              { key: "producto", label: "Producto", bold: true },
+              { key: "producto", label: "Producto", render: (_, r) => (
+                <div>
+                  <div className="font-semibold text-slate-800">{s(r.producto)}</div>
+                  <div className="font-mono text-[11px] text-slate-400 mt-0.5">{s(r.sku)}</div>
+                </div>
+              )},
               { key: "pendientes", label: "Pedidos", render: v => n(v).toLocaleString() },
               { key: "stock", label: "Tienes en stock", render: (v, r) => {
                 const bajo = n(r.stockMinimo) > 0 && n(v) < n(r.stockMinimo);
