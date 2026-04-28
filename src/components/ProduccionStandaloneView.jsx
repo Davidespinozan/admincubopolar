@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { s, n } from '../utils/safe';
 
-const empaqueMap = { "HC-25K": "EMP-25", "HC-5K": "EMP-5", "HT-25K": "EMP-25", "BH-50K": null };
+// empaqueMap se deriva dinámicamente de data.productos.empaque_sku
 const PRODUCCION_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf3f6_0%,#e5edf1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function ProduccionStandaloneView({ user, data, actions, onLogout }) {
@@ -15,17 +15,15 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const [guardandoTrans, setGuardandoTrans] = useState(false);
 
   // Producir form — includes destino (congelador)
-  const [form, setForm] = useState({ turno: "Matutino", maquina: "Máquina 30", sku: "HC-25K", cantidad: "", destino: "CF-1" });
-  const [tForm, setTForm] = useState({ origen: "CF-1", destino: "CF-2", sku: "HC-25K", cantidad: "" });
-  const [sacarForm, setSacarForm] = useState({ sku: "HC-25K", cantidad: "", motivo: "Carga a ruta" });
+  const [form, setForm] = useState({ turno: "Matutino", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1" });
+  const [tForm, setTForm] = useState({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
+  const [sacarForm, setSacarForm] = useState({ sku: "", cantidad: "", motivo: "Carga a ruta" });
 
-  // Simulated pending cargas from chofers
-  const [cargasPendientes, setCargasPendientes] = useState([
-    { id: 1, chofer: s(user?.nombre || "Operador"), ruta: "Ruta Norte", items: { "HC-25K": 74, "BH-50K": 5 }, hora: "07:30", estatus: "Pendiente" },
-  ]);
+  // Simulated pending cargas from chofers (vacío — no usar mock data con SKUs hardcodeados)
+  const [cargasPendientes, setCargasPendientes] = useState([]);
 
   const [mermaModal, setMermaModal] = useState(false);
-  const [mForm, setMForm] = useState({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" });
+  const [mForm, setMForm] = useState({ sku: "", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" });
   const [fotoMermaFile, setFotoMermaFile] = useState(null);
   const [fotoMermaPreview, setFotoMermaPreview] = useState('');
   const [guardandoMerma, setGuardandoMerma] = useState(false);
@@ -94,7 +92,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       showToast("Merma: " + cant + "× " + mForm.sku + " registrada");
       setMermaModal(false);
       clearFotoMerma();
-      setMForm({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" });
+      setMForm({ sku: "", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" });
     } finally {
       setGuardandoMerma(false);
     }
@@ -149,7 +147,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     return t;
   }, [cuartos]);
 
-  const bolsaSku = empaqueMap[form.sku] || null;
+  const bolsaSku = useMemo(() => {
+    const prod = (data.productos || []).find(p => s(p.sku) === s(form.sku));
+    return s(prod?.empaqueSku || prod?.empaque_sku) || null;
+  }, [data.productos, form.sku]);
   const stockBolsa = useMemo(() => {
     if (!bolsaSku) return 999999;
     const p = data.productos.find(x => x.sku === bolsaSku);
@@ -169,7 +170,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     const cfNombre = cuartos.find(cf => s(cf.id) === form.destino)?.nombre || form.destino;
     showToast(form.cantidad + " " + form.sku + " → " + cfNombre);
     setModal(false);
-    setForm({ turno: "Matutino", maquina: "Máquina 30", sku: "HC-25K", cantidad: "", destino: "CF-1" });
+    setForm({ turno: "Matutino", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1" });
   };
 
   const hacerTraspaso = () => {
@@ -179,7 +180,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     const destinoN = cuartos.find(cf => s(cf.id) === tForm.destino)?.nombre || tForm.destino;
     showToast(tForm.cantidad + " " + tForm.sku + ": " + origenN + " → " + destinoN);
     setTraspasoModal(false);
-    setTForm({ origen: "CF-1", destino: "CF-2", sku: "HC-25K", cantidad: "" });
+    setTForm({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
   };
 
   const hacerSalida = () => {
@@ -189,7 +190,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     }
     showToast("Salida: " + sacarForm.cantidad + " " + sacarForm.sku + " de " + sacarModal.cfNombre);
     setSacarModal(null);
-    setSacarForm({ sku: "HC-25K", cantidad: "", motivo: "Carga a ruta" });
+    setSacarForm({ sku: "", cantidad: "", motivo: "Carga a ruta" });
   };
 
   return (
@@ -337,7 +338,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   <div className="px-4 pb-3"><div className="bg-slate-50 rounded-lg p-3 text-center"><p className="text-sm text-slate-400">Vacío</p></div></div>
                 )}
                 <div className="border-t border-slate-100">
-                  <button onClick={() => { setSacarModal({ cfId: s(cf.id), cfNombre: s(cf.nombre) }); setSacarForm({ sku: "HC-25K", cantidad: "", motivo: "Carga a ruta" }); }}
+                  <button onClick={() => { setSacarModal({ cfId: s(cf.id), cfNombre: s(cf.nombre) }); setSacarForm({ sku: "", cantidad: "", motivo: "Carga a ruta" }); }}
                     className="w-full py-3 text-xs font-bold text-amber-600 active:bg-amber-50">
                     − Sacar hielo (carga a ruta / otro)
                   </button>
@@ -569,7 +570,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
       {/* ═══ TAB MERMAS ═══ */}
         {tab === "mermas" && (<>
-          <button onClick={() => { setMermaModal(true); clearFotoMerma(); setMForm({ sku: "HC-25K", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" }); }}
+          <button onClick={() => { setMermaModal(true); clearFotoMerma(); setMForm({ sku: "", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" }); }}
             className="w-full py-4 bg-[#8f2d22] text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(143,45,34,0.18)] active:scale-[0.98] transition-transform">
             Registrar merma
           </button>
@@ -605,10 +606,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {["HC-25K", "HC-5K", "HT-25K", "BH-50K"].map(sku => (
-                    <button key={sku} onClick={() => setMForm(f => ({ ...f, sku }))}
-                      className={`py-2.5 rounded-xl text-xs font-bold border-2 ${mForm.sku === sku ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 text-slate-600"}`}>
-                      {sku}
+                  {(data.productos || []).filter(p => s(p.tipo) === "Producto Terminado").map(p => (
+                    <button key={p.sku} onClick={() => setMForm(f => ({ ...f, sku: s(p.sku) }))}
+                      className={`py-2.5 rounded-xl text-xs font-bold border-2 ${mForm.sku === s(p.sku) ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 text-slate-600"}`}>
+                      {s(p.nombre)}
                     </button>
                   ))}
                 </div>

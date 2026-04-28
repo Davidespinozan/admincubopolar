@@ -7,7 +7,7 @@ export function ProduccionView({ data, actions }) {
   // ── Producción normal ──
   const [modal, setModal] = useState(false);
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({turno:"Matutino",maquina:"Máquina 30",sku:"HC-25K",cantidad:""});
+  const [form, setForm] = useState({turno:"Matutino",maquina:"Máquina 30",sku:"",cantidad:""});
 
   // ── Editar / Eliminar ──
   const [editModal, setEditModal] = useState(false);
@@ -16,7 +16,7 @@ export function ProduccionView({ data, actions }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null); // id to delete
 
   const openEdit = (r) => {
-    setEditForm({id:r.id, turno:r.turno||"Matutino", maquina:r.maquina||"Máquina 30", sku:r.sku||"HC-25K", cantidad:String(r.cantidad||""), estatus:r.estatus||"En proceso"});
+    setEditForm({id:r.id, turno:r.turno||"Matutino", maquina:r.maquina||"Máquina 30", sku:s(r.sku), cantidad:String(r.cantidad||""), estatus:r.estatus||"En proceso"});
     setEditErrors({});
     setEditModal(true);
   };
@@ -42,8 +42,11 @@ export function ProduccionView({ data, actions }) {
     setDeleteConfirm(null);
   };
 
-  const empaqueMap = {"HC-25K":"EMP-25","HC-5K":"EMP-5","HT-25K":"EMP-25","BH-50K":null};
-  const bolsaNecesaria = empaqueMap[form.sku] || null;
+  // Deriva el empaque desde el catálogo (no hardcodear SKUs)
+  const bolsaNecesaria = useMemo(() => {
+    const prod = (data.productos || []).find(p => s(p.sku) === s(form.sku));
+    return s(prod?.empaqueSku || prod?.empaque_sku) || null;
+  }, [data.productos, form.sku]);
   const stockBolsa = useMemo(() => {
     if (!bolsaNecesaria) return 999999;
     const p = data.productos.find(x => x.sku === bolsaNecesaria);
@@ -58,7 +61,7 @@ export function ProduccionView({ data, actions }) {
     const err = await actions.addProduccion(form);
     if (err) { toast?.error("No se pudo crear la orden de producción"); return; }
     toast?.success("Orden creada: " + form.cantidad + " " + form.sku);
-    setModal(false); setForm({turno:"Matutino",maquina:"Máquina 30",sku:"HC-25K",cantidad:""}); setErrors({});
+    setModal(false); setForm({turno:"Matutino",maquina:"Máquina 30",sku:"",cantidad:""}); setErrors({});
   };
 
   const skuOptions = useMemo(() => data.productos.filter(p=>p.tipo==="Producto Terminado").map(p=>s(p.sku)), [data.productos]);
@@ -160,7 +163,10 @@ export function ProduccionView({ data, actions }) {
     <PageHeader
       title="Producción"
       subtitle="Hielo y transformaciones"
-      action={() => tab === 'transformaciones' ? (setTModal(true), setTErrors({})) : (setModal(true), setErrors({}))}
+      action={() => {
+        if (tab === 'transformaciones') { setTModal(true); setTErrors({}); }
+        else { setForm(f => ({...f, sku: f.sku || skuOptions[0] || ""})); setModal(true); setErrors({}); }
+      }}
       actionLabel={tab === 'transformaciones' ? "Registrar transformación" : "Nueva orden"}
       extraButtons={exportBtns}
     />
