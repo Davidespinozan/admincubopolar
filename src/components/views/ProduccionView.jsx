@@ -206,14 +206,18 @@ export function ProduccionView({ data, actions }) {
             <button onClick={(e)=>{e.stopPropagation();setDeleteConfirm(r.id)}} title="Eliminar" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
           </div>},
         ]} data={prodNormal}
-        cardSubtitle={r => <div>
-          <span className="text-xs text-slate-400">{fmtDate(r.fecha)} · {s(r.turno)} · {s(r.sku)}</span>
+        cardSubtitle={r => {
+          const prod = (data.productos || []).find(p => s(p.sku) === s(r.sku));
+          const nombreProd = prod ? s(prod.nombre) : s(r.sku);
+          return <div>
+          <span className="text-xs text-slate-400">{fmtDate(r.fecha)} · {s(r.turno)} · {nombreProd}</span>
           <div className="flex gap-2 mt-2">
             {r.estatus==="En proceso"&&<button onClick={(e)=>{e.stopPropagation();actions.confirmarProduccion(r.id)}} className="flex-1 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-2.5 rounded-lg min-h-[44px]">Confirmar ✓</button>}
             <button onClick={(e)=>{e.stopPropagation();openEdit(r)}} className="text-xs font-semibold text-slate-600 bg-slate-50 px-3 py-2.5 rounded-lg min-h-[44px]">Editar</button>
             <button onClick={(e)=>{e.stopPropagation();setDeleteConfirm(r.id)}} className="text-xs font-semibold text-red-600 bg-red-50 px-3 py-2.5 rounded-lg min-h-[44px]">Eliminar</button>
           </div>
-        </div>}
+        </div>;
+        }}
         />
       </div>
     </>}

@@ -167,8 +167,18 @@ export function OrdenesView({ data, actions, user }) {
       cardSubtitle={r => {
         const est = r.estatus;
         const btn = (label, color, next) => <button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,next)}} className={`mt-2 w-full text-xs font-semibold ${color} px-3 py-2.5 rounded-lg min-h-[44px]`}>{label}</button>;
+        const prodsLegibles = (() => {
+          const raw = s(r.productos);
+          if (!raw) return '';
+          return raw.split(',').map(part => {
+            const mt = part.trim().match(/(\d+)\s*[×x]\s*(\S+)/);
+            if (!mt) return part.trim();
+            const prod = (data.productos || []).find(p => s(p.sku) === s(mt[2]));
+            return prod ? `${mt[1]}× ${s(prod.nombre)}` : `${mt[1]}× ${mt[2]}`;
+          }).join(', ');
+        })();
         return <div>
-          <span className="text-xs text-slate-400">{fmtDate(r.fecha)} · {s(r.productos)}</span>
+          <span className="text-xs text-slate-400">{fmtDate(r.fecha)} · {prodsLegibles}</span>
           {est==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="mt-2 w-full text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2.5 rounded-lg min-h-[44px]">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="mt-2 w-full text-xs font-semibold text-slate-700 bg-slate-100 px-3 py-2.5 rounded-lg min-h-[44px]">Asignar a ruta</button></>}
           {est==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"entrega")}} className="mt-2 w-full text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2.5 rounded-lg min-h-[44px]">Cobrar entrega</button>}
           {est==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="mt-2 w-full text-xs font-semibold text-slate-700 bg-slate-100 px-3 py-2.5 rounded-lg min-h-[44px]">→ Facturar</button>}
