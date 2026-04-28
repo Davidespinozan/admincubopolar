@@ -113,6 +113,36 @@ const AREA_META = {
 
 export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }) {
   const [view, setView] = useState('dashboard');
+
+  // Estado de áreas expandidas/colapsadas en sidebar (con persistencia)
+  const [areasExpandidas, setAreasExpandidas] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cubopolar_sidebar_areas');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    // Default: Operación y Comercial abiertas, Finanzas y Equipo cerradas
+    return { operacion: true, comercial: true, finanzas: false, equipo: false };
+  });
+
+  // Persistir cambios en localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('cubopolar_sidebar_areas', JSON.stringify(areasExpandidas));
+    } catch (e) {}
+  }, [areasExpandidas]);
+
+  // Si el usuario navega a un módulo dentro de un área cerrada, abrirla automáticamente
+  useEffect(() => {
+    const currentArea = AREAS.find(area => area.items.some(item => item.id === view));
+    if (currentArea && !areasExpandidas[currentArea.id]) {
+      setAreasExpandidas(prev => ({ ...prev, [currentArea.id]: true }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view]);
+
+  const toggleArea = (areaId) => {
+    setAreasExpandidas(prev => ({ ...prev, [areaId]: !prev[areaId] }));
+  };
   const [moreOpen, setMoreOpen] = useState(false);
   const [alertasOpen, setAlertasOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -199,29 +229,45 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
         </div>
 
         <nav className="flex-1 overflow-y-auto px-4 py-4">
-          {AREAS.map(area => (
-            <div key={area.id} className="mb-4">
-              <div className="mb-2 flex items-center gap-2 px-3">
-                <span className="h-2 w-2 rounded-full bg-white/28" />
-                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">{area.label}</p>
+          {AREAS.map(area => {
+            const expandida = areasExpandidas[area.id];
+            const itemCount = area.items.length;
+            return (
+              <div key={area.id} className="mb-3">
+                <button
+                  onClick={() => toggleArea(area.id)}
+                  className="mb-2 flex w-full items-center gap-2 rounded-[12px] px-3 py-1.5 transition-colors hover:bg-white/6 group"
+                >
+                  <span className={`h-2 w-2 rounded-full transition-colors ${expandida ? 'bg-cyan-300' : 'bg-white/28'}`} />
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400 group-hover:text-slate-200 flex-1 text-left">{area.label}</p>
+                  <span className="text-[10px] text-slate-500 mr-1">{itemCount}</span>
+                  <svg
+                    className={`w-3.5 h-3.5 text-slate-400 transition-transform ${expandida ? 'rotate-90' : ''}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+                {expandida && (
+                  <div className="space-y-1">
+                    {area.items.map(item => {
+                      const Ic = Icons[item.icon] || Icons.Package;
+                      const active = view === item.id;
+                      return (
+                        <button key={item.id} onClick={() => go(item.id)}
+                          className={`w-full rounded-[18px] px-3 py-2.5 text-left text-sm transition-all ${active ? 'bg-blue-50 text-blue-900 shadow-[0_16px_28px_rgba(2,10,15,0.16)]' : 'text-slate-300/82 hover:bg-white/6 hover:text-white'}`}>
+                          <span className="flex items-center gap-3">
+                            <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[14px] ${active ? 'bg-blue-600 text-white' : 'bg-white/6 text-slate-300'}`}><Ic /></span>
+                          <span className="truncate">{item.label}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <div className="space-y-1">
-                {area.items.map(item => {
-                  const Ic = Icons[item.icon] || Icons.Package;
-                  const active = view === item.id;
-                  return (
-                    <button key={item.id} onClick={() => go(item.id)}
-                      className={`w-full rounded-[18px] px-3 py-2.5 text-left text-sm transition-all ${active ? 'bg-blue-50 text-blue-900 shadow-[0_16px_28px_rgba(2,10,15,0.16)]' : 'text-slate-300/82 hover:bg-white/6 hover:text-white'}`}>
-                      <span className="flex items-center gap-3">
-                        <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[14px] ${active ? 'bg-blue-600 text-white' : 'bg-white/6 text-slate-300'}`}><Ic /></span>
-                      <span className="truncate">{item.label}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </nav>
 
         {onViewAs && (
