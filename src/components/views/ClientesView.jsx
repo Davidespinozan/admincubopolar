@@ -1,4 +1,5 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, eqId, useDebounce, useToast, reporteClientes, PAGE_SIZE, Paginator } from './viewsCommon';
+import AddressAutocomplete from '../ui/AddressAutocomplete';
 
 export function ClientesView({ data, actions }) {
   const toast = useToast();
@@ -9,14 +10,14 @@ export function ClientesView({ data, actions }) {
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
   const [geocoding, setGeocoding] = useState(false);
-  const empty = { nombre:"",nombreComercial:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",cp:"",correo:"",tipo:"Tienda",contacto:"",calle:"",colonia:"",ciudad:"Hermosillo",zona:"",latitud:"",longitud:"",creditoAutorizado:false,limiteCredito:"" };
+  const empty = { nombre:"",nombreComercial:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",cp:"",correo:"",tipo:"Tienda",contacto:"",calle:"",colonia:"",ciudad:"Durango",zona:"",latitud:"",longitud:"",creditoAutorizado:false,limiteCredito:"" };
   const [form, setForm] = useState(empty);
   const [step, setStep] = useState(1);
 
   const dSearch = useDebounce(search);
 
   const openNew = () => { setForm(empty); setErrors({}); setStep(1); setModal("new"); };
-  const openEdit = (c) => { setForm({ nombre:s(c.nombre),nombreComercial:s(c.nombreComercial||c.nombre_comercial),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Hermosillo",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"",creditoAutorizado:c.credito_autorizado||false,limiteCredito:c.limite_credito||"" }); setErrors({}); setStep(1); setModal(c); };
+  const openEdit = (c) => { setForm({ nombre:s(c.nombre),nombreComercial:s(c.nombreComercial||c.nombre_comercial),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Durango",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"",creditoAutorizado:c.credito_autorizado||false,limiteCredito:c.limite_credito||"" }); setErrors({}); setStep(1); setModal(c); };
 
   const validateStep = (currentStep) => {
     const e = {};
@@ -51,11 +52,18 @@ export function ClientesView({ data, actions }) {
     if (form.rfc.trim() && (form.rfc.length < 12 || form.rfc.length > 13)) e.rfc = "RFC debe tener 12-13 caracteres";
     if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
     if (form.cp.trim() && !/^\d{5}$/.test(form.cp)) e.cp = "CP debe ser 5 dígitos";
-    if (Object.keys(e).length) { setErrors(e); return; }
+    if (Object.keys(e).length) {
+      // Si hay error en un campo de otro paso, regresar al paso correcto con el campo en rojo
+      if (e.nombre || e.rfc || e.correo) setStep(1);
+      else if (e.cp) setStep(2);
+      setErrors(e);
+      toast?.error('Revisa los campos marcados en rojo');
+      return;
+    }
     const err = modal === "new"
       ? await actions.addCliente(form)
       : await actions.updateCliente(modal.id, form);
-    if (err) {
+    if (err && (err.message || err.code)) {
       toast?.error(modal === "new" ? "No se pudo crear el cliente" : "No se pudo actualizar el cliente");
       return;
     }
@@ -146,22 +154,42 @@ export function ClientesView({ data, actions }) {
 
       {/* PASO 2: Dirección */}
       {step === 2 && (
-        <div className="space-y-3">
-          <p className="text-sm text-slate-500 mb-2">Para que el chofer encuentre al cliente y se pueda mostrar en el mapa de rutas.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <FormInput label="Calle y número" value={form.calle} onChange={e=>setForm({...form,calle:e.target.value})} placeholder="Av. Revolución #123" />
-            <FormInput label="Colonia" value={form.colonia} onChange={e=>setForm({...form,colonia:e.target.value})} placeholder="Centro" />
-            <FormInput label="Ciudad" value={form.ciudad} onChange={e=>setForm({...form,ciudad:e.target.value})} />
-            <FormSelect label="Zona" options={["","Centro","Norte","Sur","Oriente","Poniente","Industrial","Periférico Norte","Periférico Sur"]} value={form.zona} onChange={e=>setForm({...form,zona:e.target.value})} />
-            <FormInput label="Código postal" value={form.cp} onChange={e=>setForm({...form,cp:e.target.value})} maxLength={5} error={errors.cp} />
-          </div>
-          <div className="flex items-center gap-2 mt-3 p-3 bg-slate-50 rounded-xl">
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">Para que el chofer encuentre al cliente y se pueda mostrar en el mapa de rutas.</p>
+
+          <AddressAutocomplete onSelect={(addr) => {
+            setForm(f => ({
+              ...f,
+              calle: addr.calle || f.calle,
+              colonia: addr.colonia || f.colonia,
+              ciudad: addr.ciudad || f.ciudad,
+              cp: addr.cp || f.cp,
+              latitud: addr.lat ?? f.latitud,
+              longitud: addr.lng ?? f.longitud,
+            }));
+            toast?.success('Dirección capturada');
+          }} />
+
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs text-slate-500 font-semibold hover:text-slate-700">
+              ✏️ Editar campos manualmente
+            </summary>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
+              <FormInput label="Calle y número" value={form.calle} onChange={e=>setForm({...form,calle:e.target.value})} placeholder="Av. Revolución #123" />
+              <FormInput label="Colonia" value={form.colonia} onChange={e=>setForm({...form,colonia:e.target.value})} placeholder="Centro" />
+              <FormInput label="Ciudad" value={form.ciudad} onChange={e=>setForm({...form,ciudad:e.target.value})} />
+              <FormSelect label="Zona" options={["","Centro","Norte","Sur","Oriente","Poniente","Industrial","Periférico Norte","Periférico Sur"]} value={form.zona} onChange={e=>setForm({...form,zona:e.target.value})} />
+              <FormInput label="Código postal" value={form.cp} onChange={e=>setForm({...form,cp:e.target.value})} maxLength={5} error={errors.cp} />
+            </div>
+          </details>
+
+          <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
             <span className="text-xs text-slate-500">📍 Ubicación GPS:</span>
-            <span className="text-xs font-mono bg-white px-2 py-1 rounded">{form.latitud && form.longitud ? `${form.latitud}, ${form.longitud}` : "Sin geocodificar"}</span>
-            {form.calle && form.colonia && (
+            <span className="text-xs font-mono bg-white px-2 py-1 rounded">{form.latitud && form.longitud ? `${Number(form.latitud).toFixed(5)}, ${Number(form.longitud).toFixed(5)}` : "Sin coordenadas"}</span>
+            {form.calle && form.colonia && !form.latitud && (
               <button type="button" disabled={geocoding} onClick={async()=>{
                 setGeocoding(true);
-                const geo=await import('../../utils/geocoding.js').then(m=>m.geocodeDireccion(`${form.calle}, ${form.colonia}, ${form.ciudad||'Hermosillo'}, Sonora, México`));
+                const geo=await import('../../utils/geocoding.js').then(m=>m.geocodeDireccion(`${form.calle}, ${form.colonia}, ${form.ciudad||'Durango'}, Durango, México`));
                 if(geo){ setForm(f=>({...f,latitud:geo.lat,longitud:geo.lng})); toast?.success('Ubicación obtenida'); }
                 else { toast?.error('No se pudo geocodificar'); }
                 setGeocoding(false);

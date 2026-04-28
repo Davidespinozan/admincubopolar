@@ -1,39 +1,56 @@
 /**
- * Geocoding con Nominatim (OpenStreetMap) — gratis, sin API key.
- * Límite: 1 req/seg. Más que suficiente para guardar clientes.
+ * Geocoding con Google Maps Geocoding API.
+ * Cobertura mucho mejor que Nominatim, especialmente en ciudades pequeñas.
+ * Requiere VITE_GOOGLE_MAPS_API_KEY en .env.local + habilitada Geocoding API en Google Cloud.
  */
 
+const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
+
 /**
- * Convierte una dirección a coordenadas lat/lng usando Nominatim.
+ * Convierte una dirección a coordenadas lat/lng usando Google Geocoding.
  * @param {string} direccion - "Calle 1 #123, Colonia Centro, Durango"
  * @returns {Promise<{lat: number, lng: number, formatted: string} | null>}
  */
 export async function geocodeDireccion(direccion) {
   if (!direccion?.trim()) return null;
 
-  try {
-    const url = new URL('https://nominatim.openstreetmap.org/search');
-    url.searchParams.set('q', direccion);
-    url.searchParams.set('format', 'json');
-    url.searchParams.set('limit', '1');
-    url.searchParams.set('countrycodes', 'mx');
+  if (!GOOGLE_API_KEY) {
+    console.error('[geocoding] Falta VITE_GOOGLE_MAPS_API_KEY en .env.local');
+    return null;
+  }
 
-    const res = await fetch(url.toString(), {
-      headers: { 'Accept-Language': 'es', 'User-Agent': 'CuboPolarERP/1.0' },
-      signal: AbortSignal.timeout(6000),
-    });
+  try {
+    const url = new URL('https://maps.googleapis.com/maps/api/geocode/json');
+    url.searchParams.set('address', direccion);
+    url.searchParams.set('key', GOOGLE_API_KEY);
+    url.searchParams.set('region', 'mx'); // Sesgo a México
+    url.searchParams.set('language', 'es');
+
+    const res = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
     const data = await res.json();
 
-    if (data.length > 0) {
+    if (data.status === 'OK' && data.results?.length > 0) {
+      const r = data.results[0];
       return {
-        lat: parseFloat(data[0].lat),
-        lng: parseFloat(data[0].lon),
-        formatted: data[0].display_name,
+        lat: r.geometry.location.lat,
+        lng: r.geometry.location.lng,
+        formatted: r.formatted_address,
       };
     }
 
+    if (data.status === 'REQUEST_DENIED') {
+      console.error('[geocoding] API key inválida o Geocoding API no habilitada en Google Cloud');
+    } else if (data.status === 'ZERO_RESULTS') {
+      console.warn('[geocoding] Dirección no encontrada:', direccion);
+    } else if (data.status === 'OVER_QUERY_LIMIT') {
+      console.error('[geocoding] Cuota de Google Maps excedida');
+    } else {
+      console.warn('[geocoding] Status:', data.status, data.error_message || '');
+    }
+
     return null;
-  } catch {
+  } catch (err) {
+    console.error('[geocoding] Error de red:', err?.message || err);
     return null;
   }
 }
@@ -45,8 +62,8 @@ export function buildDireccion(cliente) {
   const partes = [
     cliente.calle,
     cliente.colonia,
-    cliente.ciudad || 'Hermosillo',
-    cliente.estado || 'Sonora',
+    cliente.ciudad || 'Durango',
+    cliente.estado || 'Durango',
     cliente.codigo_postal || cliente.cp,
   ].filter(Boolean);
   return partes.join(', ');
@@ -156,7 +173,7 @@ export function agruparPorProximidad(clientes, radioKm = 3) {
  * @param {Object} origen - {lat, lng} punto de partida (fábrica)
  * @returns {Array} Clientes ordenados por proximidad secuencial
  */
-export function ordenarPorProximidad(clientes, origen = { lat: 29.0892, lng: -110.9611 }) {
+export function ordenarPorProximidad(clientes, origen = { lat: 24.0277, lng: -104.6532 }) {
   const clientesConCoords = clientes.filter(c => c.latitud && c.longitud);
   if (clientesConCoords.length === 0) return clientes; // Sin cambios si no hay coords
 
