@@ -608,6 +608,28 @@ export function useSupaStore(userId, userName) {
       },
 
       updateProducto: async (id, p) => {
+        // Detectar si el SKU cambió comparando contra el actual en DB
+        const { data: current, error: getErr } = await supabase
+          .from('productos').select('sku').eq('id', id).single();
+        if (getErr) { t()?.error('Error al leer producto'); return getErr; }
+
+        const oldSku = String(current?.sku || '').trim();
+        const newSku = (p.sku !== undefined && p.sku !== null) ? String(p.sku).trim() : oldSku;
+        const skuCambio = newSku && oldSku && newSku !== oldSku;
+
+        // Si cambió el SKU, hacer rename atómico (incluye actualizar productos.sku)
+        if (skuCambio) {
+          const { error: renameErr } = await supabase.rpc('rename_sku', {
+            p_id: id, p_old_sku: oldSku, p_new_sku: newSku,
+          });
+          if (renameErr) {
+            t()?.error('Error al renombrar SKU: ' + renameErr.message);
+            return renameErr;
+          }
+          log('Renombrar SKU', 'Productos', `${oldSku} → ${newSku}`);
+        }
+
+        // Actualizar el resto de los campos (sin SKU porque ya lo manejó rename_sku)
         const update = {
           nombre: p.nombre, tipo: p.tipo, ubicacion: p.ubicacion,
           precio: Number(p.precio) || 0,
@@ -615,7 +637,6 @@ export function useSupaStore(userId, userName) {
           proveedor: p.proveedor || null,
           empaque_sku: p.empaque_sku || p.empaqueSku || null,
         };
-        if (p.sku !== undefined && p.sku !== null && String(p.sku).trim() !== '') update.sku = String(p.sku).trim();
         if (p.stock !== undefined && p.stock !== null && p.stock !== '') update.stock = Number(p.stock) || 0;
         const { error } = await supabase.from('productos').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar producto: ' + error.message); return error; }
