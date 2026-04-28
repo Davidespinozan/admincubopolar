@@ -113,6 +113,100 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const mermaHoy = useMemo(() => mermasHoyList.reduce((sum, item) => sum + n(item.cantidad), 0), [mermasHoyList]);
   const skuOptions = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
 
+  // ───────────── PANEL "QUÉ NECESITAS PRODUCIR" ─────────────
+  // Mismo cálculo que el dashboard de admin para mantener consistencia total.
+  const productosHielo = useMemo(
+    () => (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado"),
+    [data.productos]
+  );
+
+  const estatusPendientes = useMemo(() => new Set(["creada", "asignada", "pendiente", "en proceso", "en_proceso", "enprogreso"]), []);
+
+  const pedidosPendPorSku = useMemo(() => {
+    const acc = {};
+    for (const p of productosHielo) acc[s(p.sku)] = 0;
+    for (const ord of (data.ordenes || [])) {
+      const est = s(ord.estatus).toLowerCase();
+      if (!estatusPendientes.has(est)) continue;
+      if (Array.isArray(ord.preciosSnapshot) && ord.preciosSnapshot.length > 0) {
+        for (const ln of ord.preciosSnapshot) {
+          const sku = s(ln.sku);
+          if (!sku) continue;
+          acc[sku] = (acc[sku] || 0) + n(ln.qty || ln.cantidad);
+        }
+        continue;
+      }
+      const raw = s(ord.productos);
+      if (!raw) continue;
+      raw.split(',').forEach(part => {
+        const mt = part.trim().match(/(\d+)\s*[×x]\s*(\S+)/);
+        if (!mt) return;
+        const qty = Number(mt[1] || 0);
+        const sku = s(mt[2]);
+        if (!sku) return;
+        acc[sku] = (acc[sku] || 0) + qty;
+      });
+    }
+    return acc;
+  }, [data.ordenes, productosHielo, estatusPendientes]);
+
+  const stockCuartosPorSku = useMemo(() => {
+    const acc = {};
+    for (const p of productosHielo) acc[s(p.sku)] = 0;
+    for (const cf of (data.cuartosFrios || [])) {
+      const st = (cf?.stock && typeof cf.stock === 'object') ? cf.stock : {};
+      for (const [sku, qty] of Object.entries(st)) {
+        acc[s(sku)] = (acc[s(sku)] || 0) + n(qty);
+      }
+    }
+    return acc;
+  }, [data.cuartosFrios, productosHielo]);
+
+  const reservadoEnRutasPorSku = useMemo(() => {
+    const acc = {};
+    for (const p of productosHielo) acc[s(p.sku)] = 0;
+    const rutasActivas = (data.rutas || []).filter(r => {
+      const est = s(r.estatus).toLowerCase();
+      return est === 'programada' || est === 'en progreso' || est === 'en_progreso';
+    });
+    for (const ruta of rutasActivas) {
+      const carga = ruta.carga_autorizada || ruta.cargaAutorizada || ruta.carga || {};
+      for (const [sku, qty] of Object.entries(carga)) {
+        acc[s(sku)] = (acc[s(sku)] || 0) + Number(qty || 0);
+      }
+    }
+    return acc;
+  }, [data.rutas, productosHielo]);
+
+  const producidoHoyPorSku = useMemo(() => {
+    const acc = {};
+    for (const p of productosHielo) acc[s(p.sku)] = 0;
+    const hoy = new Date().toISOString().slice(0, 10);
+    for (const pr of (data.produccion || [])) {
+      if (!s(pr.fecha).startsWith(hoy)) continue;
+      const sku = s(pr.sku);
+      acc[sku] = (acc[sku] || 0) + n(pr.cantidad);
+    }
+    return acc;
+  }, [data.produccion, productosHielo]);
+
+  const tableroDemanda = useMemo(() => {
+    return productosHielo.map(p => {
+      const sku = s(p.sku);
+      const pendientes = n(pedidosPendPorSku[sku]);
+      const stockBruto = n(stockCuartosPorSku[sku]);
+      const reservado = n(reservadoEnRutasPorSku[sku]);
+      const stock = Math.max(0, stockBruto - reservado);
+      const producidoHoy = n(producidoHoyPorSku[sku]);
+      const stockMinimo = n(p.stock_minimo);
+      const faltante = Math.max(0, pendientes + stockMinimo - stock);
+      const bajoMinimo = stockMinimo > 0 && stock < stockMinimo;
+      return { sku, producto: s(p.nombre), pendientes, stock, stockMinimo, faltante, producidoHoy, bajoMinimo };
+    });
+  }, [productosHielo, pedidosPendPorSku, stockCuartosPorSku, reservadoEnRutasPorSku, producidoHoyPorSku]);
+
+  const hayFaltante = useMemo(() => tableroDemanda.some(r => r.faltante > 0), [tableroDemanda]);
+
   const insumos = useMemo(() => data.productos.filter(p => {
     const t = s(p.tipo).toLowerCase(); const sk = s(p.sku).toLowerCase();
     return t.includes('barra') || t.includes('insumo') || t.includes('materia') || sk.includes('bh-') || sk.includes('barra');
@@ -241,6 +335,54 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             className="w-full py-4 bg-blue-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
             + Ya produje hielo
           </button>
+
+          {/* ═══ PANEL: Qué necesitas producir ═══ */}
+          <div className={`rounded-[24px] p-4 border shadow-[0_14px_28px_rgba(8,19,27,0.06)] ${hayFaltante ? 'bg-amber-50 border-amber-200' : 'bg-white/90 border-slate-200/80'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Qué necesitas producir</h3>
+                <p className="text-[11px] text-slate-500">Pedidos pendientes + mínimo de stock − lo que ya hay</p>
+              </div>
+              {hayFaltante && <span className="text-[10px] font-bold uppercase bg-amber-500 text-white px-2 py-1 rounded-full">Atención</span>}
+            </div>
+
+            {tableroDemanda.length === 0 ? (
+              <p className="text-xs text-slate-400 text-center py-3">Sin productos terminados configurados</p>
+            ) : (
+              <div className="space-y-2">
+                {tableroDemanda.map(r => (
+                  <div key={r.sku} className={`rounded-[16px] p-3 ${r.faltante > 0 ? 'bg-white border border-amber-200' : 'bg-slate-50 border border-slate-100'}`}>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <p className="text-sm font-semibold text-slate-800 truncate">{r.producto}</p>
+                      {r.faltante > 0 ? (
+                        <span className="text-xs font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full flex-shrink-0">Faltan {r.faltante.toLocaleString()}</span>
+                      ) : (
+                        <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full flex-shrink-0">✓ Cubierto</span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-center">
+                      <div>
+                        <p className="text-[10px] text-slate-400 uppercase">Pedidos</p>
+                        <p className={`text-sm font-bold ${r.pendientes > 0 ? 'text-blue-600' : 'text-slate-400'}`}>{r.pendientes.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 uppercase">Stock</p>
+                        <p className={`text-sm font-bold ${r.bajoMinimo ? 'text-red-600' : 'text-slate-700'}`}>{r.stock.toLocaleString()}{r.bajoMinimo && <span className="text-[10px] text-red-400 ml-0.5">▼</span>}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 uppercase">Mínimo</p>
+                        <p className="text-sm font-bold text-slate-500">{r.stockMinimo > 0 ? r.stockMinimo.toLocaleString() : '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 uppercase">Hecho hoy</p>
+                        <p className={`text-sm font-bold ${r.producidoHoy > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{r.producidoHoy.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {prodHoy.length > 0 && (
             <div>
