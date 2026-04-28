@@ -7,7 +7,7 @@ export function ProduccionView({ data, actions }) {
   // ── Producción normal ──
   const [modal, setModal] = useState(false);
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({turno:"Matutino",maquina:"Máquina 30",sku:"HC-25K",cantidad:""});
+  const [form, setForm] = useState({turno:"Matutino",maquina:"Máquina 30",sku:"",cantidad:""});
 
   // ── Editar / Eliminar ──
   const [editModal, setEditModal] = useState(false);
@@ -16,7 +16,7 @@ export function ProduccionView({ data, actions }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null); // id to delete
 
   const openEdit = (r) => {
-    setEditForm({id:r.id, turno:r.turno||"Matutino", maquina:r.maquina||"Máquina 30", sku:r.sku||"HC-25K", cantidad:String(r.cantidad||""), estatus:r.estatus||"En proceso"});
+    setEditForm({id:r.id, turno:r.turno||"Matutino", maquina:r.maquina||"Máquina 30", sku:s(r.sku), cantidad:String(r.cantidad||""), estatus:r.estatus||"En proceso"});
     setEditErrors({});
     setEditModal(true);
   };
@@ -42,8 +42,11 @@ export function ProduccionView({ data, actions }) {
     setDeleteConfirm(null);
   };
 
-  const empaqueMap = {"HC-25K":"EMP-25","HC-5K":"EMP-5","HT-25K":"EMP-25","BH-50K":null};
-  const bolsaNecesaria = empaqueMap[form.sku] || null;
+  // Deriva el empaque desde el catálogo (no hardcodear SKUs)
+  const bolsaNecesaria = useMemo(() => {
+    const prod = (data.productos || []).find(p => s(p.sku) === s(form.sku));
+    return s(prod?.empaqueSku || prod?.empaque_sku) || null;
+  }, [data.productos, form.sku]);
   const stockBolsa = useMemo(() => {
     if (!bolsaNecesaria) return 999999;
     const p = data.productos.find(x => x.sku === bolsaNecesaria);
@@ -58,7 +61,7 @@ export function ProduccionView({ data, actions }) {
     const err = await actions.addProduccion(form);
     if (err) { toast?.error("No se pudo crear la orden de producción"); return; }
     toast?.success("Orden creada: " + form.cantidad + " " + form.sku);
-    setModal(false); setForm({turno:"Matutino",maquina:"Máquina 30",sku:"HC-25K",cantidad:""}); setErrors({});
+    setModal(false); setForm({turno:"Matutino",maquina:"Máquina 30",sku:"",cantidad:""}); setErrors({});
   };
 
   const skuOptions = useMemo(() => data.productos.filter(p=>p.tipo==="Producto Terminado").map(p=>s(p.sku)), [data.productos]);
@@ -160,7 +163,10 @@ export function ProduccionView({ data, actions }) {
     <PageHeader
       title="Producción"
       subtitle="Hielo y transformaciones"
-      action={() => tab === 'transformaciones' ? (setTModal(true), setTErrors({})) : (setModal(true), setErrors({}))}
+      action={() => {
+        if (tab === 'transformaciones') { setTModal(true); setTErrors({}); }
+        else { setForm(f => ({...f, sku: f.sku || skuOptions[0] || ""})); setModal(true); setErrors({}); }
+      }}
       actionLabel={tab === 'transformaciones' ? "Registrar transformación" : "Nueva orden"}
       extraButtons={exportBtns}
     />
@@ -190,7 +196,15 @@ export function ProduccionView({ data, actions }) {
           {key:"fecha",label:"Fecha",render:v=>fmtDate(v),hideOnMobile:true},
           {key:"turno",label:"Turno",hideOnMobile:true},
           {key:"maquina",label:"Máquina",bold:true},
-          {key:"sku",label:"SKU",render:v=><span className="font-mono text-xs bg-slate-100 px-2 py-0.5 rounded-md">{s(v)}</span>},
+          {key:"sku",label:"Producto",render:v=>{
+            const prod = (data.productos || []).find(p => s(p.sku) === s(v));
+            return (
+              <div>
+                <div className="text-sm font-medium text-slate-700">{prod ? s(prod.nombre) : s(v)}</div>
+                <div className="font-mono text-[11px] text-slate-400 mt-0.5">{s(v)}</div>
+              </div>
+            );
+          }},
           {key:"cantidad",label:"Qty",render:v=><span className="font-semibold">{n(v).toLocaleString()}</span>},
           {key:"estatus",label:"Estatus",badge:true,render:(v,r)=><div className="flex items-center gap-2"><StatusBadge status={v}/><span className="hidden md:inline">{v==="En proceso"&&<button onClick={(e)=>{e.stopPropagation();actions.confirmarProduccion(r.id)}} className="text-xs text-blue-600 font-semibold hover:text-blue-800 px-2.5 py-0.5">Confirmar ✓</button>}</span></div>},
           {key:"_actions",label:"",render:(_,r)=><div className="flex items-center gap-1">
@@ -198,14 +212,18 @@ export function ProduccionView({ data, actions }) {
             <button onClick={(e)=>{e.stopPropagation();setDeleteConfirm(r.id)}} title="Eliminar" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
           </div>},
         ]} data={prodNormal}
-        cardSubtitle={r => <div>
-          <span className="text-xs text-slate-400">{fmtDate(r.fecha)} · {s(r.turno)} · {s(r.sku)}</span>
+        cardSubtitle={r => {
+          const prod = (data.productos || []).find(p => s(p.sku) === s(r.sku));
+          const nombreProd = prod ? s(prod.nombre) : s(r.sku);
+          return <div>
+          <span className="text-xs text-slate-400">{fmtDate(r.fecha)} · {s(r.turno)} · {nombreProd}</span>
           <div className="flex gap-2 mt-2">
             {r.estatus==="En proceso"&&<button onClick={(e)=>{e.stopPropagation();actions.confirmarProduccion(r.id)}} className="flex-1 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-2.5 rounded-lg min-h-[44px]">Confirmar ✓</button>}
             <button onClick={(e)=>{e.stopPropagation();openEdit(r)}} className="text-xs font-semibold text-slate-600 bg-slate-50 px-3 py-2.5 rounded-lg min-h-[44px]">Editar</button>
             <button onClick={(e)=>{e.stopPropagation();setDeleteConfirm(r.id)}} className="text-xs font-semibold text-red-600 bg-red-50 px-3 py-2.5 rounded-lg min-h-[44px]">Eliminar</button>
           </div>
-        </div>}
+        </div>;
+        }}
         />
       </div>
     </>}
@@ -261,7 +279,12 @@ export function ProduccionView({ data, actions }) {
                   <div className="bg-slate-50 rounded-lg p-2.5">
                     <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Entrada</p>
                     <p className="text-sm font-bold text-slate-800">{n(t.input_kg)} kg</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5 font-mono">{s(t.input_sku)}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      {(() => {
+                        const p = (data.productos || []).find(x => s(x.sku) === s(t.input_sku));
+                        return p ? s(p.nombre) : s(t.input_sku);
+                      })()}
+                    </p>
                   </div>
                   <div className="bg-orange-50 rounded-lg p-2.5">
                     <p className="text-[10px] font-semibold text-red-400 uppercase mb-1">Merma</p>
@@ -271,7 +294,12 @@ export function ProduccionView({ data, actions }) {
                   <div className="bg-emerald-50 rounded-lg p-2.5">
                     <p className="text-[10px] font-semibold text-emerald-500 uppercase mb-1">Salida</p>
                     <p className="text-sm font-bold text-emerald-700">{n(t.output_kg)} kg</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5 font-mono">{s(t.sku)}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      {(() => {
+                        const p = (data.productos || []).find(x => s(x.sku) === s(t.sku));
+                        return p ? s(p.nombre) : s(t.sku);
+                      })()}
+                    </p>
                   </div>
                 </div>
                 {s(t.destino) && <p className="text-xs text-slate-400 mt-2">Notas: {s(t.destino)}</p>}

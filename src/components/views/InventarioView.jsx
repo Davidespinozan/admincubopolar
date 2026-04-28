@@ -6,7 +6,7 @@ export function InventarioView({ data, actions }) {
   const [pageExist, setPageExist] = useState(0);
   const [pageKardex, setPageKardex] = useState(0);
   const [traspasoModal, setTraspasoModal] = useState(false);
-  const [traspasoForm, setTraspasoForm] = useState({origen:"CF-1",destino:"CF-2",sku:"HC-25K",cantidad:""});
+  const [traspasoForm, setTraspasoForm] = useState({origen:"",destino:"",sku:"",cantidad:""});
   const [traspasoErrors, setTraspasoErrors] = useState({});
   const [cfModal, setCfModal] = useState(null);
   const [cfForm, setCfForm] = useState({nombre:"",temp:"-10",capacidad:"0"});
@@ -55,7 +55,7 @@ export function InventarioView({ data, actions }) {
       actions.traspasoEntreUbicaciones(traspasoForm);
     }
     toast?.success(traspasoForm.cantidad + " " + traspasoForm.sku + " de " + traspasoForm.origen + " a " + traspasoForm.destino);
-    setTraspasoModal(false); setTraspasoForm({origen:"CF-1",destino:"CF-2",sku:"HC-25K",cantidad:""}); setTraspasoErrors({});
+    setTraspasoModal(false); setTraspasoForm({origen:"",destino:"",sku:"",cantidad:""}); setTraspasoErrors({});
   };
 
   const totalStockByCF = useMemo(() => {
@@ -101,7 +101,12 @@ export function InventarioView({ data, actions }) {
       <div><h2 className="text-lg font-bold text-slate-800">Inventario</h2><p className="text-xs text-slate-400">Cuartos fríos, existencias y movimientos</p></div>
       <div className="flex gap-2">
         <button onClick={()=>{setCfForm({nombre:"",temp:"-10",capacidad:"0"});setCfModal("new")}} className="px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Cuarto Frío</button>
-        <button onClick={()=>{setTraspasoModal(true);setTraspasoErrors({})}} className="px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl min-h-[44px]">Traspaso</button>
+        <button onClick={()=>{
+          const cfs = (data.cuartosFrios || []).map(c => s(c.id));
+          const firstSku = (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado")[0]?.sku || "";
+          setTraspasoForm({origen: cfs[0] || "", destino: cfs[1] || cfs[0] || "", sku: s(firstSku), cantidad:""});
+          setTraspasoModal(true); setTraspasoErrors({});
+        }} className="px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl min-h-[44px]">Traspaso</button>
       </div>
     </div>
     <div className="flex sm:grid sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6 overflow-x-auto sm:overflow-x-visible pb-1 sm:pb-0 snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -126,7 +131,12 @@ export function InventarioView({ data, actions }) {
         <div className="mt-3 space-y-1">
           {cf.stockEntries.map(([sku, qty]) => (
             <div key={sku} className="flex justify-between text-xs">
-              <span className="font-mono text-slate-500">{sku}</span>
+              <span className="text-slate-500">
+                {(() => {
+                  const p = (data.productos || []).find(x => s(x.sku) === s(sku));
+                  return p ? s(p.nombre) : sku;
+                })()}
+              </span>
               <span className="font-bold text-slate-700">{n(qty).toLocaleString()}</span>
             </div>
           ))}
@@ -141,8 +151,13 @@ export function InventarioView({ data, actions }) {
     <div className="bg-white border border-slate-100 rounded-2xl p-5 mb-6">
       <h3 className="text-sm font-bold text-slate-700 mb-4">Existencias</h3>
       <DataTable columns={[
-        {key:"sku",label:"SKU",render:v=><span className="font-mono text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md">{s(v)}</span>},
-        {key:"nombre",label:"Producto",bold:true},{key:"tipo",label:"Tipo",badge:true,render:v=><StatusBadge status={v}/>},
+        {key:"nombre",label:"Producto",render:(v,r)=>(
+          <div>
+            <div className="font-semibold text-slate-800">{s(v)}</div>
+            <div className="font-mono text-[11px] text-slate-400 mt-0.5">{s(r.sku)}</div>
+          </div>
+        )},
+        {key:"tipo",label:"Tipo",badge:true,render:v=><StatusBadge status={v}/>},
         {key:"stock",label:"Existencia",render:(v,r)=>{
           const min = n(r.stock_minimo);
           const bajo = min > 0 && n(v) < min;

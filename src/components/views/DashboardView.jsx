@@ -474,8 +474,12 @@ export default function DashboardView({ data, user, onNavigate }) {
         {tableroDemanda.length === 0 ? <EmptyState message="Sin productos de hielo" /> :
           <DataTable
             columns={[
-              { key: "sku", label: "SKU", render: v => <span className="font-mono text-xs font-bold text-blue-600">{s(v)}</span> },
-              { key: "producto", label: "Producto", bold: true },
+              { key: "producto", label: "Producto", render: (_, r) => (
+                <div>
+                  <div className="font-semibold text-slate-800">{s(r.producto)}</div>
+                  <div className="font-mono text-[11px] text-slate-400 mt-0.5">{s(r.sku)}</div>
+                </div>
+              )},
               { key: "pendientes", label: "Pedidos", render: v => n(v).toLocaleString() },
               { key: "stock", label: "Tienes en stock", render: (v, r) => {
                 const bajo = n(r.stockMinimo) > 0 && n(v) < n(r.stockMinimo);
@@ -486,7 +490,7 @@ export default function DashboardView({ data, user, onNavigate }) {
               { key: "producidoHoy", label: "Hecho hoy", render: v => n(v).toLocaleString() },
             ]}
             data={tableroDemanda}
-            cardTitle={r => `${s(r.sku)} · ${s(r.producto)}`}
+            cardTitle={r => s(r.producto)}
             cardSubtitle={r => <span className="text-xs text-slate-500">Pend: {n(r.pendientes)} · Stock: {n(r.stock)}{n(r.stockMinimo) > 0 ? ` (mín ${n(r.stockMinimo)})` : ''} · Faltante: {n(r.faltante)} · Hoy: {n(r.producidoHoy)}</span>}
           />}
       </div>
@@ -505,7 +509,7 @@ export default function DashboardView({ data, user, onNavigate }) {
                 </div>
                 <CapacityBar pct={n(cf.capacidad)} />
                 <p className="text-xs text-slate-400 mt-1.5">{n(cf.capacidad)}%</p>
-                <div className="mt-1.5 space-y-0.5">{cf.stock ? Object.entries(cf.stock).map(([sku,qty])=><div key={sku} className="flex justify-between text-xs"><span className="text-slate-500">{sku}</span><span className="font-bold text-slate-700">{qty}</span></div>) : <p className="text-xs text-slate-500">{s(cf.productos)}</p>}</div>
+                <div className="mt-1.5 space-y-0.5">{cf.stock ? Object.entries(cf.stock).map(([sku,qty])=>{const p=(data.productos||[]).find(x=>s(x.sku)===s(sku));return <div key={sku} className="flex justify-between text-xs"><span className="text-slate-500">{p?s(p.nombre):sku}</span><span className="font-bold text-slate-700">{qty}</span></div>;}) : <p className="text-xs text-slate-500">{s(cf.productos)}</p>}</div>
               </div>
             ))}
           </div>}

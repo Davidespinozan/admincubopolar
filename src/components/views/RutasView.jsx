@@ -583,7 +583,7 @@ export function RutasView({ data, actions }) {
                 const extra = n(form.extraPorProducto[p.sku]);
                 return (
                   <span key={p.sku} className="px-3 py-1 bg-white border border-emerald-200 rounded-full text-xs font-semibold text-emerald-700">
-                    {base + extra}× {p.sku}
+                    {base + extra}× {s(p.nombre)}
                     {extra > 0 && <span className="text-amber-600 ml-1">(+{extra})</span>}
                   </span>
                 );
@@ -691,7 +691,10 @@ export function RutasView({ data, actions }) {
               <p className="text-xs text-blue-700 font-semibold">
                 Regresa a cuarto frío: {Object.entries(cierreForm.devolucionPorProducto)
                   .filter(([_, v]) => n(v) > 0)
-                  .map(([sku, v]) => `${n(v)}× ${sku}`)
+                  .map(([sku, v]) => {
+                    const p = (data.productos || []).find(x => s(x.sku) === s(sku));
+                    return `${n(v)}× ${p ? s(p.nombre) : sku}`;
+                  })
                   .join(', ')}
               </p>
             </div>
