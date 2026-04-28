@@ -51,6 +51,7 @@ export function RutasView({ data, actions }) {
   const [errors, setErrors] = useState({});
   // Carga por producto: objeto con SKU como key; ordenesIds: array de IDs de órdenes seleccionadas
   const [form, setForm] = useState({nombre:"",choferId:"",ayudanteId:"",camionId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});
+  const [step, setStep] = useState(1);
   const [searchOrden, setSearchOrden] = useState("");
   const [asignarModal, setAsignarModal] = useState(null);
   const [cierreModal, setCierreModal] = useState(null);
@@ -162,6 +163,44 @@ export function RutasView({ data, actions }) {
   const camiones = useMemo(() => (data.camiones || [])
     .filter(c => s(c.estatus) === 'Activo')
     .map(c => ({ value: String(c.id), label: s(c.nombre) + (c.placas ? ` (${c.placas})` : '') })), [data.camiones]);
+
+  const validateStep = (currentStep) => {
+    const e = {};
+    if (currentStep === 1) {
+      if (!form.nombre.trim()) e.nombre = "Requerido";
+      if (!form.choferId) e.choferId = "Requerido";
+    }
+    if (currentStep === 3 && !editingRuta) {
+      const totalCarga = Object.values(form.cargaPorProducto).reduce((s, v) => s + n(v), 0);
+      const totalExtra = Object.values(form.extraPorProducto).reduce((s, v) => s + n(v), 0);
+      if ((totalCarga + totalExtra) === 0) e.carga = "Debe autorizar al menos 1 producto";
+      // Validar stock
+      for (const [sku, qty] of Object.entries(form.cargaPorProducto)) {
+        const extraQty = n(form.extraPorProducto[sku]);
+        const totalReq = n(qty) + extraQty;
+        if (totalReq > 0) {
+          const stockDisp = n(stockPorSku[sku]);
+          if (totalReq > stockDisp) {
+            e.carga = `Stock insuficiente de ${sku} (disp: ${stockDisp}, sol: ${totalReq})`;
+            break;
+          }
+        }
+      }
+    }
+    return e;
+  };
+
+  const nextStep = () => {
+    const e = validateStep(step);
+    if (Object.keys(e).length) { setErrors(e); return; }
+    setErrors({});
+    setStep(step + 1);
+  };
+
+  const prevStep = () => {
+    setErrors({});
+    setStep(step - 1);
+  };
 
   const save = async () => {
     const e = {};
@@ -283,6 +322,7 @@ export function RutasView({ data, actions }) {
     });
     setSearchOrden("");
     setErrors({});
+    setStep(1);
     setModal(true);
   };
 
@@ -365,7 +405,7 @@ export function RutasView({ data, actions }) {
 
   return (<div>
     {ConfirmEl}
-    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",ayudanteId:"",camionId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});setSearchOrden("");setModal(true);setErrors({})}} actionLabel="Autorizar ruta" extraButtons={exportBtns} />
+    <PageHeader title="Entregas" subtitle="Rutas de distribución" action={()=>{setEditingRuta(null);setForm({nombre:"",choferId:"",ayudanteId:"",camionId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});setSearchOrden("");setStep(1);setModal(true);setErrors({})}} actionLabel="Autorizar ruta" extraButtons={exportBtns} />
 
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
       <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar ruta, folio o chofer..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
@@ -469,148 +509,89 @@ export function RutasView({ data, actions }) {
       })}
     </div>}
 
-    {/* Modal crear/editar ruta */}
+    {/* Modal crear/editar ruta — Wizard 3 pasos */}
     <Modal open={modal} onClose={()=>{setModal(false);setEditingRuta(null)}} title={editingRuta ? "Editar ruta" : "Autorizar carga de ruta"} wide>
-      <div className="space-y-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <FormInput label="Nombre de ruta *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Ej: Ruta Norte" error={errors.nombre} />
-          <FormSelect label="Chofer *" options={[{value:"",label:"Seleccionar..."}, ...choferes]} value={form.choferId} onChange={e=>setForm({...form,choferId:e.target.value})} error={errors.choferId} />
-          <FormSelect label="Ayudante" options={[{value:"",label:"Sin ayudante"}, ...ayudantes]} value={form.ayudanteId} onChange={e=>setForm({...form,ayudanteId:e.target.value})} />
-          <div>
-            <FormSelect label="Camión" options={[{value:"",label:"Seleccionar camión..."}, ...camiones]} value={form.camionId} onChange={e=>setForm({...form,camionId:e.target.value})} />
-            {!nuevoCamion && <button type="button" onClick={()=>setNuevoCamion(true)} className="text-xs text-blue-600 font-semibold mt-1">+ Nuevo camión</button>}
-            {nuevoCamion && (
-              <div className="mt-2 bg-blue-50 rounded-xl p-3 space-y-2">
-                <p className="text-xs font-bold text-blue-700">Registrar camión</p>
-                <input value={camionForm.nombre} onChange={e=>setCamionForm({...camionForm,nombre:e.target.value})} placeholder="Nombre (ej: Camión 1)" className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white" />
-                <div className="grid grid-cols-2 gap-2">
-                  <input value={camionForm.placas} onChange={e=>setCamionForm({...camionForm,placas:e.target.value})} placeholder="Placas" className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white" />
-                  <input value={camionForm.modelo} onChange={e=>setCamionForm({...camionForm,modelo:e.target.value})} placeholder="Modelo" className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white" />
-                </div>
-                <div className="flex gap-2">
-                  <button type="button" onClick={async()=>{
-                    if(!camionForm.nombre.trim()){toast?.error('Nombre requerido');return;}
-                    await actions.addCamion(camionForm);
-                    toast?.success('Camión registrado');
-                    setCamionForm({nombre:"",placas:"",modelo:""});
-                    setNuevoCamion(false);
-                  }} className="flex-1 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg">Guardar</button>
-                  <button type="button" onClick={()=>{setNuevoCamion(false);setCamionForm({nombre:"",placas:"",modelo:""})}} className="flex-1 py-2 bg-slate-200 text-slate-600 text-xs font-semibold rounded-lg">Cancelar</button>
-                </div>
-              </div>
-            )}
+      {/* Indicador de pasos */}
+      <div className="flex items-center gap-2 mb-5">
+        {[1, 2, 3].map(num => (
+          <div key={num} className="flex items-center gap-2 flex-1">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+              step === num ? 'bg-slate-900 text-white' :
+              step > num ? 'bg-emerald-500 text-white' :
+              'bg-slate-100 text-slate-400'
+            }`}>
+              {step > num ? '✓' : num}
+            </div>
+            <div className="flex-1">
+              <p className={`text-xs font-semibold ${step === num ? 'text-slate-900' : 'text-slate-400'}`}>
+                {num === 1 ? 'Datos básicos' : num === 2 ? 'Órdenes' : 'Carga'}
+              </p>
+              <p className="text-[10px] text-slate-400">{num === 1 ? 'Requerido' : 'Opcional'}</p>
+            </div>
+            {num < 3 && <div className={`h-0.5 flex-1 ${step > num ? 'bg-emerald-500' : 'bg-slate-200'}`} />}
           </div>
-        </div>
-        {editingRuta && <FormSelect label="Estatus" options={["Programada","En progreso","Completada","Cerrada","Cancelada"]} value={form.estatus} onChange={e=>setForm({...form,estatus:e.target.value})} />}
+        ))}
+      </div>
 
-        {/* Carga autorizada por producto */}
-        <div className="border-t pt-4">
-          <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-            <span className="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs">1</span>
-            Carga base autorizada
-          </h4>
-          {errors.carga && <p className="text-xs text-red-500 mb-2">{errors.carga}</p>}
-          {form.ordenesIds.length > 0 && Object.values(demandaSeleccionados).some(v => v > 0) && (
-            <button
-              type="button"
-              onClick={() => setForm(prev => ({ ...prev, cargaPorProducto: {...prev.cargaPorProducto, ...Object.fromEntries(Object.entries(demandaSeleccionados).map(([k,v]) => [k, v]))} }))}
-              className="mb-3 w-full py-2 text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 rounded-xl hover:bg-blue-100 transition-colors"
-            >
-              Llenar con demanda de clientes seleccionados ({Object.values(demandaSeleccionados).reduce((a,b)=>a+b,0)} bolsas)
-            </button>
-          )}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {prodTerminados.map(p => {
-              const sku = s(p.sku);
-              const disp = n(stockPorSku[sku]);
-              const demanda = n(demandaSeleccionados[sku]);
-              const solicitado = n(form.cargaPorProducto[sku]) + n(form.extraPorProducto[sku]);
-              const sinStock = solicitado > disp;
-              return (
-                <div key={sku} className={`rounded-xl p-3 ${sinStock ? 'bg-red-50 border border-red-200' : 'bg-slate-50'}`}>
-                  <label className="text-xs font-semibold text-slate-600 block mb-0.5">{p.nombre}</label>
-                  <span className="text-[10px] text-slate-400 block">{sku}</span>
-                  <div className="flex justify-between text-[10px] mt-1 mb-2">
-                    <span className={`font-semibold ${disp === 0 ? 'text-red-500' : 'text-emerald-600'}`}>Disp: {disp}</span>
-                    {demanda > 0 && <span className="font-semibold text-blue-600">Dem: {demanda}</span>}
+      {/* PASO 1: Datos básicos */}
+      {step === 1 && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500 mb-2">Quién hace la entrega y con qué vehículo.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormInput label="Nombre de ruta *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} placeholder="Ej: Ruta Norte" error={errors.nombre} />
+            <FormSelect label="Chofer *" options={[{value:"",label:"Seleccionar..."}, ...choferes]} value={form.choferId} onChange={e=>setForm({...form,choferId:e.target.value})} error={errors.choferId} />
+            <FormSelect label="Ayudante" options={[{value:"",label:"Sin ayudante"}, ...ayudantes]} value={form.ayudanteId} onChange={e=>setForm({...form,ayudanteId:e.target.value})} />
+            <div>
+              <FormSelect label="Camión" options={[{value:"",label:"Seleccionar camión..."}, ...camiones]} value={form.camionId} onChange={e=>setForm({...form,camionId:e.target.value})} />
+              {!nuevoCamion && <button type="button" onClick={()=>setNuevoCamion(true)} className="text-xs text-blue-600 font-semibold mt-1">+ Nuevo camión</button>}
+              {nuevoCamion && (
+                <div className="mt-2 bg-blue-50 rounded-xl p-3 space-y-2">
+                  <p className="text-xs font-bold text-blue-700">Registrar camión</p>
+                  <input value={camionForm.nombre} onChange={e=>setCamionForm({...camionForm,nombre:e.target.value})} placeholder="Nombre (ej: Camión 1)" className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white" />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input value={camionForm.placas} onChange={e=>setCamionForm({...camionForm,placas:e.target.value})} placeholder="Placas" className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white" />
+                    <input value={camionForm.modelo} onChange={e=>setCamionForm({...camionForm,modelo:e.target.value})} placeholder="Modelo" className="w-full px-3 py-2 border border-blue-200 rounded-lg text-sm focus:outline-none focus:border-blue-400 bg-white" />
                   </div>
-                  <input
-                    type="number"
-                    min="0"
-                    value={form.cargaPorProducto[sku] || ""}
-                    onChange={e => setForm({...form, cargaPorProducto: {...form.cargaPorProducto, [sku]: e.target.value}})}
-                    placeholder={demanda > 0 ? String(demanda) : "0"}
-                    className={`w-full px-3 py-2 border rounded-lg text-sm text-center focus:outline-none ${sinStock ? 'border-red-300 bg-white focus:border-red-400' : 'border-slate-200 focus:border-blue-400'}`}
-                  />
-                  {sinStock && <p className="text-[10px] text-red-500 text-center mt-1">Excede stock</p>}
+                  <div className="flex gap-2">
+                    <button type="button" onClick={async()=>{
+                      if(!camionForm.nombre.trim()){toast?.error('Nombre requerido');return;}
+                      await actions.addCamion(camionForm);
+                      toast?.success('Camión registrado');
+                      setCamionForm({nombre:"",placas:"",modelo:""});
+                      setNuevoCamion(false);
+                    }} className="flex-1 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg">Guardar</button>
+                    <button type="button" onClick={()=>{setNuevoCamion(false);setCamionForm({nombre:"",placas:"",modelo:""})}} className="flex-1 py-2 bg-slate-200 text-slate-600 text-xs font-semibold rounded-lg">Cancelar</button>
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Extra autorizado */}
-        <div className="border-t pt-4">
-          <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-            <span className="w-6 h-6 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center text-xs">2</span>
-            Extra autorizado <span className="text-xs font-normal text-slate-400">(adicional a carga base)</span>
-          </h4>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {prodTerminados.map(p => (
-              <div key={p.sku} className="bg-amber-50 rounded-xl p-3">
-                <label className="text-xs font-semibold text-amber-700 block mb-1">{p.nombre}</label>
-                <span className="text-[10px] text-amber-500 block mb-2">+ Extra</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.extraPorProducto[p.sku] || ""}
-                  onChange={e => setForm({...form, extraPorProducto: {...form.extraPorProducto, [p.sku]: e.target.value}})}
-                  placeholder="0"
-                  className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm text-center focus:outline-none focus:border-amber-400 bg-white"
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Resumen de carga total */}
-        {Object.values(form.cargaPorProducto).some(v => n(v) > 0) && (
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-            <h4 className="text-xs font-bold text-emerald-700 uppercase mb-2">Carga total autorizada</h4>
-            <div className="flex flex-wrap gap-2">
-              {prodTerminados.filter(p => n(form.cargaPorProducto[p.sku]) > 0 || n(form.extraPorProducto[p.sku]) > 0).map(p => {
-                const base = n(form.cargaPorProducto[p.sku]);
-                const extra = n(form.extraPorProducto[p.sku]);
-                return (
-                  <span key={p.sku} className="px-3 py-1 bg-white border border-emerald-200 rounded-full text-xs font-semibold text-emerald-700">
-                    {base + extra}× {s(p.nombre)}
-                    {extra > 0 && <span className="text-amber-600 ml-1">(+{extra})</span>}
-                  </span>
-                );
-              })}
+              )}
             </div>
           </div>
-        )}
+          {editingRuta && <FormSelect label="Estatus" options={["Programada","En progreso","Completada","Cerrada","Cancelada"]} value={form.estatus} onChange={e=>setForm({...form,estatus:e.target.value})} />}
+        </div>
+      )}
 
-        {/* Órdenes a entregar */}
-        <div className="border-t pt-4">
-          <h4 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-            <span className="w-6 h-6 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center text-xs">3</span>
-            Órdenes a entregar
-            {form.ordenesIds.length > 0 && <span className="text-xs font-normal text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full">{form.ordenesIds.length} seleccionadas</span>}
-          </h4>
+      {/* PASO 2: Órdenes */}
+      {step === 2 && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500 mb-2">Selecciona qué órdenes va a entregar el chofer en esta ruta. Puedes saltar este paso y asignar después.</p>
 
           <input
             type="text"
             value={searchOrden}
             onChange={e => setSearchOrden(e.target.value)}
             placeholder="Buscar por folio, cliente o dirección..."
-            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm mb-2 focus:outline-none focus:border-purple-400"
+            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-slate-400"
           />
 
-          <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-xl bg-white divide-y divide-slate-100">
+          {form.ordenesIds.length > 0 && (
+            <div className="bg-slate-50 rounded-xl px-3 py-2 text-xs text-slate-600">
+              <strong className="text-slate-800">{form.ordenesIds.length}</strong> {form.ordenesIds.length === 1 ? 'orden seleccionada' : 'órdenes seleccionadas'}
+            </div>
+          )}
+
+          <div className="max-h-72 overflow-y-auto border border-slate-200 rounded-xl bg-white divide-y divide-slate-100">
             {ordenesFiltradas.length === 0 && (
-              <p className="px-3 py-4 text-xs text-slate-400 text-center">No hay órdenes pendientes sin ruta asignada</p>
+              <p className="px-3 py-6 text-xs text-slate-400 text-center">No hay órdenes pendientes sin ruta asignada</p>
             )}
             {ordenesFiltradas.map(o => {
               const sel = form.ordenesIds.includes(String(o.id));
@@ -618,9 +599,9 @@ export function RutasView({ data, actions }) {
                 <button
                   key={o.id}
                   onClick={() => toggleOrden(o.id)}
-                  className={`w-full px-3 py-2.5 text-left flex items-start gap-3 transition-colors ${sel ? 'bg-purple-50' : 'hover:bg-slate-50'}`}
+                  className={`w-full px-3 py-2.5 text-left flex items-start gap-3 transition-colors ${sel ? 'bg-slate-100' : 'hover:bg-slate-50'}`}
                 >
-                  <span className={`mt-0.5 w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${sel ? 'border-purple-500 bg-purple-500 text-white' : 'border-slate-300'}`}>
+                  <span className={`mt-0.5 w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${sel ? 'border-slate-700 bg-slate-700 text-white' : 'border-slate-300'}`}>
                     {sel ? '✓' : ''}
                   </span>
                   <div className="flex-1 min-w-0">
@@ -638,13 +619,111 @@ export function RutasView({ data, actions }) {
             })}
           </div>
         </div>
-      </div>
-      <div className="flex justify-end gap-2 mt-5">
-        {(errors.nombre || errors.choferId) && (
-          <p className="text-sm text-red-500 flex-1">⚠️ Completa el nombre de ruta y selecciona un chofer</p>
-        )}
+      )}
+
+      {/* PASO 3: Carga autorizada */}
+      {step === 3 && (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500 mb-2">Cuántos productos lleva el chofer en el camión. La carga base cubre las órdenes; el extra es por si vende en ruta.</p>
+
+          {errors.carga && <div className="bg-red-50 border border-red-200 rounded-xl p-3"><p className="text-xs text-red-700 font-semibold">⚠️ {errors.carga}</p></div>}
+
+          {/* Atajo: llenar con demanda */}
+          {form.ordenesIds.length > 0 && Object.values(demandaSeleccionados).some(v => v > 0) && (
+            <button
+              type="button"
+              onClick={() => setForm(prev => ({ ...prev, cargaPorProducto: {...prev.cargaPorProducto, ...Object.fromEntries(Object.entries(demandaSeleccionados).map(([k,v]) => [k, v]))} }))}
+              className="w-full py-2.5 text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-200 transition-colors"
+            >
+              ⚡ Llenar carga con demanda de las {form.ordenesIds.length} órdenes seleccionadas ({Object.values(demandaSeleccionados).reduce((a,b)=>a+b,0)} productos)
+            </button>
+          )}
+
+          {/* Carga base */}
+          <div>
+            <h4 className="text-sm font-semibold text-slate-700 mb-2">Carga base</h4>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {prodTerminados.map(p => {
+                const sku = s(p.sku);
+                const disp = n(stockPorSku[sku]);
+                const demanda = n(demandaSeleccionados[sku]);
+                const solicitado = n(form.cargaPorProducto[sku]) + n(form.extraPorProducto[sku]);
+                const sinStock = solicitado > disp;
+                return (
+                  <div key={sku} className={`rounded-xl p-3 ${sinStock ? 'bg-red-50 border border-red-200' : 'bg-slate-50'}`}>
+                    <label className="text-xs font-semibold text-slate-700 block mb-0.5">{s(p.nombre)}</label>
+                    <span className="text-[10px] text-slate-400 block">{sku}</span>
+                    <div className="flex justify-between text-[10px] mt-1 mb-2">
+                      <span className={`font-semibold ${disp === 0 ? 'text-red-500' : 'text-emerald-600'}`}>Disp: {disp}</span>
+                      {demanda > 0 && <span className="font-semibold text-blue-600">Dem: {demanda}</span>}
+                    </div>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.cargaPorProducto[sku] || ""}
+                      onChange={e => setForm({...form, cargaPorProducto: {...form.cargaPorProducto, [sku]: e.target.value}})}
+                      placeholder={demanda > 0 ? String(demanda) : "0"}
+                      className={`w-full px-3 py-2 border rounded-lg text-sm text-center focus:outline-none ${sinStock ? 'border-red-300 bg-white focus:border-red-400' : 'border-slate-200 focus:border-slate-400'}`}
+                    />
+                    {sinStock && <p className="text-[10px] text-red-500 text-center mt-1">Excede stock</p>}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Extra autorizado (acordeón colapsado) */}
+          <details>
+            <summary className="cursor-pointer text-sm font-semibold text-slate-700 hover:text-slate-900">
+              + Extra autorizado <span className="text-xs font-normal text-slate-400">(adicional para venta en ruta)</span>
+            </summary>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3">
+              {prodTerminados.map(p => (
+                <div key={p.sku} className="bg-amber-50 rounded-xl p-3">
+                  <label className="text-xs font-semibold text-amber-700 block mb-1">{s(p.nombre)}</label>
+                  <span className="text-[10px] text-amber-500 block mb-2">{s(p.sku)}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.extraPorProducto[p.sku] || ""}
+                    onChange={e => setForm({...form, extraPorProducto: {...form.extraPorProducto, [p.sku]: e.target.value}})}
+                    placeholder="0"
+                    className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm text-center focus:outline-none focus:border-amber-400 bg-white"
+                  />
+                </div>
+              ))}
+            </div>
+          </details>
+
+          {/* Resumen */}
+          {Object.values(form.cargaPorProducto).some(v => n(v) > 0) && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+              <h4 className="text-xs font-semibold text-emerald-700 mb-2">Carga total autorizada</h4>
+              <div className="flex flex-wrap gap-2">
+                {prodTerminados.filter(p => n(form.cargaPorProducto[p.sku]) > 0 || n(form.extraPorProducto[p.sku]) > 0).map(p => {
+                  const base = n(form.cargaPorProducto[p.sku]);
+                  const extra = n(form.extraPorProducto[p.sku]);
+                  return (
+                    <span key={p.sku} className="px-3 py-1 bg-white border border-emerald-200 rounded-full text-xs font-semibold text-emerald-700">
+                      {base + extra}× {s(p.nombre)}
+                      {extra > 0 && <span className="text-amber-600 ml-1">(+{extra})</span>}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Footer con navegación */}
+      <div className="flex justify-between gap-2 mt-6 pt-4 border-t border-slate-100">
         <FormBtn onClick={()=>{setModal(false);setEditingRuta(null)}}>Cancelar</FormBtn>
-        <FormBtn primary onClick={save}>{editingRuta ? "Guardar cambios" : "Autorizar carga"}</FormBtn>
+        <div className="flex gap-2">
+          {step > 1 && <FormBtn onClick={prevStep}>← Atrás</FormBtn>}
+          {step < 3 && <FormBtn primary onClick={nextStep}>Siguiente →</FormBtn>}
+          {step === 3 && <FormBtn primary onClick={save}>{editingRuta ? "Guardar cambios" : "Autorizar carga"}</FormBtn>}
+        </div>
       </div>
     </Modal>
 
