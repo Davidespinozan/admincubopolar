@@ -64,12 +64,12 @@ const AREAS = [
   },
   { id: "finanzas", label: "Finanzas", icon: "Wallet", color: "amber",
     items: [
-      { id: "contabilidad", label: "Ingresos / Egresos", icon: "Calculator" },
-      { id: "cobros", label: "Cuentas por Cobrar", icon: "DollarSign" },
-      { id: "proveedores", label: "Cuentas por Pagar", icon: "CreditCard" },
-      { id: "costos", label: "Costos y Gastos", icon: "Receipt" },
+      { id: "contabilidad", label: "Movimientos de dinero", icon: "Calculator" },
+      { id: "cobros", label: "Te deben", icon: "DollarSign" },
+      { id: "proveedores", label: "Debes", icon: "CreditCard" },
+      { id: "costos", label: "Costos", icon: "Receipt" },
       { id: "facturacion", label: "Facturación", icon: "FileText" },
-      { id: "conciliacion", label: "Cortes de caja", icon: "ClipboardCheck" },
+      { id: "conciliacion", label: "Cortes", icon: "ClipboardCheck" },
       { id: "nomina", label: "Nómina", icon: "Wallet" },
     ]
   },
@@ -83,7 +83,7 @@ const AREAS = [
 ];
 
 const ALL_ITEMS = AREAS.flatMap(a => a.items);
-const BOTTOM_PRIMARY = ["dashboard", "ordenes", "produccion", "contabilidad"];
+const BOTTOM_PRIMARY = ["dashboard", "ordenes", "produccion", "cobros"];
 const AREA_META = {
   operacion: {
     tagline: 'Cadena fria y despacho',
@@ -98,14 +98,14 @@ const AREA_META = {
     glow: 'from-emerald-300/40 via-teal-200/30 to-transparent',
   },
   finanzas: {
-    tagline: 'Caja, cobranza y control',
-    subtitle: 'ingresos, egresos y conciliacion',
+    tagline: 'Tu dinero',
+    subtitle: 'lo que entra, lo que sale, lo que falta',
     chip: 'border-amber-200/80 bg-amber-100/80 text-amber-900',
     glow: 'from-amber-200/50 via-orange-200/30 to-transparent',
   },
   equipo: {
-    tagline: 'Gobierno operativo',
-    subtitle: 'personas, auditoria y ajustes',
+    tagline: 'Tu equipo',
+    subtitle: 'personas y configuracion',
     chip: 'border-violet-200/80 bg-violet-100/80 text-violet-900',
     glow: 'from-violet-200/40 via-slate-200/30 to-transparent',
   },
@@ -146,7 +146,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
 
   const renderView = () => {
     switch (view) {
-      case 'dashboard': return <DashboardView data={data} />;
+      case 'dashboard': return <DashboardView data={data} user={user} onNavigate={go} />;
       case 'clientes': return <ClientesView {...vp} />;
       case 'productos': return <ProductosView {...vp} />;
       case 'bolsas': return <AlmacenBolsasView {...vp} />;
@@ -341,7 +341,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                 <Ic />
                 <span className="mt-0.5 max-w-full truncate px-0.5 text-[11px] font-semibold leading-none sm:text-xs">{
                   id === "dashboard" ? "Inicio" :
-                  id === "contabilidad" ? "Dinero" :
+                  id === "cobros" ? "Cobrar" :
                   id === "produccion" ? "Prod." :
                   item.label.split(" ")[0]
                 }</span>

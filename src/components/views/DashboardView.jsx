@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Icons } from '../ui/Icons';
-import { StatusBadge, DataTable, CapacityBar, StatCard } from '../ui/Components';
+import { StatusBadge, DataTable, CapacityBar } from '../ui/Components';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, fmtDate, fmtDateTime } from '../../utils/safe';
 
@@ -13,8 +13,17 @@ import { s, n, fmtDate, fmtDateTime } from '../../utils/safe';
 // Also: inventarioMov.slice(0,5) created a new array ref every render,
 // causing DataTable to re-render even though the data was identical.
 
+// Detecta si el "nombre" del usuario es realmente un nombre humano
+// o un username derivado de email (ej: "santy_mier_21" en vez de "Santiago Mier")
+function looksLikeRealName(nombre) {
+  if (!nombre) return false;
+  const t = String(nombre).trim();
+  // Un nombre real típicamente tiene espacio (Nombre + Apellido)
+  // y no tiene guiones bajos, números, ni puntos
+  return t.includes(' ') && !/[_\d.]/.test(t);
+}
 
-export default function DashboardView({ data }) {
+export default function DashboardView({ data, user, onNavigate }) {
   const hoy = new Date();
   const y = hoy.getFullYear();
   const m = hoy.getMonth();
@@ -129,15 +138,32 @@ export default function DashboardView({ data }) {
     });
   }, [productosHielo, pedidosPendPorSku, stockCuartosPorSku, reservadoEnRutasPorSku, producidoHoyPorSku]);
 
-  const rutasAct = useMemo(
-    () => (data.rutas || []).filter(r => s(r.estatus).toLowerCase() === "en progreso").length,
-    [data.rutas]
-  );
-
-  const alertasActivas = useMemo(
-    () => (data.alertas || []).filter(a => !!s(a.msg || a.mensaje || a.detalle)),
-    [data.alertas]
-  );
+  const alertasActivas = useMemo(() => {
+    const raw = (data.alertas || []).filter(a => !!s(a.msg || a.mensaje || a.detalle));
+    const grupos = new Map();
+    for (const a of raw) {
+      const msg = s(a.msg || a.mensaje || a.detalle);
+      // Extrae cliente y monto si la alerta es tipo "CxC vencida"
+      const matchCxC = msg.match(/CxC vencida.*?—\s*(.+?)\s*—\s*\$(\d+(?:[.,]\d+)?)/);
+      if (matchCxC) {
+        const cliente = matchCxC[1].trim();
+        const monto = parseFloat(matchCxC[2].replace(',', ''));
+        const key = `cxc:${cliente}`;
+        if (!grupos.has(key)) {
+          grupos.set(key, { ...a, _cliente: cliente, _total: 0, _count: 0, _tipo: 'cxc' });
+        }
+        const g = grupos.get(key);
+        g._total += monto;
+        g._count += 1;
+        g.msg = `${cliente} te debe $${g._total.toLocaleString()} (${g._count} ${g._count === 1 ? 'factura vencida' : 'facturas vencidas'})`;
+        g.tipo = 'critica';
+      } else {
+        // Alertas que no son de CxC pasan tal cual
+        grupos.set(`other:${a.id || msg}`, a);
+      }
+    }
+    return Array.from(grupos.values());
+  }, [data.alertas]);
 
   const ordPend = useMemo(
     () => (data.ordenes || []).filter(o => estatusPendientes.has(s(o.estatus).toLowerCase())).length,
@@ -164,20 +190,6 @@ export default function DashboardView({ data }) {
     }
     return { dia, semana, mes };
   }, [data.ordenes]);
-
-  const clientesActivos = useMemo(
-    () => (data.clientes || []).filter(c => s(c.estatus || 'Activo') === 'Activo').length,
-    [data.clientes]
-  );
-
-  const stats = useMemo(() => [
-    { label: "Ventas hoy", val: `$${n(ventasResumen.dia).toLocaleString()}`, unit: "pesos", bg: "bg-emerald-50", txt: "text-emerald-600", icon: Icons.DollarSign },
-    { label: "Ventas semana", val: `$${n(ventasResumen.semana).toLocaleString()}`, unit: "pesos", bg: "bg-indigo-50", txt: "text-indigo-600", icon: Icons.Calculator },
-    { label: "Ventas mes", val: `$${n(ventasResumen.mes).toLocaleString()}`, unit: "pesos", bg: "bg-blue-50", txt: "text-blue-600", icon: Icons.Wallet },
-    { label: "Por entregar", val: ordPend, unit: "órdenes", bg: "bg-amber-50", txt: "text-amber-500", icon: Icons.ShoppingCart },
-    { label: "Rutas activas", val: rutasAct, unit: "en calle", bg: "bg-emerald-50", txt: "text-emerald-500", icon: Icons.Truck },
-    { label: "Clientes activos", val: n(clientesActivos).toLocaleString(), unit: "clientes", bg: "bg-cyan-50", txt: "text-cyan-600", icon: Icons.Users },
-  ], [ordPend, rutasAct, ventasResumen, clientesActivos]);
 
   // ── ESTADO DE RESULTADOS ──
   const estadoResultados = useMemo(() => {
@@ -243,19 +255,162 @@ export default function DashboardView({ data }) {
     return { efectivoHoy, cxcTotal, cxpTotal, posicion };
   }, [data.pagos, data.cuentasPorCobrar, data.cuentasPorPagar]);
 
+  // ── ZONA 1: Saludo según hora ──
+  const saludo = useMemo(() => {
+    const h = new Date().getHours();
+    if (h < 12) return { texto: 'Buen día', emoji: '☀️' };
+    if (h < 19) return { texto: 'Buenas tardes', emoji: '👋' };
+    return { texto: 'Buenas noches', emoji: '🌙' };
+  }, []);
+
+  // ── ZONA 1: Resumen accionable de "hoy" ──
+  const accionablesHoy = useMemo(() => {
+    const acciones = [];
+
+    // Entregas pendientes
+    if (ordPend > 0) {
+      acciones.push({
+        tipo: 'entregas',
+        texto: `${ordPend} ${ordPend === 1 ? 'entrega pendiente' : 'entregas pendientes'}`,
+        cta: 'Ver entregas',
+        target: 'ordenes',
+      });
+    }
+
+    // Producción faltante (suma de toda la columna "faltante")
+    const faltanteTotal = tableroDemanda.reduce((sum, r) => sum + n(r.faltante), 0);
+    if (faltanteTotal > 0) {
+      acciones.push({
+        tipo: 'produccion',
+        texto: `Faltan ${faltanteTotal.toLocaleString()} productos por producir`,
+        cta: 'Producir',
+        target: 'produccion',
+      });
+    }
+
+    // Cobros pendientes (cliente que más debe)
+    if (balance.cxcTotal > 0) {
+      // Buscar al cliente que más debe
+      const porCliente = {};
+      for (const c of (data.cuentasPorCobrar || [])) {
+        if (c.estatus === 'Pagada') continue;
+        // Intentar varios campos posibles donde puede venir el nombre
+        let nombreCli = s(c.cliente || c.clienteNombre || c.cliente_nombre || c.nombre);
+        // Si no hay nombre directo, buscar en data.clientes por id
+        if (!nombreCli || nombreCli === 'Cliente') {
+          const clienteId = c.clienteId || c.cliente_id;
+          if (clienteId) {
+            const cliObj = (data.clientes || []).find(cl => String(cl.id) === String(clienteId));
+            if (cliObj) nombreCli = s(cliObj.nombre);
+          }
+        }
+        if (!nombreCli) nombreCli = 'Cliente';
+        porCliente[nombreCli] = (porCliente[nombreCli] || 0) + n(c.saldoPendiente);
+      }
+      const topCliente = Object.entries(porCliente).sort((a, b) => b[1] - a[1])[0];
+      if (topCliente) {
+        acciones.push({
+          tipo: 'cobro',
+          texto: `${topCliente[0]} te debe $${topCliente[1].toLocaleString()}`,
+          cta: 'Cobrar',
+          target: 'cobros',
+        });
+      }
+    }
+
+    return acciones;
+  }, [ordPend, tableroDemanda, balance.cxcTotal, data.cuentasPorCobrar, data.clientes]);
+
   return (
     <div>
-      <div className="mb-4 grid grid-cols-2 gap-3 md:mb-6 md:grid-cols-3 md:gap-4">
-        {stats.map((item, i) => (
-          <StatCard key={i} label={item.label} value={item.val} unit={item.unit} icon={item.icon} />
-        ))}
+      {/* ═══ ZONA 1: HOY (lo accionable) ═══ */}
+      {accionablesHoy.length > 0 && (
+        <div className="mb-4 md:mb-6 rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-white to-cyan-50/40 p-5 md:p-7 shadow-[0_18px_40px_rgba(8,20,27,0.08)]">
+          <div className="mb-4 md:mb-5">
+            <p className="font-display text-xl md:text-2xl font-bold tracking-[-0.03em] text-slate-900">
+              {saludo.texto}{looksLikeRealName(user?.nombre) ? `, ${user.nombre.split(' ')[0]}` : ''} {saludo.emoji}
+            </p>
+            <p className="text-sm text-slate-500 mt-1">Esto es lo que necesitas atender hoy</p>
+          </div>
+
+          <div className="space-y-2.5 md:space-y-3 mb-5">
+            {accionablesHoy.map((a, i) => (
+              <div key={i} className="flex items-center justify-between gap-3 rounded-[18px] border border-slate-100 bg-white px-4 py-3 hover:border-slate-300 transition-colors">
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${
+                    a.tipo === 'entregas' ? 'bg-blue-50 text-blue-600' :
+                    a.tipo === 'produccion' ? 'bg-amber-50 text-amber-600' :
+                    'bg-emerald-50 text-emerald-600'
+                  }`}>
+                    {a.tipo === 'entregas' ? <Icons.Truck /> : a.tipo === 'produccion' ? <Icons.Factory /> : <Icons.DollarSign />}
+                  </span>
+                  <p className="text-sm md:text-base font-semibold text-slate-800 truncate">{a.texto}</p>
+                </div>
+                {onNavigate && (
+                  <button
+                    onClick={() => onNavigate(a.target)}
+                    className="flex-shrink-0 inline-flex items-center gap-1 rounded-[12px] bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
+                  >
+                    {a.cta} →
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {accionablesHoy.length === 0 && (
+            <p className="text-sm text-slate-500 italic">Todo al día. No hay pendientes urgentes.</p>
+          )}
+        </div>
+      )}
+
+      {/* ═══ ZONA 2: ESTA SEMANA (números clave en una sola línea) ═══ */}
+      <div className="mb-4 md:mb-6 rounded-[24px] border border-slate-200/80 bg-white p-4 md:p-5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-3">Esta semana</p>
+        <div className="grid grid-cols-3 gap-3 md:gap-6">
+          <div>
+            <p className="text-xs text-slate-500 mb-1">Vendiste</p>
+            <p className="font-display text-xl md:text-2xl font-bold text-slate-900">${n(ventasResumen.semana).toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 mb-1">Ganaste (mes)</p>
+            <p className={`font-display text-xl md:text-2xl font-bold ${estadoResultados.mes.utilidad >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+              ${estadoResultados.mes.utilidad.toLocaleString()}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-500 mb-1">Te deben</p>
+            <p className={`font-display text-xl md:text-2xl font-bold ${balance.cxcTotal > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+              ${balance.cxcTotal.toLocaleString()}
+            </p>
+          </div>
+        </div>
       </div>
+
+      {/* ═══ ZONA 3: ALERTAS PROMOVIDAS ARRIBA ═══ */}
+      {alertasActivas.length > 0 && (
+        <div className="mb-4 md:mb-6 rounded-[24px] border border-slate-200/80 bg-white p-4 md:p-5">
+          <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.AlertTriangle /> Necesita tu atención</h3>
+          <div className="space-y-2 md:space-y-3">
+            {alertasActivas.slice(0, 5).map((a, i) => (
+              <div key={a.id ?? i} className="flex items-start gap-2.5 rounded-[14px] border border-slate-100 bg-slate-50/60 p-3">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${s(a.tipo)==="critica"?"bg-red-500":s(a.tipo)==="accionable"?"bg-amber-500":"bg-blue-400"}`} />
+                <p className="text-sm font-medium text-slate-700 flex-1">{s(a.msg || a.mensaje || a.detalle)}</p>
+              </div>
+            ))}
+            {alertasActivas.length > 5 && (
+              <p className="text-xs text-slate-400 text-center pt-1">+{alertasActivas.length - 5} más</p>
+            )}
+          </div>
+        </div>
+      )}
+
 
       {/* Estado de Resultados y Balance */}
       <div className="mb-4 grid grid-cols-1 gap-4 md:mb-6 md:grid-cols-2">
         {/* Estado de Resultados */}
         <div className="rounded-2xl border border-slate-100 bg-white p-4 md:p-5">
-          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Calculator /> Estado de Resultados</h3>
+          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Calculator /> Cómo va el mes</h3>
           <div className="flex gap-2 mb-3">
             <button className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Mes</button>
           </div>
@@ -265,21 +420,21 @@ export default function DashboardView({ data }) {
               <span className="text-sm font-bold text-emerald-600">+${estadoResultados.mes.ventasTot.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Costo de ventas</span>
+              <span className="text-sm text-slate-600">Costo del hielo</span>
               <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.costoDeVentas.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100 bg-slate-50 rounded-lg px-2 -mx-2">
-              <span className="text-sm font-semibold text-slate-700">Utilidad bruta</span>
+              <span className="text-sm font-semibold text-slate-700">Ganancia antes de gastos</span>
               <span className={`text-sm font-bold ${estadoResultados.mes.utilidadBruta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                 ${estadoResultados.mes.utilidadBruta.toLocaleString()}
               </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Gastos operativos</span>
+              <span className="text-sm text-slate-600">Otros gastos</span>
               <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.gastosOp.toLocaleString()}</span>
             </div>
             <div className="-mx-2 flex justify-between rounded-[16px] bg-slate-900 px-3 py-2 text-white">
-              <span className="text-sm font-bold text-white/82">Utilidad</span>
+              <span className="text-sm font-bold text-white/82">Ganancia</span>
               <span className={`text-sm font-extrabold ${estadoResultados.mes.utilidad >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>
                 ${estadoResultados.mes.utilidad.toLocaleString()}
               </span>
@@ -289,22 +444,22 @@ export default function DashboardView({ data }) {
 
         {/* Balance Simplificado */}
         <div className="rounded-2xl border border-slate-100 bg-white p-4 md:p-5">
-          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Wallet /> Balance Financiero</h3>
+          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Wallet /> Tu dinero</h3>
           <div className="space-y-2">
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Efectivo cobrado hoy</span>
+              <span className="text-sm text-slate-600">Cobrado hoy en efectivo</span>
               <span className="text-sm font-bold text-emerald-600">${balance.efectivoHoy.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Cuentas por cobrar</span>
+              <span className="text-sm text-slate-600">Te deben</span>
               <span className="text-sm font-bold text-amber-600">${balance.cxcTotal.toLocaleString()}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Cuentas por pagar</span>
+              <span className="text-sm text-slate-600">Debes</span>
               <span className="text-sm font-bold text-red-500">${balance.cxpTotal.toLocaleString()}</span>
             </div>
             <div className="-mx-2 flex justify-between rounded-[16px] bg-slate-900 px-3 py-2 text-white">
-              <span className="text-sm font-bold text-white/82">Posición financiera</span>
+              <span className="text-sm font-bold text-white/82">Saldo a favor</span>
               <span className={`text-sm font-extrabold ${balance.posicion >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>
                 ${balance.posicion.toLocaleString()}
               </span>
@@ -315,20 +470,20 @@ export default function DashboardView({ data }) {
 
       {/* Demanda vs Producción */}
       <div className="mb-4 rounded-2xl border border-slate-100 bg-white p-4 md:mb-6 md:p-5">
-        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.Factory /> Demanda vs producción</h3>
+        <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.Factory /> Qué necesitas producir</h3>
         {tableroDemanda.length === 0 ? <EmptyState message="Sin productos de hielo" /> :
           <DataTable
             columns={[
               { key: "sku", label: "SKU", render: v => <span className="font-mono text-xs font-bold text-blue-600">{s(v)}</span> },
               { key: "producto", label: "Producto", bold: true },
-              { key: "pendientes", label: "Pedidos pendientes", render: v => n(v).toLocaleString() },
-              { key: "stock", label: "Stock disponible", render: (v, r) => {
+              { key: "pendientes", label: "Pedidos", render: v => n(v).toLocaleString() },
+              { key: "stock", label: "Tienes en stock", render: (v, r) => {
                 const bajo = n(r.stockMinimo) > 0 && n(v) < n(r.stockMinimo);
                 return <span className={`font-bold ${bajo ? 'text-red-600' : ''}`}>{n(v).toLocaleString()}{bajo && <span className="text-[10px] text-red-400 ml-1">▼ bajo mín</span>}</span>;
               }},
-              { key: "stockMinimo", label: "Stock mínimo", render: v => n(v) > 0 ? <span className="text-xs text-slate-500">{n(v).toLocaleString()}</span> : <span className="text-xs text-slate-300">—</span> },
-              { key: "faltante", label: "Faltante por producir", render: v => <span className={`font-bold ${n(v) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{n(v).toLocaleString()}</span> },
-              { key: "producidoHoy", label: "Producido hoy", render: v => n(v).toLocaleString() },
+              { key: "stockMinimo", label: "Mínimo", render: v => n(v) > 0 ? <span className="text-xs text-slate-500">{n(v).toLocaleString()}</span> : <span className="text-xs text-slate-300">—</span> },
+              { key: "faltante", label: "Por producir", render: v => <span className={`font-bold ${n(v) > 0 ? 'text-red-600' : 'text-emerald-600'}`}>{n(v).toLocaleString()}</span> },
+              { key: "producidoHoy", label: "Hecho hoy", render: v => n(v).toLocaleString() },
             ]}
             data={tableroDemanda}
             cardTitle={r => `${s(r.sku)} · ${s(r.producto)}`}
@@ -336,9 +491,9 @@ export default function DashboardView({ data }) {
           />}
       </div>
 
-      {/* Cuartos + Alertas */}
-      <div className="mb-4 grid grid-cols-1 gap-3 md:mb-6 md:grid-cols-3 md:gap-4">
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 md:col-span-2 md:p-5">
+      {/* Cuartos Fríos */}
+      <div className="mb-4 md:mb-6">
+        <div className="rounded-2xl border border-slate-100 bg-white p-4 md:p-5">
           <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.Thermometer /> Cuartos Fríos</h3>
           {(data.cuartosFrios || []).length === 0 ? <EmptyState message="Sin cuartos fríos" /> :
           <div className="flex sm:grid sm:grid-cols-3 gap-3 overflow-x-auto sm:overflow-x-visible pb-1 sm:pb-0 snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -351,18 +506,6 @@ export default function DashboardView({ data }) {
                 <CapacityBar pct={n(cf.capacidad)} />
                 <p className="text-xs text-slate-400 mt-1.5">{n(cf.capacidad)}%</p>
                 <div className="mt-1.5 space-y-0.5">{cf.stock ? Object.entries(cf.stock).map(([sku,qty])=><div key={sku} className="flex justify-between text-xs"><span className="text-slate-500">{sku}</span><span className="font-bold text-slate-700">{qty}</span></div>) : <p className="text-xs text-slate-500">{s(cf.productos)}</p>}</div>
-              </div>
-            ))}
-          </div>}
-        </div>
-        <div className="rounded-2xl border border-slate-100 bg-white p-4 md:p-5">
-          <h3 className="text-sm font-bold text-slate-700 mb-3 md:mb-4 flex items-center gap-2"><Icons.AlertTriangle /> Alertas</h3>
-          {alertasActivas.length === 0 ? <EmptyState message="Sin alertas activas" /> :
-          <div className="space-y-2 md:space-y-3">
-            {alertasActivas.map((a, i) => (
-              <div key={a.id ?? i} className="flex items-start gap-2.5 rounded-[18px] border border-slate-100 bg-slate-50 p-2.5 md:gap-3 md:p-3">
-                <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-1.5 ${s(a.tipo)==="critica"?"bg-red-500":s(a.tipo)==="accionable"?"bg-amber-500":"bg-blue-400"}`} />
-                <div><p className="text-xs font-medium text-slate-700">{s(a.msg || a.mensaje || a.detalle)}</p><p className="text-xs text-slate-400 mt-0.5">{fmtDateTime(a.created_at)}</p></div>
               </div>
             ))}
           </div>}
