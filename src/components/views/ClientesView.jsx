@@ -11,11 +11,38 @@ export function ClientesView({ data, actions }) {
   const [geocoding, setGeocoding] = useState(false);
   const empty = { nombre:"",nombreComercial:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",cp:"",correo:"",tipo:"Tienda",contacto:"",calle:"",colonia:"",ciudad:"Hermosillo",zona:"",latitud:"",longitud:"",creditoAutorizado:false,limiteCredito:"" };
   const [form, setForm] = useState(empty);
+  const [step, setStep] = useState(1);
 
   const dSearch = useDebounce(search);
 
-  const openNew = () => { setForm(empty); setErrors({}); setModal("new"); };
-  const openEdit = (c) => { setForm({ nombre:s(c.nombre),nombreComercial:s(c.nombreComercial||c.nombre_comercial),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Hermosillo",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"",creditoAutorizado:c.credito_autorizado||false,limiteCredito:c.limite_credito||"" }); setErrors({}); setModal(c); };
+  const openNew = () => { setForm(empty); setErrors({}); setStep(1); setModal("new"); };
+  const openEdit = (c) => { setForm({ nombre:s(c.nombre),nombreComercial:s(c.nombreComercial||c.nombre_comercial),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Hermosillo",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"",creditoAutorizado:c.credito_autorizado||false,limiteCredito:c.limite_credito||"" }); setErrors({}); setStep(1); setModal(c); };
+
+  const validateStep = (currentStep) => {
+    const e = {};
+    if (currentStep === 1) {
+      if (!form.nombre.trim()) e.nombre = "Requerido";
+      if (!form.rfc.trim()) e.rfc = "Requerido";
+      if (form.rfc.trim() && (form.rfc.length < 12 || form.rfc.length > 13)) e.rfc = "RFC debe tener 12-13 caracteres";
+    }
+    if (currentStep === 2) {
+      if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
+      if (form.cp.trim() && !/^\d{5}$/.test(form.cp)) e.cp = "CP debe ser 5 dígitos";
+    }
+    return e;
+  };
+
+  const nextStep = () => {
+    const e = validateStep(step);
+    if (Object.keys(e).length) { setErrors(e); return; }
+    setErrors({});
+    setStep(step + 1);
+  };
+
+  const prevStep = () => {
+    setErrors({});
+    setStep(step - 1);
+  };
 
     const save = async () => {
     const e = {};
@@ -71,57 +98,130 @@ export function ClientesView({ data, actions }) {
       <Paginator page={page} total={filtered.length} onPage={setPage} />
     </div>
     <Modal open={!!modal} onClose={()=>setModal(null)} title={modal==="new"?"Nuevo Cliente":"Editar Cliente"} wide>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <FormInput label="Razón social *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} error={errors.nombre} />
-        <FormInput label="Nombre comercial" value={form.nombreComercial} onChange={e=>setForm({...form,nombreComercial:e.target.value})} placeholder="Ej: Nevería Don Pedro" />
-        <FormInput label="RFC *" value={form.rfc} onChange={e=>setForm({...form,rfc:e.target.value.toUpperCase()})} maxLength={13} error={errors.rfc} />
-        <FormSelect label="Régimen fiscal" options={["Régimen General","Régimen Simplificado","Sin obligaciones"]} value={form.regimen} onChange={e=>setForm({...form,regimen:e.target.value})} />
-        <FormSelect label="Uso CFDI" options={["G01","G03","S01","P01"]} value={form.usoCfdi} onChange={e=>setForm({...form,usoCfdi:e.target.value})} />
-        <FormInput label="Código postal" value={form.cp} onChange={e=>setForm({...form,cp:e.target.value})} maxLength={5} />
-        <FormInput label="Correo" type="email" value={form.correo} onChange={e=>setForm({...form,correo:e.target.value})} />
-        <FormSelect label="Tipo" options={["Tienda","Restaurante","Cadena","Hotel","Nevería","General","Otro"]} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} />
-        <FormInput label="Teléfono" value={form.contacto} onChange={e=>setForm({...form,contacto:e.target.value})} />
+      {/* Indicador de pasos */}
+      <div className="flex items-center gap-2 mb-5">
+        {[1, 2, 3].map(n => (
+          <div key={n} className="flex items-center gap-2 flex-1">
+            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+              step === n ? 'bg-slate-900 text-white' :
+              step > n ? 'bg-emerald-500 text-white' :
+              'bg-slate-100 text-slate-400'
+            }`}>
+              {step > n ? '✓' : n}
+            </div>
+            <div className="flex-1">
+              <p className={`text-xs font-semibold ${step === n ? 'text-slate-900' : 'text-slate-400'}`}>
+                {n === 1 ? 'Datos básicos' : n === 2 ? 'Dirección' : 'Crédito'}
+              </p>
+              {n === 1 && <p className="text-[10px] text-slate-400">Requerido</p>}
+              {n !== 1 && <p className="text-[10px] text-slate-400">Opcional</p>}
+            </div>
+            {n < 3 && <div className={`h-0.5 flex-1 ${step > n ? 'bg-emerald-500' : 'bg-slate-200'}`} />}
+          </div>
+        ))}
       </div>
-      <div className="border-t border-slate-200 pt-4 mt-4">
-        <h4 className="text-sm font-semibold text-slate-700 mb-3">📍 Dirección para rutas</h4>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <FormInput label="Calle y número" value={form.calle} onChange={e=>setForm({...form,calle:e.target.value})} placeholder="Av. Revolución #123" />
-          <FormInput label="Colonia" value={form.colonia} onChange={e=>setForm({...form,colonia:e.target.value})} placeholder="Centro" />
-          <FormInput label="Ciudad" value={form.ciudad} onChange={e=>setForm({...form,ciudad:e.target.value})} />
-          <FormSelect label="Zona" options={["","Centro","Norte","Sur","Oriente","Poniente","Industrial","Periférico Norte","Periférico Sur"]} value={form.zona} onChange={e=>setForm({...form,zona:e.target.value})} />
+
+      {/* PASO 1: Datos básicos */}
+      {step === 1 && (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormInput label="Razón social *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} error={errors.nombre} />
+            <FormInput label="Nombre comercial" value={form.nombreComercial} onChange={e=>setForm({...form,nombreComercial:e.target.value})} placeholder="Ej: Nevería Don Pedro" />
+            <FormInput label="RFC *" value={form.rfc} onChange={e=>setForm({...form,rfc:e.target.value.toUpperCase()})} maxLength={13} error={errors.rfc} />
+            <FormSelect label="Tipo" options={["Tienda","Restaurante","Cadena","Hotel","Nevería","General","Otro"]} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} />
+            <FormInput label="Teléfono" value={form.contacto} onChange={e=>setForm({...form,contacto:e.target.value})} />
+            <FormInput label="Correo" type="email" value={form.correo} onChange={e=>setForm({...form,correo:e.target.value})} />
+          </div>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs text-slate-500 font-semibold hover:text-slate-700">
+              ⚙️ Datos fiscales avanzados (opcional)
+            </summary>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
+              <FormSelect label="Régimen fiscal" options={["Régimen General","Régimen Simplificado","Sin obligaciones"]} value={form.regimen} onChange={e=>setForm({...form,regimen:e.target.value})} />
+              <FormSelect label="Uso CFDI" options={["G01","G03","S01","P01"]} value={form.usoCfdi} onChange={e=>setForm({...form,usoCfdi:e.target.value})} />
+            </div>
+          </details>
         </div>
-        <div className="flex items-center gap-2 mt-3">
-          <span className="text-xs text-slate-500">Coordenadas:</span>
-          <span className="text-xs font-mono bg-slate-100 px-2 py-1 rounded">{form.latitud && form.longitud ? `${form.latitud}, ${form.longitud}` : "Sin geocodificar"}</span>
-          {form.calle && form.colonia && <button type="button" disabled={geocoding} onClick={async()=>{ setGeocoding(true); const geo=await import('../../utils/geocoding.js').then(m=>m.geocodeDireccion(`${form.calle}, ${form.colonia}, ${form.ciudad||'Hermosillo'}, Sonora, México`)); if(geo){ setForm(f=>({...f,latitud:geo.lat,longitud:geo.lng})); toast?.success('Ubicación obtenida'); } else { toast?.error('No se pudo geocodificar'); } setGeocoding(false); }} className="text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg disabled:opacity-50">{geocoding?'Buscando...':'📍 Obtener ubicación'}</button>}
+      )}
+
+      {/* PASO 2: Dirección */}
+      {step === 2 && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500 mb-2">Para que el chofer encuentre al cliente y se pueda mostrar en el mapa de rutas.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <FormInput label="Calle y número" value={form.calle} onChange={e=>setForm({...form,calle:e.target.value})} placeholder="Av. Revolución #123" />
+            <FormInput label="Colonia" value={form.colonia} onChange={e=>setForm({...form,colonia:e.target.value})} placeholder="Centro" />
+            <FormInput label="Ciudad" value={form.ciudad} onChange={e=>setForm({...form,ciudad:e.target.value})} />
+            <FormSelect label="Zona" options={["","Centro","Norte","Sur","Oriente","Poniente","Industrial","Periférico Norte","Periférico Sur"]} value={form.zona} onChange={e=>setForm({...form,zona:e.target.value})} />
+            <FormInput label="Código postal" value={form.cp} onChange={e=>setForm({...form,cp:e.target.value})} maxLength={5} error={errors.cp} />
+          </div>
+          <div className="flex items-center gap-2 mt-3 p-3 bg-slate-50 rounded-xl">
+            <span className="text-xs text-slate-500">📍 Ubicación GPS:</span>
+            <span className="text-xs font-mono bg-white px-2 py-1 rounded">{form.latitud && form.longitud ? `${form.latitud}, ${form.longitud}` : "Sin geocodificar"}</span>
+            {form.calle && form.colonia && (
+              <button type="button" disabled={geocoding} onClick={async()=>{
+                setGeocoding(true);
+                const geo=await import('../../utils/geocoding.js').then(m=>m.geocodeDireccion(`${form.calle}, ${form.colonia}, ${form.ciudad||'Hermosillo'}, Sonora, México`));
+                if(geo){ setForm(f=>({...f,latitud:geo.lat,longitud:geo.lng})); toast?.success('Ubicación obtenida'); }
+                else { toast?.error('No se pudo geocodificar'); }
+                setGeocoding(false);
+              }} className="ml-auto text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg disabled:opacity-50">
+                {geocoding?'Buscando...':'Obtener'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* PASO 3: Crédito */}
+      {step === 3 && (
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500 mb-2">Si autorizas crédito, podrás vender al cliente sin cobro inmediato y se llevará registro de saldo.</p>
+          <div className="flex items-center justify-between bg-slate-50 rounded-xl p-4 border border-slate-200">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">Crédito autorizado</p>
+              <p className="text-xs text-slate-400 mt-0.5">Permite marcar pedidos "a crédito"</p>
+            </div>
+            <button type="button" onClick={()=>setForm(f=>({...f,creditoAutorizado:!f.creditoAutorizado}))}
+              className={`w-12 h-7 rounded-full transition-all relative flex-shrink-0 ${form.creditoAutorizado?"bg-emerald-500":"bg-slate-300"}`}>
+              <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-all ${form.creditoAutorizado?"left-[22px]":"left-0.5"}`} />
+            </button>
+          </div>
+          {form.creditoAutorizado && (
+            <FormInput label="Límite de crédito ($)" type="number" value={form.limiteCredito} onChange={e=>setForm({...form,limiteCredito:e.target.value})} placeholder="0.00" />
+          )}
+
+          {modal !== "new" && (
+            <div className="border-t border-slate-200 pt-4 mt-6">
+              <button onClick={() => askConfirm("Desactivar cliente", `¿Desactivar "${s(modal.nombre)}"?`, async () => {
+                  const err = await actions.updateCliente(modal.id, { estatus: "Inactivo" });
+                  if (err) { toast?.error("No se pudo desactivar el cliente"); return; }
+                  toast?.success("Cliente desactivado");
+                  setModal(null);
+                }, true)} className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200 transition-colors">
+                🗑 Desactivar cliente
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Footer con navegación */}
+      <div className="flex justify-between gap-2 mt-6 pt-4 border-t border-slate-100">
+        <FormBtn onClick={()=>setModal(null)}>Cancelar</FormBtn>
+        <div className="flex gap-2">
+          {step > 1 && <FormBtn onClick={prevStep}>← Atrás</FormBtn>}
+          {step < 3 && <FormBtn primary onClick={nextStep}>Siguiente →</FormBtn>}
+          {step === 3 && <FormBtn primary onClick={save}>{modal === "new" ? "Crear cliente" : "Guardar cambios"}</FormBtn>}
+          {step === 1 && modal === "new" && (
+            <FormBtn primary onClick={async () => {
+              const e = validateStep(1);
+              if (Object.keys(e).length) { setErrors(e); return; }
+              await save();
+            }}>Crear y terminar</FormBtn>
+          )}
         </div>
       </div>
-      <div className="border-t border-slate-200 pt-4 mt-4">
-        <h4 className="text-sm font-semibold text-slate-700 mb-3">💳 Crédito</h4>
-        <div className="flex items-center justify-between bg-slate-50 rounded-xl p-3 border border-slate-200 mb-3">
-          <div><p className="text-sm font-semibold text-slate-700">Crédito autorizado</p><p className="text-xs text-slate-400">Permite marcar pedidos "a crédito" sin cobro inmediato</p></div>
-          <button type="button" onClick={()=>setForm(f=>({...f,creditoAutorizado:!f.creditoAutorizado}))}
-            className={`w-12 h-7 rounded-full transition-all relative flex-shrink-0 ${form.creditoAutorizado?"bg-emerald-500":"bg-slate-300"}`}>
-            <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-all ${form.creditoAutorizado?"left-[22px]":"left-0.5"}`} />
-          </button>
-        </div>
-        {form.creditoAutorizado && (
-          <FormInput label="Límite de crédito ($)" type="number" value={form.limiteCredito} onChange={e=>setForm({...form,limiteCredito:e.target.value})} placeholder="0.00" />
-        )}
-      </div>
-      <div className="space-y-3 border-t border-slate-200 pt-4 mt-5">
-        {modal !== "new" && (
-          <button onClick={() => askConfirm("Desactivar cliente", `¿Desactivar "${s(modal.nombre)}"?`, async () => {
-              const err = await actions.updateCliente(modal.id, { estatus: "Inactivo" });
-              if (err) { toast?.error("No se pudo desactivar el cliente"); return; }
-              toast?.success("Cliente desactivado");
-              setModal(null);
-            }, true)} className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200 transition-colors">
-            🗑 Desactivar cliente
-          </button>
-        )}
-      </div>
-      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Guardar</FormBtn></div>
     </Modal>
   </div>);
 }
