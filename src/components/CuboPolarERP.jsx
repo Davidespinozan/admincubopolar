@@ -231,7 +231,6 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
         <nav className="flex-1 overflow-y-auto px-4 py-4">
           {AREAS.map(area => {
             const expandida = areasExpandidas[area.id];
-            const itemCount = area.items.length;
             return (
               <div key={area.id} className="mb-3">
                 <button
@@ -240,7 +239,6 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                 >
                   <span className={`h-2 w-2 rounded-full transition-colors ${expandida ? 'bg-cyan-300' : 'bg-white/28'}`} />
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400 group-hover:text-slate-200 flex-1 text-left">{area.label}</p>
-                  <span className="text-[10px] text-slate-500 mr-1">{itemCount}</span>
                   <svg
                     className={`w-3.5 h-3.5 text-slate-400 transition-transform ${expandida ? 'rotate-90' : ''}`}
                     fill="none" stroke="currentColor" viewBox="0 0 24 24"
