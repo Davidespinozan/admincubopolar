@@ -146,7 +146,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
 
   const renderView = () => {
     switch (view) {
-      case 'dashboard': return <DashboardView data={data} user={user} />;
+      case 'dashboard': return <DashboardView data={data} user={user} onNavigate={go} />;
       case 'clientes': return <ClientesView {...vp} />;
       case 'productos': return <ProductosView {...vp} />;
       case 'bolsas': return <AlmacenBolsasView {...vp} />;

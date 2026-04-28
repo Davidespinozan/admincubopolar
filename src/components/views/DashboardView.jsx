@@ -13,8 +13,17 @@ import { s, n, fmtDate, fmtDateTime } from '../../utils/safe';
 // Also: inventarioMov.slice(0,5) created a new array ref every render,
 // causing DataTable to re-render even though the data was identical.
 
+// Detecta si el "nombre" del usuario es realmente un nombre humano
+// o un username derivado de email (ej: "santy_mier_21" en vez de "Santiago Mier")
+function looksLikeRealName(nombre) {
+  if (!nombre) return false;
+  const t = String(nombre).trim();
+  // Un nombre real típicamente tiene espacio (Nombre + Apellido)
+  // y no tiene guiones bajos, números, ni puntos
+  return t.includes(' ') && !/[_\d.]/.test(t);
+}
 
-export default function DashboardView({ data, user }) {
+export default function DashboardView({ data, user, onNavigate }) {
   const hoy = new Date();
   const y = hoy.getFullYear();
   const m = hoy.getMonth();
@@ -249,9 +258,9 @@ export default function DashboardView({ data, user }) {
   // ── ZONA 1: Saludo según hora ──
   const saludo = useMemo(() => {
     const h = new Date().getHours();
-    if (h < 12) return 'Buen día';
-    if (h < 19) return 'Buenas tardes';
-    return 'Buenas noches';
+    if (h < 12) return { texto: 'Buen día', emoji: '☀️' };
+    if (h < 19) return { texto: 'Buenas tardes', emoji: '👋' };
+    return { texto: 'Buenas noches', emoji: '🌙' };
   }, []);
 
   // ── ZONA 1: Resumen accionable de "hoy" ──
@@ -285,8 +294,18 @@ export default function DashboardView({ data, user }) {
       const porCliente = {};
       for (const c of (data.cuentasPorCobrar || [])) {
         if (c.estatus === 'Pagada') continue;
-        const cli = s(c.cliente || c.clienteNombre || 'Cliente');
-        porCliente[cli] = (porCliente[cli] || 0) + n(c.saldoPendiente);
+        // Intentar varios campos posibles donde puede venir el nombre
+        let nombreCli = s(c.cliente || c.clienteNombre || c.cliente_nombre || c.nombre);
+        // Si no hay nombre directo, buscar en data.clientes por id
+        if (!nombreCli || nombreCli === 'Cliente') {
+          const clienteId = c.clienteId || c.cliente_id;
+          if (clienteId) {
+            const cliObj = (data.clientes || []).find(cl => String(cl.id) === String(clienteId));
+            if (cliObj) nombreCli = s(cliObj.nombre);
+          }
+        }
+        if (!nombreCli) nombreCli = 'Cliente';
+        porCliente[nombreCli] = (porCliente[nombreCli] || 0) + n(c.saldoPendiente);
       }
       const topCliente = Object.entries(porCliente).sort((a, b) => b[1] - a[1])[0];
       if (topCliente) {
@@ -300,7 +319,7 @@ export default function DashboardView({ data, user }) {
     }
 
     return acciones;
-  }, [ordPend, tableroDemanda, balance.cxcTotal, data.cuentasPorCobrar]);
+  }, [ordPend, tableroDemanda, balance.cxcTotal, data.cuentasPorCobrar, data.clientes]);
 
   return (
     <div>
@@ -309,14 +328,14 @@ export default function DashboardView({ data, user }) {
         <div className="mb-4 md:mb-6 rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-white to-cyan-50/40 p-5 md:p-7 shadow-[0_18px_40px_rgba(8,20,27,0.08)]">
           <div className="mb-4 md:mb-5">
             <p className="font-display text-xl md:text-2xl font-bold tracking-[-0.03em] text-slate-900">
-              {saludo}{user?.nombre ? `, ${user.nombre}` : ''} ☀️
+              {saludo.texto}{looksLikeRealName(user?.nombre) ? `, ${user.nombre.split(' ')[0]}` : ''} {saludo.emoji}
             </p>
             <p className="text-sm text-slate-500 mt-1">Esto es lo que necesitas atender hoy</p>
           </div>
 
           <div className="space-y-2.5 md:space-y-3 mb-5">
             {accionablesHoy.map((a, i) => (
-              <div key={i} className="flex items-center justify-between gap-3 rounded-[18px] border border-slate-100 bg-white px-4 py-3">
+              <div key={i} className="flex items-center justify-between gap-3 rounded-[18px] border border-slate-100 bg-white px-4 py-3 hover:border-slate-300 transition-colors">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${
                     a.tipo === 'entregas' ? 'bg-blue-50 text-blue-600' :
@@ -327,6 +346,14 @@ export default function DashboardView({ data, user }) {
                   </span>
                   <p className="text-sm md:text-base font-semibold text-slate-800 truncate">{a.texto}</p>
                 </div>
+                {onNavigate && (
+                  <button
+                    onClick={() => onNavigate(a.target)}
+                    className="flex-shrink-0 inline-flex items-center gap-1 rounded-[12px] bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
+                  >
+                    {a.cta} →
+                  </button>
+                )}
               </div>
             ))}
           </div>
