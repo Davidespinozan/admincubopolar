@@ -515,7 +515,7 @@ export function RutasView({ data, actions }) {
             const colorPunto = estatus === 'En progreso' ? 'bg-blue-500' : estatus === 'Programada' ? 'bg-amber-500' : estatus === 'Completada' ? 'bg-emerald-500' : 'bg-slate-300';
 
             return (
-              <div key={estatus} className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+              <div key={estatus} className="bg-white border border-slate-100 rounded-2xl">
                 <button
                   onClick={() => toggleGrupo(estatus)}
                   className="w-full px-4 sm:px-5 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors"
