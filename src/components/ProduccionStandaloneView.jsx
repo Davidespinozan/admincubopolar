@@ -14,8 +14,11 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const [transForm, setTransForm] = useState({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", notas: "" });
   const [guardandoTrans, setGuardandoTrans] = useState(false);
 
-  // Producir form — includes destino (congelador)
-  const [form, setForm] = useState({ turno: "Turno 1", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1" });
+  // Producir form — includes destino (congelador) + merma inline opcional
+  const [form, setForm] = useState({ turno: "Turno 1", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1", conMerma: false, mermaCantidad: "", mermaCausa: "Bolsa rota" });
+  const [fotoMermaProdFile, setFotoMermaProdFile] = useState(null);
+  const [fotoMermaProdPreview, setFotoMermaProdPreview] = useState('');
+  const [guardandoProd, setGuardandoProd] = useState(false);
   const [tForm, setTForm] = useState({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
   const [sacarForm, setSacarForm] = useState({ sku: "", cantidad: "", motivo: "Carga a ruta" });
 
@@ -41,12 +44,33 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     };
   }, [fotoMermaPreview]);
 
+  useEffect(() => {
+    return () => {
+      if (fotoMermaProdPreview && fotoMermaProdPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(fotoMermaProdPreview);
+      }
+    };
+  }, [fotoMermaProdPreview]);
+
   const clearFotoMerma = () => {
     if (fotoMermaPreview && fotoMermaPreview.startsWith('blob:')) {
       URL.revokeObjectURL(fotoMermaPreview);
     }
     setFotoMermaFile(null);
     setFotoMermaPreview('');
+  };
+
+  const clearFotoMermaProd = () => {
+    if (fotoMermaProdPreview && fotoMermaProdPreview.startsWith('blob:')) {
+      URL.revokeObjectURL(fotoMermaProdPreview);
+    }
+    setFotoMermaProdFile(null);
+    setFotoMermaProdPreview('');
+  };
+
+  const resetFormProd = () => {
+    setForm({ turno: "Turno 1", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1", conMerma: false, mermaCantidad: "", mermaCausa: "Bolsa rota" });
+    clearFotoMermaProd();
   };
 
   const registrarMerma = async () => {
@@ -251,20 +275,71 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     return p ? n(p.stock) : 0;
   }, [data.productos, bolsaSku]);
 
-  const registrarProduccion = () => {
+  const registrarProduccion = async () => {
     if (!form.cantidad || n(form.cantidad) <= 0) return;
     if (bolsaSku && n(form.cantidad) > stockBolsa) return;
 
-    // Atomic: producción + descontar empaques + meter a cuarto frío
-    actions.producirYCongelar({
-      turno: form.turno, maquina: form.maquina, sku: form.sku,
-      cantidad: form.cantidad, destino: form.destino,
-    });
-
+    const cant = n(form.cantidad);
     const cfNombre = cuartos.find(cf => s(cf.id) === form.destino)?.nombre || form.destino;
-    showToast(form.cantidad + " " + form.sku + " → " + cfNombre);
-    setModal(false);
-    setForm({ turno: "Turno 1", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1" });
+
+    // Sin merma: comportamiento original (atómico)
+    if (!form.conMerma) {
+      actions.producirYCongelar({
+        turno: form.turno, maquina: form.maquina, sku: form.sku,
+        cantidad: form.cantidad, destino: form.destino,
+      });
+      showToast(cant + " " + form.sku + " → " + cfNombre);
+      setModal(false);
+      resetFormProd();
+      return;
+    }
+
+    // Con merma: validaciones extra
+    const merma = n(form.mermaCantidad);
+    if (merma <= 0 || merma > cant) return;
+    if (!fotoMermaProdFile) return;
+
+    setGuardandoProd(true);
+    try {
+      // 1. Subir foto a Storage
+      const authOwner = s(user?.auth_id || user?.id || 'usuario');
+      const ext = (fotoMermaProdFile.name?.split('.').pop() || 'jpg').toLowerCase();
+      const safeExt = /^[a-z0-9]+$/.test(ext) ? ext : 'jpg';
+      const filePath = `${authOwner}/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${form.sku}-prod.${safeExt}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('mermas')
+        .upload(filePath, fotoMermaProdFile, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: fotoMermaProdFile.type || 'image/jpeg',
+        });
+      if (uploadErr) {
+        showToast('No se pudo subir la foto de merma');
+        return;
+      }
+
+      // 2. Producción + meter al cuarto frío (no retorna error; asume OK)
+      await actions.producirYCongelar({
+        turno: form.turno, maquina: form.maquina, sku: form.sku,
+        cantidad: form.cantidad, destino: form.destino,
+      });
+
+      // 3. Registrar merma (descuenta del CF internamente)
+      const mermaErr = await actions.registrarMerma(form.sku, merma, form.mermaCausa, s(user?.nombre), filePath);
+      if (mermaErr) {
+        showToast('Producción OK, pero la merma no se registró. Hazlo desde Mermas.');
+        setModal(false);
+        resetFormProd();
+        return;
+      }
+
+      showToast(`${cant} producidas, ${merma} mermadas → ${cfNombre}`);
+      setModal(false);
+      resetFormProd();
+    } finally {
+      setGuardandoProd(false);
+    }
   };
 
   const hacerTraspaso = () => {
@@ -331,7 +406,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
         {/* ═══ TAB: PRODUCCIÓN ═══ */}
         {tab === "producir" && (<>
-          <button onClick={() => setModal(true)}
+          <button onClick={() => { resetFormProd(); setModal(true); }}
             className="w-full py-4 bg-blue-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
             + Ya produje hielo
           </button>
@@ -542,7 +617,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
       {/* ═══ MODAL: Ya produje hielo ═══ */}
       {modal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setModal(false)}>
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => { setModal(false); clearFotoMermaProd(); }}>
           <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Producción</p>
@@ -606,11 +681,76 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   ))}
                 </div>
               </div>
+
+              {/* ═══ Merma inline opcional ═══ */}
+              <div className="border-t border-slate-200 pt-3">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.conMerma}
+                    onChange={e => {
+                      const checked = e.target.checked;
+                      setForm(f => ({ ...f, conMerma: checked }));
+                      if (!checked) clearFotoMermaProd();
+                    }}
+                    className="w-5 h-5 rounded border-slate-300 accent-red-500"
+                  />
+                  <span className="text-sm font-semibold text-slate-700">¿Hubo merma en este lote?</span>
+                </label>
+              </div>
+
+              {form.conMerma && (
+                <div className="bg-red-50/60 border border-red-200 rounded-xl p-3 space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad de merma</label>
+                    <input type="number" inputMode="numeric" value={form.mermaCantidad}
+                      onChange={e => setForm(f => ({ ...f, mermaCantidad: e.target.value }))}
+                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="0" />
+                    {form.mermaCantidad && n(form.mermaCantidad) > n(form.cantidad) && (
+                      <p className="text-xs text-red-600 font-bold mt-1 text-center">No puede ser mayor a la cantidad producida ({n(form.cantidad)})</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Causa</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {MERMA_CAUSAS.map(c => (
+                        <button key={c} onClick={() => setForm(f => ({ ...f, mermaCausa: c }))}
+                          className={`py-2 rounded-xl text-xs font-semibold border-2 ${form.mermaCausa === c ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 text-slate-500"}`}>
+                          {c}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Evidencia (foto) *</label>
+                    {fotoMermaProdPreview ? (
+                      <div>
+                        <img src={fotoMermaProdPreview} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" />
+                        <button onClick={clearFotoMermaProd} className="text-xs text-slate-400 mt-1">Tomar otra</button>
+                      </div>
+                    ) : (
+                      <label className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
+                        <span className="text-lg">📷</span> Tomar foto de evidencia
+                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { clearFotoMermaProd(); setFotoMermaProdFile(f); setFotoMermaProdPreview(URL.createObjectURL(f)); } }} />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             <button onClick={registrarProduccion}
-              disabled={!form.cantidad || n(form.cantidad) <= 0 || (bolsaSku && n(form.cantidad) > stockBolsa)}
+              disabled={
+                guardandoProd ||
+                !form.cantidad || n(form.cantidad) <= 0 ||
+                (bolsaSku && n(form.cantidad) > stockBolsa) ||
+                (form.conMerma && (
+                  !form.mermaCantidad || n(form.mermaCantidad) <= 0 ||
+                  n(form.mermaCantidad) > n(form.cantidad) ||
+                  !fotoMermaProdFile
+                ))
+              }
               className="w-full py-4 bg-blue-600 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40 active:scale-[0.98] transition-transform">
-              Registrar producción
+              {guardandoProd ? 'Guardando...' : 'Registrar producción'}
             </button>
           </div>
         </div>
