@@ -1463,6 +1463,177 @@ export function useSupaStore(userId, userName) {
         return null;
       },
 
+      solicitarFirmaCarga: async (rutaId, cargaReal) => {
+        // El chofer marca su carga real y solicita firma. La ruta queda en
+        // 'Pendiente firma'. NO descuenta inventario aún. Eso lo hace firmarCarga.
+        if (!rutaId || !cargaReal || typeof cargaReal !== 'object') {
+          t()?.error('Datos de carga inválidos');
+          return new Error('Datos inválidos');
+        }
+
+        const { data: ruta, error: rutaErr } = await supabase
+          .from('rutas')
+          .select('id, folio, estatus, carga_autorizada, extra_autorizado, carga_confirmada_at')
+          .eq('id', rutaId)
+          .single();
+        if (rutaErr || !ruta) {
+          t()?.error('Ruta no encontrada');
+          return rutaErr || new Error('Ruta no encontrada');
+        }
+        if (ruta.carga_confirmada_at) {
+          t()?.error('Esta ruta ya tiene carga confirmada');
+          return new Error('Carga ya confirmada');
+        }
+
+        // Validar que cargaReal no excede autorizado + extra
+        const autorizada = (ruta.carga_autorizada && typeof ruta.carga_autorizada === 'object') ? ruta.carga_autorizada : {};
+        const extra = (ruta.extra_autorizado && typeof ruta.extra_autorizado === 'object') ? ruta.extra_autorizado : {};
+        for (const [sku, qty] of Object.entries(cargaReal)) {
+          const max = Number(autorizada[sku] || 0) + Number(extra[sku] || 0);
+          if (Number(qty) > max) {
+            t()?.error(`No puedes cargar ${qty} de ${sku}. Máximo: ${max}`);
+            return new Error(`Excede autorización: ${sku}`);
+          }
+        }
+
+        // Guardar carga real + cambiar estatus + timestamp de solicitud
+        const { error: updErr } = await supabase.from('rutas').update({
+          carga_real: cargaReal,
+          estatus: 'Pendiente firma',
+          carga_solicitada_at: new Date().toISOString(),
+        }).eq('id', rutaId);
+        if (updErr) {
+          t()?.error('No se pudo solicitar firma');
+          return updErr;
+        }
+
+        const cargaTxt = Object.entries(cargaReal).map(([sku, qty]) => `${qty}×${sku}`).join(', ');
+        await log('Solicitar firma', 'Rutas', `${ruta.folio} — ${cargaTxt}`);
+        rf();
+        return null;
+      },
+
+      firmarCarga: async (rutaId, firmaBase64, opciones = {}) => {
+        // Producción/Admin firma la carga. Esto sí descuenta inventario.
+        // opciones: { excepcion: bool, motivoExcepcion: string }
+        if (!rutaId) {
+          t()?.error('Ruta inválida');
+          return new Error('Sin ruta');
+        }
+        if (!firmaBase64 && !opciones.excepcion) {
+          t()?.error('Firma requerida');
+          return new Error('Sin firma');
+        }
+        if (opciones.excepcion && !s(opciones.motivoExcepcion).trim()) {
+          t()?.error('Justificación requerida para carga sin firma');
+          return new Error('Sin justificación');
+        }
+
+        const { data: ruta, error: rutaErr } = await supabase
+          .from('rutas')
+          .select('id, folio, estatus, carga_real, carga_confirmada_at')
+          .eq('id', rutaId)
+          .single();
+        if (rutaErr || !ruta) {
+          t()?.error('Ruta no encontrada');
+          return rutaErr || new Error('No encontrada');
+        }
+        if (ruta.carga_confirmada_at) {
+          t()?.error('Carga ya confirmada anteriormente');
+          return new Error('Ya confirmada');
+        }
+
+        const cargaReal = (ruta.carga_real && typeof ruta.carga_real === 'object') ? ruta.carga_real : {};
+        if (Object.keys(cargaReal).length === 0) {
+          t()?.error('No hay carga real registrada');
+          return new Error('Sin carga');
+        }
+
+        // Descontar inventario de cuartos fríos
+        const { data: cuartos, error: cfErr } = await supabase
+          .from('cuartos_frios').select('id, stock').order('id');
+        if (cfErr) {
+          t()?.error('Error al consultar cuartos fríos');
+          return cfErr;
+        }
+        if (!cuartos || cuartos.length === 0) {
+          t()?.error('No hay cuartos fríos');
+          return new Error('Sin cuartos fríos');
+        }
+
+        const changes = [];
+        for (const [sku, qtyNeeded] of Object.entries(cargaReal)) {
+          let remaining = Number(qtyNeeded);
+          if (remaining <= 0) continue;
+          for (const cf of cuartos) {
+            if (remaining <= 0) break;
+            const stockObj = (cf.stock && typeof cf.stock === 'object') ? cf.stock : {};
+            const available = Number(stockObj[sku] || 0);
+            if (available > 0) {
+              const toTake = Math.min(available, remaining);
+              remaining -= toTake;
+              changes.push({
+                cuarto_id: cf.id,
+                sku,
+                delta: -toTake,
+                tipo: 'Salida',
+                origen: `Carga ruta ${ruta.folio}` + (opciones.excepcion ? ' (sin firma)' : ''),
+                usuario: uname() || 'Sistema',
+              });
+            }
+          }
+          if (remaining > 0) {
+            t()?.error(`Inventario insuficiente: ${sku}`);
+            return new Error(`Stock insuficiente: ${sku}`);
+          }
+        }
+
+        if (changes.length > 0) {
+          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
+            p_changes: changes,
+          });
+          if (rpcErr) {
+            t()?.error('Error al descontar inventario');
+            return rpcErr;
+          }
+        }
+
+        // Actualizar ruta con firma y estatus
+        const updateData = {
+          carga_confirmada_at: new Date().toISOString(),
+          carga_confirmada_por: uid(),
+          estatus: 'Cargada',
+        };
+        if (opciones.excepcion) {
+          updateData.firma_excepcion = true;
+          updateData.firma_excepcion_motivo = s(opciones.motivoExcepcion).trim();
+          updateData.firma_carga = null;
+        } else {
+          updateData.firma_carga = firmaBase64;
+          updateData.firma_excepcion = false;
+        }
+
+        const { error: updErr } = await supabase.from('rutas').update(updateData).eq('id', rutaId);
+        if (updErr) {
+          // Rollback inventario
+          if (changes.length > 0) {
+            const reverse = changes.map(c => ({ ...c, delta: -c.delta, tipo: 'Entrada', origen: `Rollback firma ${ruta.folio}` }));
+            await supabase.rpc('update_stocks_atomic', { p_changes: reverse });
+          }
+          t()?.error('No se pudo registrar firma');
+          return updErr;
+        }
+
+        await checkStockBajo(Object.keys(cargaReal));
+        const tipo = opciones.excepcion ? 'Carga sin firma' : 'Firma carga';
+        const detalle = opciones.excepcion
+          ? `${ruta.folio} — Excepción: ${opciones.motivoExcepcion}`
+          : `${ruta.folio} — Firmado`;
+        await log(tipo, 'Rutas', detalle);
+        rf();
+        return null;
+      },
+
       updateRutaEstatus: async (id, est) => {
         const { error } = await supabase.from('rutas').update({ estatus: est }).eq('id', id);
         if (error) { t()?.error('Error al actualizar ruta'); return error; }
