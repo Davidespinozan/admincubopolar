@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, useDebounce, useToast, reporteRutas } from './viewsCommon';
 import { ordenarPorProximidad } from '../../utils/geocoding';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
@@ -71,6 +71,17 @@ export function RutasView({ data, actions }) {
     'Cerrada': true,
   });
   const toggleGrupo = (estatus) => setGruposColapsados(prev => ({ ...prev, [estatus]: !prev[estatus] }));
+
+  // Cerrar dropdowns del menú [···] al hacer click fuera
+  useEffect(() => {
+    const handleClick = (e) => {
+      document.querySelectorAll('details[data-dropdown="ruta"][open]').forEach(d => {
+        if (!d.contains(e.target)) d.removeAttribute('open');
+      });
+    };
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
+  }, []);
 
   const dSearch = useDebounce(search);
 
@@ -596,7 +607,7 @@ export function RutasView({ data, actions }) {
                               )}
 
                               {/* Menú de 3 puntos */}
-                              <details className="relative">
+                              <details className="relative" data-dropdown="ruta">
                                 <summary className="list-none cursor-pointer p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
                                   <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                                     <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
