@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, useDebounce, useToast, reporteRutas } from './viewsCommon';
+import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, useDebounce, useToast, reporteRutas, reporteRutaDiaria } from './viewsCommon';
 import { ordenarPorProximidad } from '../../utils/geocoding';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 
@@ -622,6 +622,15 @@ export function RutasView({ data, actions }) {
                                     <button onClick={(e) => { e.currentTarget.closest('details').open = false; abrirCierre(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 text-amber-700 border-t border-slate-100">
                                       🔒 Cerrar ruta (admin)
                                       <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Solo si el chofer no puede</span>
+                                    </button>
+                                  )}
+                                  {(isCerrada || isCompletada) && (
+                                    <button onClick={(e) => {
+                                      e.currentTarget.closest('details').open = false;
+                                      reporteRutaDiaria(r, data.ordenes || [], data.mermas || [], data.productos || [], data.clientes || []);
+                                    }} className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 text-blue-700 border-t border-slate-100">
+                                      📄 Descargar reporte
+                                      <span className="block text-[10px] text-slate-400 font-normal mt-0.5">PDF estilo hoja diaria</span>
                                     </button>
                                   )}
                                   <button onClick={(e) => { e.currentTarget.closest('details').open = false; askConfirm('Eliminar ruta', '¿Eliminar ruta ' + s(r.nombre) + '?', () => actions.deleteRuta(r.id), true); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600">🗑️ Eliminar</button>

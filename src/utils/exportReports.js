@@ -528,3 +528,272 @@ export function reporteNomina(empleados, nominas, formato = 'excel') {
     exportToExcel(data, 'Nomina_CuboPolar', 'Nómina', { columns });
   }
 }
+
+/**
+ * Reporte de Ruta Diaria — formato estilo hoja física Cubopolar
+ * Para una ruta específica con todas sus entregas, mermas, carga y cierre
+ */
+export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes) {
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Helpers
+  const s = v => (v ?? '').toString();
+  const n = v => Number(v) || 0;
+  const findProd = sku => productos?.find(p => s(p.sku) === s(sku));
+  const findCli = id => clientes?.find(c => String(c.id) === String(id));
+
+  // ── HEADER ──
+  doc.setFontSize(20);
+  doc.setFont('helvetica', 'bold');
+  doc.text('CUBO POLAR', 14, 15);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(100);
+  doc.text('FÁBRICA DE HIELO', 14, 20);
+  doc.setTextColor(0);
+
+  doc.setFontSize(14);
+  doc.setFont('helvetica', 'bold');
+  doc.text('REPORTE DE RUTA DIARIA', pageWidth / 2, 18, { align: 'center' });
+
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Folio: ${s(ruta.folio)}`, pageWidth - 14, 15, { align: 'right' });
+  const fechaFormat = ruta.fecha_fin || ruta.cierre_at || ruta.fecha || new Date().toISOString().slice(0, 10);
+  const fechaShort = fechaFormat.slice(0, 10);
+  doc.text(`Fecha: ${fechaShort}`, pageWidth - 14, 21, { align: 'right' });
+
+  // Línea separadora
+  doc.setDrawColor(200);
+  doc.line(14, 26, pageWidth - 14, 26);
+
+  // ── INFO DE LA RUTA ──
+  let y = 32;
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Ruta:', 14, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(s(ruta.nombre), 30, y);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('Chofer:', pageWidth / 2, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(s(ruta.choferNombre || ruta.chofer_nombre || ruta.chofer), pageWidth / 2 + 20, y);
+
+  y += 6;
+  if (ruta.ayudanteNombre || ruta.ayudante_nombre) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Ayudante:', 14, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(s(ruta.ayudanteNombre || ruta.ayudante_nombre), 35, y);
+    y += 6;
+  }
+  if (ruta.camionNombre || ruta.camion_nombre) {
+    doc.setFont('helvetica', 'bold');
+    doc.text('Camión:', 14, y);
+    doc.setFont('helvetica', 'normal');
+    const camionTxt = s(ruta.camionNombre || ruta.camion_nombre) + (ruta.camionPlacas || ruta.camion_placas ? ` — placas ${s(ruta.camionPlacas || ruta.camion_placas)}` : '');
+    doc.text(camionTxt, 35, y);
+    y += 6;
+  }
+
+  // ── TABLA DE CARGA ──
+  const carga = (ruta.carga && typeof ruta.carga === 'object') ? ruta.carga : {};
+  const cargaAuth = (ruta.carga_autorizada && typeof ruta.carga_autorizada === 'object') ? ruta.carga_autorizada : carga;
+  const devolucion = (ruta.devolucion && typeof ruta.devolucion === 'object') ? ruta.devolucion : {};
+
+  const rutaOrdenes = (ordenes || []).filter(o => String(o.rutaId || o.ruta_id) === String(ruta.id));
+
+  // Calcular vendido por SKU desde las órdenes entregadas
+  const vendidoPorSku = {};
+  for (const o of rutaOrdenes) {
+    if (s(o.estatus).toLowerCase() !== 'entregada') continue;
+    if (Array.isArray(o.preciosSnapshot) && o.preciosSnapshot.length > 0) {
+      for (const ln of o.preciosSnapshot) {
+        const sku = s(ln.sku);
+        vendidoPorSku[sku] = (vendidoPorSku[sku] || 0) + n(ln.qty || ln.cantidad);
+      }
+    } else {
+      s(o.productos).split(',').forEach(part => {
+        const mt = part.trim().match(/(\d+)\s*[×x]\s*(\S+)/);
+        if (!mt) return;
+        const sku = s(mt[2]);
+        vendidoPorSku[sku] = (vendidoPorSku[sku] || 0) + Number(mt[1] || 0);
+      });
+    }
+  }
+
+  // Calcular merma por SKU
+  const mermasRuta = (mermas || []).filter(m => s(m.origen).toLowerCase().includes(s(ruta.choferNombre || ruta.chofer_nombre || '').toLowerCase()));
+  const mermaPorSku = {};
+  for (const m of mermasRuta) {
+    const sku = s(m.sku);
+    mermaPorSku[sku] = (mermaPorSku[sku] || 0) + n(m.cantidad || m.cant);
+  }
+
+  const cargaRows = [];
+  const skusUnicos = new Set([...Object.keys(carga), ...Object.keys(cargaAuth), ...Object.keys(vendidoPorSku), ...Object.keys(devolucion), ...Object.keys(mermaPorSku)]);
+  for (const sku of skusUnicos) {
+    const prod = findProd(sku);
+    const nombreProd = prod ? s(prod.nombre) : sku;
+    const cargado = n(carga[sku] || cargaAuth[sku]);
+    const dev = n(devolucion[sku]);
+    const merma = n(mermaPorSku[sku]);
+    const vendido = n(vendidoPorSku[sku]);
+    cargaRows.push([nombreProd, sku, cargado, dev, merma, vendido]);
+  }
+
+  if (cargaRows.length > 0) {
+    y += 4;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('CARGA Y MOVIMIENTO', 14, y);
+    y += 2;
+
+    doc.autoTable({
+      head: [['Producto', 'SKU', 'Cargado', 'Devuelto', 'Merma', 'Vendido']],
+      body: cargaRows,
+      startY: y + 2,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 14, right: 14 },
+      columnStyles: {
+        2: { halign: 'center' },
+        3: { halign: 'center' },
+        4: { halign: 'center' },
+        5: { halign: 'center', fontStyle: 'bold' },
+      },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // ── TABLA DE ENTREGAS ──
+  if (rutaOrdenes.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(`ENTREGAS DEL DÍA (${rutaOrdenes.length})`, 14, y);
+    y += 2;
+
+    const entregasRows = rutaOrdenes.map((o, i) => {
+      const cli = findCli(o.clienteId || o.cliente_id);
+      return [
+        i + 1,
+        s(o.folio || `ORD-${o.id}`),
+        s(o.cliente || o.cliente_nombre || cli?.nombre || 'Público'),
+        s(o.metodoPago || o.metodo_pago || 'Efectivo'),
+        `$${n(o.total).toLocaleString('es-MX')}`,
+        s(o.estatus),
+      ];
+    });
+
+    doc.autoTable({
+      head: [['#', 'Folio', 'Cliente', 'Pago', 'Total', 'Estatus']],
+      body: entregasRows,
+      startY: y + 2,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [37, 99, 235], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 14, right: 14 },
+      columnStyles: {
+        0: { halign: 'center', cellWidth: 10 },
+        4: { halign: 'right', fontStyle: 'bold' },
+      },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+  }
+
+  // ── RESUMEN ECONÓMICO ──
+  const totalCobrado = n(ruta.total_cobrado || ruta.totalCobrado);
+  const totalCredito = n(ruta.total_credito || ruta.totalCredito);
+  const totalGeneral = totalCobrado + totalCredito;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('RESUMEN ECONÓMICO', 14, y);
+  y += 6;
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('Total cobrado (efectivo + transferencia):', 14, y);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`$${totalCobrado.toLocaleString('es-MX')}`, pageWidth - 14, y, { align: 'right' });
+  y += 5;
+
+  doc.setFont('helvetica', 'normal');
+  doc.text('Total a crédito:', 14, y);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`$${totalCredito.toLocaleString('es-MX')}`, pageWidth - 14, y, { align: 'right' });
+  y += 5;
+
+  doc.setDrawColor(200);
+  doc.line(14, y, pageWidth - 14, y);
+  y += 5;
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('TOTAL GENERAL:', 14, y);
+  doc.text(`$${totalGeneral.toLocaleString('es-MX')}`, pageWidth - 14, y, { align: 'right' });
+  y += 10;
+
+  // ── MERMAS ──
+  if (mermasRuta.length > 0) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(`MERMAS REPORTADAS (${mermasRuta.length})`, 14, y);
+    y += 2;
+
+    const mermasRows = mermasRuta.map(m => {
+      const prod = findProd(m.sku);
+      return [
+        s(m.sku),
+        prod ? s(prod.nombre) : '',
+        n(m.cantidad || m.cant),
+        s(m.causa || 'Sin causa'),
+      ];
+    });
+
+    doc.autoTable({
+      head: [['SKU', 'Producto', 'Cantidad', 'Causa']],
+      body: mermasRows,
+      startY: y + 2,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [220, 38, 38], textColor: 255, fontStyle: 'bold' },
+      alternateRowStyles: { fillColor: [254, 242, 242] },
+      margin: { left: 14, right: 14 },
+      columnStyles: { 2: { halign: 'center' } },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+  }
+
+  // ── FIRMAS ──
+  // Si no hay espacio, página nueva
+  if (y > pageHeight - 50) {
+    doc.addPage();
+    y = 30;
+  } else {
+    y = pageHeight - 45;
+  }
+
+  doc.setDrawColor(0);
+  const firmaWidth = (pageWidth - 40) / 2;
+  doc.line(14, y, 14 + firmaWidth, y);
+  doc.line(pageWidth - 14 - firmaWidth, y, pageWidth - 14, y);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text('FIRMA DEL CHOFER', 14 + firmaWidth / 2, y + 5, { align: 'center' });
+  doc.text('FIRMA RESPONSABLE PRODUCCIÓN', pageWidth - 14 - firmaWidth / 2, y + 5, { align: 'center' });
+
+  // Footer
+  doc.setFontSize(8);
+  doc.setTextColor(150);
+  doc.text(`Generado: ${new Date().toLocaleString('es-MX')}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+
+  // Guardar
+  const fileDate = fechaShort.replace(/-/g, '');
+  doc.save(`Reporte_Ruta_${s(ruta.folio)}_${fileDate}.pdf`);
+}

@@ -7,7 +7,7 @@ import Modal, { FormInput, FormSelect, FormBtn, useConfirm } from '../ui/Modal';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today, centavos } from '../../utils/safe';
 import { useToast } from '../ui/Toast';
-import { reporteVentas, reporteProduccion, reporteInventario, reporteClientes, reporteRutas, reporteFinanciero } from '../../utils/exportReports';
+import { reporteVentas, reporteProduccion, reporteInventario, reporteClientes, reporteRutas, reporteRutaDiaria, reporteFinanciero } from '../../utils/exportReports';
 import { backendPost } from '../../lib/backend';
 
 // Re-export everything for views to consume
@@ -20,7 +20,7 @@ export {
   EmptyState,
   s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today, centavos,
   useToast,
-  reporteVentas, reporteProduccion, reporteInventario, reporteClientes, reporteRutas, reporteFinanciero,
+  reporteVentas, reporteProduccion, reporteInventario, reporteClientes, reporteRutas, reporteRutaDiaria, reporteFinanciero,
   backendPost
 };
 
