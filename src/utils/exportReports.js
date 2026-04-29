@@ -627,7 +627,7 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, no
   }
 
   // Calcular merma por SKU
-  const mermasRuta = (mermas || []).filter(m => s(m.origen).toLowerCase().includes(s(ruta.choferNombre || ruta.chofer_nombre || '').toLowerCase()));
+  const mermasRuta = (mermas || []).filter(m => String(m.ruta_id || m.rutaId || '') === String(ruta.id));
   const mermaPorSku = {};
   for (const m of mermasRuta) {
     const sku = s(m.sku);
