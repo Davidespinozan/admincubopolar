@@ -7,6 +7,7 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
   const [firmaTienePuntos, setFirmaTienePuntos] = useState(false);
   const [firmaDibujando, setFirmaDibujando] = useState(false);
   const [firmando, setFirmando] = useState(false);
+  const [advertenciaAdmin, setAdvertenciaAdmin] = useState(null);
 
   // Tracking de rutas ya mostradas en popup automático para no repetir
   const rutasYaMostradas = useRef(new Set());
@@ -16,6 +17,8 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
   const ctxRef = useRef(null);
 
   const puedeFirmar = user?.rol === 'Producción' || user?.rol === 'Admin';
+  const esProduccion = user?.rol === 'Producción';
+  const esAdmin = user?.rol === 'Admin';
 
   const rutasPendientes = useMemo(() => {
     if (!puedeFirmar) return [];
@@ -27,6 +30,7 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
   // ── DETECCIÓN AUTOMÁTICA DE RUTAS NUEVAS ──
   useEffect(() => {
     if (!puedeFirmar) return;
+    if (!esProduccion) return;
 
     // Primera vez que carga: marcar todas las rutas existentes como ya vistas
     // (no abrir popup para rutas que llevan rato esperando)
@@ -72,9 +76,13 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
   if (!puedeFirmar) return null;
 
   const handleAbrirRuta = (ruta) => {
-    setRutaSeleccionada(ruta);
     setAbierto(false);
-    setFirmaTienePuntos(false);
+    if (esAdmin) {
+      setAdvertenciaAdmin(ruta);
+    } else {
+      setRutaSeleccionada(ruta);
+      setFirmaTienePuntos(false);
+    }
   };
 
   const limpiarFirma = () => {
@@ -123,7 +131,7 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
           <circle cx="11" cy="11" r="2"/>
         </svg>
         {rutasPendientes.length > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 bg-amber-400 text-slate-900 text-[10px] font-extrabold rounded-full flex items-center justify-center border-2 border-slate-900">
+          <span className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-[10px] font-extrabold rounded-full flex items-center justify-center border-2 border-slate-900 ${esProduccion ? 'bg-amber-400 text-slate-900' : 'bg-slate-300 text-slate-700'}`}>
             {rutasPendientes.length}
           </span>
         )}
@@ -133,8 +141,15 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
       {abierto && (
         <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-[20px] shadow-[0_20px_50px_rgba(3,14,19,0.18)] border border-slate-200 overflow-hidden z-50">
           <div className="bg-slate-900 px-4 py-3 text-white">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-200">Firmas de carga</p>
-            <h3 className="font-display text-base font-bold tracking-tight">{rutasPendientes.length} ruta{rutasPendientes.length === 1 ? '' : 's'} esperando</h3>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-200">
+              {esAdmin ? 'Esperando firma de Producción' : 'Firmas de carga'}
+            </p>
+            <h3 className="font-display text-base font-bold tracking-tight">
+              {rutasPendientes.length} ruta{rutasPendientes.length === 1 ? '' : 's'} esperando
+            </h3>
+            {esAdmin && (
+              <p className="text-[11px] text-slate-300 mt-1">Solo firma si Producción no está disponible</p>
+            )}
           </div>
           {rutasPendientes.length === 0 ? (
             <div className="p-6 text-center">
@@ -166,6 +181,45 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Modal de advertencia para Admin antes de firmar */}
+      {advertenciaAdmin && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={() => setAdvertenciaAdmin(null)}>
+          <div className="bg-white w-full max-w-md rounded-[24px] p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-center w-14 h-14 bg-amber-100 rounded-full mx-auto mb-3">
+              <span className="text-3xl">⚠️</span>
+            </div>
+            <h3 className="font-display text-lg font-bold text-slate-900 text-center mb-2">
+              Esta firma le corresponde a Producción
+            </h3>
+            <p className="text-sm text-slate-600 text-center mb-3">
+              El responsable de cuarto frío debe verificar físicamente la carga del camión antes de firmar.
+            </p>
+            <p className="text-xs text-slate-500 text-center mb-4">
+              Solo firma como Admin si Producción no está disponible. Esta acción quedará registrada como firma de Admin.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setAdvertenciaAdmin(null)}
+                className="flex-1 py-3 bg-slate-200 text-slate-700 text-sm font-bold rounded-xl"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  const ruta = advertenciaAdmin;
+                  setAdvertenciaAdmin(null);
+                  setRutaSeleccionada(ruta);
+                  setFirmaTienePuntos(false);
+                }}
+                className="flex-1 py-3 bg-amber-600 text-white text-sm font-bold rounded-xl"
+              >
+                Firmar como Admin
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
