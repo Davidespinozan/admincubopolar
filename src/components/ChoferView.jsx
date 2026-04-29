@@ -13,6 +13,18 @@ const CHOFER_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradi
 export default function ChoferView({ user, data, actions, onLogout }) {
   const [stepOverride, setStepOverride] = useState(null);
   const [confirmadoCarga, setConfirmadoCarga] = useState(false);
+
+  // Fase 18 paso 3: Carga real + firma
+  const [cargaRealForm, setCargaRealForm] = useState({});
+  const [solicitandoFirma, setSolicitandoFirma] = useState(false);
+  const [firmaModal, setFirmaModal] = useState(false);
+  const [excepcionModal, setExcepcionModal] = useState(false);
+  const [motivoExcepcion, setMotivoExcepcion] = useState('');
+  const [tiempoEsperaSegs, setTiempoEsperaSegs] = useState(0);
+  const firmaCanvasRef = useRef(null);
+  const firmaContextRef = useRef(null);
+  const [firmaDibujando, setFirmaDibujando] = useState(false);
+  const [firmaTienePuntos, setFirmaTienePuntos] = useState(false);
   const [mapaVisible, setMapaVisible] = useState(false);
   const [entregas, setEntregas] = useState([]);
   const [mermas, setMermas] = useState([]);
@@ -70,7 +82,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
   // Derivar step desde el estado real de la ruta — si ya está "En progreso" saltar directo a ruta
   const rutaEnProgreso = miRutaActiva && (s(miRutaActiva.estatus).toLowerCase() === 'en progreso' || s(miRutaActiva.estatus).toLowerCase() === 'en_progreso');
-  const step = stepOverride ?? (rutaEnProgreso ? 'ruta' : 'cargar');
+  const rutaPendienteFirma = miRutaActiva && s(miRutaActiva.estatus).toLowerCase() === 'pendiente firma';
+  const rutaCargada = miRutaActiva && s(miRutaActiva.estatus).toLowerCase() === 'cargada';
+  const step = stepOverride ?? (rutaEnProgreso ? 'ruta' : (rutaPendienteFirma ? 'esperando-firma' : (rutaCargada ? 'cargada' : 'cargar')));
   const setStep = (v) => setStepOverride(v);
 
   // Carga autorizada por administración (SOLO LECTURA)
@@ -190,6 +204,33 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }
   }, [miRutaActiva?.id]);
 
+  // Inicializar cargaRealForm con los máximos autorizados
+  useEffect(() => {
+    if (miRutaActiva && Object.keys(cargaTotal).length > 0) {
+      const inicial = {};
+      for (const [sku, qty] of Object.entries(cargaTotal)) {
+        inicial[sku] = String(n(qty));
+      }
+      setCargaRealForm(inicial);
+    }
+  }, [miRutaActiva?.id]);
+
+  // Timer para fallbacks (15 min admin remoto, 30 min excepción)
+  useEffect(() => {
+    if (step !== 'esperando-firma' || !miRutaActiva?.carga_solicitada_at) {
+      setTiempoEsperaSegs(0);
+      return;
+    }
+    const calcular = () => {
+      const inicio = new Date(miRutaActiva.carga_solicitada_at).getTime();
+      const ahora = Date.now();
+      setTiempoEsperaSegs(Math.floor((ahora - inicio) / 1000));
+    };
+    calcular();
+    const interval = setInterval(calcular, 1000);
+    return () => clearInterval(interval);
+  }, [step, miRutaActiva?.carga_solicitada_at]);
+
   // GPS tracking: enviar ubicación cada 30s cuando step = "ruta"
   useEffect(() => {
     const esEnRuta = step === 'ruta' && miRutaActiva?.id && user?.id;
@@ -265,6 +306,92 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     setConfirmadoCarga(true);
     setStep("ruta");
     showToast("Carga confirmada. Ruta iniciada.");
+  };
+
+  const solicitarFirma = async () => {
+    if (solicitandoFirma) return;
+
+    // Validar que al menos un producto tenga carga real > 0
+    const tieneCarga = Object.values(cargaRealForm).some(v => n(v) > 0);
+    if (!tieneCarga) {
+      showToast('Debes marcar al menos un producto cargado');
+      return;
+    }
+
+    // Validar que ningún valor exceda el autorizado
+    for (const [sku, qty] of Object.entries(cargaRealForm)) {
+      const autorizado = n(cargaTotal[sku]);
+      if (n(qty) > autorizado) {
+        showToast(`${sku}: máximo autorizado ${autorizado}`);
+        return;
+      }
+    }
+
+    setSolicitandoFirma(true);
+    try {
+      const cargaRealNum = {};
+      for (const [sku, qty] of Object.entries(cargaRealForm)) {
+        if (n(qty) > 0) cargaRealNum[sku] = n(qty);
+      }
+      const result = await actions.solicitarFirmaCarga?.(miRutaActiva.id, cargaRealNum);
+      if (result && result.message) {
+        showToast('Error: ' + result.message);
+        return;
+      }
+      showToast('Firma solicitada. Espera a Producción.');
+    } catch (err) {
+      showToast('No se pudo solicitar firma');
+    } finally {
+      setSolicitandoFirma(false);
+    }
+  };
+
+  // Permite que Producción/Admin firme la carga
+  const enviarFirma = async (esExcepcion = false) => {
+    if (esExcepcion) {
+      if (!motivoExcepcion.trim()) {
+        showToast('Captura el motivo de la excepción');
+        return;
+      }
+      const result = await actions.firmarCarga?.(miRutaActiva.id, null, {
+        excepcion: true,
+        motivoExcepcion: motivoExcepcion.trim(),
+      });
+      if (result && result.message) {
+        showToast('Error: ' + result.message);
+        return;
+      }
+      showToast('Carga registrada (sin firma, con justificación)');
+      setExcepcionModal(false);
+      setMotivoExcepcion('');
+      return;
+    }
+
+    if (!firmaTienePuntos) {
+      showToast('Dibuja la firma antes de confirmar');
+      return;
+    }
+    const canvas = firmaCanvasRef.current;
+    if (!canvas) return;
+    const firmaBase64 = canvas.toDataURL('image/png');
+    const result = await actions.firmarCarga?.(miRutaActiva.id, firmaBase64);
+    if (result && result.message) {
+      showToast('Error: ' + result.message);
+      return;
+    }
+    showToast('Firma registrada. Inventario descontado.');
+    setFirmaModal(false);
+    setFirmaTienePuntos(false);
+  };
+
+  const limpiarFirma = () => {
+    const canvas = firmaCanvasRef.current;
+    const ctx = firmaContextRef.current;
+    if (canvas && ctx) {
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      setFirmaTienePuntos(false);
+    }
   };
 
   const confirmarEntrega = async () => {
@@ -436,127 +563,272 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }
   };
 
-  // ═══ STEP 1: CARGAR ═══
+  // ═══ STEP 1: CARGAR (chofer marca cuánto cargó realmente) ═══
   if (step === "cargar") return (
     <div className={CHOFER_SHELL}>
       <div className="bg-[#07131a] px-4 pb-5 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-4">
-          <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Ruta del día</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
+          <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cargar camión</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
           <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white">Salir</button>
         </div>
         <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">Paso 1 de 3</p>
-          <h2 className="font-display mt-2 text-[1.55rem] font-bold tracking-[-0.04em]">Revisa tu carga</h2>
-          <p className="mt-1.5 text-sm text-slate-300">Valida lo asignado antes de salir.</p>
+          <h2 className="font-display mt-2 text-[1.55rem] font-bold tracking-[-0.04em]">Marca cuánto cargaste</h2>
+          <p className="mt-1.5 text-sm text-slate-300">Producción debe firmar antes de salir.</p>
         </div>
       </div>
       <div className="px-4 pt-4 space-y-3">
-        <div className="rounded-[24px] border border-cyan-200/80 bg-cyan-50/90 p-4 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
-          <h3 className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-cyan-800">Ruta asignada</h3>
-          <p className="mb-3 text-sm font-semibold text-slate-700">{pendientes.length} entregas pendientes</p>
-          {productos.filter(p => necesitaPorSku[s(p.sku)] > 0).map(p => (
-            <div key={p.sku} className="flex justify-between text-sm">
-              <span className="text-slate-600">{s(p.nombre)}</span>
-              <span className="font-bold text-blue-700">{necesitaPorSku[s(p.sku)]} necesarias</span>
-            </div>
-          ))}
-          {pendientes.length === 0 && <p className="text-xs text-blue-400">No hay órdenes asignadas</p>}
-          <p className="mt-2 text-xs text-blue-500">Incluye carga extra disponible para venta rápida.</p>
-        </div>
-
-        {/* Clientes asignados a visitar */}
-        {clientesAsignados.length > 0 && (
-          <div className="rounded-[24px] border border-slate-200 bg-white/74 p-4 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
-            <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-slate-500">
-              Visitas del día
-            </h3>
-            <p className="mb-3 text-sm font-semibold text-slate-700">{clientesAsignados.length} clientes asignados</p>
-            <div className="space-y-2">
-              {clientesAsignados.map((c, idx) => (
-                <div key={c.id} className="bg-slate-50/90 rounded-[20px] p-3 border border-slate-200 flex items-center gap-3">
-                  <span className="w-7 h-7 bg-slate-900 text-cyan-200 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
-                    {idx + 1}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800 truncate">{c.nombre}</p>
-                    {c.contacto && (
-                      <a href={`tel:${c.contacto.replace(/\D/g, '')}`} className="text-xs text-purple-600 flex items-center gap-1">
-                        {c.contacto}
-                      </a>
-                    )}
-                  </div>
-                  {c.contacto && (
-                    <a href={`tel:${c.contacto.replace(/\D/g, '')}`} 
-                       className="px-3 py-1.5 bg-slate-900 text-white text-xs font-semibold rounded-full">
-                      Llamar
-                    </a>
-                  )}
-                  {c.latitud && c.longitud && (
-                    <a href={`https://www.google.com/maps/dir/?api=1&destination=${c.latitud},${c.longitud}`}
-                       target="_blank" rel="noopener noreferrer"
-                       className="px-3 py-1.5 bg-cyan-100 text-cyan-800 text-xs font-semibold rounded-full border border-cyan-200">
-                      Maps
-                    </a>
-                  )}
-                </div>
-              ))}
-            </div>
-            {/* Botón ver ruta completa en Maps */}
-            {clientesAsignados.filter(c => c.latitud && c.longitud).length >= 2 && (
-              <a href={(() => {
-                const coords = clientesAsignados.filter(c => c.latitud && c.longitud);
-                if (coords.length < 2) return '#';
-                const dest = coords[coords.length - 1];
-                const waypoints = coords.slice(0, -1).map(c => `${c.latitud},${c.longitud}`).join('|');
-                return `https://www.google.com/maps/dir/?api=1&destination=${dest.latitud},${dest.longitud}&waypoints=${waypoints}`;
-              })()}
-                 target="_blank" rel="noopener noreferrer"
-                 className="mt-3 block w-full text-center py-3 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-[18px] transition-colors">
-                Ver ruta completa en Maps
-              </a>
-            )}
+        {!miRutaActiva && (
+          <div className="bg-amber-50 border border-amber-200 rounded-[20px] p-4">
+            <p className="text-sm text-amber-700 font-semibold text-center">No tienes ruta asignada para hoy</p>
           </div>
         )}
 
-        {productos.map(p => (
-          <div key={p.sku} className="bg-white/78 rounded-[22px] border border-slate-200/80 p-4 shadow-[0_12px_24px_rgba(8,20,27,0.06)]">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-bold text-slate-800">{s(p.nombre)}</p>
-                <p className="text-xs text-slate-400">${n(p.precio)} c/u</p>
-                {necesitaPorSku[s(p.sku)] > 0 && <p className="text-xs text-blue-600 font-semibold mt-0.5">Pedidos: {necesitaPorSku[s(p.sku)]}</p>}
-              </div>
-              {/* Cantidad autorizada por administración (SOLO LECTURA) */}
-              <div className="text-center">
-                <div className="w-20 rounded-[16px] bg-slate-900 py-2.5 text-center text-xl font-extrabold text-cyan-200">
-                  {n(cargaTotal[s(p.sku)])}
+        {miRutaActiva && productos.filter(p => n(cargaTotal[s(p.sku)]) > 0).map(p => {
+          const sku = s(p.sku);
+          const autorizado = n(cargaTotal[sku]);
+          const real = cargaRealForm[sku] || '';
+          const excede = n(real) > autorizado;
+          return (
+            <div key={sku} className="bg-white/78 rounded-[22px] border border-slate-200/80 p-4 shadow-[0_12px_24px_rgba(8,20,27,0.06)]">
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex-1">
+                  <p className="text-sm font-bold text-slate-800">{s(p.nombre)}</p>
+                  <p className="text-xs text-slate-400">{sku}</p>
+                  <p className="text-xs text-cyan-700 font-semibold mt-1">Autorizado: {autorizado}</p>
                 </div>
-                <p className="mt-1 text-[11px] font-medium text-slate-500">Autorizado</p>
               </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={real}
+                  onChange={e => setCargaRealForm(f => ({ ...f, [sku]: e.target.value }))}
+                  placeholder="0"
+                  className={`flex-1 px-4 py-3 border-2 rounded-xl text-2xl font-extrabold text-center ${excede ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+                />
+                <button
+                  onClick={() => setCargaRealForm(f => ({ ...f, [sku]: String(autorizado) }))}
+                  className="px-3 py-2 bg-slate-100 text-xs font-bold text-slate-700 rounded-xl"
+                >
+                  Máx
+                </button>
+              </div>
+              {excede && <p className="text-xs text-red-600 font-semibold mt-1">Excede autorizado</p>}
             </div>
-            {n(cargaAutorizada[s(p.sku)]) > 0 && n(extraAutorizado[s(p.sku)]) > 0 && (
-              <p className="text-xs text-slate-500 mt-2">
-                {n(cargaAutorizada[s(p.sku)])} pedidos + {n(extraAutorizado[s(p.sku)])} extra
-              </p>
-            )}
-            {n(cargaTotal[s(p.sku)]) > 0 && n(cargaTotal[s(p.sku)]) < (necesitaPorSku[s(p.sku)] || 0) && (
-              <p className="text-xs text-amber-600 font-semibold mt-2">⚠ Autorizado menos de lo pedido</p>
-            )}
-          </div>
-        ))}
-        <button onClick={iniciarRuta} disabled={!miRutaActiva || !Object.values(cargaTotal).some(v => n(v) > 0)}
-          className="mt-4 w-full rounded-[22px] bg-slate-900 py-5 text-lg font-extrabold text-white shadow-[0_20px_34px_rgba(8,20,27,0.16)] transition-transform active:scale-[0.98] disabled:opacity-40">
-          {miRutaActiva ? "Iniciar ruta" : "Sin ruta asignada"}
-        </button>
-        {!miRutaActiva && (
-          <p className="text-center text-sm text-amber-600 font-medium mt-2">
-            No tienes una ruta asignada para hoy. Contacta a administración.
-          </p>
+          );
+        })}
+
+        {miRutaActiva && (
+          <button
+            onClick={solicitarFirma}
+            disabled={solicitandoFirma || !Object.values(cargaRealForm).some(v => n(v) > 0)}
+            className="mt-4 w-full rounded-[22px] bg-slate-900 py-5 text-lg font-extrabold text-white shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98] disabled:opacity-40"
+          >
+            {solicitandoFirma ? 'Solicitando…' : 'Solicitar firma de Producción'}
+          </button>
         )}
       </div>
       {toast && <Toast msg={toast} />}
     </div>
   );
+
+  // ═══ STEP NUEVO: ESPERANDO FIRMA ═══
+  if (step === "esperando-firma") {
+    const minutos = Math.floor(tiempoEsperaSegs / 60);
+    const puedeFallback = minutos >= 15;
+    const puedeExcepcion = minutos >= 30;
+    const usuarioPuedeFirmar = user?.rol === 'Producción' || user?.rol === 'Admin';
+
+    return (
+      <div className={CHOFER_SHELL}>
+        <div className="bg-[#07131a] px-4 pb-5 text-white" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
+          <div className="flex items-center justify-between mb-4">
+            <div><p className="erp-kicker text-cyan-200/70">Esperando firma</p><h1 className="font-display text-[1.4rem] font-bold tracking-[-0.04em]">Producción debe autorizar</h1></div>
+            <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white">Salir</button>
+          </div>
+        </div>
+        <div className="px-4 pt-4 space-y-4">
+          <div className="bg-amber-50 border border-amber-200 rounded-[24px] p-5 text-center">
+            <p className="text-5xl mb-2">⏳</p>
+            <p className="text-base font-bold text-amber-800">Esperando firma de Producción</p>
+            <p className="text-sm text-amber-700 mt-2">
+              {minutos < 1 ? 'Recién solicitada' : `Hace ${minutos} ${minutos === 1 ? 'minuto' : 'minutos'}`}
+            </p>
+          </div>
+
+          <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Carga reportada</h3>
+            {(() => {
+              const real = miRutaActiva?.carga_real || {};
+              return Object.entries(real).map(([sku, qty]) => {
+                const prod = productos.find(p => s(p.sku) === sku);
+                return (
+                  <div key={sku} className="flex justify-between text-sm py-1">
+                    <span className="text-slate-700">{prod ? s(prod.nombre) : sku}</span>
+                    <span className="font-bold">{qty}</span>
+                  </div>
+                );
+              });
+            })()}
+          </div>
+
+          {usuarioPuedeFirmar && (
+            <button
+              onClick={() => { setFirmaModal(true); setFirmaTienePuntos(false); }}
+              className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98]"
+            >
+              ✍️ Firmar carga ({user?.rol})
+            </button>
+          )}
+
+          {puedeFallback && !usuarioPuedeFirmar && (
+            <div className="bg-blue-50 border border-blue-200 rounded-[20px] p-4">
+              <p className="text-sm text-blue-700 font-semibold">Avisa a admin que apruebe remoto</p>
+              <p className="text-xs text-blue-600 mt-1">Pasaron más de 15 minutos. Admin puede aprobar desde su dispositivo.</p>
+            </div>
+          )}
+
+          {puedeExcepcion && (
+            <button
+              onClick={() => setExcepcionModal(true)}
+              className="w-full py-3 bg-red-50 text-red-700 border-2 border-red-200 font-bold rounded-[20px] text-sm"
+            >
+              🚨 Cargar sin firma (excepción)
+            </button>
+          )}
+        </div>
+
+        {/* Modal de firma */}
+        {firmaModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setFirmaModal(false)}>
+            <div className="bg-white w-full max-w-md rounded-[24px] p-5" onClick={e => e.stopPropagation()}>
+              <h3 className="font-display text-lg font-bold mb-3">Firma de Producción</h3>
+              <p className="text-xs text-slate-500 mb-3">Dibuja tu firma con el dedo</p>
+
+              <canvas
+                ref={el => {
+                  if (el && !firmaContextRef.current) {
+                    firmaCanvasRef.current = el;
+                    el.width = el.offsetWidth * 2;
+                    el.height = el.offsetHeight * 2;
+                    el.getContext('2d').scale(2, 2);
+                    const ctx = el.getContext('2d');
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, el.width, el.height);
+                    ctx.strokeStyle = '#0a1929';
+                    ctx.lineWidth = 2.5;
+                    ctx.lineCap = 'round';
+                    firmaContextRef.current = ctx;
+                  }
+                }}
+                className="w-full h-48 border-2 border-slate-300 rounded-xl bg-white touch-none"
+                onMouseDown={e => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  firmaContextRef.current.beginPath();
+                  firmaContextRef.current.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+                  setFirmaDibujando(true);
+                }}
+                onMouseMove={e => {
+                  if (!firmaDibujando) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  firmaContextRef.current.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+                  firmaContextRef.current.stroke();
+                  setFirmaTienePuntos(true);
+                }}
+                onMouseUp={() => setFirmaDibujando(false)}
+                onMouseLeave={() => setFirmaDibujando(false)}
+                onTouchStart={e => {
+                  e.preventDefault();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const t = e.touches[0];
+                  firmaContextRef.current.beginPath();
+                  firmaContextRef.current.moveTo(t.clientX - rect.left, t.clientY - rect.top);
+                  setFirmaDibujando(true);
+                }}
+                onTouchMove={e => {
+                  e.preventDefault();
+                  if (!firmaDibujando) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const t = e.touches[0];
+                  firmaContextRef.current.lineTo(t.clientX - rect.left, t.clientY - rect.top);
+                  firmaContextRef.current.stroke();
+                  setFirmaTienePuntos(true);
+                }}
+                onTouchEnd={() => setFirmaDibujando(false)}
+              />
+
+              <div className="flex gap-2 mt-3">
+                <button onClick={limpiarFirma} className="flex-1 py-2.5 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl">Limpiar</button>
+                <button onClick={() => setFirmaModal(false)} className="flex-1 py-2.5 bg-slate-200 text-slate-700 text-sm font-bold rounded-xl">Cancelar</button>
+                <button onClick={() => enviarFirma(false)} disabled={!firmaTienePuntos} className="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl disabled:opacity-40">Confirmar</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal de excepción */}
+        {excepcionModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setExcepcionModal(false)}>
+            <div className="bg-white w-full max-w-md rounded-[24px] p-5" onClick={e => e.stopPropagation()}>
+              <h3 className="font-display text-lg font-bold text-red-700 mb-1">⚠️ Carga sin firma</h3>
+              <p className="text-xs text-slate-600 mb-4">Esta acción queda registrada en auditoría. Solo úsala si no hay nadie de Producción/Admin disponible.</p>
+              <label className="block text-xs font-bold text-slate-600 mb-1">Motivo (obligatorio)</label>
+              <textarea
+                value={motivoExcepcion}
+                onChange={e => setMotivoExcepcion(e.target.value)}
+                placeholder="Ej: Producción no llegó a la hora, urgencia de salir..."
+                rows={3}
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm resize-none"
+              />
+              <div className="flex gap-2 mt-4">
+                <button onClick={() => { setExcepcionModal(false); setMotivoExcepcion(''); }} className="flex-1 py-2.5 bg-slate-200 text-slate-700 text-sm font-bold rounded-xl">Cancelar</button>
+                <button onClick={() => enviarFirma(true)} disabled={!motivoExcepcion.trim()} className="flex-1 py-2.5 bg-red-600 text-white text-sm font-bold rounded-xl disabled:opacity-40">Cargar sin firma</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {toast && <Toast msg={toast} />}
+      </div>
+    );
+  }
+
+  // ═══ STEP NUEVO: CARGADA (lista para salir) ═══
+  if (step === "cargada") {
+    return (
+      <div className={CHOFER_SHELL}>
+        <div className="bg-[#07131a] px-4 pb-5 text-white" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
+          <div className="flex items-center justify-between mb-4">
+            <div><p className="erp-kicker text-cyan-200/70">Lista para salir</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Carga firmada ✓</h1></div>
+            <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white">Salir</button>
+          </div>
+        </div>
+        <div className="px-4 pt-4 space-y-4">
+          <div className="bg-emerald-50 border border-emerald-200 rounded-[24px] p-5 text-center">
+            <p className="text-5xl mb-2">✓</p>
+            <p className="text-base font-bold text-emerald-700">Carga autorizada</p>
+            <p className="text-sm text-emerald-600 mt-1">
+              {miRutaActiva?.firma_excepcion ? 'Sin firma (excepción registrada)' : 'Firmada por Producción'}
+            </p>
+          </div>
+
+          <button
+            onClick={async () => {
+              if (actions.updateRutaEstatus) {
+                await actions.updateRutaEstatus(miRutaActiva.id, 'En progreso');
+              }
+              setStep('ruta');
+            }}
+            className="w-full py-5 bg-slate-900 text-white font-extrabold rounded-[22px] text-lg shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98]"
+          >
+            🚛 Iniciar ruta
+          </button>
+        </div>
+        {toast && <Toast msg={toast} />}
+      </div>
+    );
+  }
 
   // ═══ STEP 2: RUTA ═══
   if (step === "ruta") return (
