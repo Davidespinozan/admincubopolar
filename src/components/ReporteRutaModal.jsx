@@ -48,7 +48,7 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
 
   const choferNombre = s(ruta.choferNombre || ruta.chofer_nombre || ruta.chofer);
   const mermasRuta = useMemo(() =>
-    mermas.filter(m => s(m.origen).toLowerCase().includes(choferNombre.toLowerCase())),
+    mermas.filter(m => s(m.origen).toLowerCase() === ('Ruta ' + choferNombre).toLowerCase()),
     [mermas, choferNombre]
   );
 
