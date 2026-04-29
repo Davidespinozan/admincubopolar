@@ -95,20 +95,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         return;
       }
 
-      let stockErr = null;
-      if (mForm.congelador && actions.sacarDeCuartoFrio) {
-        stockErr = await actions.sacarDeCuartoFrio(mForm.congelador, mForm.sku, cant, `Merma: ${mForm.causa}`);
-      }
-      if (stockErr) {
-        await supabase.storage.from('mermas').remove([filePath]);
-        return;
-      }
-
+      // registrarMerma descuenta del CF internamente (vía update_stocks_atomic)
+      // — NO llamar sacarDeCuartoFrio antes o se descontaría dos veces.
       const mermaErr = await actions.registrarMerma(mForm.sku, cant, mForm.causa, s(user?.nombre), filePath);
       if (mermaErr) {
-        if (mForm.congelador && actions.meterACuartoFrio) {
-          await actions.meterACuartoFrio(mForm.congelador, mForm.sku, cant);
-        }
         await supabase.storage.from('mermas').remove([filePath]);
         return;
       }
