@@ -8,11 +8,13 @@ export function KardexView({ data }) {
   const filtered = useMemo(() => {
     const q = s(search).toLowerCase();
     return (data.inventarioMov || []).filter(m => {
-      const ms = !q || s(m.producto).toLowerCase().includes(q) || s(m.origen).toLowerCase().includes(q) || s(m.usuario).toLowerCase().includes(q);
+      const prod = (data.productos || []).find(p => s(p.sku) === s(m.producto));
+      const nombreProd = prod ? s(prod.nombre).toLowerCase() : '';
+      const ms = !q || s(m.producto).toLowerCase().includes(q) || nombreProd.includes(q) || s(m.origen).toLowerCase().includes(q) || s(m.usuario).toLowerCase().includes(q);
       const mt = !filterTipo || s(m.tipo) === filterTipo;
       return ms && mt;
     });
-  }, [data.inventarioMov, search, filterTipo]);
+  }, [data.inventarioMov, data.productos, search, filterTipo]);
 
   const paginated = useMemo(() => filtered.slice(pageKardex * PAGE_SIZE, (pageKardex + 1) * PAGE_SIZE), [filtered, pageKardex]);
 
@@ -48,7 +50,15 @@ export function KardexView({ data }) {
           columns={[
             { key: "fecha", label: "Fecha", render: v => fmtDateTime(v) },
             { key: "tipo", label: "Tipo", badge: true, render: v => <StatusBadge status={v} /> },
-            { key: "producto", label: "Producto", bold: true },
+            { key: "producto", label: "Producto", render: v => {
+              const prod = (data.productos || []).find(p => s(p.sku) === s(v));
+              return (
+                <div>
+                  <div className="font-semibold text-slate-800">{prod ? s(prod.nombre) : s(v)}</div>
+                  {prod && <div className="font-mono text-[11px] text-slate-400 mt-0.5">{s(v)}</div>}
+                </div>
+              );
+            }},
             { key: "cantidad", label: "Cantidad", render: v => {
               const num = n(v, -999999);
               return <span className={`font-mono font-semibold ${num > 0 ? "text-emerald-600" : num < 0 ? "text-red-500" : "text-slate-600"}`}>{num > 0 ? `+${num}` : num}</span>;
