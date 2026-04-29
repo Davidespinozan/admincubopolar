@@ -1,4 +1,4 @@
-import { useState, useMemo, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtDate, useToast, reporteProduccion } from './viewsCommon';
+import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtDate, useToast, reporteProduccion } from './viewsCommon';
 
 export function ProduccionView({ data, actions }) {
   const toast = useToast();
@@ -134,6 +134,86 @@ export function ProduccionView({ data, actions }) {
   const prodNormal = useMemo(() => data.produccion.filter(p => !p.tipo || p.tipo === 'Produccion'), [data.produccion]);
   const prodTransf = useMemo(() => data.produccion.filter(p => p.tipo === 'Transformacion'), [data.produccion]);
 
+  // ── Fase 12: Agrupación por día con turnos ──
+  const [paginaActual, setPaginaActual] = useState(0);
+  const [diasExpandidos, setDiasExpandidos] = useState({});
+
+  // Helper: normalizar turno legacy a nuevo
+  const normalizarTurno = (t) => {
+    const v = s(t).toLowerCase();
+    if (v === 'matutino' || v === 'turno 1') return 'Turno 1';
+    if (v === 'vespertino' || v === 'turno 2') return 'Turno 2';
+    if (v === 'turno 3') return 'Turno 3';
+    return s(t) || 'Sin turno';
+  };
+
+  // Agrupar producciones por día
+  const diasConProduccion = useMemo(() => {
+    const mapa = {};
+    for (const p of prodNormal) {
+      const fecha = s(p.fecha).slice(0, 10);
+      if (!fecha) continue;
+      if (!mapa[fecha]) mapa[fecha] = { fecha, registros: [] };
+      mapa[fecha].registros.push(p);
+    }
+    return mapa;
+  }, [prodNormal]);
+
+  // Generar lista completa de días (incluyendo sin producción) desde hoy hacia atrás
+  const todosLosDias = useMemo(() => {
+    const dias = [];
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
+    const fechasConProd = Object.keys(diasConProduccion).sort();
+    const fechaMasAntigua = fechasConProd[0] ? new Date(fechasConProd[0]) : hoy;
+
+    const cursor = new Date(hoy);
+    while (cursor >= fechaMasAntigua) {
+      const fechaStr = cursor.toISOString().slice(0, 10);
+      const dataDia = diasConProduccion[fechaStr] || { fecha: fechaStr, registros: [] };
+
+      const porTurno = { 'Turno 1': [], 'Turno 2': [], 'Turno 3': [] };
+      for (const reg of dataDia.registros) {
+        const t = normalizarTurno(reg.turno);
+        if (porTurno[t]) porTurno[t].push(reg);
+        else porTurno['Turno 1'].push(reg);
+      }
+
+      const totalDia = dataDia.registros.reduce((sum, r) => sum + n(r.cantidad), 0);
+
+      dias.push({
+        fecha: fechaStr,
+        fechaObj: new Date(cursor),
+        registros: dataDia.registros,
+        porTurno,
+        totalDia,
+        sinProduccion: dataDia.registros.length === 0,
+      });
+
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return dias;
+  }, [diasConProduccion]);
+
+  const DIAS_POR_PAGINA = 7;
+  const totalPaginas = Math.ceil(todosLosDias.length / DIAS_POR_PAGINA);
+  const diasPagina = useMemo(() =>
+    todosLosDias.slice(paginaActual * DIAS_POR_PAGINA, (paginaActual + 1) * DIAS_POR_PAGINA),
+  [todosLosDias, paginaActual]);
+
+  const toggleDia = (fecha) => {
+    setDiasExpandidos(prev => ({ ...prev, [fecha]: !prev[fecha] }));
+  };
+
+  const formatearFechaDia = (fechaStr) => {
+    const [y, m, d] = fechaStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    return `${diasSemana[dt.getDay()]} ${d} de ${meses[dt.getMonth()]}`;
+  };
+
   const { totalProd, enProceso, confirmadas } = useMemo(() => {
     let total = 0, proc = 0, conf = 0;
     for (const p of prodNormal) {
@@ -190,41 +270,129 @@ export function ProduccionView({ data, actions }) {
         <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">En proceso</p><p className="text-xl sm:text-3xl font-extrabold text-amber-600">{enProceso}</p></div>
         <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">Confirmadas</p><p className="text-xl sm:text-3xl font-extrabold text-emerald-600">{confirmadas}</p></div>
       </div>
-      <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
-        <DataTable columns={[
-          {key:"folio",label:"Folio",render:v=><span className="font-mono text-xs font-semibold text-blue-600">{s(v)}</span>},
-          {key:"fecha",label:"Fecha",render:v=>fmtDate(v),hideOnMobile:true},
-          {key:"turno",label:"Turno",hideOnMobile:true},
-          {key:"maquina",label:"Máquina",bold:true},
-          {key:"sku",label:"Producto",render:v=>{
-            const prod = (data.productos || []).find(p => s(p.sku) === s(v));
-            return (
-              <div>
-                <div className="text-sm font-medium text-slate-700">{prod ? s(prod.nombre) : s(v)}</div>
-                <div className="font-mono text-[11px] text-slate-400 mt-0.5">{s(v)}</div>
-              </div>
-            );
-          }},
-          {key:"cantidad",label:"Qty",render:v=><span className="font-semibold">{n(v).toLocaleString()}</span>},
-          {key:"estatus",label:"Estatus",badge:true,render:(v,r)=><div className="flex items-center gap-2"><StatusBadge status={v}/><span className="hidden md:inline">{v==="En proceso"&&<button onClick={(e)=>{e.stopPropagation();actions.confirmarProduccion(r.id)}} className="text-xs text-blue-600 font-semibold hover:text-blue-800 px-2.5 py-0.5">Confirmar ✓</button>}</span></div>},
-          {key:"_actions",label:"",render:(_,r)=><div className="flex items-center gap-1">
-            <button onClick={(e)=>{e.stopPropagation();openEdit(r)}} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
-            <button onClick={(e)=>{e.stopPropagation();setDeleteConfirm(r.id)}} title="Eliminar" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"><svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button>
-          </div>},
-        ]} data={prodNormal}
-        cardSubtitle={r => {
-          const prod = (data.productos || []).find(p => s(p.sku) === s(r.sku));
-          const nombreProd = prod ? s(prod.nombre) : s(r.sku);
-          return <div>
-          <span className="text-xs text-slate-400">{fmtDate(r.fecha)} · {s(r.turno)} · {nombreProd}</span>
-          <div className="flex gap-2 mt-2">
-            {r.estatus==="En proceso"&&<button onClick={(e)=>{e.stopPropagation();actions.confirmarProduccion(r.id)}} className="flex-1 text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-2.5 rounded-lg min-h-[44px]">Confirmar ✓</button>}
-            <button onClick={(e)=>{e.stopPropagation();openEdit(r)}} className="text-xs font-semibold text-slate-600 bg-slate-50 px-3 py-2.5 rounded-lg min-h-[44px]">Editar</button>
-            <button onClick={(e)=>{e.stopPropagation();setDeleteConfirm(r.id)}} className="text-xs font-semibold text-red-600 bg-red-50 px-3 py-2.5 rounded-lg min-h-[44px]">Eliminar</button>
+      <div className="space-y-3">
+        {diasPagina.map(dia => {
+          const expandido = diasExpandidos[dia.fecha];
+          const fechaLegible = formatearFechaDia(dia.fecha);
+
+          return (
+            <div key={dia.fecha} className={`bg-white border rounded-2xl overflow-hidden ${dia.sinProduccion ? 'border-slate-100' : 'border-slate-200'}`}>
+              {/* Header del día - clickeable */}
+              <button
+                onClick={() => toggleDia(dia.fecha)}
+                className={`w-full px-4 sm:px-5 py-4 flex items-center justify-between hover:bg-slate-50 transition-colors ${dia.sinProduccion ? 'cursor-default opacity-70' : ''}`}
+                disabled={dia.sinProduccion}
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <svg
+                    className={`w-4 h-4 text-slate-400 transition-transform flex-shrink-0 ${expandido ? 'rotate-90' : ''} ${dia.sinProduccion ? 'opacity-30' : ''}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                  <div className="text-left min-w-0">
+                    <p className="text-sm font-semibold text-slate-800 truncate">{fechaLegible}</p>
+                    {dia.sinProduccion ? (
+                      <p className="text-xs text-slate-400">Sin producción este día</p>
+                    ) : (
+                      <p className="text-xs text-slate-500">{dia.registros.length} {dia.registros.length === 1 ? 'registro' : 'registros'} · {dia.totalDia.toLocaleString()} bolsas</p>
+                    )}
+                  </div>
+                </div>
+                {!dia.sinProduccion && (
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-lg font-bold text-slate-900">{dia.totalDia.toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-400 uppercase tracking-wide">bolsas</p>
+                  </div>
+                )}
+              </button>
+
+              {/* Contenido expandido: 3 turnos */}
+              {expandido && !dia.sinProduccion && (
+                <div className="border-t border-slate-100 bg-slate-50/50 p-3 sm:p-4 space-y-3">
+                  {['Turno 1', 'Turno 2', 'Turno 3'].map(turno => {
+                    const registros = dia.porTurno[turno] || [];
+                    const totalTurno = registros.reduce((sum, r) => sum + n(r.cantidad), 0);
+
+                    return (
+                      <div key={turno} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                        <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                          <p className="text-xs font-semibold text-slate-700">{turno}</p>
+                          {registros.length > 0 ? (
+                            <p className="text-xs text-slate-500">{registros.length} {registros.length === 1 ? 'registro' : 'registros'} · <span className="font-semibold text-slate-700">{totalTurno.toLocaleString()} bolsas</span></p>
+                          ) : (
+                            <p className="text-xs text-slate-400 italic">Sin producción</p>
+                          )}
+                        </div>
+                        {registros.length > 0 && (
+                          <div className="divide-y divide-slate-100">
+                            {registros.map(r => {
+                              const prod = (data.productos || []).find(p => s(p.sku) === s(r.sku));
+                              const nombreProd = prod ? s(prod.nombre) : s(r.sku);
+                              return (
+                                <div key={r.id} className="px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50">
+                                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <span className="font-mono text-xs font-semibold text-blue-600 flex-shrink-0">{s(r.folio)}</span>
+                                    <div className="min-w-0">
+                                      <p className="text-sm font-medium text-slate-800 truncate">{nombreProd}</p>
+                                      <p className="text-xs text-slate-400">{s(r.maquina)} · {n(r.cantidad).toLocaleString()} bolsas</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                    <StatusBadge status={r.estatus} />
+                                    {r.estatus === "En proceso" && (
+                                      <button
+                                        onClick={() => actions.confirmarProduccion(r.id)}
+                                        className="text-xs text-blue-600 font-semibold hover:text-blue-800 px-2"
+                                      >
+                                        Confirmar ✓
+                                      </button>
+                                    )}
+                                    <button onClick={() => openEdit(r)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                    </button>
+                                    <button onClick={() => setDeleteConfirm(r.id)} title="Eliminar" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Paginador */}
+        {totalPaginas > 1 && (
+          <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+            <p className="text-xs text-slate-500">
+              Página {paginaActual + 1} de {totalPaginas} · Mostrando 7 días
+            </p>
+            <div className="flex gap-2">
+              <button
+                disabled={paginaActual === 0}
+                onClick={() => setPaginaActual(paginaActual - 1)}
+                className="px-4 py-2 text-sm font-semibold rounded-xl border border-slate-200 disabled:opacity-30 hover:bg-slate-50 disabled:cursor-not-allowed"
+              >
+                ← Anterior
+              </button>
+              <button
+                disabled={paginaActual >= totalPaginas - 1}
+                onClick={() => setPaginaActual(paginaActual + 1)}
+                className="px-4 py-2 text-sm font-semibold rounded-xl border border-slate-200 disabled:opacity-30 hover:bg-slate-50 disabled:cursor-not-allowed"
+              >
+                Siguiente →
+              </button>
+            </div>
           </div>
-        </div>;
-        }}
-        />
+        )}
       </div>
     </>}
 
