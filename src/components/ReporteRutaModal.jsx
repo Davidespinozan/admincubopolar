@@ -76,7 +76,12 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
   const fechaShow = s(ruta.fecha_fin || ruta.cierre_at || ruta.fecha || '').slice(0, 10);
 
   const handleDescargarPDF = () => {
-    reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, notas);
+    try {
+      reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, notas);
+    } catch (err) {
+      console.error('[ReporteRuta] Error al generar PDF:', err);
+      alert('No se pudo generar el PDF: ' + (err?.message || err));
+    }
   };
 
   return (
