@@ -1338,68 +1338,129 @@ export function useSupaStore(userId, userName) {
           autorizado_at: hoy,
         }).select('id').single();
         if (error) { t()?.error('Error al crear ruta'); return error; }
-        
-        // Descontar carga autorizada usando RPC atómica
-        if (Object.keys(cargaObj).length > 0) {
-          const { data: cuartos } = await supabase.from('cuartos_frios').select('id, stock').order('id');
-          if (cuartos && cuartos.length > 0) {
-            // Calcular cambios distribuyendo entre cuartos fríos
-            const changes = [];
-            let stockInsuficiente = false;
-            for (const [sku, qtyNeeded] of Object.entries(cargaObj)) {
-              let remaining = Number(qtyNeeded);
-              for (const cf of cuartos) {
-                if (remaining <= 0) break;
-                const stockObj = (cf.stock && typeof cf.stock === 'object') ? cf.stock : {};
-                const available = Number(stockObj[sku] || 0);
-                if (available > 0) {
-                  const toTake = Math.min(available, remaining);
-                  remaining -= toTake;
-                  changes.push({
-                    cuarto_id: cf.id,
-                    sku,
-                    delta: -toTake,  // Negativo para descontar
-                    tipo: 'Salida',
-                    origen: `Carga ruta ${folio}`,
-                    usuario: uname(),
-                  });
-                }
-              }
 
-              if (remaining > 0) {
-                stockInsuficiente = true;
-                break;
-              }
-            }
+        // Fase 18: ya NO se descuenta inventario al autorizar.
+        // El descuento ocurre cuando el chofer confirma carga (confirmarCargaRuta).
 
-            if (stockInsuficiente) {
-              await supabase.from('rutas').delete().eq('id', newRuta?.id);
-              t()?.error('Inventario insuficiente para autorizar la ruta');
-              return new Error('Inventario insuficiente para autorizar la ruta');
-            }
-            
-            // Ejecutar todos los cambios de forma atómica
-            if (changes.length > 0) {
-              const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
-                p_changes: changes
-              });
-              if (rpcErr) {
-                await supabase.from('rutas').delete().eq('id', newRuta?.id);
-                t()?.error('Error al descontar inventario');
-                return rpcErr;
-              }
-            }
-          }
-        }
-        
-        // Verificar stock bajo después de descontar la carga
-        await checkStockBajo(Object.keys(cargaObj));
-
-        // Log con detalle de carga
+        // Log con detalle de carga autorizada
         const cargaTxt = Object.entries(cargaObj).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '—';
-        log('Autorizar', 'Rutas', `${folio} — ${r.nombre} — Carga: ${cargaTxt}`);
+        log('Autorizar', 'Rutas', `${folio} — ${r.nombre} — Autorizado: ${cargaTxt}`);
         rf();
         return { id: newRuta?.id, folio };
+      },
+
+      confirmarCargaRuta: async (rutaId, cargaReal) => {
+        // cargaReal: { "HC-25K": 80, "HC-5K": 50, ... } — lo que el chofer realmente cargó
+        if (!rutaId || !cargaReal || typeof cargaReal !== 'object') {
+          t()?.error('Datos de carga inválidos');
+          return new Error('Datos de carga inválidos');
+        }
+
+        // Obtener la ruta para validar
+        const { data: ruta, error: rutaErr } = await supabase
+          .from('rutas')
+          .select('id, folio, estatus, carga_autorizada, extra_autorizado, carga_confirmada_at')
+          .eq('id', rutaId)
+          .single();
+        if (rutaErr || !ruta) {
+          t()?.error('Ruta no encontrada');
+          return rutaErr || new Error('Ruta no encontrada');
+        }
+
+        if (ruta.carga_confirmada_at) {
+          t()?.error('Esta ruta ya tiene carga confirmada');
+          return new Error('Carga ya confirmada');
+        }
+
+        if (ruta.estatus === 'Cerrada' || ruta.estatus === 'Completada') {
+          t()?.error('No se puede cargar una ruta cerrada');
+          return new Error('Ruta cerrada');
+        }
+
+        // Validar que cargaReal no excede carga_autorizada + extra_autorizado
+        const autorizada = (ruta.carga_autorizada && typeof ruta.carga_autorizada === 'object') ? ruta.carga_autorizada : {};
+        const extra = (ruta.extra_autorizado && typeof ruta.extra_autorizado === 'object') ? ruta.extra_autorizado : {};
+        for (const [sku, qty] of Object.entries(cargaReal)) {
+          const max = Number(autorizada[sku] || 0) + Number(extra[sku] || 0);
+          if (Number(qty) > max) {
+            t()?.error(`No puedes cargar ${qty} de ${sku}. Máximo autorizado: ${max}`);
+            return new Error(`Excede autorización: ${sku}`);
+          }
+        }
+
+        // Obtener cuartos fríos para calcular distribución del descuento
+        const { data: cuartos, error: cfErr } = await supabase
+          .from('cuartos_frios').select('id, stock').order('id');
+        if (cfErr) {
+          t()?.error('Error al consultar cuartos fríos');
+          return cfErr;
+        }
+        if (!cuartos || cuartos.length === 0) {
+          t()?.error('No hay cuartos fríos configurados');
+          return new Error('Sin cuartos fríos');
+        }
+
+        // Calcular cambios distribuyendo el descuento entre cuartos fríos
+        const changes = [];
+        for (const [sku, qtyNeeded] of Object.entries(cargaReal)) {
+          let remaining = Number(qtyNeeded);
+          if (remaining <= 0) continue;
+          for (const cf of cuartos) {
+            if (remaining <= 0) break;
+            const stockObj = (cf.stock && typeof cf.stock === 'object') ? cf.stock : {};
+            const available = Number(stockObj[sku] || 0);
+            if (available > 0) {
+              const toTake = Math.min(available, remaining);
+              remaining -= toTake;
+              changes.push({
+                cuarto_id: cf.id,
+                sku,
+                delta: -toTake,
+                tipo: 'Salida',
+                origen: `Carga ruta ${ruta.folio}`,
+                usuario: uname() || 'Chofer',
+              });
+            }
+          }
+          if (remaining > 0) {
+            t()?.error(`Inventario insuficiente para cargar ${qtyNeeded} de ${sku}`);
+            return new Error(`Stock insuficiente: ${sku}`);
+          }
+        }
+
+        // Aplicar descuentos atómicamente
+        if (changes.length > 0) {
+          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
+            p_changes: changes,
+          });
+          if (rpcErr) {
+            t()?.error('Error al descontar inventario');
+            return rpcErr;
+          }
+        }
+
+        // Marcar la ruta como cargada
+        const { error: updErr } = await supabase.from('rutas').update({
+          carga_real: cargaReal,
+          carga_confirmada_at: new Date().toISOString(),
+          carga_confirmada_por: uid(),
+          estatus: 'Cargada',
+        }).eq('id', rutaId);
+        if (updErr) {
+          // Rollback inventario si falló el update
+          if (changes.length > 0) {
+            const reverse = changes.map(c => ({ ...c, delta: -c.delta, tipo: 'Entrada', origen: `Rollback carga ${ruta.folio}` }));
+            await supabase.rpc('update_stocks_atomic', { p_changes: reverse });
+          }
+          t()?.error('No se pudo confirmar la carga');
+          return updErr;
+        }
+
+        await checkStockBajo(Object.keys(cargaReal));
+        const cargaTxt = Object.entries(cargaReal).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '—';
+        await log('Confirmar carga', 'Rutas', `${ruta.folio} — ${cargaTxt}`);
+        rf();
+        return null;
       },
 
       updateRutaEstatus: async (id, est) => {
@@ -2578,19 +2639,30 @@ export function useSupaStore(userId, userName) {
             }
           }
 
-          if (carga && typeof carga === 'object') {
+          // Fase 18: detectar si la ruta es legacy (creada antes del modelo "carga real").
+          // Las legacy descontaron inventario al autorizar, así que el cierre debe devolver
+          // sobrante al CF como antes. Las nuevas no descontaron al autorizar — descontaron
+          // al confirmar carga — así que NO se devuelve nada aquí (el sobrante físico se
+          // registra manualmente como entrada al CF cuando el chofer regresa al almacén).
+          let esLegacy = false;
+          if (rutaId) {
+            const { data: rutaInfo } = await supabase
+              .from('rutas').select('carga_confirmada_at').eq('id', rutaId).single();
+            esLegacy = !rutaInfo?.carga_confirmada_at;
+          }
+
+          if (esLegacy && carga && typeof carga === 'object') {
+            // ── COMPORTAMIENTO LEGACY (rutas viejas que descontaron al autorizar) ──
             const entregadoPorSku = {};
             for (const e of (entregas || [])) {
               for (const it of (e.items || [])) {
                 entregadoPorSku[it.sku] = (entregadoPorSku[it.sku] || 0) + Number(it.cant || it.qty || 0);
               }
             }
-
             const mermaPorSku = {};
             for (const m of (mermasArr || [])) {
               mermaPorSku[m.sku] = (mermaPorSku[m.sku] || 0) + Number(m.cant || 0);
             }
-
             const devueltoPorSku = {};
             for (const [sku, cargado] of Object.entries(carga)) {
               const entregado = entregadoPorSku[sku] || 0;
@@ -2598,29 +2670,20 @@ export function useSupaStore(userId, userName) {
               const devuelto = Number(cargado) - entregado - merma;
               if (devuelto > 0) devueltoPorSku[sku] = devuelto;
             }
-
             if (Object.keys(devueltoPorSku).length > 0) {
               const { data: cfs, error: cfErr } = await supabase.from('cuartos_frios').select('id').limit(1);
               if (cfErr) throw cfErr;
               const cfId = cfs?.[0]?.id;
               if (!cfId) throw new Error('No hay cuarto frío para devolver inventario');
-
               const changes = Object.entries(devueltoPorSku).map(([sku, qty]) => ({
-                cuarto_id: cfId,
-                sku,
-                delta: qty,
-                tipo: 'Entrada',
-                origen: `Devolución ruta ${choferNombre}`,
+                cuarto_id: cfId, sku, delta: qty,
+                tipo: 'Entrada', origen: `Devolución ruta ${choferNombre} (legacy)`,
                 usuario: choferNombre || uname(),
               }));
-
-              const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
-                p_changes: changes,
-              });
+              const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', { p_changes: changes });
               if (rpcErr) throw rpcErr;
-
               const devTxt = Object.entries(devueltoPorSku).map(([sku, qty]) => `${qty}×${sku}`).join(', ');
-              await log('Devolución', 'Rutas', `${choferNombre} devolvió: ${devTxt}`);
+              await log('Devolución legacy', 'Rutas', `${choferNombre} devolvió: ${devTxt}`);
             }
           }
 
