@@ -416,7 +416,7 @@ export function RutasView({ data, actions }) {
     if (v === 'programada' || v === 'pendiente') return 'Programada';
     if (v === 'en progreso' || v === 'en_progreso' || v === 'enprogreso') return 'En progreso';
     if (v === 'completada') return 'Completada';
-    if (v === 'cerrada') return 'Cerrada';
+    if (v === 'cerrada' || v === 'cancelada') return 'Cerrada';
     return 'Programada';
   };
 
