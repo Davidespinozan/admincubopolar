@@ -7,6 +7,11 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
   const [firmaTienePuntos, setFirmaTienePuntos] = useState(false);
   const [firmaDibujando, setFirmaDibujando] = useState(false);
   const [firmando, setFirmando] = useState(false);
+
+  // Tracking de rutas ya mostradas en popup automático para no repetir
+  const rutasYaMostradas = useRef(new Set());
+  const inicializado = useRef(false);
+
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
 
@@ -18,6 +23,51 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
       s(r.estatus).toLowerCase() === 'pendiente firma'
     );
   }, [data.rutas, puedeFirmar]);
+
+  // ── DETECCIÓN AUTOMÁTICA DE RUTAS NUEVAS ──
+  useEffect(() => {
+    if (!puedeFirmar) return;
+
+    // Primera vez que carga: marcar todas las rutas existentes como ya vistas
+    // (no abrir popup para rutas que llevan rato esperando)
+    if (!inicializado.current) {
+      rutasPendientes.forEach(r => rutasYaMostradas.current.add(String(r.id)));
+      inicializado.current = true;
+      return;
+    }
+
+    // Detectar rutas que NO estaban en el set (son nuevas)
+    const rutasNuevas = rutasPendientes.filter(
+      r => !rutasYaMostradas.current.has(String(r.id))
+    );
+
+    if (rutasNuevas.length > 0 && !rutaSeleccionada) {
+      // Abrir popup con la primera ruta nueva
+      const primeraNueva = rutasNuevas[0];
+
+      // Marcar TODAS las nuevas como ya mostradas (aunque solo abramos una)
+      rutasNuevas.forEach(r => rutasYaMostradas.current.add(String(r.id)));
+
+      // Reproducir sonido suave
+      try {
+        const audio = new Audio('data:audio/wav;base64,UklGRl4HAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YToHAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJOQgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIG2m98OScTgwOUarm7blmGgU7k9n1unEiBC13yO/eizEIHWq+8+OWT');
+        audio.volume = 0.3;
+        audio.play().catch(() => {}); // Silencioso si el navegador bloquea
+      } catch {}
+
+      // Abrir el modal de firma con esta ruta
+      setRutaSeleccionada(primeraNueva);
+      setFirmaTienePuntos(false);
+    }
+
+    // Limpiar del set las rutas que ya no están pendientes (ya firmadas o canceladas)
+    const idsActuales = new Set(rutasPendientes.map(r => String(r.id)));
+    for (const idGuardado of Array.from(rutasYaMostradas.current)) {
+      if (!idsActuales.has(idGuardado)) {
+        rutasYaMostradas.current.delete(idGuardado);
+      }
+    }
+  }, [rutasPendientes, puedeFirmar, rutaSeleccionada]);
 
   if (!puedeFirmar) return null;
 
