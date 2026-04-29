@@ -4,7 +4,7 @@
  */
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 // ══════════════════════════════════════════════════════════════
 // EXCEL EXPORT
@@ -178,7 +178,7 @@ export function exportToPDF(data, filename, options = {}) {
   }
 
   // Generar tabla
-  doc.autoTable({
+  autoTable(doc,{
     head: [headers],
     body: rows,
     startY: subtitle ? 35 : 30,
@@ -653,7 +653,7 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, no
     doc.text('CARGA Y MOVIMIENTO', 14, y);
     y += 2;
 
-    doc.autoTable({
+    autoTable(doc,{
       head: [['Producto', 'SKU', 'Cargado', 'Devuelto', 'Merma', 'Vendido']],
       body: cargaRows,
       startY: y + 2,
@@ -690,7 +690,7 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, no
       ];
     });
 
-    doc.autoTable({
+    autoTable(doc,{
       head: [['#', 'Folio', 'Cliente', 'Pago', 'Total', 'Estatus']],
       body: entregasRows,
       startY: y + 2,
@@ -756,7 +756,7 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, no
       ];
     });
 
-    doc.autoTable({
+    autoTable(doc,{
       head: [['SKU', 'Producto', 'Cantidad', 'Causa']],
       body: mermasRows,
       startY: y + 2,
