@@ -533,7 +533,7 @@ export function reporteNomina(empleados, nominas, formato = 'excel') {
  * Reporte de Ruta Diaria — formato estilo hoja física Cubopolar
  * Para una ruta específica con todas sus entregas, mermas, carga y cierre
  */
-export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes) {
+export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, notas = '') {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -767,6 +767,27 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes) {
       columnStyles: { 2: { halign: 'center' } },
     });
     y = doc.lastAutoTable.finalY + 10;
+  }
+
+  // ── NOTAS DEL ADMINISTRADOR ──
+  if (notas && notas.trim()) {
+    if (y > pageHeight - 60) {
+      doc.addPage();
+      y = 30;
+    }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('NOTAS ADICIONALES', 14, y);
+    y += 4;
+    doc.setDrawColor(200);
+    doc.setFillColor(254, 252, 232);
+    const notasLines = doc.splitTextToSize(notas.trim(), pageWidth - 32);
+    const notasHeight = (notasLines.length * 4.5) + 6;
+    doc.rect(14, y, pageWidth - 28, notasHeight, 'FD');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text(notasLines, 18, y + 5);
+    y += notasHeight + 8;
   }
 
   // ── FIRMAS ──
