@@ -2523,6 +2523,7 @@ export function useSupaStore(userId, userName) {
               causa: m.causa,
               origen: 'Ruta ' + choferNombre,
               foto_url: m.foto || '',
+              ruta_id: rutaId || null,
             }).select('id').single();
             if (mermaErr || !mermaRow) throw mermaErr || new Error('No se pudo registrar la merma');
             createdMermaIds.push(mermaRow.id);
