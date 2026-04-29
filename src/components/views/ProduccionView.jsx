@@ -7,7 +7,7 @@ export function ProduccionView({ data, actions }) {
   // ── Producción normal ──
   const [modal, setModal] = useState(false);
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({turno:"Matutino",maquina:"Máquina 30",sku:"",cantidad:""});
+  const [form, setForm] = useState({turno:"Turno 1",maquina:"Máquina 30",sku:"",cantidad:""});
 
   // ── Editar / Eliminar ──
   const [editModal, setEditModal] = useState(false);
@@ -16,7 +16,7 @@ export function ProduccionView({ data, actions }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null); // id to delete
 
   const openEdit = (r) => {
-    setEditForm({id:r.id, turno:r.turno||"Matutino", maquina:r.maquina||"Máquina 30", sku:s(r.sku), cantidad:String(r.cantidad||""), estatus:r.estatus||"En proceso"});
+    setEditForm({id:r.id, turno:r.turno||"Turno 1", maquina:r.maquina||"Máquina 30", sku:s(r.sku), cantidad:String(r.cantidad||""), estatus:r.estatus||"En proceso"});
     setEditErrors({});
     setEditModal(true);
   };
@@ -61,7 +61,7 @@ export function ProduccionView({ data, actions }) {
     const err = await actions.addProduccion(form);
     if (err) { toast?.error("No se pudo registrar la producción"); return; }
     toast?.success("Producción registrada: " + form.cantidad + " " + form.sku);
-    setModal(false); setForm({turno:"Matutino",maquina:"Máquina 30",sku:"",cantidad:""}); setErrors({});
+    setModal(false); setForm({turno:"Turno 1",maquina:"Máquina 30",sku:"",cantidad:""}); setErrors({});
   };
 
   const skuOptions = useMemo(() => data.productos.filter(p=>p.tipo==="Producto Terminado").map(p=>s(p.sku)), [data.productos]);
@@ -313,7 +313,7 @@ export function ProduccionView({ data, actions }) {
     {/* ═══ MODAL: Registrar producción ═══ */}
     <Modal open={modal} onClose={()=>setModal(false)} title="Registrar producción">
       <div className="space-y-3">
-        <FormSelect label="Turno" options={["Matutino","Vespertino"]} value={form.turno} onChange={e=>setForm({...form,turno:e.target.value})} />
+        <FormSelect label="Turno" options={["Turno 1","Turno 2","Turno 3"]} value={form.turno} onChange={e=>setForm({...form,turno:e.target.value})} />
         <FormSelect label="Máquina" options={["Máquina 30","Máquina 20","Máquina 15"]} value={form.maquina} onChange={e=>setForm({...form,maquina:e.target.value})} />
         <FormSelect label="SKU" options={skuOptions} value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})} />
         <FormInput label="Cantidad *" type="number" value={form.cantidad} onChange={e=>setForm({...form,cantidad:e.target.value})} placeholder="Ej: 500" error={errors.cantidad} />
@@ -422,7 +422,7 @@ export function ProduccionView({ data, actions }) {
     <Modal open={editModal} onClose={()=>setEditModal(false)} title="Editar producción">
       <div className="space-y-3">
         <FormSelect label="Estatus" options={["En proceso","Confirmada","Cancelada"]} value={editForm.estatus} onChange={e=>setEditForm({...editForm,estatus:e.target.value})} />
-        <FormSelect label="Turno" options={["Matutino","Vespertino"]} value={editForm.turno} onChange={e=>setEditForm({...editForm,turno:e.target.value})} />
+        <FormSelect label="Turno" options={["Turno 1","Turno 2","Turno 3"]} value={editForm.turno} onChange={e=>setEditForm({...editForm,turno:e.target.value})} />
         <FormSelect label="Máquina" options={["Máquina 30","Máquina 20","Máquina 15"]} value={editForm.maquina} onChange={e=>setEditForm({...editForm,maquina:e.target.value})} />
         <FormSelect label="SKU" options={skuOptions} value={editForm.sku} onChange={e=>setEditForm({...editForm,sku:e.target.value})} />
         <FormInput label="Cantidad *" type="number" value={editForm.cantidad} onChange={e=>setEditForm({...editForm,cantidad:e.target.value})} placeholder="Ej: 500" error={editErrors.cantidad} />
