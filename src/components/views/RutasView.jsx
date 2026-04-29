@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { useState, useMemo, Icons, StatusBadge, PageHeader, CapacityBar, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, useDebounce, useToast, reporteRutas } from './viewsCommon';
+import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, useDebounce, useToast, reporteRutas } from './viewsCommon';
 import { ordenarPorProximidad } from '../../utils/geocoding';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 
@@ -62,6 +62,16 @@ export function RutasView({ data, actions }) {
   const [nuevoCamion, setNuevoCamion] = useState(false);
   const [camionForm, setCamionForm] = useState({nombre:"",placas:"",modelo:""});
   const [mapaVisible, setMapaVisible] = useState(false);
+
+  // Fase 13: Grupos colapsables por estatus
+  const [gruposColapsados, setGruposColapsados] = useState({
+    'En progreso': false,
+    'Programada': false,
+    'Completada': true,
+    'Cerrada': true,
+  });
+  const toggleGrupo = (estatus) => setGruposColapsados(prev => ({ ...prev, [estatus]: !prev[estatus] }));
+
   const dSearch = useDebounce(search);
 
   // Productos terminados para mostrar en formulario de carga
@@ -389,6 +399,27 @@ export function RutasView({ data, actions }) {
     return s(raw);
   };
 
+  // Fase 13: Calcular métricas reales por ruta
+  const calcMetricasRuta = (r) => {
+    const carga = (r.carga && typeof r.carga === 'object') ? r.carga : {};
+    const totalBolsas = Object.values(carga).reduce((sum, v) => sum + n(v), 0);
+    const clientesArr = Array.isArray(r.clientesAsignados) ? r.clientesAsignados : [];
+    const totalClientes = clientesArr.length;
+    const rutaOrdenes = data.ordenes.filter(o => o.rutaId === r.id || eqId(o.rutaId, r.id));
+    const entregadas = rutaOrdenes.filter(o => o.estatus === "Entregada").length;
+    return { totalBolsas, totalClientes, totalOrdenes: rutaOrdenes.length, entregadas };
+  };
+
+  // Fase 13: Normalizar estatus a uno de los 4 grupos canónicos
+  const normalizarEstatus = (raw) => {
+    const v = s(raw).trim().toLowerCase();
+    if (v === 'programada' || v === 'pendiente') return 'Programada';
+    if (v === 'en progreso' || v === 'en_progreso' || v === 'enprogreso') return 'En progreso';
+    if (v === 'completada') return 'Completada';
+    if (v === 'cerrada') return 'Cerrada';
+    return 'Programada';
+  };
+
   const filteredRutas = useMemo(() => {
     const q = dSearch?.toLowerCase() || "";
     return data.rutas.filter(r => {
@@ -397,6 +428,18 @@ export function RutasView({ data, actions }) {
       return ms && me;
     });
   }, [data.rutas, dSearch, filterEst]);
+
+  // Fase 13: Agrupar rutas filtradas por estatus
+  const rutasPorEstatus = useMemo(() => {
+    const grupos = { 'En progreso': [], 'Programada': [], 'Completada': [], 'Cerrada': [] };
+    for (const r of filteredRutas) {
+      const est = normalizarEstatus(r.estatus);
+      if (grupos[est]) grupos[est].push(r);
+    }
+    return grupos;
+  }, [filteredRutas]);
+
+  const ordenGrupos = ['En progreso', 'Programada', 'Completada', 'Cerrada'];
 
   const exportBtns = <>
     <button onClick={() => reporteRutas(data.rutas, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
@@ -463,51 +506,136 @@ export function RutasView({ data, actions }) {
 
     {filteredRutas.length === 0
       ? <EmptyState message="Sin rutas" />
-      : <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6">
-      {filteredRutas.map(r => {
-        const est = s(r.estatus).trim().toLowerCase();
-        const isProgramada = est === "programada" || est === "pendiente";
-        const isEnProgreso = est === "en progreso" || est === "en_progreso" || est === "enprogreso";
-        const isCompletada = est === "completada";
-        const rutaOrdenes = data.ordenes.filter(o => o.rutaId === r.id || eqId(o.rutaId, r.id));
-        const entregadas = rutaOrdenes.filter(o => o.estatus === "Entregada").length;
-        return (
-        <div key={r.id} className="bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 hover:shadow-md hover:border-blue-200 transition-all">
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-mono text-xs text-slate-400">{s(r.folio)}</span>
-            <div className="flex items-center gap-2">
-              <button onClick={()=>abrirEdicion(r)} className="px-2.5 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 rounded-lg border border-blue-200">Editar</button>
-              <StatusBadge status={r.estatus}/>
-            </div>
-          </div>
-          <h3 className="text-base font-bold text-slate-800 mb-1">{s(r.nombre)}</h3>
-          <p className="text-xs text-slate-500 mb-1 truncate">{choferLabel(r)}{r.ayudanteNombre ? ` + ${r.ayudanteNombre}` : ''} · {rutaOrdenes.length} órdenes · {cargaLabel(r)}</p>
-          {r.camionNombre && <p className="text-xs text-slate-400 mb-2 truncate">🚛 {r.camionNombre}{r.camionPlacas ? ` — ${r.camionPlacas}` : ''}</p>}
-          {!r.camionNombre && <div className="mb-2" />}
-          <div className="flex items-center justify-between text-xs mb-1"><span className="text-slate-400">Entregas</span><span className="font-semibold">{entregadas}/{rutaOrdenes.length}</span></div>
-          <CapacityBar pct={rutaOrdenes.length>0?(entregadas/rutaOrdenes.length)*100:0}/>
+      : (
+        <div className="space-y-3 mb-4 sm:mb-6">
+          {ordenGrupos.map(estatus => {
+            const rutas = rutasPorEstatus[estatus];
+            if (rutas.length === 0) return null;
+            const colapsado = gruposColapsados[estatus];
+            const colorPunto = estatus === 'En progreso' ? 'bg-blue-500' : estatus === 'Programada' ? 'bg-amber-500' : estatus === 'Completada' ? 'bg-emerald-500' : 'bg-slate-300';
 
-          {isProgramada&&<div className="space-y-2 mt-3">
-            <div className="flex gap-2">
-              <button onClick={()=>asignarOrdenes(r)} className="flex-1 py-2.5 bg-blue-50 text-blue-600 text-xs font-semibold rounded-xl min-h-[44px]">+ Asignar órdenes</button>
-              <button onClick={()=>actions.updateRutaEstatus(r.id,"En progreso")} className="flex-1 py-2.5 bg-blue-600 text-white text-xs font-semibold rounded-xl min-h-[44px]">Iniciar</button>
-            </div>
-            <button onClick={() => askConfirm('Eliminar ruta','¿Eliminar ruta ' + s(r.nombre) + '?',()=>actions.deleteRuta(r.id),true)} className="w-full py-2 text-red-500 text-xs font-semibold hover:bg-red-50 rounded-xl">Eliminar ruta</button>
-          </div>}
-          {isEnProgreso&&<div className="space-y-2 mt-3">
-            <div className="flex gap-2">
-              <button onClick={()=>abrirCierre(r)} className="flex-1 py-2.5 bg-emerald-600 text-white text-xs font-semibold rounded-xl min-h-[44px]">Cerrar ruta</button>
-              <button onClick={() => askConfirm('Eliminar ruta','¿Eliminar ruta ' + s(r.nombre) + '?',()=>actions.deleteRuta(r.id),true)} className="flex-1 py-2.5 bg-red-50 text-red-600 text-xs font-semibold rounded-xl min-h-[44px]">Eliminar</button>
-            </div>
-          </div>}
-          {isCompletada&&<div className="space-y-2 mt-3">
-            <button onClick={()=>setDetalleModal(r)} className="w-full py-2.5 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-xl min-h-[44px]">Ver resumen</button>
-            <button onClick={() => askConfirm('Eliminar ruta','¿Eliminar ruta ' + s(r.nombre) + '?',()=>actions.deleteRuta(r.id),true)} className="w-full py-2 text-red-500 text-xs font-semibold hover:bg-red-50 rounded-xl">Eliminar</button>
-          </div>}
-          {r.estatus==="Cerrada"&&<p className="mt-3 text-xs text-slate-400 text-center">Ruta cerrada ✓</p>}
-        </div>);
-      })}
-    </div>}
+            return (
+              <div key={estatus} className="bg-white border border-slate-100 rounded-2xl overflow-hidden">
+                <button
+                  onClick={() => toggleGrupo(estatus)}
+                  className="w-full px-4 sm:px-5 py-3 flex items-center justify-between hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className={`h-2 w-2 rounded-full ${colorPunto}`} />
+                    <span className="text-sm font-semibold text-slate-800">{estatus}</span>
+                    <span className="text-xs text-slate-400">· {rutas.length} {rutas.length === 1 ? 'ruta' : 'rutas'}</span>
+                  </div>
+                  <svg
+                    className={`w-4 h-4 text-slate-400 transition-transform ${colapsado ? '' : 'rotate-90'}`}
+                    fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                  </svg>
+                </button>
+
+                {!colapsado && (
+                  <div className="border-t border-slate-100 divide-y divide-slate-100">
+                    {rutas.map(r => {
+                      const m = calcMetricasRuta(r);
+                      const est = normalizarEstatus(r.estatus);
+                      const isProgramada = est === 'Programada';
+                      const isEnProgreso = est === 'En progreso';
+                      const isCompletada = est === 'Completada';
+                      const isCerrada = est === 'Cerrada';
+
+                      return (
+                        <div key={r.id} className="px-4 sm:px-5 py-3 hover:bg-slate-50 transition-colors">
+                          <div className="flex items-center gap-3 sm:gap-4">
+                            {/* Folio + nombre + chofer */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-0.5">
+                                <span className="font-mono text-xs text-slate-400 flex-shrink-0">{s(r.folio)}</span>
+                                <span className="text-sm font-bold text-slate-800 truncate">{s(r.nombre)}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
+                                <span className="truncate">👤 {choferLabel(r)}</span>
+                                {r.ayudanteNombre && <span className="truncate">+ {r.ayudanteNombre}</span>}
+                                {r.camionNombre && <span className="hidden sm:inline truncate">🚛 {r.camionNombre}</span>}
+                              </div>
+                            </div>
+
+                            {/* Métricas (solo desktop) */}
+                            <div className="hidden md:flex items-center gap-4 flex-shrink-0 text-right">
+                              <div>
+                                <p className="text-sm font-bold text-slate-800">{m.totalBolsas.toLocaleString()}</p>
+                                <p className="text-[10px] text-slate-400 uppercase">bolsas</p>
+                              </div>
+                              <div>
+                                <p className="text-sm font-bold text-slate-800">{m.totalOrdenes}</p>
+                                <p className="text-[10px] text-slate-400 uppercase">órdenes</p>
+                              </div>
+                              {(isEnProgreso || isCompletada || isCerrada) && (
+                                <div>
+                                  <p className="text-sm font-bold text-emerald-600">{m.entregadas}/{m.totalOrdenes}</p>
+                                  <p className="text-[10px] text-slate-400 uppercase">entregadas</p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Botón contextual + menú */}
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              {isProgramada && (
+                                <>
+                                  <button onClick={() => asignarOrdenes(r)} className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">+ Órdenes</button>
+                                  <button onClick={() => actions.updateRutaEstatus(r.id, "En progreso")} className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">Iniciar</button>
+                                </>
+                              )}
+                              {isEnProgreso && (
+                                <button onClick={() => abrirCierre(r)} className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors">Cerrar</button>
+                              )}
+                              {isCompletada && (
+                                <button onClick={() => setDetalleModal(r)} className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">Ver resumen</button>
+                              )}
+                              {isCerrada && (
+                                <span className="text-xs text-slate-400 italic px-3">Cerrada ✓</span>
+                              )}
+
+                              {/* Menú de 3 puntos */}
+                              <details className="relative">
+                                <summary className="list-none cursor-pointer p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
+                                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
+                                  </svg>
+                                </summary>
+                                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-10 py-1 min-w-[140px]">
+                                  <button onClick={(e) => { e.currentTarget.closest('details').open = false; abrirEdicion(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700">✏️ Editar</button>
+                                  {!isCerrada && !isProgramada && (
+                                    <button onClick={(e) => { e.currentTarget.closest('details').open = false; setDetalleModal(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700">👁️ Ver detalle</button>
+                                  )}
+                                  <button onClick={(e) => { e.currentTarget.closest('details').open = false; askConfirm('Eliminar ruta', '¿Eliminar ruta ' + s(r.nombre) + '?', () => actions.deleteRuta(r.id), true); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600">🗑️ Eliminar</button>
+                                </div>
+                              </details>
+                            </div>
+                          </div>
+
+                          {/* Métricas en mobile (debajo del nombre) */}
+                          <div className="md:hidden flex items-center gap-3 mt-2 text-xs text-slate-500">
+                            <span><strong className="text-slate-700">{m.totalBolsas.toLocaleString()}</strong> bolsas</span>
+                            <span>·</span>
+                            <span><strong className="text-slate-700">{m.totalOrdenes}</strong> órdenes</span>
+                            {(isEnProgreso || isCompletada || isCerrada) && (
+                              <>
+                                <span>·</span>
+                                <span><strong className="text-emerald-600">{m.entregadas}/{m.totalOrdenes}</strong> entregadas</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )
+    }
 
     {/* Modal crear/editar ruta — Wizard 3 pasos */}
     <Modal open={modal} onClose={()=>{setModal(false);setEditingRuta(null)}} title={editingRuta ? "Editar ruta" : "Autorizar carga de ruta"} wide>
