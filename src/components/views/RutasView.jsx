@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, useDebounce, useToast, reporteRutas, reporteRutaDiaria } from './viewsCommon';
+import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, useDebounce, useToast, reporteRutas } from './viewsCommon';
 import { ordenarPorProximidad } from '../../utils/geocoding';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
+const ReporteRutaModal = lazy(() => import('../ReporteRutaModal'));
 
 function AsignarOrdenesModal({ ruta, ordenes, onClose, onConfirm }) {
   const [selected, setSelected] = useState([]);
@@ -62,6 +63,7 @@ export function RutasView({ data, actions }) {
   const [nuevoCamion, setNuevoCamion] = useState(false);
   const [camionForm, setCamionForm] = useState({nombre:"",placas:"",modelo:""});
   const [mapaVisible, setMapaVisible] = useState(false);
+  const [reporteModal, setReporteModal] = useState(null);
 
   // Fase 13: Grupos colapsables por estatus
   const [gruposColapsados, setGruposColapsados] = useState({
@@ -627,10 +629,10 @@ export function RutasView({ data, actions }) {
                                   {(isCerrada || isCompletada) && (
                                     <button onClick={(e) => {
                                       e.currentTarget.closest('details').open = false;
-                                      reporteRutaDiaria(r, data.ordenes || [], data.mermas || [], data.productos || [], data.clientes || []);
+                                      setReporteModal(r);
                                     }} className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 text-blue-700 border-t border-slate-100">
-                                      📄 Descargar reporte
-                                      <span className="block text-[10px] text-slate-400 font-normal mt-0.5">PDF estilo hoja diaria</span>
+                                      📊 Ver reporte
+                                      <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Vista completa con descarga PDF</span>
                                     </button>
                                   )}
                                   <button onClick={(e) => { e.currentTarget.closest('details').open = false; askConfirm('Eliminar ruta', '¿Eliminar ruta ' + s(r.nombre) + '?', () => actions.deleteRuta(r.id), true); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600">🗑️ Eliminar</button>
@@ -957,6 +959,13 @@ export function RutasView({ data, actions }) {
           </div>
         </div>
       </Modal>
+    )}
+
+    {/* Modal de reporte de ruta (Fase 17) */}
+    {reporteModal && (
+      <Suspense fallback={<div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white rounded-2xl p-6 text-sm text-slate-500">Cargando reporte…</div></div>}>
+        <ReporteRutaModal ruta={reporteModal} data={data} onClose={() => setReporteModal(null)} />
+      </Suspense>
     )}
   </div>);
 }
