@@ -586,7 +586,7 @@ export function RutasView({ data, actions }) {
                                 </>
                               )}
                               {isEnProgreso && (
-                                <button onClick={() => abrirCierre(r)} className="px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors">Cerrar</button>
+                                <span className="text-xs text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg font-semibold">En ruta</span>
                               )}
                               {isCompletada && (
                                 <button onClick={() => setDetalleModal(r)} className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">Ver resumen</button>
@@ -602,10 +602,16 @@ export function RutasView({ data, actions }) {
                                     <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z"/>
                                   </svg>
                                 </summary>
-                                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-10 py-1 min-w-[140px]">
+                                <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-10 py-1 min-w-[180px]">
                                   <button onClick={(e) => { e.currentTarget.closest('details').open = false; abrirEdicion(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700">✏️ Editar</button>
                                   {!isCerrada && !isProgramada && (
                                     <button onClick={(e) => { e.currentTarget.closest('details').open = false; setDetalleModal(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700">👁️ Ver detalle</button>
+                                  )}
+                                  {isEnProgreso && (
+                                    <button onClick={(e) => { e.currentTarget.closest('details').open = false; abrirCierre(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 text-amber-700 border-t border-slate-100">
+                                      🔒 Cerrar ruta (admin)
+                                      <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Solo si el chofer no puede</span>
+                                    </button>
                                   )}
                                   <button onClick={(e) => { e.currentTarget.closest('details').open = false; askConfirm('Eliminar ruta', '¿Eliminar ruta ' + s(r.nombre) + '?', () => actions.deleteRuta(r.id), true); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600">🗑️ Eliminar</button>
                                 </div>
