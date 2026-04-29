@@ -15,7 +15,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const [guardandoTrans, setGuardandoTrans] = useState(false);
 
   // Producir form — includes destino (congelador)
-  const [form, setForm] = useState({ turno: "Matutino", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1" });
+  const [form, setForm] = useState({ turno: "Turno 1", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1" });
   const [tForm, setTForm] = useState({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
   const [sacarForm, setSacarForm] = useState({ sku: "", cantidad: "", motivo: "Carga a ruta" });
 
@@ -264,7 +264,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     const cfNombre = cuartos.find(cf => s(cf.id) === form.destino)?.nombre || form.destino;
     showToast(form.cantidad + " " + form.sku + " → " + cfNombre);
     setModal(false);
-    setForm({ turno: "Matutino", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1" });
+    setForm({ turno: "Turno 1", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1" });
   };
 
   const hacerTraspaso = () => {
@@ -586,7 +586,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Turno</label>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {["Matutino", "Vespertino"].map(t => (
+                  {["Turno 1", "Turno 2", "Turno 3"].map(t => (
                     <button key={t} onClick={() => setForm(f => ({ ...f, turno: t }))}
                       className={`py-2 rounded-xl text-sm font-semibold border-2 ${form.turno === t ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
                       {t}
