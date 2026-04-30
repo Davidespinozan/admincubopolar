@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { s, n } from '../utils/safe';
 
-export default function BotonFirmasPendientes({ user, data, actions }) {
+export default function BotonFirmasPendientes({ user, data, actions, mostrarBannerUrgente = false }) {
   const [abierto, setAbierto] = useState(false);
   const [rutaSeleccionada, setRutaSeleccionada] = useState(null);
   const [firmaTienePuntos, setFirmaTienePuntos] = useState(false);
@@ -28,9 +28,12 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
   }, [data.rutas, puedeFirmar]);
 
   // ── DETECCIÓN AUTOMÁTICA DE RUTAS NUEVAS ──
+  // Solo la instancia con mostrarBannerUrgente=true dispara popup automático.
+  // Si hay 2 instancias (botón header + banner urgente), evita doble popup.
   useEffect(() => {
     if (!puedeFirmar) return;
     if (!esProduccion) return;
+    if (!mostrarBannerUrgente) return;
 
     // Primera vez que carga: marcar todas las rutas existentes como ya vistas
     // (no abrir popup para rutas que llevan rato esperando)
@@ -118,7 +121,32 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
 
   return (
     <>
-      {/* Botón en topbar */}
+      {/* Banner urgente persistente — solo cuando se solicita explícitamente */}
+      {mostrarBannerUrgente && esProduccion && rutasPendientes.length > 0 && (
+        <button
+          onClick={() => {
+            const primera = rutasPendientes[0];
+            setRutaSeleccionada(primera);
+            setFirmaTienePuntos(false);
+          }}
+          className="w-full bg-amber-500 hover:bg-amber-600 transition-colors text-slate-900 px-4 py-3 flex items-center justify-center gap-3 shadow-[0_4px_12px_rgba(251,191,36,0.25)] animate-pulse"
+        >
+          <span className="text-xl">⚠️</span>
+          <div className="text-left">
+            <p className="text-sm font-extrabold tracking-tight">
+              {rutasPendientes.length} firma{rutasPendientes.length === 1 ? '' : 's'} pendiente{rutasPendientes.length === 1 ? '' : 's'}
+            </p>
+            <p className="text-[11px] font-semibold opacity-80">Tocar para firmar</p>
+          </div>
+          <span className="ml-2 text-xs font-bold bg-slate-900 text-amber-300 px-2 py-0.5 rounded-full">
+            URGENTE
+          </span>
+        </button>
+      )}
+
+      {/* Botón en topbar — solo en modo NO banner (la instancia banner solo muestra banner) */}
+      {!mostrarBannerUrgente && (
+        <>
       <button
         onClick={() => setAbierto(!abierto)}
         className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/8 border border-white/10 text-cyan-200 hover:bg-white/12 transition-colors"
@@ -182,6 +210,8 @@ export default function BotonFirmasPendientes({ user, data, actions }) {
             </div>
           )}
         </div>
+      )}
+        </>
       )}
 
       {/* Modal de advertencia para Admin antes de firmar */}
