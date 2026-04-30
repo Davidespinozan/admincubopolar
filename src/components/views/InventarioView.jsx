@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, CapacityBar, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 
 export function InventarioView({ data, actions }) {
@@ -9,7 +9,7 @@ export function InventarioView({ data, actions }) {
   const [traspasoForm, setTraspasoForm] = useState({origen:"",destino:"",sku:"",cantidad:""});
   const [traspasoErrors, setTraspasoErrors] = useState({});
   const [cfModal, setCfModal] = useState(null);
-  const [cfForm, setCfForm] = useState({nombre:"",temp:"-10",capacidad:"0"});
+  const [cfForm, setCfForm] = useState({nombre:"",temp:"-10",capacidad_tarimas:""});
   const [ajusteModal, setAjusteModal] = useState(null);
   const [ajusteForm, setAjusteForm] = useState({ existencia: "", motivo: "" });
   const [ajusteErrors, setAjusteErrors] = useState({});
@@ -112,12 +112,12 @@ export function InventarioView({ data, actions }) {
       {totalStockByCF.length === 0 ? <EmptyState message="Sin cuartos fríos" /> :
       totalStockByCF.map(cf=><div key={cf.id} className="min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 snap-start">
         <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={()=>{setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad:String(n(cf.capacidad))});setCfModal(cf)}}>
+          <div className="flex items-center gap-2 cursor-pointer" onClick={()=>{setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad_tarimas:String(n(cf.capacidad_tarimas) || '')});setCfModal(cf)}}>
             <h3 className="text-sm font-bold text-slate-700">{s(cf.nombre)}</h3>
             <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">{n(cf.temp, -50, 10)}°C</span>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={e=>{e.stopPropagation();setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad:String(n(cf.capacidad))});setCfModal(cf);}} className="p-1 text-slate-500 hover:text-blue-600">
+            <button onClick={e=>{e.stopPropagation();setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad_tarimas:String(n(cf.capacidad_tarimas) || '')});setCfModal(cf);}} className="p-1 text-slate-500 hover:text-blue-600">
               <Icons.Edit />
             </button>
             <button onClick={e=>{e.stopPropagation();askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cf.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cf.id); toast?.success('Cuarto frío eliminado');}, true)}} className="p-1 text-red-500 hover:text-red-700">
@@ -125,13 +125,12 @@ export function InventarioView({ data, actions }) {
             </button>
           </div>
         </div>
-        <CapacityBar pct={n(cf.capacidad)}/>
-        <p className="text-xs text-slate-400 mt-2">{n(cf.capacidad)}% capacidad</p>
-
         {(() => {
           const ocupado = tarimasOcupadasEnCuarto(cf, data.productos);
           const capacidad = n(cf.capacidad_tarimas);
-          if (capacidad <= 0) return null;
+          if (capacidad <= 0) {
+            return <p className="text-xs text-slate-400 mt-2">Sin capacidad configurada</p>;
+          }
           const pct = Math.round((ocupado / capacidad) * 100);
           const color = colorTarimasUso(ocupado, capacidad);
           const colorClass = color === 'red' ? 'bg-red-500' : color === 'amber' ? 'bg-amber-500' : 'bg-emerald-500';
@@ -211,7 +210,7 @@ export function InventarioView({ data, actions }) {
       <div className="space-y-3">
         <FormInput label="Nombre *" value={cfForm.nombre} onChange={e=>setCfForm({...cfForm,nombre:e.target.value})} />
         <FormInput label="Temperatura (°C)" type="number" value={cfForm.temp} onChange={e=>setCfForm({...cfForm,temp:e.target.value})} />
-        <FormInput label="Capacidad (%)" type="number" value={cfForm.capacidad} onChange={e=>setCfForm({...cfForm,capacidad:e.target.value})} />
+        <FormInput label="Capacidad (tarimas)" type="number" value={cfForm.capacidad_tarimas || ''} onChange={e=>setCfForm({...cfForm,capacidad_tarimas:e.target.value})} placeholder="ej: 8, 15, 13" />
       </div>
       <div className="flex justify-between mt-5">
         {cfModal && cfModal !== "new" && cfModal.id && <button onClick={()=> askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cfModal.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cfModal.id); toast?.success('Cuarto frío eliminado'); setCfModal(null);}, true)} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
@@ -220,7 +219,7 @@ export function InventarioView({ data, actions }) {
           <FormBtn primary onClick={async ()=>{
             const e = {};
             if (!cfForm.nombre || !cfForm.nombre.trim()) { toast?.error('Nombre requerido'); return; }
-            const payload = { nombre: cfForm.nombre, temp: Number(cfForm.temp), capacidad: Number(cfForm.capacidad) };
+            const payload = { nombre: cfForm.nombre, temp: Number(cfForm.temp), capacidad_tarimas: Number(cfForm.capacidad_tarimas) || 0 };
             try {
               if (cfModal === "new") { await actions.addCuartoFrio(payload); toast?.success('Cuarto frío creado'); }
               else { await actions.updateCuartoFrio(cfModal.id, payload); toast?.success('Cuarto frío actualizado'); }

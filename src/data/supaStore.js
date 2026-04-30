@@ -1115,7 +1115,7 @@ export function useSupaStore(userId, userName) {
       // ── CUARTOS FRÍOS — CRUD ──
       addCuartoFrio: async (cf) => {
         const { error } = await supabase.from('cuartos_frios').insert({
-          nombre: cf.nombre, temp: cf.temp, capacidad: cf.capacidad, stock: {},
+          nombre: cf.nombre, temp: cf.temp, capacidad_tarimas: cf.capacidad_tarimas || 0, stock: {},
         });
         if (error) { t()?.error('Error al crear cuarto frío'); return error; }
         log('Crear', 'Cuartos Fríos', `${cf.nombre}`);
@@ -1126,7 +1126,7 @@ export function useSupaStore(userId, userName) {
         const update = {};
         if (cf.nombre    !== undefined) update.nombre    = cf.nombre;
         if (cf.temp      !== undefined) update.temp      = cf.temp;
-        if (cf.capacidad !== undefined) update.capacidad = cf.capacidad;
+        if (cf.capacidad_tarimas !== undefined) update.capacidad_tarimas = Number(cf.capacidad_tarimas) || 0;
         const { error } = await supabase.from('cuartos_frios').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar cuarto frío'); return error; }
         log('Editar', 'Cuartos Fríos', `ID ${id}`);
