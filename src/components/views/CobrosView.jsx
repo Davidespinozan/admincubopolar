@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, s, n, useToast } from './viewsCommon';
+import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, useToast } from './viewsCommon';
 
 export function CobrosView({ data, actions }) {
   const toast = useToast();
@@ -83,7 +83,12 @@ export function CobrosView({ data, actions }) {
 
     {tab === 'pendientes' && (
       <div className="space-y-2">
-        {cxcPendientes.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin cuentas pendientes de cobro</p>}
+        {cxcPendientes.length === 0 && (
+          <EmptyState
+            message="Sin cuentas pendientes de cobro"
+            hint="Todas las ventas a crédito están al corriente"
+          />
+        )}
         {cxcPendientes.map(cxc => {
           const cli = clientes[cxc.clienteId];
           const pctPagado = (n(cxc.montoPagado) / n(cxc.montoOriginal)) * 100;
@@ -122,7 +127,12 @@ export function CobrosView({ data, actions }) {
 
     {tab === 'pagos' && (
       <div className="space-y-1.5">
-        {pagosRecientes.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin pagos registrados</p>}
+        {pagosRecientes.length === 0 && (
+          <EmptyState
+            message="Sin pagos registrados"
+            hint="Los pagos aparecerán aquí cuando se cobren cuentas"
+          />
+        )}
         {pagosRecientes.map(p => {
           const cli = clientes[p.clienteId];
           return (

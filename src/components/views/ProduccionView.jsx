@@ -1,4 +1,4 @@
-import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtDate, useToast, useConfirm, reporteProduccion } from './viewsCommon';
+import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion } from './viewsCommon';
 
 export function ProduccionView({ data, actions }) {
   const toast = useToast();
@@ -411,14 +411,12 @@ export function ProduccionView({ data, actions }) {
       </div>
 
       {prodTransf.length === 0 ? (
-        <div className="bg-orange-50 border border-orange-200 rounded-2xl p-8 text-center">
-          <p className="text-2xl mb-2">🧊</p>
-          <p className="font-semibold text-slate-700">Sin transformaciones registradas</p>
-          <p className="text-sm text-slate-500 mt-1">Registra cuando trituras o picas barras de hielo para obtener hielo molido o escarchado</p>
-          <button onClick={() => { setTModal(true); setTErrors({}); }} className="mt-4 px-5 py-2.5 bg-orange-500 text-white text-sm font-bold rounded-xl">
-            Registrar primera transformación
-          </button>
-        </div>
+        <EmptyState
+          message="Sin transformaciones registradas"
+          hint="Registra cuando tritures o piques barras de hielo para obtener hielo molido o escarchado"
+          cta="Registrar primera transformación"
+          onCta={() => { setTModal(true); setTErrors({}); }}
+        />
       ) : (
         <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
           <div className="space-y-3">

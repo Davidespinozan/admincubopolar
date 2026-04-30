@@ -220,6 +220,10 @@ export function OrdenesView({ data, actions, user }) {
           {est==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="mt-2 w-full text-xs font-semibold text-slate-700 bg-slate-100 px-3 py-2.5 rounded-lg min-h-[44px]">→ Facturar</button>}
         </div>;
       }}
+        emptyMessage={(search?.trim() || filterEst) ? "Sin resultados" : "Aún no tienes ventas"}
+        emptyHint={(search?.trim() || filterEst) ? "Intenta con otra búsqueda o limpia los filtros" : "Crea tu primera venta con el botón de arriba"}
+        emptyCta={(search?.trim() || filterEst) ? "Limpiar filtros" : "+ Nueva orden"}
+        onEmptyCta={(search?.trim() || filterEst) ? () => { setSearch(''); setFilterEst(''); setPage(0); } : openModal}
       />
       <Paginator page={page} total={filtered.length} onPage={setPage} />
     </div>

@@ -162,7 +162,7 @@ export function InventarioView({ data, actions }) {
               <span className="font-bold text-slate-700">{n(qty).toLocaleString()}</span>
             </div>
           ))}
-          {cf.stockEntries.length === 0 && <p className="text-xs text-slate-400">Vacío</p>}
+          {cf.stockEntries.length === 0 && <p className="text-xs text-slate-400 italic">Cuarto vacío</p>}
         </div>
         <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between text-xs">
           <span className="text-slate-400">Total</span>

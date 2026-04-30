@@ -1,4 +1,4 @@
-import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, useToast, supabase } from './viewsCommon';
+import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, useToast, supabase } from './viewsCommon';
 
 export function ConfiguracionView({ data, actions }) {
   const toast = useToast();
@@ -78,10 +78,10 @@ export function ConfiguracionView({ data, actions }) {
       <button onClick={openNew} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo usuario</button>
     </div>
     {usuarios.length === 0 && (
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <p className="text-sm text-blue-700">Aún no hay usuarios registrados. Usa el botón "+ Nuevo usuario" para dar de alta empleados.</p>
-        <p className="text-xs text-blue-500 mt-1">Cada usuario necesita un correo y contraseña para entrar al sistema.</p>
-      </div>
+      <EmptyState
+        message="Aún no hay usuarios"
+        hint="Da de alta empleados con el botón + Nuevo usuario"
+      />
     )}
     <div className="space-y-2">
       {usuarios.map(u => (

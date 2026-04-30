@@ -360,7 +360,10 @@ export default function DashboardView({ data, user, onNavigate }) {
           </div>
 
           {accionablesHoy.length === 0 && (
-            <p className="text-sm text-slate-500 italic">Todo al día. No hay pendientes urgentes.</p>
+            <EmptyState
+              message="Todo al día"
+              hint="No tienes pendientes urgentes en este momento"
+            />
           )}
         </div>
       )}

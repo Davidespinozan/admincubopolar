@@ -12,7 +12,10 @@ function AsignarOrdenesModal({ ruta, ordenes, onClose, onConfirm }) {
   return (
     <Modal open={true} onClose={onClose} title={"Asignar órdenes a " + s(ruta.nombre)} wide>
       {ordenes.length === 0 ? (
-        <p className="text-sm text-slate-400 text-center py-6">No hay órdenes pendientes de asignar</p>
+        <EmptyState
+          message="Sin órdenes para asignar"
+          hint="Todas las órdenes ya tienen ruta o no hay órdenes creadas"
+        />
       ) : (
         <div>
           <button onClick={toggleAll} className="text-xs text-blue-600 font-semibold mb-3">
@@ -747,7 +750,10 @@ export function RutasView({ data, actions }) {
 
           <div className="max-h-72 overflow-y-auto border border-slate-200 rounded-xl bg-white divide-y divide-slate-100">
             {ordenesFiltradas.length === 0 && (
-              <p className="px-3 py-6 text-xs text-slate-400 text-center">No hay órdenes pendientes sin ruta asignada</p>
+              <EmptyState
+                message="Todas las órdenes asignadas"
+                hint="No quedan órdenes pendientes sin ruta"
+              />
             )}
             {ordenesFiltradas.map(o => {
               const sel = form.ordenesIds.includes(String(o.id));
