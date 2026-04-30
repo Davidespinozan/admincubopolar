@@ -70,7 +70,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     const hoyStr = new Date().toISOString().slice(0, 10);
     return (data.rutas || []).find(r => {
       const estatus = s(r.estatus).toLowerCase();
-      const estaActiva = estatus === 'programada' || estatus === 'en progreso' || estatus === 'en_progreso';
+      const estaActiva = estatus === 'programada' || estatus === 'en progreso' || estatus === 'en_progreso' || estatus === 'pendiente firma' || estatus === 'cargada';
       const esFechaHoy = !r.fecha || s(r.fecha).startsWith(hoyStr);
       if (!estaActiva || !esFechaHoy) return false;
       // Admin preview: mostrar primera ruta activa (sin filtrar por chofer)
