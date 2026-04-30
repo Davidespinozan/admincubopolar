@@ -77,7 +77,7 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
 
   const handleDescargarPDF = () => {
     try {
-      reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, notas);
+      reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, data.usuarios || [], notas);
     } catch (err) {
       console.error('[ReporteRuta] Error al generar PDF:', err);
       alert('No se pudo generar el PDF: ' + (err?.message || err));
@@ -228,6 +228,52 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* Firma de carga */}
+        {ruta.carga_confirmada_at && (
+          <div>
+            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">✍️ Firma de carga</h4>
+            {ruta.firma_excepcion ? (
+              <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-lg">⚠️</span>
+                  <span className="text-sm font-bold text-red-700">Carga sin firma — Excepción</span>
+                </div>
+                <p className="text-xs text-slate-600 mb-2">
+                  <strong>Motivo:</strong> {s(ruta.firma_excepcion_motivo) || 'Sin motivo registrado'}
+                </p>
+                {(() => {
+                  const u = (data.usuarios || []).find(u => String(u.id) === String(ruta.carga_confirmada_por));
+                  return (
+                    <p className="text-[11px] text-slate-500">
+                      Cargado por: {u ? `${s(u.nombre)} (${s(u.rol)})` : `Usuario desconocido (#${ruta.carga_confirmada_por})`}
+                      {' · '}{new Date(ruta.carga_confirmada_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}
+                    </p>
+                  );
+                })()}
+              </div>
+            ) : ruta.firma_carga ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
+                <div className="bg-white border border-slate-200 rounded-xl p-3 inline-block">
+                  <img src={ruta.firma_carga} alt="Firma de Producción" className="max-h-24 max-w-full" />
+                </div>
+                {(() => {
+                  const u = (data.usuarios || []).find(u => String(u.id) === String(ruta.carga_confirmada_por));
+                  return (
+                    <p className="text-[11px] text-emerald-700 font-semibold mt-2">
+                      Firmado por: {u ? `${s(u.nombre)} (${s(u.rol)})` : `Usuario desconocido (#${ruta.carga_confirmada_por})`}
+                      {' · '}{new Date(ruta.carga_confirmada_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}
+                    </p>
+                  );
+                })()}
+              </div>
+            ) : (
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                <p className="text-xs text-slate-400 italic">Carga confirmada sin firma capturada</p>
+              </div>
+            )}
           </div>
         )}
 

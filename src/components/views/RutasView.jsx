@@ -954,6 +954,53 @@ export function RutasView({ data, actions }) {
               <div><span className="text-slate-400">Entregadas:</span> <span className="font-semibold">{n(detalleModal.entregadas)}</span></div>
             </div>
           </div>
+
+          {detalleModal.carga_confirmada_at && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-4">
+              <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">
+                ✍️ Firma de carga
+              </h4>
+
+              {detalleModal.firma_excepcion ? (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">⚠️</span>
+                    <span className="text-sm font-bold text-red-700">Carga sin firma — Excepción</span>
+                  </div>
+                  <p className="text-xs text-slate-600 mb-2">
+                    <strong>Motivo:</strong> {s(detalleModal.firma_excepcion_motivo) || 'Sin motivo registrado'}
+                  </p>
+                  {(() => {
+                    const u = (data.usuarios || []).find(u => String(u.id) === String(detalleModal.carga_confirmada_por));
+                    return (
+                      <p className="text-[11px] text-slate-500">
+                        Cargado por: {u ? `${s(u.nombre)} (${s(u.rol)})` : `Usuario desconocido (#${detalleModal.carga_confirmada_por})`}
+                        {' · '}{new Date(detalleModal.carga_confirmada_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}
+                      </p>
+                    );
+                  })()}
+                </div>
+              ) : detalleModal.firma_carga ? (
+                <div>
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 inline-block">
+                    <img src={detalleModal.firma_carga} alt="Firma de Producción" className="max-h-24 max-w-full" />
+                  </div>
+                  {(() => {
+                    const u = (data.usuarios || []).find(u => String(u.id) === String(detalleModal.carga_confirmada_por));
+                    return (
+                      <p className="text-[11px] text-slate-500 mt-2">
+                        Firmado por: {u ? `${s(u.nombre)} (${s(u.rol)})` : `Usuario desconocido (#${detalleModal.carga_confirmada_por})`}
+                        {' · '}{new Date(detalleModal.carga_confirmada_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}
+                      </p>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400 italic">Carga confirmada sin firma capturada</p>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-end">
             <FormBtn onClick={()=>setDetalleModal(null)}>Cerrar</FormBtn>
           </div>

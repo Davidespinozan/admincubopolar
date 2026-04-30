@@ -533,7 +533,7 @@ export function reporteNomina(empleados, nominas, formato = 'excel') {
  * Reporte de Ruta Diaria — formato estilo hoja física Cubopolar
  * Para una ruta específica con todas sus entregas, mermas, carga y cierre
  */
-export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, notas = '') {
+export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, usuarios = [], notas = '') {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -790,24 +790,83 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, no
     y += notasHeight + 8;
   }
 
-  // ── FIRMAS ──
-  // Si no hay espacio, página nueva
-  if (y > pageHeight - 50) {
+  // ── BLOQUE DE FIRMAS ──
+  if (y > pageHeight - 70) {
     doc.addPage();
     y = 30;
   } else {
-    y = pageHeight - 45;
+    y = pageHeight - 65;
   }
 
-  doc.setDrawColor(0);
-  const firmaWidth = (pageWidth - 40) / 2;
-  doc.line(14, y, 14 + firmaWidth, y);
-  doc.line(pageWidth - 14 - firmaWidth, y, pageWidth - 14, y);
+  const firmaY = y + 5;
+  const firmaW = (pageWidth - 28) / 2 - 5;
+  const firmaH = 30;
+  const firmaXIzq = 14;
+  const firmaXDer = 14 + firmaW + 10;
 
-  doc.setFontSize(9);
+  // Lado izquierdo: espacio vacío para que el chofer firme de puño en papel
+  doc.setDrawColor(150);
+  doc.line(firmaXIzq, firmaY + firmaH - 5, firmaXIzq + firmaW, firmaY + firmaH - 5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(0);
+  doc.text('FIRMA DEL CHOFER', firmaXIzq + firmaW / 2, firmaY + firmaH + 1, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  doc.text('FIRMA DEL CHOFER', 14 + firmaWidth / 2, y + 5, { align: 'center' });
-  doc.text('FIRMA RESPONSABLE PRODUCCIÓN', pageWidth - 14 - firmaWidth / 2, y + 5, { align: 'center' });
+  doc.setFontSize(7);
+  doc.setTextColor(120);
+  doc.text(s(ruta.choferNombre || ruta.chofer_nombre || ruta.chofer || ''), firmaXIzq + firmaW / 2, firmaY + firmaH + 5, { align: 'center' });
+  doc.setTextColor(0);
+
+  // Lado derecho: firma digital o nota de excepción
+  if (ruta.firma_excepcion) {
+    // Excepción — recuadro rojo
+    doc.setDrawColor(220, 38, 38);
+    doc.setFillColor(254, 226, 226);
+    doc.rect(firmaXDer, firmaY, firmaW, firmaH + 2, 'FD');
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(185, 28, 28);
+    doc.text('CARGA SIN FIRMA — EXCEPCIÓN', firmaXDer + firmaW / 2, firmaY + 6, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(80);
+    const motivoLines = doc.splitTextToSize(`Motivo: ${s(ruta.firma_excepcion_motivo) || 'Sin motivo'}`, firmaW - 4);
+    doc.text(motivoLines, firmaXDer + 2, firmaY + 12);
+    doc.setTextColor(0);
+  } else if (ruta.firma_carga) {
+    // Firma digital capturada
+    try {
+      doc.addImage(ruta.firma_carga, 'PNG', firmaXDer, firmaY, firmaW, firmaH);
+    } catch (e) {
+      doc.setDrawColor(150);
+      doc.line(firmaXDer, firmaY + firmaH - 5, firmaXDer + firmaW, firmaY + firmaH - 5);
+    }
+  } else {
+    // Sin firma capturada — línea vacía
+    doc.setDrawColor(150);
+    doc.line(firmaXDer, firmaY + firmaH - 5, firmaXDer + firmaW, firmaY + firmaH - 5);
+  }
+
+  // Pie del lado derecho
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(0);
+  doc.text('FIRMA RESPONSABLE PRODUCCIÓN', firmaXDer + firmaW / 2, firmaY + firmaH + 1, { align: 'center' });
+
+  // Texto pequeño con nombre + fecha del firmante (si aplica)
+  if (ruta.carga_confirmada_at && !ruta.firma_excepcion) {
+    const firmante = (usuarios || []).find(u => String(u.id) === String(ruta.carga_confirmada_por));
+    const nombreFirmante = firmante ? s(firmante.nombre) : `Usuario #${ruta.carga_confirmada_por}`;
+    const fechaFirma = new Date(ruta.carga_confirmada_at).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(120);
+    doc.text(`Firmado por: ${nombreFirmante}`, firmaXDer + firmaW / 2, firmaY + firmaH + 5, { align: 'center' });
+    doc.text(fechaFirma, firmaXDer + firmaW / 2, firmaY + firmaH + 8, { align: 'center' });
+    doc.setTextColor(0);
+  }
+
+  y = firmaY + firmaH + 15;
 
   // Footer
   doc.setFontSize(8);
