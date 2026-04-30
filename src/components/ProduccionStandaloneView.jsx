@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { s, n } from '../utils/safe';
+import BotonFirmasPendientes from './BotonFirmasPendientes';
 
 // empaqueMap se deriva dinámicamente de data.productos.empaque_sku
 const PRODUCCION_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf3f6_0%,#e5edf1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
@@ -362,7 +363,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             <h1 className="font-display text-[1.6rem] font-bold tracking-[-0.04em]">Producción del día</h1>
             <p className="text-xs text-cyan-100/80">{s(user?.nombre)}</p>
           </div>
-          <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold">Salir</button>
+          <div className="flex items-center gap-2 relative">
+            <BotonFirmasPendientes user={user} data={data} actions={actions} />
+            <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold">Salir</button>
+          </div>
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
           <div className="rounded-[22px] border border-white/10 bg-white/8 p-3.5 text-center backdrop-blur-xl">
@@ -379,6 +383,14 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           </div>
         </div>
       </div>
+
+      {/* Banner urgente de firmas pendientes (solo Producción) */}
+      <BotonFirmasPendientes
+        user={user}
+        data={data}
+        actions={actions}
+        mostrarBannerUrgente={true}
+      />
 
       {/* Tabs */}
       <div className="px-4 pt-3">
