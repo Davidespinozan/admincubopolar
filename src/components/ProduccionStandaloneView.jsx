@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { s, n } from '../utils/safe';
+import { puedeAgregarAlCuarto, tarimasOcupadasEnCuarto, colorTarimasUso } from '../utils/tarimas';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
 
 // empaqueMap se deriva dinámicamente de data.productos.empaque_sku
@@ -273,6 +274,23 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     const cant = n(form.cantidad);
     const cfNombre = cuartos.find(cf => s(cf.id) === form.destino)?.nombre || form.destino;
 
+    // Validar capacidad de tarimas del cuarto destino (Fase 19)
+    const cuartoDestino = (data.cuartosFrios || []).find(c => String(c.id) === String(form.destino));
+    if (cuartoDestino && n(cuartoDestino.capacidad_tarimas) > 0) {
+      const { puede, ocupadoActual, ocupadoFuturo, capacidad } = puedeAgregarAlCuarto(
+        cuartoDestino,
+        data.productos,
+        form.sku,
+        cant
+      );
+      if (!puede) {
+        const exceso = (ocupadoFuturo - capacidad).toFixed(1);
+        const mensaje = `${cfNombre} no tiene espacio. Ocupado ${ocupadoActual.toFixed(1)}/${capacidad} tarimas. Faltan ${exceso} tarimas. Elige otro cuarto.`;
+        showToast(mensaje);
+        return;
+      }
+    }
+
     // Sin merma: comportamiento original (atómico)
     if (!form.conMerma) {
       actions.producirYCongelar({
@@ -544,6 +562,30 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     <p className="text-[10px] text-slate-400">bolsas</p>
                   </div>
                 </div>
+
+                {(() => {
+                  const ocupado = tarimasOcupadasEnCuarto(cf, data.productos);
+                  const capacidad = n(cf.capacidad_tarimas);
+                  if (capacidad <= 0) return null;
+                  const pct = Math.round((ocupado / capacidad) * 100);
+                  const color = colorTarimasUso(ocupado, capacidad);
+                  const colorClass = color === 'red' ? 'bg-red-500' : color === 'amber' ? 'bg-amber-500' : 'bg-emerald-500';
+                  const textColorClass = color === 'red' ? 'text-red-700' : color === 'amber' ? 'text-amber-700' : 'text-emerald-700';
+                  return (
+                    <div className="px-4 pb-3">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Tarimas</span>
+                        <span className={`text-xs font-bold ${textColorClass}`}>
+                          {ocupado.toFixed(1)}/{capacidad} ({pct}%)
+                        </span>
+                      </div>
+                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                        <div className={`h-full ${colorClass} transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {stockEntries.length > 0 ? (
                   <div className="grid grid-cols-1 gap-2 px-4 pb-3 sm:grid-cols-2 lg:grid-cols-3">
                     {stockEntries.map(([sku, qty]) => (
