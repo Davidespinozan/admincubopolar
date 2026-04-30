@@ -199,7 +199,13 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     if (miRutaActiva?.id) {
       const saved = localStorage.getItem('mermas_ruta_' + miRutaActiva.id);
       if (saved) {
-        try { setMermas(JSON.parse(saved)); } catch {}
+        try {
+          setMermas(JSON.parse(saved));
+        } catch (e) {
+          console.warn('No se pudieron cargar mermas guardadas:', e);
+          showToast('Mermas guardadas no se pudieron recuperar. Por favor regístralas de nuevo.');
+          localStorage.removeItem('mermas_ruta_' + miRutaActiva.id);
+        }
       }
     }
   }, [miRutaActiva?.id]);
