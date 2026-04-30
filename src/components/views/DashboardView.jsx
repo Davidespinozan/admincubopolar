@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Icons } from '../ui/Icons';
-import { StatusBadge, DataTable, CapacityBar } from '../ui/Components';
+import { StatusBadge, DataTable } from '../ui/Components';
+import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, fmtDate, fmtDateTime } from '../../utils/safe';
 
@@ -507,8 +508,24 @@ export default function DashboardView({ data, user, onNavigate }) {
                   <span className="text-sm font-bold text-slate-700">{s(cf.nombre)}</span>
                   <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-lg">{n(cf.temp, -50, 10)}°C</span>
                 </div>
-                <CapacityBar pct={n(cf.capacidad)} />
-                <p className="text-xs text-slate-400 mt-1.5">{n(cf.capacidad)}%</p>
+                {(() => {
+                  const ocupado = tarimasOcupadasEnCuarto(cf, data.productos);
+                  const capacidad = n(cf.capacidad_tarimas);
+                  if (capacidad <= 0) {
+                    return <p className="text-xs text-slate-400">Sin configurar</p>;
+                  }
+                  const pct = Math.round((ocupado / capacidad) * 100);
+                  const color = colorTarimasUso(ocupado, capacidad);
+                  const colorClass = color === 'red' ? 'bg-red-500' : color === 'amber' ? 'bg-amber-500' : 'bg-emerald-500';
+                  return (
+                    <div className="mt-1.5">
+                      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-1">
+                        <div className={`h-full ${colorClass} transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
+                      </div>
+                      <p className="text-xs text-slate-500">{ocupado.toFixed(1)}/{capacidad} tarimas ({pct}%)</p>
+                    </div>
+                  );
+                })()}
                 <div className="mt-1.5 space-y-0.5">{cf.stock ? Object.entries(cf.stock).map(([sku,qty])=>{const p=(data.productos||[]).find(x=>s(x.sku)===s(sku));return <div key={sku} className="flex justify-between text-xs"><span className="text-slate-500">{p?s(p.nombre):sku}</span><span className="font-bold text-slate-700">{qty}</span></div>;}) : <p className="text-xs text-slate-500">{s(cf.productos)}</p>}</div>
               </div>
             ))}

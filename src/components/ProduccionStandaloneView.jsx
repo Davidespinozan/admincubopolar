@@ -554,7 +554,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     </div>
                     <div>
                       <p className="text-base font-bold text-slate-800">{s(cf.nombre)}</p>
-                      <p className="text-xs text-slate-500">{n(cf.temp, -50, 10)}°C · {n(cf.capacidad)}%</p>
+                      <p className="text-xs text-slate-500">{n(cf.temp, -50, 10)}°C</p>
                     </div>
                   </div>
                   <div className="text-right">
