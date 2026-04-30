@@ -67,6 +67,8 @@ export function RutasView({ data, actions }) {
   const [camionForm, setCamionForm] = useState({nombre:"",placas:"",modelo:""});
   const [mapaVisible, setMapaVisible] = useState(false);
   const [reporteModal, setReporteModal] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [cerrando, setCerrando] = useState(false);
 
   // Fase 13: Grupos colapsables por estatus
   const [gruposColapsados, setGruposColapsados] = useState({
@@ -229,6 +231,7 @@ export function RutasView({ data, actions }) {
   };
 
   const save = async () => {
+    if (saving) return;
     const e = {};
     if (!form.nombre.trim()) e.nombre = "Requerido";
     if (!form.choferId) e.choferId = "Requerido";
@@ -280,50 +283,55 @@ export function RutasView({ data, actions }) {
       }
     });
 
-    let err;
-    if (editingRuta) {
-      err = await actions.updateRuta(editingRuta.id, {
-        nombre: form.nombre,
-        choferId: Number(form.choferId),
-        ayudanteId: form.ayudanteId ? Number(form.ayudanteId) : null,
-        camionId: form.camionId ? Number(form.camionId) : null,
-        estatus: form.estatus,
-        carga: cargaTotal,
-        cargaAutorizada,
-        extraAutorizado,
-        clientesAsignados,
-      });
-      if (!err && form.ordenesIds.length > 0) {
-        await actions.asignarOrdenesARuta(editingRuta.id, form.ordenesIds, 0);
+    setSaving(true);
+    try {
+      let err;
+      if (editingRuta) {
+        err = await actions.updateRuta(editingRuta.id, {
+          nombre: form.nombre,
+          choferId: Number(form.choferId),
+          ayudanteId: form.ayudanteId ? Number(form.ayudanteId) : null,
+          camionId: form.camionId ? Number(form.camionId) : null,
+          estatus: form.estatus,
+          carga: cargaTotal,
+          cargaAutorizada,
+          extraAutorizado,
+          clientesAsignados,
+        });
+        if (!err && form.ordenesIds.length > 0) {
+          await actions.asignarOrdenesARuta(editingRuta.id, form.ordenesIds, 0);
+        }
+      } else {
+        const result = await actions.addRuta({
+          nombre: form.nombre,
+          choferId: Number(form.choferId),
+          ayudanteId: form.ayudanteId ? Number(form.ayudanteId) : null,
+          camionId: form.camionId ? Number(form.camionId) : null,
+          ordenes: 0,
+          carga: cargaTotal,
+          cargaAutorizada,
+          extraAutorizado,
+          clientesAsignados,
+        });
+        err = result instanceof Error ? result : null;
+        // Link selected orders to the new route
+        if (!err && form.ordenesIds.length > 0 && result?.id) {
+          await actions.asignarOrdenesARuta(result.id, form.ordenesIds, 0);
+        }
       }
-    } else {
-      const result = await actions.addRuta({
-        nombre: form.nombre,
-        choferId: Number(form.choferId),
-        ayudanteId: form.ayudanteId ? Number(form.ayudanteId) : null,
-        camionId: form.camionId ? Number(form.camionId) : null,
-        ordenes: 0,
-        carga: cargaTotal,
-        cargaAutorizada,
-        extraAutorizado,
-        clientesAsignados,
-      });
-      err = result instanceof Error ? result : null;
-      // Link selected orders to the new route
-      if (!err && form.ordenesIds.length > 0 && result?.id) {
-        await actions.asignarOrdenesARuta(result.id, form.ordenesIds, 0);
+      if (err) {
+        toast?.error(editingRuta ? "No se pudo actualizar la ruta" : "No se pudo crear la ruta");
+        return;
       }
+      toast?.success(editingRuta ? "Ruta actualizada" : "Ruta creada y carga autorizada");
+      setModal(false);
+      setEditingRuta(null);
+      setForm({nombre:"",choferId:"",ayudanteId:"",camionId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});
+      setSearchOrden("");
+      setErrors({});
+    } finally {
+      setSaving(false);
     }
-    if (err) {
-      toast?.error(editingRuta ? "No se pudo actualizar la ruta" : "No se pudo crear la ruta");
-      return;
-    }
-    toast?.success(editingRuta ? "Ruta actualizada" : "Ruta creada y carga autorizada");
-    setModal(false);
-    setEditingRuta(null);
-    setForm({nombre:"",choferId:"",ayudanteId:"",camionId:"",estatus:"Programada",cargaPorProducto:{},extraPorProducto:{},ordenesIds:[]});
-    setSearchOrden("");
-    setErrors({});
   };
 
   const abrirEdicion = (ruta) => {
@@ -379,18 +387,24 @@ export function RutasView({ data, actions }) {
     prodTerminados.forEach(p => devInit[p.sku] = 0);
     setCierreForm({devolucionPorProducto: devInit});
   };
-  const confirmarCierre = () => {
+  const confirmarCierre = async () => {
+    if (cerrando) return;
     if (!cierreModal) return;
     // Filtrar solo productos con devolución > 0
     const devolucion = {};
     for (const [sku, qty] of Object.entries(cierreForm.devolucionPorProducto)) {
       if (n(qty) > 0) devolucion[sku] = n(qty);
     }
-    if (actions.cerrarRuta) {
-      actions.cerrarRuta(cierreModal.id, devolucion);
+    setCerrando(true);
+    try {
+      if (actions.cerrarRuta) {
+        await actions.cerrarRuta(cierreModal.id, devolucion);
+      }
+      toast?.success("Ruta " + s(cierreModal.nombre) + " cerrada");
+      setCierreModal(null);
+    } finally {
+      setCerrando(false);
     }
-    toast?.success("Ruta " + s(cierreModal.nombre) + " cerrada");
-    setCierreModal(null);
   };
 
   const choferLabel = (r) => {
@@ -884,7 +898,7 @@ export function RutasView({ data, actions }) {
         <div className="flex gap-2">
           {step > 1 && <FormBtn onClick={prevStep}>← Atrás</FormBtn>}
           {step < 3 && <FormBtn primary onClick={nextStep}>Siguiente →</FormBtn>}
-          {step === 3 && <FormBtn primary onClick={save}>{editingRuta ? "Guardar cambios" : "Autorizar carga"}</FormBtn>}
+          {step === 3 && <FormBtn primary onClick={save} loading={saving}>{editingRuta ? "Guardar cambios" : "Autorizar carga"}</FormBtn>}
         </div>
       </div>
     </Modal>
@@ -941,7 +955,7 @@ export function RutasView({ data, actions }) {
             </div>
           )}
         </div>
-        <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setCierreModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={confirmarCierre}>Cerrar ruta</FormBtn></div>
+        <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setCierreModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={confirmarCierre} loading={cerrando}>Cerrar ruta</FormBtn></div>
       </Modal>
     )}
 

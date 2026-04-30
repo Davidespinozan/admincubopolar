@@ -37,6 +37,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [shortUrl, setShortUrl] = useState(null);
   const [generandoLink, setGenerandoLink] = useState(false);
+  const [confirmandoEntrega, setConfirmandoEntrega] = useState(false);
+  const [creandoVenta, setCreandoVenta] = useState(false);
+  const [registrandoMerma, setRegistrandoMerma] = useState(false);
   const [vForm, setVForm] = useState({ clienteId: "", cliente: "", sku: "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
   const [mForm, setMForm] = useState({ sku: "", cant: "", causa: "Bolsa rota" });
   const [fotoMerma, setFotoMerma] = useState(null);
@@ -401,6 +404,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   };
 
   const confirmarEntrega = async () => {
+    if (confirmandoEntrega || generandoLink) return;
     if (!entregaModal) return;
     // QR / Link de pago → generate checkout
     if (cobroMetodo === "QR / Link de pago") {
@@ -434,21 +438,27 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       fotoEntrega: fotoEntrega || null,
       hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
     };
-    // Update order status in store
-    const err = actions.updateOrdenEstatus
-      ? await actions.updateOrdenEstatus(entregaModal.id, "Entregada", cobroMetodo, { folioNota: folioNota || null })
-      : null;
-    if (err) {
-      showToast("No se pudo registrar la entrega");
-      return;
+    setConfirmandoEntrega(true);
+    try {
+      // Update order status in store
+      const err = actions.updateOrdenEstatus
+        ? await actions.updateOrdenEstatus(entregaModal.id, "Entregada", cobroMetodo, { folioNota: folioNota || null })
+        : null;
+      if (err) {
+        showToast("No se pudo registrar la entrega");
+        return;
+      }
+      setEntregas(prev => [...prev, entrega]);
+      showToast("Entregado a " + entrega.cliente);
+      setEntregaModal(null);
+      setFotoTransf(null);
+    } finally {
+      setConfirmandoEntrega(false);
     }
-    setEntregas(prev => [...prev, entrega]);
-    showToast("Entregado a " + entrega.cliente);
-    setEntregaModal(null);
-    setFotoTransf(null);
   };
 
-  const crearVentaExpress = () => {
+  const crearVentaExpress = async () => {
+    if (creandoVenta) return;
     if (!vForm.cant || n(vForm.cant) <= 0) return;
 
     const clienteNombre = s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general";
@@ -469,32 +479,38 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       showToast("No tienes suficiente — te quedan " + (restante[sku] || 0));
       return;
     }
-    const precio = getPrice(clienteNombre, sku);
-    const subtotal = n(vForm.cant) * precio;
-    const total = subtotal; // Hielo: IVA tasa 0%
-    const venta = {
-      id: Date.now(), folio: "EX-" + String(Date.now()).slice(-4),
-      clienteId: vForm.clienteId || clienteExpressSel?.id || null,
-      cliente: clienteNombre,
-      items: [{ sku, cant: n(vForm.cant), precio }],
-      subtotal, iva: 0,
-      total, pago: vForm.pago,
-      hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
-      express: true,
-      factura: vForm.factura,
-      rfc: vForm.factura ? vForm.rfc : "",
-      correo: vForm.factura ? vForm.correo : "",
-      regimen: vForm.factura ? vForm.regimen : "",
-      usoCfdi: vForm.factura ? vForm.usoCfdi : "",
-      cp: vForm.factura ? vForm.cp : "",
-    };
-    setEntregas(prev => [...prev, venta]);
-    showToast("Venta exprés: $" + total.toLocaleString() + (vForm.factura ? " (factura)" : ""));
-    setVentaModal(false);
-    setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
+    setCreandoVenta(true);
+    try {
+      const precio = getPrice(clienteNombre, sku);
+      const subtotal = n(vForm.cant) * precio;
+      const total = subtotal; // Hielo: IVA tasa 0%
+      const venta = {
+        id: Date.now(), folio: "EX-" + String(Date.now()).slice(-4),
+        clienteId: vForm.clienteId || clienteExpressSel?.id || null,
+        cliente: clienteNombre,
+        items: [{ sku, cant: n(vForm.cant), precio }],
+        subtotal, iva: 0,
+        total, pago: vForm.pago,
+        hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+        express: true,
+        factura: vForm.factura,
+        rfc: vForm.factura ? vForm.rfc : "",
+        correo: vForm.factura ? vForm.correo : "",
+        regimen: vForm.factura ? vForm.regimen : "",
+        usoCfdi: vForm.factura ? vForm.usoCfdi : "",
+        cp: vForm.factura ? vForm.cp : "",
+      };
+      setEntregas(prev => [...prev, venta]);
+      showToast("Venta exprés: $" + total.toLocaleString() + (vForm.factura ? " (factura)" : ""));
+      setVentaModal(false);
+      setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
+    } finally {
+      setCreandoVenta(false);
+    }
   };
 
-  const registrarMerma = () => {
+  const registrarMerma = async () => {
+    if (registrandoMerma) return;
     if (!mForm.cant || n(mForm.cant) <= 0 || !fotoMerma) return;
     // Validar que no exceda stock disponible
     const disponibleSku = restante[mForm.sku] || 0;
@@ -502,22 +518,27 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       showToast(`Solo tienes ${disponibleSku} disponibles de ${mForm.sku}`, "error");
       return;
     }
-    // Save to store with audit trail
-    if (actions.registrarMerma) {
-      actions.registrarMerma(mForm.sku, n(mForm.cant), mForm.causa, s(user?.nombre), fotoMerma);
-    }
-    setMermas(prev => {
-      const nuevaMerma = { ...mForm, id: Date.now(), cant: n(mForm.cant), foto: fotoMerma, hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) };
-      const updated = [...prev, nuevaMerma];
-      if (miRutaActiva?.id) {
-        localStorage.setItem('mermas_ruta_' + miRutaActiva.id, JSON.stringify(updated));
+    setRegistrandoMerma(true);
+    try {
+      // Save to store with audit trail
+      if (actions.registrarMerma) {
+        await actions.registrarMerma(mForm.sku, n(mForm.cant), mForm.causa, s(user?.nombre), fotoMerma);
       }
-      return updated;
-    });
-    showToast("Merma registrada");
-    setMermaModal(false);
-    setFotoMerma(null);
-    setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" });
+      setMermas(prev => {
+        const nuevaMerma = { ...mForm, id: Date.now(), cant: n(mForm.cant), foto: fotoMerma, hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) };
+        const updated = [...prev, nuevaMerma];
+        if (miRutaActiva?.id) {
+          localStorage.setItem('mermas_ruta_' + miRutaActiva.id, JSON.stringify(updated));
+        }
+        return updated;
+      });
+      showToast("Merma registrada");
+      setMermaModal(false);
+      setFotoMerma(null);
+      setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" });
+    } finally {
+      setRegistrandoMerma(false);
+    }
   };
 
   const cerrarRuta = async () => {
@@ -1012,7 +1033,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 </label>
               )}
             </div>
-            {!checkoutUrl && <button onClick={confirmarEntrega} disabled={generandoLink} className={`w-full py-4 text-white font-extrabold rounded-xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform ${generandoLink ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : cobroMetodo === "QR / Link de pago" ? "Generar link de pago" : "✓ Confirmar entrega"}</button>}
+            {!checkoutUrl && <button onClick={confirmarEntrega} disabled={generandoLink || confirmandoEntrega} className={`w-full py-4 text-white font-extrabold rounded-xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform ${(generandoLink || confirmandoEntrega) ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : confirmandoEntrega ? 'Registrando entrega…' : cobroMetodo === "QR / Link de pago" ? "Generar link de pago" : "✓ Confirmar entrega"}</button>}
           </div>
         </div>
       )}
@@ -1092,7 +1113,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               </div>
 
             </div>
-            <button onClick={crearVentaExpress} disabled={!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&(!vForm.cliente.trim()||!vForm.rfc.trim()||!vForm.correo.trim()||!vForm.regimen||!vForm.usoCfdi||vForm.cp.trim().length!==5||vForm.rfc.trim().length<12||vForm.rfc.trim().length>13))} className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40">{vForm.factura ? "Crear venta con factura" : "Crear venta"}</button>
+            <button onClick={crearVentaExpress} disabled={creandoVenta||!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&(!vForm.cliente.trim()||!vForm.rfc.trim()||!vForm.correo.trim()||!vForm.regimen||!vForm.usoCfdi||vForm.cp.trim().length!==5||vForm.rfc.trim().length<12||vForm.rfc.trim().length>13))} className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40">{creandoVenta ? "Creando venta…" : vForm.factura ? "Crear venta con factura" : "Crear venta"}</button>
           </div>
         </div>
       )}
@@ -1120,7 +1141,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 </label>
               )}
             </div>
-            <button onClick={registrarMerma} disabled={!mForm.cant||n(mForm.cant)<=0||!fotoMerma} className="w-full py-3.5 bg-amber-600 text-white font-bold rounded-xl text-sm disabled:opacity-40">Registrar merma</button>
+            <button onClick={registrarMerma} disabled={registrandoMerma||!mForm.cant||n(mForm.cant)<=0||!fotoMerma} className="w-full py-3.5 bg-amber-600 text-white font-bold rounded-xl text-sm disabled:opacity-40">{registrandoMerma ? "Registrando…" : "Registrar merma"}</button>
           </div>
         </div>
       )}
