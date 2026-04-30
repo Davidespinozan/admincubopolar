@@ -1,7 +1,8 @@
-import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, s, n, eqId, useToast, Icons } from './viewsCommon';
+import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, s, n, eqId, useToast, useConfirm, Icons } from './viewsCommon';
 
 export function PreciosView({ data, actions }) {
   const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(false);
   const [errors, setErrors] = useState({});
   const [form, setForm] = useState({clienteId:"",sku:"",precio:""});
@@ -40,6 +41,7 @@ export function PreciosView({ data, actions }) {
   };
 
   return (<div>
+    {ConfirmEl}
     <PageHeader title="Precios por Cliente" subtitle="Precio público + overrides" />
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
       <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
@@ -52,7 +54,7 @@ export function PreciosView({ data, actions }) {
         <h3 className="text-sm font-bold text-slate-700 mb-4">Precios especiales</h3>
         {(data.preciosEsp || []).length === 0 && <EmptyState message="Sin precios especiales" />}
         {data.preciosEsp.map(p=>{const base=precioBaseMap[p.sku]||0;const desc=base>0?Math.round(((base-n(p.precio))/base)*100):0;
-          return<div key={p.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2"><div className="flex items-center justify-between gap-2"><div className="min-w-0"><span className="text-sm font-semibold text-slate-700 truncate block">{s(p.clienteNom)}</span><span className="text-xs text-slate-400">{s(p.sku)}</span></div><div className="flex items-center gap-2 flex-shrink-0"><span className="text-sm font-bold text-blue-600">${n(p.precio).toFixed(2)}</span>{desc>0&&<span className="text-xs text-emerald-600">-{desc}%</span>}<button onClick={()=>actions.deletePrecioEsp(p.id)} className="text-xs text-red-400 hover:text-red-600 p-1 min-w-[28px] min-h-[28px] flex items-center justify-center">✕</button></div></div></div>})}
+          return<div key={p.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2"><div className="flex items-center justify-between gap-2"><div className="min-w-0"><span className="text-sm font-semibold text-slate-700 truncate block">{s(p.clienteNom)}</span><span className="text-xs text-slate-400">{s(p.sku)}</span></div><div className="flex items-center gap-2 flex-shrink-0"><span className="text-sm font-bold text-blue-600">${n(p.precio).toFixed(2)}</span>{desc>0&&<span className="text-xs text-emerald-600">-{desc}%</span>}<button onClick={()=>askConfirm('Eliminar precio especial', `¿Seguro que quieres eliminar el precio especial de ${s(p.clienteNom || 'este cliente')} para ${s(p.sku)}?`, async () => { await actions.deletePrecioEsp(p.id); }, true)} className="text-xs text-red-400 hover:text-red-600 p-1 min-w-[28px] min-h-[28px] flex items-center justify-center">✕</button></div></div></div>})}
         <button onClick={()=>{setModal(true);setErrors({})}} className="mt-3 w-full py-2.5 border border-dashed border-slate-300 rounded-xl text-xs font-semibold text-slate-400 hover:border-blue-400 hover:text-blue-500 flex items-center justify-center gap-1 min-h-[44px]"><Icons.Plus /> Agregar</button>
       </div>
     </div>

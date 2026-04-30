@@ -1,7 +1,8 @@
-import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtDate, useToast, reporteProduccion } from './viewsCommon';
+import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtDate, useToast, useConfirm, reporteProduccion } from './viewsCommon';
 
 export function ProduccionView({ data, actions }) {
   const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [tab, setTab] = useState('produccion'); // 'produccion' | 'transformaciones'
 
   // ── Producción normal ──
@@ -9,11 +10,10 @@ export function ProduccionView({ data, actions }) {
   const [errors, setErrors] = useState({});
   const [form, setForm] = useState({turno:"Turno 1",maquina:"Máquina 30",sku:"",cantidad:""});
 
-  // ── Editar / Eliminar ──
+  // ── Editar ──
   const [editModal, setEditModal] = useState(false);
   const [editForm, setEditForm] = useState({id:null,turno:"",maquina:"",sku:"",cantidad:"",estatus:""});
   const [editErrors, setEditErrors] = useState({});
-  const [deleteConfirm, setDeleteConfirm] = useState(null); // id to delete
 
   const openEdit = (r) => {
     setEditForm({id:r.id, turno:r.turno||"Turno 1", maquina:r.maquina||"Máquina 30", sku:s(r.sku), cantidad:String(r.cantidad||""), estatus:r.estatus||"En proceso"});
@@ -32,14 +32,6 @@ export function ProduccionView({ data, actions }) {
     if (err) { toast?.error("No se pudo actualizar la orden"); return; }
     toast?.success("Orden actualizada");
     setEditModal(false);
-  };
-
-  const confirmDelete = async () => {
-    if (!deleteConfirm) return;
-    const err = await actions.deleteProduccion(deleteConfirm);
-    if (err) { toast?.error("No se pudo eliminar la orden"); return; }
-    toast?.success("Orden eliminada");
-    setDeleteConfirm(null);
   };
 
   // Deriva el empaque desde el catálogo (no hardcodear SKUs)
@@ -351,7 +343,7 @@ export function ProduccionView({ data, actions }) {
                                     <button onClick={() => openEdit(r)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                                       <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                     </button>
-                                    <button onClick={() => setDeleteConfirm(r.id)} title="Eliminar" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                    <button onClick={() => askConfirm('Eliminar registro de producción', `¿Eliminar este registro de producción de ${fmtDate(r.fecha)}? Esto reverterá el inventario asociado.`, async () => { const err = await actions.deleteProduccion(r.id); if (err) { toast?.error("No se pudo eliminar la orden"); return; } toast?.success("Orden eliminada"); }, true)} title="Eliminar" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
                                       <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                     </button>
                                   </div>
@@ -598,13 +590,6 @@ export function ProduccionView({ data, actions }) {
       <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setEditModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={saveEdit}>Guardar cambios</FormBtn></div>
     </Modal>
 
-    {/* ═══ MODAL: Confirmar eliminación ═══ */}
-    <Modal open={!!deleteConfirm} onClose={()=>setDeleteConfirm(null)} title="Eliminar producción">
-      <p className="text-sm text-slate-600">¿Estás seguro de que deseas eliminar esta orden? Esta acción no se puede deshacer.</p>
-      <div className="flex justify-end gap-2 mt-5">
-        <FormBtn onClick={()=>setDeleteConfirm(null)}>Cancelar</FormBtn>
-        <FormBtn primary onClick={confirmDelete} className="bg-red-600 hover:bg-red-700">Eliminar</FormBtn>
-      </div>
-    </Modal>
+    {ConfirmEl}
   </div>);
 }
