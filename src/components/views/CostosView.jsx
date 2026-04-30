@@ -19,6 +19,9 @@ export function CostosView({ data, actions }) {
   const [aplicarForm, setAplicarForm] = useState({ fecha: today(), referencia: '' });
   const emptyGasto = { concepto: '', categoria: 'Gasolina', monto: '', fecha: today(), referencia: '' };
   const [gastoForm, setGastoForm] = useState(emptyGasto);
+  const [saving, setSaving] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
+  const [savingGasto, setSavingGasto] = useState(false);
 
   const costosFijos = useMemo(() => (data.costosFijos || []), [data.costosFijos]);
   const costosHistorial = useMemo(() => (data.costosHistorial || []).sort((a, b) => new Date(b.fecha || b.createdAt) - new Date(a.fecha || a.createdAt)), [data.costosHistorial]);
@@ -57,6 +60,7 @@ export function CostosView({ data, actions }) {
   };
 
   const save = async () => {
+    if (saving) return;
     const e = {};
     if (!form.nombre.trim()) e.nombre = 'Requerido';
     if (!form.monto || Number(form.monto) <= 0) e.monto = 'Monto inválido';
@@ -72,14 +76,19 @@ export function CostosView({ data, actions }) {
       activo: form.activo
     };
 
-    if (modal === 'new') {
-      await actions.addCostoFijo(payload);
-      toast?.success('Costo fijo creado');
-    } else {
-      await actions.updateCostoFijo(modal.id, payload);
-      toast?.success('Costo actualizado');
+    setSaving(true);
+    try {
+      if (modal === 'new') {
+        await actions.addCostoFijo(payload);
+        toast?.success('Costo fijo creado');
+      } else {
+        await actions.updateCostoFijo(modal.id, payload);
+        toast?.success('Costo actualizado');
+      }
+      setModal(null);
+    } finally {
+      setSaving(false);
     }
-    setModal(null);
   };
 
   const openAplicar = (c) => {
@@ -88,29 +97,41 @@ export function CostosView({ data, actions }) {
   };
 
   const aplicar = async () => {
+    if (aplicando) return;
     if (!aplicarModal) return;
-    await actions.aplicarCostoFijo(aplicarModal.id, aplicarForm.fecha, aplicarForm.referencia);
-    toast?.success('Costo aplicado y registrado como egreso');
-    setAplicarModal(null);
+    setAplicando(true);
+    try {
+      await actions.aplicarCostoFijo(aplicarModal.id, aplicarForm.fecha, aplicarForm.referencia);
+      toast?.success('Costo aplicado y registrado como egreso');
+      setAplicarModal(null);
+    } finally {
+      setAplicando(false);
+    }
   };
 
   // Registrar gasto directo/variable
   const openGasto = () => { setGastoForm(emptyGasto); setErrors({}); setGastoModal(true); };
   const guardarGasto = async () => {
+    if (savingGasto) return;
     const e = {};
     if (!gastoForm.concepto.trim()) e.concepto = 'Requerido';
     if (!gastoForm.monto || Number(gastoForm.monto) <= 0) e.monto = 'Monto inválido';
     if (Object.keys(e).length) { setErrors(e); return; }
 
-    await actions.registrarCostoVariable(
-      gastoForm.categoria,
-      gastoForm.concepto.trim(),
-      Number(gastoForm.monto),
-      gastoForm.referencia.trim() || null,
-      gastoForm.fecha
-    );
-    toast?.success('Gasto registrado y egreso generado');
-    setGastoModal(false);
+    setSavingGasto(true);
+    try {
+      await actions.registrarCostoVariable(
+        gastoForm.categoria,
+        gastoForm.concepto.trim(),
+        Number(gastoForm.monto),
+        gastoForm.referencia.trim() || null,
+        gastoForm.fecha
+      );
+      toast?.success('Gasto registrado y egreso generado');
+      setGastoModal(false);
+    } finally {
+      setSavingGasto(false);
+    }
   };
 
   // Calculate totals by category
@@ -263,7 +284,7 @@ export function CostosView({ data, actions }) {
           })} className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg mr-auto">Eliminar</button>
         )}
         <FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn>
-        <FormBtn primary onClick={save}>Guardar</FormBtn>
+        <FormBtn primary onClick={save} loading={saving}>Guardar</FormBtn>
       </div>
     </Modal>
 
@@ -281,7 +302,7 @@ export function CostosView({ data, actions }) {
           <p className="text-xs text-slate-400">Al aplicar, se registrará automáticamente como egreso en movimientos contables.</p>
           <div className="flex justify-end gap-2">
             <FormBtn onClick={() => setAplicarModal(null)}>Cancelar</FormBtn>
-            <FormBtn primary onClick={aplicar}>Aplicar y registrar egreso</FormBtn>
+            <FormBtn primary onClick={aplicar} loading={aplicando}>Aplicar y registrar egreso</FormBtn>
           </div>
         </div>
       )}
@@ -299,7 +320,7 @@ export function CostosView({ data, actions }) {
       </div>
       <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-slate-200">
         <FormBtn onClick={() => setGastoModal(false)}>Cancelar</FormBtn>
-        <FormBtn primary onClick={guardarGasto}>Registrar gasto</FormBtn>
+        <FormBtn primary onClick={guardarGasto} loading={savingGasto}>Registrar gasto</FormBtn>
       </div>
     </Modal>
   </div>);

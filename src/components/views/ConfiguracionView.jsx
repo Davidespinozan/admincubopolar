@@ -7,11 +7,13 @@ export function ConfiguracionView({ data, actions }) {
   const empty = { nombre: "", email: "", rol: "Ventas", password: "" };
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
 
   const openNew = () => { setForm(empty); setErrors({}); setModal("new"); };
   const openEdit = (u) => { setForm({ nombre: s(u.nombre), email: s(u.email), rol: s(u.rol), password: "" }); setErrors({}); setModal(u); };
 
   const save = async () => {
+    if (saving) return;
     const e = {};
     if (!form.nombre.trim()) e.nombre = "Requerido";
     if (!form.email.trim()) e.email = "Requerido";
@@ -19,54 +21,59 @@ export function ConfiguracionView({ data, actions }) {
     if (modal === "new" && form.password && form.password.length < 6) e.password = "Mínimo 6 caracteres";
     if (Object.keys(e).length) { setErrors(e); return; }
 
-    if (modal === "new") {
-      // Create user via secure Edge Function (validates rol server-side)
-      const { data: fnData, error: fnError } = await supabase.functions.invoke('hyper-endpoint', {
-        body: {
-          email: form.email.trim().toLowerCase(),
-          password: form.password,
-          nombre: form.nombre.trim(),
-          rol: form.rol,
+    setSaving(true);
+    try {
+      if (modal === "new") {
+        // Create user via secure Edge Function (validates rol server-side)
+        const { data: fnData, error: fnError } = await supabase.functions.invoke('hyper-endpoint', {
+          body: {
+            email: form.email.trim().toLowerCase(),
+            password: form.password,
+            nombre: form.nombre.trim(),
+            rol: form.rol,
+          }
+        });
+
+        if (fnError) {
+          setErrors({ email: fnError.message || 'Error al crear usuario' });
+          return;
         }
-      });
 
-      if (fnError) {
-        setErrors({ email: fnError.message || 'Error al crear usuario' });
-        return;
+        if (fnData?.error) {
+          setErrors({ email: fnData.error });
+          return;
+        }
+
+        // Create profile in usuarios table with auth_id from Edge Function
+        const authId = fnData?.user?.id;
+        if (!authId) {
+          setErrors({ email: 'No se obtuvo ID del usuario creado' });
+          return;
+        }
+
+        const insertError = await actions.addUsuario({
+          nombre: form.nombre.trim(),
+          email: form.email.trim().toLowerCase(),
+          rol: form.rol,
+          auth_id: authId,
+          estatus: "Activo"
+        });
+
+        if (insertError) {
+          setErrors({ email: `Error al guardar en base de datos: ${insertError.message}` });
+          return;
+        }
+
+        toast?.success("Usuario creado — ya puede iniciar sesión");
+      } else {
+        // Edit — only update profile (nombre, rol), not auth
+        await actions.updateUsuario(modal.id, { nombre: form.nombre, rol: form.rol });
+        toast?.success("Usuario actualizado");
       }
-
-      if (fnData?.error) {
-        setErrors({ email: fnData.error });
-        return;
-      }
-
-      // Create profile in usuarios table with auth_id from Edge Function
-      const authId = fnData?.user?.id;
-      if (!authId) {
-        setErrors({ email: 'No se obtuvo ID del usuario creado' });
-        return;
-      }
-
-      const insertError = await actions.addUsuario({
-        nombre: form.nombre.trim(),
-        email: form.email.trim().toLowerCase(),
-        rol: form.rol,
-        auth_id: authId,
-        estatus: "Activo"
-      });
-
-      if (insertError) {
-        setErrors({ email: `Error al guardar en base de datos: ${insertError.message}` });
-        return;
-      }
-
-      toast?.success("Usuario creado — ya puede iniciar sesión");
-    } else {
-      // Edit — only update profile (nombre, rol), not auth
-      await actions.updateUsuario(modal.id, { nombre: form.nombre, rol: form.rol });
-      toast?.success("Usuario actualizado");
+      setModal(null);
+    } finally {
+      setSaving(false);
     }
-    setModal(null);
   };
 
   const usuarios = data.usuarios || [];
@@ -133,7 +140,7 @@ export function ConfiguracionView({ data, actions }) {
       </div>
       <div className="flex justify-between mt-5">
         {modal !== "new" && modal?.id && <button onClick={()=> askConfirm('Eliminar usuario','¿Eliminar ' + s(modal.nombre) + '?', async()=>{await actions.deleteUsuario(modal.id); toast?.success('Usuario eliminado'); setModal(null);}, true)} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
-        <div className="flex gap-2 ml-auto"><FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save}>{modal === "new" ? "Crear usuario" : "Guardar"}</FormBtn></div>
+        <div className="flex gap-2 ml-auto"><FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save} loading={saving}>{modal === "new" ? "Crear usuario" : "Guardar"}</FormBtn></div>
       </div>
     </Modal>
   </div>);

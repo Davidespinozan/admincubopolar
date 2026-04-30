@@ -8,6 +8,7 @@ export function ContabilidadView({ data, actions }) {
   const empty = { tipo: "Egreso", categoria: "Proveedores", concepto: "", monto: "", fecha: today() };
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
+  const [saving, setSaving] = useState(false);
 
   const cont = data.contabilidad || { ingresos: [], egresos: [] };
   const totalIngresos = cont.ingresos.reduce((s, i) => s + n(i.monto), 0);
@@ -20,15 +21,21 @@ export function ContabilidadView({ data, actions }) {
   const openNew = (tipo) => { setForm({ ...empty, tipo }); setErrors({}); setModal("new"); };
 
   const save = async () => {
+    if (saving) return;
     const e = {};
     if (!form.concepto.trim()) e.concepto = "Requerido";
     if (!form.monto || parseFloat(form.monto) <= 0) e.monto = "Mayor a 0";
     if (Object.keys(e).length) { setErrors(e); return; }
+    setSaving(true);
     try {
       await actions.addMovContable({ ...form, monto: parseFloat(form.monto) });
       toast?.success(form.tipo === "Ingreso" ? "Ingreso registrado" : "Gasto registrado");
       setModal(null);
-    } catch(ex) { toast?.error('Error: ' + (ex?.message || 'No se pudo guardar')); }
+    } catch(ex) {
+      toast?.error('Error: ' + (ex?.message || 'No se pudo guardar'));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const egresosPorCat = {};
@@ -113,7 +120,7 @@ export function ContabilidadView({ data, actions }) {
         <FormInput label="Concepto *" value={form.concepto} onChange={e => setForm({ ...form, concepto: e.target.value })} placeholder="Ej: Pago de diesel ruta norte" error={errors.concepto} />
         <FormInput label="Monto *" type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} placeholder="0.00" error={errors.monto} />
       </div>
-      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save}>{form.tipo === "Ingreso" ? "Registrar ingreso" : "Registrar gasto"}</FormBtn></div>
+      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save} loading={saving}>{form.tipo === "Ingreso" ? "Registrar ingreso" : "Registrar gasto"}</FormBtn></div>
     </Modal>
   </div>);
 }

@@ -6,6 +6,7 @@ export function PreciosView({ data, actions }) {
   const [modal, setModal] = useState(false);
   const [errors, setErrors] = useState({});
   const [form, setForm] = useState({clienteId:"",sku:"",precio:""});
+  const [saving, setSaving] = useState(false);
 
   // FIX P10: data.productos.filter(p=>p.tipo==="Producto Terminado") was called 3 times
   // in render: once for empty check, once for list, once for modal select options.
@@ -25,19 +26,25 @@ export function PreciosView({ data, actions }) {
   }, [data.productos]);
 
   const save = async () => {
+    if (saving) return;
     const e = {};
     if (!form.clienteId) e.clienteId = "Requerido";
     if (!form.sku) e.sku = "Requerido";
     if (!form.precio || n(form.precio) <= 0) e.precio = "Precio debe ser mayor a 0";
     if (Object.keys(e).length) { setErrors(e); return; }
     const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
-    const err = await actions.addPrecioEsp({clienteId:form.clienteId,clienteNom:s(cli?.nombre),sku:form.sku,precio:form.precio});
-    if (err) {
-      toast?.error("No se pudo crear el precio especial");
-      return;
+    setSaving(true);
+    try {
+      const err = await actions.addPrecioEsp({clienteId:form.clienteId,clienteNom:s(cli?.nombre),sku:form.sku,precio:form.precio});
+      if (err) {
+        toast?.error("No se pudo crear el precio especial");
+        return;
+      }
+      toast?.success("Precio especial creado");
+      setModal(false); setForm({clienteId:"",sku:"",precio:""}); setErrors({});
+    } finally {
+      setSaving(false);
     }
-    toast?.success("Precio especial creado");
-    setModal(false); setForm({clienteId:"",sku:"",precio:""}); setErrors({});
   };
 
   return (<div>
@@ -64,7 +71,7 @@ export function PreciosView({ data, actions }) {
         <FormSelect label="Producto *" options={prodOptions} value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})} error={errors.sku} />
         <FormInput label="Precio especial ($) *" type="number" value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})} placeholder="Ej: 78" error={errors.precio} />
       </div>
-      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Guardar</FormBtn></div>
+      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={save} loading={saving}>Guardar</FormBtn></div>
     </Modal>
   </div>);
 }

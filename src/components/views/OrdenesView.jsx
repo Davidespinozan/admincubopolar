@@ -10,6 +10,7 @@ export function OrdenesView({ data, actions, user }) {
   const [form, setForm] = useState({clienteId:"",fecha:"",tipoCobro:"Contado",folioNota:""});
   const [lines, setLines] = useState([]);
   const [step, setStep] = useState(1);
+  const [saving, setSaving] = useState(false);
 
   const dSearch = useDebounce(search);
 
@@ -96,6 +97,7 @@ export function OrdenesView({ data, actions, user }) {
   };
 
   const save = async () => {
+    if (saving) return;
     const e = {};
     if (!form.clienteId) e.clienteId = "Requerido";
     if (lines.length===0||!lines.some(l=>l.sku&&l.qty>0)) e.productos = "Agrega al menos un producto";
@@ -111,13 +113,18 @@ export function OrdenesView({ data, actions, user }) {
     }
     if (Object.keys(e).length) { setErrors(e); return; }
     const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
-    const err = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc,usuarioId:user?.id||null,tipoCobro:form.tipoCobro||"Contado",folioNota:form.folioNota||null});
-    if (err) {
-      toast?.error(err.message || "No se pudo crear la orden");
-      return;
+    setSaving(true);
+    try {
+      const err = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc,usuarioId:user?.id||null,tipoCobro:form.tipoCobro||"Contado",folioNota:form.folioNota||null});
+      if (err) {
+        toast?.error(err.message || "No se pudo crear la orden");
+        return;
+      }
+      toast?.success("Orden creada");
+      setModal(false); setForm({clienteId:"",fecha:"",tipoCobro:"Contado",folioNota:""}); setLines([]); setErrors({});
+    } finally {
+      setSaving(false);
     }
-    toast?.success("Orden creada");
-    setModal(false); setForm({clienteId:"",fecha:"",tipoCobro:"Contado",folioNota:""}); setLines([]); setErrors({});
   };
   const openModal = () => { setStep(1); setModal(true); setErrors({}); setForm({clienteId:"",fecha:"",tipoCobro:"Contado",folioNota:""}); setLines([{sku:"",qty:1,precio:0}]); };
 
@@ -378,7 +385,7 @@ export function OrdenesView({ data, actions, user }) {
         <div className="flex gap-2">
           {step > 1 && <FormBtn onClick={prevStep}>← Atrás</FormBtn>}
           {step < 3 && <FormBtn primary onClick={nextStep}>Siguiente →</FormBtn>}
-          {step === 3 && <FormBtn primary onClick={save}>Crear orden</FormBtn>}
+          {step === 3 && <FormBtn primary onClick={save} loading={saving}>Crear orden</FormBtn>}
         </div>
       </div>
     </Modal>

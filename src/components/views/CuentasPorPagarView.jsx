@@ -15,6 +15,8 @@ export function CuentasPorPagarView({ data, actions }) {
   const empty = { proveedor: '', concepto: '', monto: '', categoria: 'Proveedores', fechaVencimiento: '', referencia: '', notas: '' };
   const [form, setForm] = useState(empty);
   const [pagoForm, setPagoForm] = useState({ monto: '', metodo: 'Transferencia', referencia: '' });
+  const [saving, setSaving] = useState(false);
+  const [pagando, setPagando] = useState(false);
 
   const cxpPendientes = useMemo(() =>
     (data.cuentasPorPagar || []).filter(c => c.estatus !== 'Pagada'),
@@ -59,6 +61,7 @@ export function CuentasPorPagarView({ data, actions }) {
   };
 
   const save = async () => {
+    if (saving) return;
     const e = {};
     if (!form.proveedor.trim()) e.proveedor = 'Requerido';
     if (!form.concepto.trim()) e.concepto = 'Requerido';
@@ -75,16 +78,21 @@ export function CuentasPorPagarView({ data, actions }) {
       notas: form.notas.trim() || null,
     };
 
-    if (modal === 'new') {
-      const err = await actions.addCuentaPorPagar(payload);
-      if (err) return; // error toast ya se mostró en store
-      toast?.success('Cuenta por pagar creada');
-    } else {
-      const err = await actions.updateCuentaPorPagar(modal.id, payload);
-      if (err) return;
-      toast?.success('Cuenta actualizada');
+    setSaving(true);
+    try {
+      if (modal === 'new') {
+        const err = await actions.addCuentaPorPagar(payload);
+        if (err) return; // error toast ya se mostró en store
+        toast?.success('Cuenta por pagar creada');
+      } else {
+        const err = await actions.updateCuentaPorPagar(modal.id, payload);
+        if (err) return;
+        toast?.success('Cuenta actualizada');
+      }
+      setModal(null);
+    } finally {
+      setSaving(false);
     }
-    setModal(null);
   };
 
   const openPago = (cxp) => {
@@ -94,15 +102,21 @@ export function CuentasPorPagarView({ data, actions }) {
   };
 
   const pagar = async () => {
+    if (pagando) return;
     const e = {};
     if (!pagoForm.monto || parseFloat(pagoForm.monto) <= 0) e.monto = 'Monto inválido';
     if (parseFloat(pagoForm.monto) > n(pagoModal.saldoPendiente)) e.monto = 'Excede el saldo pendiente';
     if (Object.keys(e).length) { setErrors(e); return; }
+    setPagando(true);
     try {
       await actions.pagarCuentaPorPagar(pagoModal.id, parseFloat(pagoForm.monto), pagoForm.metodo, pagoForm.referencia);
       toast?.success('Pago registrado');
       setPagoModal(null);
-    } catch (ex) { toast?.error('Error: ' + (ex?.message || '')); }
+    } catch (ex) {
+      toast?.error('Error: ' + (ex?.message || ''));
+    } finally {
+      setPagando(false);
+    }
   };
 
   const paginatedPendientes = useMemo(() => cxpPendientes.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [cxpPendientes, page]);
@@ -262,7 +276,7 @@ export function CuentasPorPagarView({ data, actions }) {
           })} className="px-4 py-2 text-red-600 text-sm font-semibold hover:bg-red-50 rounded-lg mr-auto">Eliminar</button>
         )}
         <FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn>
-        <FormBtn primary onClick={save}>{modal === 'new' ? 'Crear cuenta' : 'Guardar cambios'}</FormBtn>
+        <FormBtn primary onClick={save} loading={saving}>{modal === 'new' ? 'Crear cuenta' : 'Guardar cambios'}</FormBtn>
       </div>
     </Modal>
 
@@ -281,7 +295,7 @@ export function CuentasPorPagarView({ data, actions }) {
           <p className="text-xs text-slate-400">Este pago se registrará automáticamente como egreso en contabilidad.</p>
           <div className="flex justify-end gap-2">
             <FormBtn onClick={() => setPagoModal(null)}>Cancelar</FormBtn>
-            <FormBtn primary onClick={pagar}>Registrar pago</FormBtn>
+            <FormBtn primary onClick={pagar} loading={pagando}>Registrar pago</FormBtn>
           </div>
         </div>
       )}

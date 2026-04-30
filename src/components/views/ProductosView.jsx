@@ -10,6 +10,7 @@ export function ProductosView({ data, actions }) {
   const [errors, setErrors] = useState({});
   const empty = {sku:"",nombre:"",tipo:"Producto Terminado",stock:0,ubicacion:"CF-1",precio:0,costoUnitario:0,proveedor:"",empaqueSku:""};
   const [form, setForm] = useState(empty);
+  const [saving, setSaving] = useState(false);
 
   const dSearch = useDebounce(search);
 
@@ -17,6 +18,7 @@ export function ProductosView({ data, actions }) {
   const openEdit = (p) => { setForm({sku:s(p.sku),nombre:s(p.nombre),tipo:s(p.tipo),stock:n(p.stock),ubicacion:s(p.ubicacion),precio:n(p.precio),costoUnitario:n(p.costo_unitario||p.costoUnitario),proveedor:s(p.proveedor),empaqueSku:s(p.empaque_sku||p.empaqueSku)}); setErrors({}); setModal(p); };
 
   const save = async () => {
+    if (saving) return;
     const e = {};
     if (!form.sku.trim()) e.sku = "Requerido";
     if (!form.nombre.trim()) e.nombre = "Requerido";
@@ -32,15 +34,20 @@ export function ProductosView({ data, actions }) {
       proveedor: form.proveedor || null,
       empaque_sku: form.tipo === "Producto Terminado" ? form.empaqueSku || null : null,
     };
-    const err = modal === "new"
-      ? await actions.addProducto(payload)
-      : await actions.updateProducto(modal.id, payload);
-    if (err) {
-      toast?.error(modal === "new" ? "No se pudo crear el producto" : "No se pudo actualizar el producto");
-      return;
+    setSaving(true);
+    try {
+      const err = modal === "new"
+        ? await actions.addProducto(payload)
+        : await actions.updateProducto(modal.id, payload);
+      if (err) {
+        toast?.error(modal === "new" ? "No se pudo crear el producto" : "No se pudo actualizar el producto");
+        return;
+      }
+      toast?.success(modal === "new" ? "Producto creado" : "Producto actualizado");
+      setModal(null);
+    } finally {
+      setSaving(false);
     }
-    toast?.success(modal === "new" ? "Producto creado" : "Producto actualizado");
-    setModal(null);
   };
 
   // Empaques disponibles para vincular
@@ -129,7 +136,7 @@ export function ProductosView({ data, actions }) {
           Eliminar producto
         </button>
       )}
-      <div className="flex justify-end gap-2 mt-3"><FormBtn onClick={()=>setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Guardar</FormBtn></div>
+      <div className="flex justify-end gap-2 mt-3"><FormBtn onClick={()=>setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save} loading={saving}>Guardar</FormBtn></div>
     </Modal>
   </div>);
 }

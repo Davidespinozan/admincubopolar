@@ -4,6 +4,7 @@ import AddressAutocomplete from '../ui/AddressAutocomplete';
 export function ClientesView({ data, actions }) {
   const toast = useToast();
   const [askConfirm, ConfirmEl] = useConfirm();
+  const [saving, setSaving] = useState(false);
   const [modal, setModal] = useState(null);
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
@@ -46,6 +47,7 @@ export function ClientesView({ data, actions }) {
   };
 
     const save = async () => {
+    if (saving) return;
     const e = {};
     if (!form.nombre.trim()) e.nombre = "Requerido";
     if (!form.rfc.trim()) e.rfc = "Requerido";
@@ -60,15 +62,20 @@ export function ClientesView({ data, actions }) {
       toast?.error('Revisa los campos marcados en rojo');
       return;
     }
-    const err = modal === "new"
-      ? await actions.addCliente(form)
-      : await actions.updateCliente(modal.id, form);
-    if (err && (err.message || err.code)) {
-      toast?.error(modal === "new" ? "No se pudo crear el cliente" : "No se pudo actualizar el cliente");
-      return;
+    setSaving(true);
+    try {
+      const err = modal === "new"
+        ? await actions.addCliente(form)
+        : await actions.updateCliente(modal.id, form);
+      if (err && (err.message || err.code)) {
+        toast?.error(modal === "new" ? "No se pudo crear el cliente" : "No se pudo actualizar el cliente");
+        return;
+      }
+      toast?.success(modal === "new" ? "Cliente creado" : "Cliente actualizado");
+      setModal(null);
+    } finally {
+      setSaving(false);
     }
-    toast?.success(modal === "new" ? "Cliente creado" : "Cliente actualizado");
-    setModal(null);
   };
 
   const filtered = useMemo(() => {
@@ -245,7 +252,7 @@ export function ClientesView({ data, actions }) {
         <div className="flex gap-2">
           {step > 1 && <FormBtn onClick={prevStep}>← Atrás</FormBtn>}
           {step < 3 && <FormBtn primary onClick={nextStep}>Siguiente →</FormBtn>}
-          {step === 3 && <FormBtn primary onClick={save}>{modal === "new" ? "Crear cliente" : "Guardar cambios"}</FormBtn>}
+          {step === 3 && <FormBtn primary onClick={save} loading={saving}>{modal === "new" ? "Crear cliente" : "Guardar cambios"}</FormBtn>}
           {step === 1 && modal === "new" && (
             <FormBtn primary onClick={async () => {
               const e = validateStep(1);

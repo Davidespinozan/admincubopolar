@@ -15,6 +15,9 @@ export function InventarioView({ data, actions }) {
   const [ajusteErrors, setAjusteErrors] = useState({});
   const [editMinId, setEditMinId] = useState(null);
   const [editMinVal, setEditMinVal] = useState('');
+  const [traspasando, setTraspasando] = useState(false);
+  const [savingCf, setSavingCf] = useState(false);
+  const [ajustando, setAjustando] = useState(false);
 
   const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
 
@@ -43,18 +46,24 @@ export function InventarioView({ data, actions }) {
   const cfOptions = useMemo(() => data.cuartosFrios.map(cf => ({value: s(cf.id), label: s(cf.nombre)})), [data.cuartosFrios]);
   const skuProd = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado").map(p => s(p.sku)), [data.productos]);
 
-  const hacerTraspaso = () => {
+  const hacerTraspaso = async () => {
+    if (traspasando) return;
     const e = {};
     if (!traspasoForm.cantidad || n(traspasoForm.cantidad) <= 0) e.cantidad = "Requerido";
     if (traspasoForm.origen === traspasoForm.destino) e.destino = "Debe ser diferente al origen";
     const cfOrigen = data.cuartosFrios.find(cf => cf.id === traspasoForm.origen);
     if (cfOrigen && cfOrigen.stock && (cfOrigen.stock[traspasoForm.sku] || 0) < n(traspasoForm.cantidad)) e.cantidad = "Stock insuficiente en origen";
     if (Object.keys(e).length) { setTraspasoErrors(e); return; }
-    if (actions.traspasoEntreUbicaciones) {
-      actions.traspasoEntreUbicaciones(traspasoForm);
+    setTraspasando(true);
+    try {
+      if (actions.traspasoEntreUbicaciones) {
+        await actions.traspasoEntreUbicaciones(traspasoForm);
+      }
+      toast?.success(traspasoForm.cantidad + " " + traspasoForm.sku + " de " + traspasoForm.origen + " a " + traspasoForm.destino);
+      setTraspasoModal(false); setTraspasoForm({origen:"",destino:"",sku:"",cantidad:""}); setTraspasoErrors({});
+    } finally {
+      setTraspasando(false);
     }
-    toast?.success(traspasoForm.cantidad + " " + traspasoForm.sku + " de " + traspasoForm.origen + " a " + traspasoForm.destino);
-    setTraspasoModal(false); setTraspasoForm({origen:"",destino:"",sku:"",cantidad:""}); setTraspasoErrors({});
   };
 
   const totalStockByCF = useMemo(() => {
@@ -72,6 +81,7 @@ export function InventarioView({ data, actions }) {
   };
 
   const confirmarAjuste = async () => {
+    if (ajustando) return;
     if (!ajusteModal) return;
     const e = {};
     const nueva = n(ajusteForm.existencia, -1);
@@ -79,19 +89,24 @@ export function InventarioView({ data, actions }) {
     if (!s(ajusteForm.motivo).trim()) e.motivo = "Motivo requerido";
     if (Object.keys(e).length) { setAjusteErrors(e); return; }
 
-    const err = await actions.ajustarExistenciaManual?.({
-      sku: s(ajusteModal.sku),
-      nuevaExistencia: nueva,
-      motivo: s(ajusteForm.motivo).trim(),
-    });
+    setAjustando(true);
+    try {
+      const err = await actions.ajustarExistenciaManual?.({
+        sku: s(ajusteModal.sku),
+        nuevaExistencia: nueva,
+        motivo: s(ajusteForm.motivo).trim(),
+      });
 
-    if (err) {
-      toast?.error("No se pudo ajustar la existencia");
-      return;
+      if (err) {
+        toast?.error("No se pudo ajustar la existencia");
+        return;
+      }
+
+      toast?.success("Existencia ajustada");
+      setAjusteModal(null);
+    } finally {
+      setAjustando(false);
     }
-
-    toast?.success("Existencia ajustada");
-    setAjusteModal(null);
   };
 
   return (<div>
@@ -202,7 +217,7 @@ export function InventarioView({ data, actions }) {
         <FormSelect label="Producto" options={skuProd} value={traspasoForm.sku} onChange={e=>setTraspasoForm({...traspasoForm,sku:e.target.value})} />
         <FormInput label="Cantidad *" type="number" value={traspasoForm.cantidad} onChange={e=>setTraspasoForm({...traspasoForm,cantidad:e.target.value})} placeholder="Ej: 100" error={traspasoErrors.cantidad} />
       </div>
-      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setTraspasoModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={hacerTraspaso}>Traspasar</FormBtn></div>
+      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setTraspasoModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={hacerTraspaso} loading={traspasando}>Traspasar</FormBtn></div>
     </Modal>
 
     {/* Modal: Crear / Editar Cuarto Frío */}
@@ -216,15 +231,20 @@ export function InventarioView({ data, actions }) {
         {cfModal && cfModal !== "new" && cfModal.id && <button onClick={()=> askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cfModal.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cfModal.id); toast?.success('Cuarto frío eliminado'); setCfModal(null);}, true)} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
         <div className="flex gap-2 ml-auto">
           <FormBtn onClick={()=>setCfModal(null)}>Cancelar</FormBtn>
-          <FormBtn primary onClick={async ()=>{
-            const e = {};
+          <FormBtn primary loading={savingCf} onClick={async ()=>{
+            if (savingCf) return;
             if (!cfForm.nombre || !cfForm.nombre.trim()) { toast?.error('Nombre requerido'); return; }
             const payload = { nombre: cfForm.nombre, temp: Number(cfForm.temp), capacidad_tarimas: Number(cfForm.capacidad_tarimas) || 0 };
+            setSavingCf(true);
             try {
               if (cfModal === "new") { await actions.addCuartoFrio(payload); toast?.success('Cuarto frío creado'); }
               else { await actions.updateCuartoFrio(cfModal.id, payload); toast?.success('Cuarto frío actualizado'); }
               setCfModal(null);
-            } catch(ex) { toast?.error('Error: ' + (ex?.message || 'No se pudo guardar')); }
+            } catch(ex) {
+              toast?.error('Error: ' + (ex?.message || 'No se pudo guardar'));
+            } finally {
+              setSavingCf(false);
+            }
           }}>Guardar</FormBtn>
         </div>
       </div>
@@ -254,7 +274,7 @@ export function InventarioView({ data, actions }) {
       </div>
       <div className="flex justify-end gap-2 mt-5">
         <FormBtn onClick={()=>setAjusteModal(null)}>Cancelar</FormBtn>
-        <FormBtn primary onClick={confirmarAjuste}>Guardar ajuste</FormBtn>
+        <FormBtn primary onClick={confirmarAjuste} loading={ajustando}>Guardar ajuste</FormBtn>
       </div>
     </Modal>
   </div>);
