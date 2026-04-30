@@ -89,7 +89,12 @@ export function ProductosView({ data, actions }) {
         {key:"stock",label:"Stock",render:(v,r)=><span className={`font-semibold ${s(r.tipo)==="Empaque"&&n(v)<200?"text-red-600":"text-slate-800"}`}>{n(v).toLocaleString()}</span>},
         {key:"costo_unitario",label:"Costo",render:(v,r)=>s(r.tipo)==="Empaque" && n(v)>0?<span className="text-amber-600 font-semibold">${n(v).toFixed(2)}</span>:"—"},
         {key:"precio",label:"Precio",render:(v,r)=>s(r.tipo)==="Producto Terminado" && n(v)>0?`$${n(v).toFixed(2)}`:"—"},
-      ]} data={paginated} onRowClick={r=>openEdit(r)} />
+      ]} data={paginated} onRowClick={r=>openEdit(r)}
+        emptyMessage={(search?.trim() || filterTipo) ? "Sin resultados" : "Aún no tienes productos"}
+        emptyHint={(search?.trim() || filterTipo) ? "Intenta con otra búsqueda o limpia los filtros" : "Crea tu primer producto con el botón de arriba"}
+        emptyCta={(search?.trim() || filterTipo) ? "Limpiar filtros" : "+ Nuevo producto"}
+        onEmptyCta={(search?.trim() || filterTipo) ? () => { setSearch(''); setFilterTipo(''); setPage(0); } : openNew}
+      />
       <Paginator page={page} total={filtered.length} onPage={setPage} />
     </div>
     <Modal open={!!modal} onClose={()=>setModal(null)} title={modal==="new"?"Nuevo Producto":"Editar Producto"}>

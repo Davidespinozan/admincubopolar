@@ -29,11 +29,51 @@ export function BtnSpinner() {
 }
 
 // Empty state for sections that use .map() directly
-export function EmptyState({ message = "Sin datos", icon }) {
+import { Icons } from './Icons';
+
+export function EmptyState({
+  message = "Sin datos",
+  icon,
+  hint,
+  cta,
+  onCta,
+  secondaryLabel,
+  onSecondary,
+}) {
+  // icon puede ser string (nombre de Icons) o ReactNode directo
+  const iconNode = typeof icon === 'string' && Icons[icon]
+    ? Icons[icon]()
+    : icon;
+
   return (
-    <div className="text-center py-8">
-      {icon && <div className="text-slate-300 mb-2 flex justify-center">{icon}</div>}
-      <p className="text-sm text-slate-400">{message}</p>
+    <div className="text-center py-10 px-4">
+      {iconNode && (
+        <div className="text-slate-300 mb-3 flex justify-center [&>svg]:w-12 [&>svg]:h-12">
+          {iconNode}
+        </div>
+      )}
+      <p className="text-sm font-semibold text-slate-600 mb-1">{message}</p>
+      {hint && <p className="text-xs text-slate-400 max-w-sm mx-auto">{hint}</p>}
+      {(cta || secondaryLabel) && (
+        <div className="mt-4 flex items-center justify-center gap-2">
+          {cta && onCta && (
+            <button
+              onClick={onCta}
+              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-sm font-bold rounded-xl transition-colors"
+            >
+              {cta}
+            </button>
+          )}
+          {secondaryLabel && onSecondary && (
+            <button
+              onClick={onSecondary}
+              className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl transition-colors"
+            >
+              {secondaryLabel}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

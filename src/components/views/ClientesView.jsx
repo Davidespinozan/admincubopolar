@@ -102,7 +102,12 @@ export function ClientesView({ data, actions }) {
         {key:"saldo",label:"Saldo",bold:true,render:v=>v?`$${n(v).toLocaleString()}`:"$0"},
         {key:"credito_autorizado",label:"Crédito",render:(_,row)=>row.credito_autorizado?<span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">✓ ${n(row.limite_credito).toLocaleString()}</span>:<span className="text-xs text-slate-400">—</span>},
         {key:"estatus",label:"Estatus",badge:true,render:v=><StatusBadge status={v}/>},
-      ]} data={paginated} onRowClick={r=>openEdit(r)} />
+      ]} data={paginated} onRowClick={r=>openEdit(r)}
+        emptyMessage={(search?.trim() || filterTipo) ? "Sin resultados" : "Aún no tienes clientes"}
+        emptyHint={(search?.trim() || filterTipo) ? "Intenta con otra búsqueda o limpia los filtros" : "Crea tu primer cliente con el botón de arriba"}
+        emptyCta={(search?.trim() || filterTipo) ? "Limpiar filtros" : "+ Nuevo cliente"}
+        onEmptyCta={(search?.trim() || filterTipo) ? () => { setSearch(''); setFilterTipo(''); setPage(0); } : openNew}
+      />
       <Paginator page={page} total={filtered.length} onPage={setPage} />
     </div>
     <Modal open={!!modal} onClose={()=>setModal(null)} title={modal==="new"?"Nuevo Cliente":"Editar Cliente"} wide>

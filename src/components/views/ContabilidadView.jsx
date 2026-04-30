@@ -1,4 +1,4 @@
-import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, useToast, today, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
+import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, today, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
 
 export function ContabilidadView({ data, actions }) {
   const toast = useToast();
@@ -80,7 +80,12 @@ export function ContabilidadView({ data, actions }) {
 
     <div>
       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Movimientos recientes</h3>
-      {todos.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin movimientos. Usa los botones + Ingreso o + Gasto para registrar.</p>}
+      {todos.length === 0 && (
+        <EmptyState
+          message="Aún no hay movimientos contables"
+          hint="Registra ingresos o gastos con los botones de arriba"
+        />
+      )}
       <div className="space-y-1.5">
         {(showAll ? todos : todos.slice(0, PAGE_SIZE)).map(m => (
           <div key={m.id} className={`rounded-lg p-3 border overflow-hidden ${m._tipo === "Ingreso" ? "bg-emerald-50 border-emerald-100" : "bg-red-50 border-red-100"}`}>

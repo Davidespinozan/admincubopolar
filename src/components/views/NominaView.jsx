@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, FormBtn, s, n, useToast } from './viewsCommon';
+import { useState, useMemo, Modal, FormBtn, EmptyState, s, n, useToast } from './viewsCommon';
 
 export function NominaView({ data, actions }) {
   const toast = useToast();
@@ -184,7 +184,10 @@ export function NominaView({ data, actions }) {
       <Modal onClose={() => setPeriodoSeleccionado(null)} title={`Recibos Semana ${n(periodoSeleccionado.numeroSemana)}`}>
         <div className="space-y-3 max-h-96 overflow-y-auto">
           {recibosPeriodo.length === 0 ? (
-            <p className="text-sm text-slate-500 text-center py-4">No hay recibos generados. Presiona "Generar recibos" para crearlos.</p>
+            <EmptyState
+              message="Aún no hay recibos generados"
+              hint="Usa el botón 'Generar recibos' para crear los del período actual"
+            />
           ) : (
             recibosPeriodo.map(r => {
               const emp = emps.find(e => n(e.id) === n(r.empleadoId));

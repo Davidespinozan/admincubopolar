@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 
 const CATEGORIAS_CXP = ['Proveedores', 'Servicios', 'Renta', 'Otro'];
 const METODOS_PAGO = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta'];
@@ -145,7 +145,12 @@ export function CuentasPorPagarView({ data, actions }) {
 
     {tab === 'pendientes' && (
       <div className="space-y-2">
-        {paginatedPendientes.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin cuentas pendientes de pago</p>}
+        {paginatedPendientes.length === 0 && (
+          <EmptyState
+            message="Sin cuentas por pagar"
+            hint="No tienes deudas pendientes con proveedores"
+          />
+        )}
         {paginatedPendientes.map(cxp => {
           const pctPagado = n(cxp.montoOriginal) > 0 ? (n(cxp.montoPagado) / n(cxp.montoOriginal)) * 100 : 0;
           const vencida = cxp.fechaVencimiento && new Date(cxp.fechaVencimiento) < new Date();
@@ -189,7 +194,12 @@ export function CuentasPorPagarView({ data, actions }) {
 
     {tab === 'pagadas' && (
       <div className="space-y-2">
-        {paginatedPagadas.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin cuentas pagadas</p>}
+        {paginatedPagadas.length === 0 && (
+          <EmptyState
+            message="Sin cuentas pagadas todavía"
+            hint="El historial de pagos a proveedores aparecerá aquí"
+          />
+        )}
         {paginatedPagadas.map(cxp => (
           <div key={cxp.id} className="bg-emerald-50 rounded-lg p-3.5 border border-emerald-100">
             <div className="flex justify-between items-start gap-2">
@@ -208,7 +218,12 @@ export function CuentasPorPagarView({ data, actions }) {
 
     {tab === 'pagos' && (
       <div className="space-y-1.5">
-        {pagosRecientes.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin pagos registrados</p>}
+        {pagosRecientes.length === 0 && (
+          <EmptyState
+            message="Sin pagos registrados"
+            hint="Los pagos a proveedores se mostrarán aquí cuando se hagan"
+          />
+        )}
         {pagosRecientes.map(p => (
           <div key={p.id} className="bg-red-50 rounded-lg p-3 border border-red-100 overflow-hidden">
             <div className="flex justify-between gap-2">

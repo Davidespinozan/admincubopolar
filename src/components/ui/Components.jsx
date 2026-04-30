@@ -1,4 +1,5 @@
 import { Icons } from './Icons';
+import { EmptyState } from './Skeleton';
 
 // ─── STATUS BADGE ───
 const STATUS_COLORS = {
@@ -46,14 +47,37 @@ export const AlertBadge = ({ tipo }) => {
 //   cardTitle: (row) => string — override for mobile card title
 //   cardSubtitle: (row) => ReactNode — extra line under title
 //   data, onRowClick
-export const DataTable = ({ columns, data, onRowClick, cardTitle, cardSubtitle }) => {
+export const DataTable = ({
+  columns,
+  data,
+  onRowClick,
+  cardTitle,
+  cardSubtitle,
+  emptyMessage,
+  emptyHint,
+  emptyCta,
+  onEmptyCta,
+  emptySecondaryLabel,
+  onEmptySecondary,
+  emptyIcon,
+}) => {
   // Determine which column is "primary" for card title
   const primaryCol = columns.find(c => c.primary) || columns.find(c => c.bold) || columns[0];
   const secondaryCols = columns.filter(c => c !== primaryCol && !c.hideOnMobile);
 
   return (
     <div>
-      {data.length === 0 && <p className="text-sm text-slate-400 text-center py-8">Sin datos</p>}
+      {data.length === 0 && (
+        <EmptyState
+          message={emptyMessage || 'Sin datos'}
+          hint={emptyHint}
+          cta={emptyCta}
+          onCta={onEmptyCta}
+          secondaryLabel={emptySecondaryLabel}
+          onSecondary={onEmptySecondary}
+          icon={emptyIcon}
+        />
+      )}
 
       {/* ── DESKTOP TABLE (hidden on mobile) ── */}
       {data.length > 0 && <div className="hidden overflow-x-auto rounded-[28px] border border-slate-200/80 bg-white/70 shadow-[0_14px_32px_rgba(8,20,27,0.06)] md:block">

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>Respuesta a Observaciones — CuboPolar ERP</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    span.underline{text-decoration: underline;}
+    div.column{display: inline-block; vertical-align: top; width: 50%;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    ul.task-list{list-style: none;}
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+  </style>
+  <link rel="stylesheet" href="-" />
+  <!--[if lt IE 9]>
+    <script src="//cdnjs.cloudflare.com/ajax/libs/html5shiv/3.7.3/html5shiv-printshiv.min.js"></script>
+  <![endif]-->
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">Respuesta a Observaciones — CuboPolar ERP</h1>
+</header>
+<h1 id="respuesta-a-observaciones-dudas-y-aclaraciones-cubopolar-erp">Respuesta a Observaciones, Dudas y Aclaraciones — CuboPolar ERP</h1>
+<hr />
+<h2 id="observaciones-catálogo-de-productos-sku">1. Observaciones — Catálogo de Productos (SKU)</h2>
+<p><strong>“No permite modificar el SKU una vez creado”</strong> &gt; El campo SKU <strong>sí es editable</strong>. Al hacer clic sobre cualquier producto en el catálogo se abre el formulario de edición donde se puede modificar el SKU, nombre, precio, costo y demás campos. Si necesitan que les mostremos dónde, con gusto agendamos una sesión.</p>
+<p><strong>“No existe la opción para eliminar productos”</strong> &gt; <strong>Ya se agregó.</strong> Al abrir un producto para editar, ahora aparece un botón rojo “Eliminar producto” en la parte inferior del formulario. Pide confirmación antes de ejecutar para evitar eliminaciones accidentales.</p>
+<hr />
+<h2 id="observaciones-rutas-de-distribución-entregas">2. Observaciones — Rutas de Distribución (Entregas)</h2>
+<p><strong>“No hay visualización en tiempo real de las rutas”</strong> &gt; <strong>Ya se implementó.</strong> Ahora cuando un chofer está en ruta, el sistema envía su ubicación GPS cada 30 segundos automáticamente. Desde la vista de Administración en el módulo de Rutas, al hacer clic en “Ver mapa de pedidos”, se muestran: &gt; - Pins naranjas = pedidos sin ruta asignada &gt; - Pins azules = pedidos asignados a ruta &gt; - <strong>Marcadores verdes pulsantes = choferes activos en tiempo real</strong> (con nombre del chofer y folio de ruta)</p>
+<p><strong>“Adjuntar evidencia (folio de nota y/o fotografía)”</strong> &gt; <strong>Ya se implementó ambos:</strong> &gt; - <strong>Folio de nota:</strong> Aparece un campo “Folio de nota (opcional)” tanto al crear la orden desde administración como al momento de la entrega por parte del chofer. &gt; - <strong>Foto de evidencia:</strong> En el modal de entrega del chofer ahora aparece la opción “Foto de nota o entrega” que permite tomar una foto con la cámara del celular como comprobante. Esta foto queda vinculada a la entrega.</p>
+<p><strong>“No hay opción para cuadrar producto vendido contra merma o devoluciones”</strong> &gt; <strong>Ya se mejoró.</strong> La pantalla de cierre de ruta del chofer ahora muestra una tabla de cuadre con 5 columnas: &gt; &gt; | Producto | Cargó | Entregó | Merma | Devuelve | &gt; |———-|——-|———|——-|———-| &gt; | HC-25K | 100 | 85 | 3 | 12 | &gt; | HC-5K | 50 | 45 | 1 | 4 | &gt; | <strong>Total</strong>| <strong>150</strong>| <strong>130</strong> | <strong>4</strong> | <strong>16</strong> | &gt; &gt; Además, el sistema <strong>bloquea el cierre de ruta</strong> si los números no cuadran (si un producto muestra que se entregó más de lo que se cargó).</p>
+<hr />
+<h2 id="observaciones-creación-de-cliente-nuevo">3. Observaciones — Creación de Cliente Nuevo</h2>
+<p><strong>“No hay campo de nombre comercial”</strong> &gt; <strong>Ya se agregó.</strong> Al crear o editar un cliente ahora aparece el campo “Nombre comercial” debajo de la razón social. Ejemplos: “Nevería Don Pedro”, “Tienda La Esquina”. Este nombre comercial: &gt; - Se muestra en la tabla de clientes debajo de la razón social &gt; - Se puede buscar por nombre comercial en el buscador</p>
+<p><strong>“Solo se permite registrar razón social y RFC”</strong> &gt; Resuelto con el punto anterior. El nombre comercial permite identificar clientes de mostrador sin necesidad de razón social formal. Para público en general se puede usar el RFC genérico (XAXX010101000) junto con un nombre comercial descriptivo.</p>
+<p><strong>“Precios especiales solo permite configurar un solo producto”</strong> &gt; Esto <strong>ya funcionaba para múltiples productos</strong>. Existe una vista completa llamada <strong>“Precios Especiales”</strong> en el menú de Comercial donde se pueden asignar precios diferentes a <strong>todos los productos que se deseen</strong> por cada cliente. Cada precio especial se agrega individualmente y se pueden tener tantos como se necesiten por cliente. Les mostraremos dónde encontrarla.</p>
+<hr />
+<h2 id="observaciones-ventas">4. Observaciones — Ventas</h2>
+<p><strong>“Falta captura del número de folio de la nota”</strong> &gt; <strong>Ya se agregó.</strong> El campo “Folio de nota” aparece en dos lugares: &gt; 1. Al crear una orden desde Ventas (campo opcional) &gt; 2. Al momento de la entrega por parte del chofer (campo opcional) &gt; &gt; El folio de nota se muestra en la tabla de ventas debajo del folio del sistema para fácil identificación.</p>
+<hr />
+<h2 id="dudas-y-aclaraciones">5. Dudas y Aclaraciones</h2>
+<h3 id="cómo-funcionan-las-órdenes-de-venta">“¿Cómo funcionan las órdenes de venta?”</h3>
+<p>Las órdenes tienen un ciclo de vida con 4 estados:</p>
+<pre><code>CREADA → ASIGNADA → ENTREGADA → FACTURADA</code></pre>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 44%" />
+<col style="width: 35%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Etapa</th>
+<th>Quién la hace</th>
+<th>Qué sucede</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Creada</strong></td>
+<td>Admin o Vendedor</td>
+<td>Se registra el pedido con cliente, productos, total y tipo de cobro (contado o crédito). El folio se genera automáticamente (OV-0001, OV-0002…)</td>
+</tr>
+<tr class="even">
+<td><strong>Asignada</strong></td>
+<td>Admin</td>
+<td>Se agrega la orden a una ruta de reparto. El inventario se descuenta del cuarto frío en ese momento</td>
+</tr>
+<tr class="odd">
+<td><strong>Entregada</strong></td>
+<td>Chofer o Admin</td>
+<td>Se registra el cobro (efectivo, transferencia, tarjeta, crédito). Se genera automáticamente el ingreso contable</td>
+</tr>
+<tr class="even">
+<td><strong>Facturada</strong></td>
+<td>Admin</td>
+<td>Se timbra el CFDI en Facturama. El folio fiscal queda ligado a la orden</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="la-facturación-está-ligada-a-los-ingresos-está-automatizado">“¿La facturación está ligada a los ingresos? ¿Está automatizado?”</h3>
+<p><strong>Sí, todo está conectado y automatizado:</strong></p>
+<ol type="1">
+<li>Al <strong>cobrar una orden</strong> → se genera automáticamente un registro de <strong>ingreso en contabilidad</strong></li>
+<li>Al <strong>timbrar factura</strong> → se genera el CFDI en Facturama y la orden pasa a “Facturada”</li>
+<li>Si la venta es a <strong>crédito con factura</strong> → se emite factura PPD y cuando el cliente paga, se genera automáticamente el <strong>Complemento de Pago</strong></li>
+</ol>
+<pre><code>Venta → Cobro → Ingreso contable (automático)
+              → Cuenta por cobrar si es crédito (automático)
+              → Factura CFDI (se timbra con un botón)
+              → Complemento de pago (automático al cobrar la CxC)</code></pre>
+<hr />
+<h3 id="las-órdenes-son-de-andén-o-de-ruta">“¿Las órdenes son de andén o de ruta?”</h3>
+<p><strong>Sirven para ambas.</strong> La diferencia es cómo se procesan:</p>
+<table>
+<colgroup>
+<col style="width: 62%" />
+<col style="width: 37%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Tipo de venta</th>
+<th>Proceso</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Andén / mostrador</strong></td>
+<td>Crear orden → Cobrar directo (botón “Cobrar”) → Listo</td>
+</tr>
+<tr class="even">
+<td><strong>Ruta</strong></td>
+<td>Crear orden → Crear ruta (asignar chofer + camión + órdenes) → Chofer entrega y cobra → Cierre de ruta</td>
+</tr>
+<tr class="odd">
+<td><strong>Venta a bordo</strong></td>
+<td>El chofer crea la venta directamente desde su celular usando “Venta rápida”</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h3 id="la-vista-de-ventas-está-limitada">“La vista de Ventas está limitada”</h3>
+<p>La vista de Ventas ya muestra el flujo completo de cada venta:</p>
+<ul>
+<li><strong>Badges de color</strong> por estatus: Creada (gris), Asignada (azul), Entregada (verde), Facturada (morado)</li>
+<li><strong>Columna “Ruta”</strong> que muestra a qué ruta está asignada cada orden</li>
+<li><strong>Botones de acción</strong> según la etapa:
+<ul>
+<li>Creada → “Cobrar” + “Asignar ruta”</li>
+<li>Asignada → “Cobrar entrega”</li>
+<li>Entregada → “Facturar”</li>
+</ul></li>
+<li>Se puede <strong>filtrar por estatus</strong> y <strong>buscar por folio o cliente</strong></li>
+</ul>
+<hr />
+<h3 id="cómo-funciona-el-sistema-desde-la-vista-de-otros-usuarios">“¿Cómo funciona el sistema desde la vista de otros usuarios?”</h3>
+<p>El sistema tiene <strong>5 roles</strong>, cada uno con su propia vista:</p>
+<table>
+<colgroup>
+<col style="width: 20%" />
+<col style="width: 32%" />
+<col style="width: 48%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Rol</th>
+<th>Qué ve</th>
+<th>Para quién</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><strong>Admin</strong></td>
+<td>Todo: ventas, rutas, producción, inventario, contabilidad, facturación, clientes, empleados, nómina, auditoría</td>
+<td>Dueños / gerente</td>
+</tr>
+<tr class="even">
+<td><strong>Chofer</strong></td>
+<td>App móvil de 3 pasos: Confirmar carga → Entregar pedidos → Cerrar ruta</td>
+<td>Chofer / repartidor</td>
+</tr>
+<tr class="odd">
+<td><strong>Ventas</strong></td>
+<td>Crear órdenes, ver sus clientes, registrar cobros</td>
+<td>Vendedor</td>
+</tr>
+<tr class="even">
+<td><strong>Producción</strong></td>
+<td>Crear lotes de producción, confirmar, transformar productos</td>
+<td>Encargado de planta</td>
+</tr>
+<tr class="odd">
+<td><strong>Almacén</strong></td>
+<td>Entrada/salida de empaques, ajustes de inventario, cuartos fríos</td>
+<td>Almacenista</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Como Admin pueden ver cualquier vista</strong> usando el botón <strong>“Ver como…”</strong> que aparece en la parte superior. Esto les permite ver exactamente lo que ve un Chofer, Vendedor, etc.</p>
+<hr />
+<h3 id="ejemplo-completo-flujo-de-una-venta-de-ruta">Ejemplo completo: Flujo de una venta de ruta</h3>
+<pre><code>1. Admin/Vendedor crea la orden:
+   OV-0045 → Nevería Don Pedro → 25 bolsas HC-25K → $2,500 → Contado
+
+2. Admin crea la ruta del día:
+   R-012 → Chofer: Juan → Camión: Unidad 3
+   Asigna OV-0045 + otras órdenes → Inventario se descuenta automáticamente
+
+3. Chofer Juan abre su app:
+   → Confirma la carga
+   → Ve las entregas pendientes con dirección y mapa
+   → Entrega a Nevería Don Pedro → Cobra $2,500 efectivo
+   → Captura folio de nota y foto de evidencia
+   → Si alguien le compra en el camino → Venta rápida
+   → Si se rompe una bolsa → Registra merma con foto
+
+4. Al terminar, el chofer cierra la ruta:
+   → Ve el cuadre: Cargó 100 | Entregó 85 | Merma 3 | Devuelve 12
+   → Ve cobros: Efectivo $15,000 | Transferencia $3,000 | Crédito $2,500
+   → Envía reporte → Ruta cerrada
+
+5. El sistema automáticamente:
+   → Registra ingresos contables por cada cobro
+   → Crea cuentas por cobrar por ventas a crédito
+   → Registra egresos por costo de mermas
+   → Devuelve inventario sobrante al cuarto frío
+   → Envía notificación al admin</code></pre>
+<hr />
+<h2 id="resumen-de-cambios-realizados">Resumen de cambios realizados</h2>
+<table>
+<thead>
+<tr class="header">
+<th>Funcionalidad</th>
+<th>Estado</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Nombre comercial en clientes</td>
+<td>Implementado</td>
+</tr>
+<tr class="even">
+<td>Folio de nota en ventas y entregas</td>
+<td>Implementado</td>
+</tr>
+<tr class="odd">
+<td>Foto de evidencia en entregas</td>
+<td>Implementado</td>
+</tr>
+<tr class="even">
+<td>Eliminar productos del catálogo</td>
+<td>Implementado</td>
+</tr>
+<tr class="odd">
+<td>Cuadre detallado al cierre de ruta</td>
+<td>Implementado</td>
+</tr>
+<tr class="even">
+<td>GPS en tiempo real de choferes</td>
+<td>Implementado</td>
+</tr>
+<tr class="odd">
+<td>Seguridad por roles (RLS)</td>
+<td>Implementado</td>
+</tr>
+<tr class="even">
+<td>Registro de errores en producción</td>
+<td>Implementado</td>
+</tr>
+<tr class="odd">
+<td>Precios especiales multi-producto</td>
+<td>Ya existía</td>
+</tr>
+<tr class="even">
+<td>Edición de SKU</td>
+<td>Ya existía</td>
+</tr>
+<tr class="odd">
+<td>Vista por roles (Ver como…)</td>
+<td>Ya existía</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<p><em>Cualquier duda adicional estamos a sus órdenes. Se recomienda agendar una sesión de capacitación para mostrar las nuevas funcionalidades y las que ya existían pero no se habían explorado.</em></p>
+</body>
+</html>
