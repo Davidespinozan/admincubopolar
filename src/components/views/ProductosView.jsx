@@ -70,7 +70,7 @@ export function ProductosView({ data, actions }) {
     {hasDemoProducts && (
       <div className="mb-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
         <span className="text-amber-700 text-sm">Se detectaron productos de demostración (DEMO-*).</span>
-        <button onClick={() => { actions.deleteDemoProducts(); }} className="px-3 py-1 text-xs font-medium bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">Eliminar datos demo</button>
+        <button onClick={() => askConfirm('Eliminar datos de demo', 'Esta acción borrará TODOS los productos marcados como demo. No se puede deshacer. ¿Continuar?', async () => { await actions.deleteDemoProducts(); }, true)} className="px-3 py-1 text-xs font-medium bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors">Eliminar datos demo</button>
       </div>
     )}
     <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">

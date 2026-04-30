@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense, Component } from 'react';
 import { Icons } from './ui/Icons';
+import { useConfirm } from './ui/Modal';
 import DashboardView from './views/DashboardView';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
 
@@ -458,6 +459,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
 // ═══ PLACEHOLDER VIEWS for new modules ═══
 
 function ComodatosView({ data, actions }) {
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(null);
   const empty = { clienteId: "", negocio: "", direccion: "", contacto: "", congeladorModelo: "", capacidad: "60", stockMaximo: "60", frecuencia: "Diario" };
   const [form, setForm] = useState(empty);
@@ -489,6 +491,7 @@ function ComodatosView({ data, actions }) {
   };
 
   return (<div className="space-y-4">
+    {ConfirmEl}
     <div className="flex items-center justify-between">
       <div><h2 className="text-lg font-bold text-slate-800">Comodatos</h2><p className="text-xs text-slate-400">Congeladores en negocios. El chofer repone y cobra.</p></div>
       <button onClick={() => { setForm(empty); setModal('new'); }} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo</button>
@@ -516,18 +519,22 @@ function ComodatosView({ data, actions }) {
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
           <button onClick={() => openEdit(c)} className="px-3 py-2 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl border border-blue-200">✏️ Editar</button>
-          <button onClick={async () => {
-            if (window.confirm(`¿${c.estatus === 'Activo' ? 'Desactivar' : 'Activar'} comodato "${c.negocio}"?`)) {
-              await actions.updateComodato(c.id, { estatus: c.estatus === 'Activo' ? 'Inactivo' : 'Activo' });
-            }
-          }} className="px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-200">
+          <button onClick={() => askConfirm(
+            c.estatus === 'Activo' ? 'Desactivar comodato' : 'Activar comodato',
+            c.estatus === 'Activo'
+              ? `¿Marcar comodato "${c.negocio}" como inactivo? Podrás reactivarlo después.`
+              : `¿Reactivar comodato "${c.negocio}"?`,
+            async () => { await actions.updateComodato(c.id, { estatus: c.estatus === 'Activo' ? 'Inactivo' : 'Activo' }); },
+            c.estatus === 'Activo'
+          )} className="px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-200">
             {c.estatus === 'Activo' ? '🗑 Desactivar' : '✅ Activar'}
           </button>
-          <button onClick={async () => {
-            if (window.confirm(`¿Eliminar comodato "${c.negocio}"?`)) {
-              await actions.deleteComodato(c.id);
-            }
-          }} className="px-3 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200">Eliminar</button>
+          <button onClick={() => askConfirm(
+            'Eliminar comodato',
+            `¿Eliminar comodato "${c.negocio}"? Esta acción no se puede deshacer.`,
+            async () => { await actions.deleteComodato(c.id); },
+            true
+          )} className="px-3 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200">Eliminar</button>
         </div>
       </div>
     )) : <p className="text-sm text-slate-400 text-center py-8">Sin comodatos. Usa + Nuevo para registrar.</p>}
@@ -555,18 +562,18 @@ function ComodatosView({ data, actions }) {
           </div>
           {modal !== 'new' && (
             <div className="space-y-2 mt-4">
-              <button onClick={async () => {
-                if (window.confirm(`¿Desactivar comodato "${form.negocio}"?`)) {
-                  await actions.updateComodato(modal.id, { estatus: 'Inactivo' });
-                  setModal(null);
-                }
-              }} className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200">🗑 Desactivar comodato</button>
-              <button onClick={async () => {
-                if (window.confirm(`¿Eliminar comodato "${form.negocio}"?`)) {
-                  await actions.deleteComodato(modal.id);
-                  setModal(null);
-                }
-              }} className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl border border-slate-200">Eliminar comodato</button>
+              <button onClick={() => askConfirm(
+                'Desactivar comodato',
+                `¿Marcar comodato "${form.negocio}" como inactivo? Podrás reactivarlo después.`,
+                async () => { await actions.updateComodato(modal.id, { estatus: 'Inactivo' }); setModal(null); },
+                true
+              )} className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200">🗑 Desactivar comodato</button>
+              <button onClick={() => askConfirm(
+                'Eliminar comodato',
+                `¿Eliminar comodato "${form.negocio}"? Esta acción no se puede deshacer.`,
+                async () => { await actions.deleteComodato(modal.id); setModal(null); },
+                true
+              )} className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl border border-slate-200">Eliminar comodato</button>
             </div>
           )}
           <button onClick={save} disabled={!form.clienteId || !form.negocio.trim()} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">Guardar comodato</button>
