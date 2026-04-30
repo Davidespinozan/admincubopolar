@@ -1,7 +1,9 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { s, n } from '../utils/safe';
+import { useToast } from './views/viewsCommon';
 
 export default function BotonFirmasPendientes({ user, data, actions, mostrarBannerUrgente = false }) {
+  const toast = useToast();
   const [abierto, setAbierto] = useState(false);
   const [rutaSeleccionada, setRutaSeleccionada] = useState(null);
   const [firmaTienePuntos, setFirmaTienePuntos] = useState(false);
@@ -107,13 +109,13 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
       const firmaBase64 = canvas.toDataURL('image/png');
       const result = await actions.firmarCarga?.(rutaSeleccionada.id, firmaBase64);
       if (result && result.message) {
-        alert('Error: ' + result.message);
+        toast?.error('Error: ' + result.message);
         return;
       }
       setRutaSeleccionada(null);
       setFirmaTienePuntos(false);
     } catch (e) {
-      alert('No se pudo firmar: ' + (e.message || 'error'));
+      toast?.error('No se pudo firmar: ' + (e.message || 'error'));
     } finally {
       setFirmando(false);
     }

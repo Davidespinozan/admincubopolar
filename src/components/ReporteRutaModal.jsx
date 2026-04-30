@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
-import { Modal, FormBtn, s, n } from './views/viewsCommon';
+import { Modal, FormBtn, useToast, s, n } from './views/viewsCommon';
 import { reporteRutaDiaria } from '../utils/exportReports';
 
 export default function ReporteRutaModal({ ruta, data, onClose }) {
   const [notas, setNotas] = useState('');
+  const toast = useToast();
 
   if (!ruta) return null;
 
@@ -80,7 +81,7 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
       reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, data.usuarios || [], notas);
     } catch (err) {
       console.error('[ReporteRuta] Error al generar PDF:', err);
-      alert('No se pudo generar el PDF: ' + (err?.message || err));
+      toast?.error('No se pudo generar el PDF: ' + (err?.message || err));
     }
   };
 
