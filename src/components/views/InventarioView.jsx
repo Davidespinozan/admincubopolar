@@ -1,4 +1,5 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, CapacityBar, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 
 export function InventarioView({ data, actions }) {
   const toast = useToast();
@@ -126,6 +127,30 @@ export function InventarioView({ data, actions }) {
         </div>
         <CapacityBar pct={n(cf.capacidad)}/>
         <p className="text-xs text-slate-400 mt-2">{n(cf.capacidad)}% capacidad</p>
+
+        {(() => {
+          const ocupado = tarimasOcupadasEnCuarto(cf, data.productos);
+          const capacidad = n(cf.capacidad_tarimas);
+          if (capacidad <= 0) return null;
+          const pct = Math.round((ocupado / capacidad) * 100);
+          const color = colorTarimasUso(ocupado, capacidad);
+          const colorClass = color === 'red' ? 'bg-red-500' : color === 'amber' ? 'bg-amber-500' : 'bg-emerald-500';
+          const textColorClass = color === 'red' ? 'text-red-700' : color === 'amber' ? 'text-amber-700' : 'text-emerald-700';
+          return (
+            <div className="mt-2">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Tarimas</span>
+                <span className={`text-xs font-bold ${textColorClass}`}>
+                  {ocupado.toFixed(1)}/{capacidad} ({pct}%)
+                </span>
+              </div>
+              <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                <div className={`h-full ${colorClass} transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
+              </div>
+            </div>
+          );
+        })()}
+
         <div className="mt-3 space-y-1">
           {cf.stockEntries.map(([sku, qty]) => (
             <div key={sku} className="flex justify-between text-xs">
