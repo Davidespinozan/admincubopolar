@@ -19,6 +19,9 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [shortUrl, setShortUrl] = useState(null);
   const [generandoLink, setGenerandoLink] = useState(false);
+  const [confirmandoCobro, setConfirmandoCobro] = useState(false);
+  const [creandoOrden, setCreandoOrden] = useState(false);
+  const [registrandoCliente, setRegistrandoCliente] = useState(false);
   const [toast, setToast] = useState("");
 
   // Order form
@@ -82,6 +85,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
 
   // Register new client and select it using the real Supabase-assigned ID
   const registrarCliente = async () => {
+    if (registrandoCliente) return;
     if (!cliForm.nombre.trim()) return;
     const nuevo = {
       nombre: cliForm.nombre.trim(),
@@ -93,40 +97,59 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       usoCfdi: cliForm.requiereFactura ? cliForm.usoCfdi : "S01",
       cp: cliForm.cp || "34000",
     };
-    const result = await actions.addCliente(nuevo);
-    // result is { id } on success or an error object
-    const realId = result?.id ? String(result.id) : null;
-    if (realId) {
+    setRegistrandoCliente(true);
+    try {
+      const result = await actions.addCliente(nuevo);
+      // result is { id } on success or an error object
+      const realId = result?.id ? String(result.id) : null;
+      if (!realId) {
+        showToast('No se pudo registrar el cliente. Intenta de nuevo.');
+        return;
+      }
       setForm(f => ({ ...f, clienteId: realId, requiereFactura: cliForm.requiereFactura }));
       setLines(prev => prev.map(l => ({ ...l, precio: getPrice(realId, l.sku) })));
+      setNuevoCliente(false);
+      showToast("Cliente " + cliForm.nombre + " registrado ✓");
+      setCliForm({ nombre: "", contacto: "", tipo: "Tienda", requiereFactura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
+    } catch (e) {
+      console.error('Error registrando cliente:', e);
+      showToast('Error al registrar cliente. Verifica tu conexión.');
+    } finally {
+      setRegistrandoCliente(false);
     }
-    setNuevoCliente(false);
-    showToast("Cliente " + cliForm.nombre + " registrado ✓");
-    setCliForm({ nombre: "", contacto: "", tipo: "Tienda", requiereFactura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
   };
 
   const crearOrden = async () => {
+    if (creandoOrden) return;
     if (!form.clienteId) return;
     if (!lines.some(l => l.sku && l.qty > 0)) return;
     const cli = (data.clientes || []).find(c => eqId(c.id, form.clienteId));
     const total = totalCalc;
-    const result = await actions.addOrden({
-      cliente: s(cli?.nombre), clienteId: form.clienteId,
-      fecha: new Date().toISOString().slice(0, 10),
-      productos: productosStr, total,
-      requiereFactura: form.requiereFactura,
-      usuarioId: user?.id,
-      authId: user?.auth_id,
-    });
-    setModal(false);
-    setForm({ clienteId: "", requiereFactura: false });
-    setLines([{ sku: "", qty: 1, precio: 0 }]);
-    // Auto-open payment modal with the newly created order
-    if (result?.orden) {
-      showToast("Orden creada — ahora cobra");
-      cobrar(result.orden);
-    } else {
-      showToast("Orden creada — $" + total.toLocaleString());
+    setCreandoOrden(true);
+    try {
+      const result = await actions.addOrden({
+        cliente: s(cli?.nombre), clienteId: form.clienteId,
+        fecha: new Date().toISOString().slice(0, 10),
+        productos: productosStr, total,
+        requiereFactura: form.requiereFactura,
+        usuarioId: user?.id,
+        authId: user?.auth_id,
+      });
+      setModal(false);
+      setForm({ clienteId: "", requiereFactura: false });
+      setLines([{ sku: "", qty: 1, precio: 0 }]);
+      // Auto-open payment modal with the newly created order
+      if (result?.orden) {
+        showToast("Orden creada — ahora cobra");
+        cobrar(result.orden);
+      } else {
+        showToast("Orden creada — $" + total.toLocaleString());
+      }
+    } catch (e) {
+      console.error('Error creando orden:', e);
+      showToast('Error al crear orden. Verifica tu conexión.');
+    } finally {
+      setCreandoOrden(false);
     }
   };
 
@@ -151,9 +174,18 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       }
       return;
     }
-    await actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo);
-    showToast(pagoForm.metodo.includes("Crédito") || pagoForm.metodo.includes("fiado") ? "Venta a crédito registrada" : "Cobrado — " + pagoForm.metodo);
-    setPagoModal(null);
+    if (confirmandoCobro) return;
+    setConfirmandoCobro(true);
+    try {
+      await actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo);
+      showToast(pagoForm.metodo.includes("Crédito") || pagoForm.metodo.includes("fiado") ? "Venta a crédito registrada" : "Cobrado — " + pagoForm.metodo);
+      setPagoModal(null);
+    } catch (e) {
+      console.error('Error confirmando cobro:', e);
+      showToast('Error al cobrar. Verifica tu conexión.');
+    } finally {
+      setConfirmandoCobro(false);
+    }
   };
 
   const hoy = new Date().toISOString().slice(0, 10);
@@ -322,9 +354,9 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                       </div>
                     )}
 
-                    <button onClick={registrarCliente} disabled={!cliForm.nombre.trim() || (cliForm.requiereFactura && !cliForm.rfc.trim())}
-                      className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm disabled:opacity-40">
-                      Registrar cliente y continuar
+                    <button onClick={registrarCliente} disabled={registrandoCliente || !cliForm.nombre.trim() || (cliForm.requiereFactura && !cliForm.rfc.trim())}
+                      className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm disabled:opacity-40 disabled:cursor-not-allowed">
+                      {registrandoCliente ? 'Registrando…' : 'Registrar cliente y continuar'}
                     </button>
                   </div>
                 </div>
@@ -387,9 +419,9 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
               </div>
             </div>
 
-            <button onClick={crearOrden} disabled={!form.clienteId || !lines.some(l => l.sku)}
-              className="w-full mt-4 rounded-[18px] bg-emerald-600 py-3.5 text-sm font-bold text-white disabled:opacity-40">
-              {form.requiereFactura ? "Crear venta con factura" : "Crear venta"}
+            <button onClick={crearOrden} disabled={creandoOrden || !form.clienteId || !lines.some(l => l.sku)}
+              className="w-full mt-4 rounded-[18px] bg-emerald-600 py-3.5 text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed">
+              {creandoOrden ? "Creando venta…" : form.requiereFactura ? "Crear venta con factura" : "Crear venta"}
             </button>
           </div>
         </div>
@@ -434,7 +466,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
             {pagoForm.metodo === "Crédito (fiado)" && (
               <div className="mb-4 p-3 bg-amber-50 rounded-xl"><p className="text-xs text-amber-700 font-semibold">Se agregará al saldo del cliente</p></div>
             )}
-            {!checkoutUrl && <button onClick={confirmarCobro} disabled={generandoLink} className={`w-full py-3.5 text-white font-bold rounded-xl text-sm shadow-lg shadow-emerald-200 ${generandoLink ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : pagoForm.metodo === "QR / Link de pago" ? "Generar link de pago" : "Confirmar cobro"}</button>}
+            {!checkoutUrl && <button onClick={confirmarCobro} disabled={generandoLink || confirmandoCobro} className={`w-full py-3.5 text-white font-bold rounded-xl text-sm shadow-lg shadow-emerald-200 disabled:cursor-not-allowed ${(generandoLink || confirmandoCobro) ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : confirmandoCobro ? 'Cobrando…' : pagoForm.metodo === "QR / Link de pago" ? "Generar link de pago" : "Confirmar cobro"}</button>}
           </div>
         </div>
       )}
