@@ -1,6 +1,6 @@
 import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, useToast, supabase } from './viewsCommon';
 
-export function ConfiguracionView({ data, actions }) {
+export function ConfiguracionView({ data, actions, user }) {
   const toast = useToast();
   const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(null);
@@ -8,6 +8,39 @@ export function ConfiguracionView({ data, actions }) {
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const isAdmin = s(user?.rol) === 'Admin';
+  const [resetModal, setResetModal] = useState(false);
+  const [resetConfirmacion, setResetConfirmacion] = useState('');
+  const [resetMotivo, setResetMotivo] = useState('');
+  const [reseting, setReseting] = useState(false);
+
+  const cerrarReset = () => {
+    setResetModal(false);
+    setResetConfirmacion('');
+    setResetMotivo('');
+  };
+
+  const ejecutarReset = async () => {
+    if (reseting) return;
+    if (resetConfirmacion !== 'RESETEAR') return;
+    setReseting(true);
+    try {
+      const result = await actions.resetSistema?.({
+        confirmacion: resetConfirmacion,
+        motivo: resetMotivo,
+      });
+      if (result?.error) {
+        toast?.error(result.partial ? `Reset parcial: ${result.error}` : result.error);
+        return;
+      }
+      toast?.success('Sistema reseteado correctamente');
+      cerrarReset();
+    } catch (ex) {
+      toast?.error('Error: ' + (ex?.message || 'No se pudo resetear'));
+    } finally {
+      setReseting(false);
+    }
+  };
 
   const openNew = () => { setForm(empty); setErrors({}); setModal("new"); };
   const openEdit = (u) => { setForm({ nombre: s(u.nombre), email: s(u.email), rol: s(u.rol), password: "" }); setErrors({}); setModal(u); };
@@ -112,6 +145,74 @@ export function ConfiguracionView({ data, actions }) {
         </div>
       ))}
     </div>
+    {isAdmin && (
+      <div className="mt-12 border-2 border-red-300 rounded-2xl p-5 bg-red-50">
+        <h3 className="text-lg font-bold text-red-900 mb-2">⚠️ Zona de peligro</h3>
+        <p className="text-sm text-red-800 mb-4">
+          Esta sección contiene acciones destructivas e irreversibles. Úsala solo durante pruebas o cuando estés seguro de lo que haces.
+        </p>
+        <div className="bg-white rounded-xl p-4 border border-red-200">
+          <h4 className="font-bold text-slate-900 mb-1">Reset masivo del sistema</h4>
+          <p className="text-xs text-slate-600 mb-3">
+            Borra TODAS las ventas, pagos, mermas, producciones, rutas y movimientos de inventario. Resetea el stock de productos y cuartos fríos a 0. NO borra catálogos (productos, clientes, empleados) ni configuración.
+          </p>
+          <button
+            onClick={() => setResetModal(true)}
+            className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-xl hover:bg-red-700 min-h-[44px]"
+          >
+            Resetear sistema
+          </button>
+        </div>
+      </div>
+    )}
+
+    <Modal open={resetModal} onClose={cerrarReset} title="⚠️ Confirmar reset del sistema">
+      <div className="space-y-4">
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+          <p className="text-sm font-bold text-red-900 mb-2">Esta acción borrará:</p>
+          <ul className="text-xs text-red-800 space-y-1 list-disc list-inside">
+            <li>Todas las órdenes de venta y sus líneas</li>
+            <li>Todos los pagos y cuentas por cobrar</li>
+            <li>Todos los movimientos contables, cuentas por pagar y pagos a proveedores</li>
+            <li>Todas las mermas, producciones y transformaciones</li>
+            <li>Todos los movimientos de inventario y tracking GPS</li>
+            <li>Todas las rutas (incluso completadas)</li>
+            <li>Nóminas (períodos y recibos), histórico de costos, notificaciones, log de errores</li>
+            <li>Stock de productos y cuartos fríos (vuelven a 0)</li>
+            <li>Auditoría previa (queda solo el registro de este reset)</li>
+          </ul>
+          <p className="text-sm font-bold text-red-900 mt-3">
+            NO se borrarán: catálogos de productos, clientes, empleados, cuartos fríos (estructura), camiones, leads, comodatos, ni configuración.
+          </p>
+        </div>
+
+        <FormInput
+          label="Motivo (opcional)"
+          value={resetMotivo}
+          onChange={(e) => setResetMotivo(e.target.value)}
+          placeholder="Ej: Limpieza pre-producción"
+        />
+
+        <FormInput
+          label='Para confirmar, escribe "RESETEAR" (en mayúsculas)'
+          value={resetConfirmacion}
+          onChange={(e) => setResetConfirmacion(e.target.value)}
+          placeholder="RESETEAR"
+        />
+
+        <div className="flex justify-end gap-2 mt-4">
+          <FormBtn onClick={cerrarReset}>Cancelar</FormBtn>
+          <button
+            onClick={ejecutarReset}
+            disabled={reseting || resetConfirmacion !== 'RESETEAR'}
+            className="px-4 py-2 bg-red-600 text-white text-sm font-bold rounded-xl hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed min-h-[44px]"
+          >
+            {reseting ? 'Reseteando…' : 'Resetear ahora'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+
     <Modal open={!!modal} onClose={() => setModal(null)} title={modal === "new" ? "Nuevo Usuario" : "Editar Usuario"}>
       <div className="space-y-3">
         <FormInput label="Nombre completo *" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} error={errors.nombre} />

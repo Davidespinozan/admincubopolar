@@ -3142,6 +3142,102 @@ export function useSupaStore(userId, userName) {
       logAudit: async (accion, modulo, detalle) => {
         await log(accion, modulo, detalle);
       },
+
+      // ── RESET MASIVO DEL SISTEMA ──
+      // Borra todos los datos transaccionales pero preserva catálogos.
+      // Pensada para pre-producción: permite a Admin limpiar el sistema
+      // antes de operar con datos reales.
+      // Requiere confirmacion === 'RESETEAR' para activarse.
+      resetSistema: async ({ confirmacion, motivo = '' } = {}) => {
+        try {
+          if (confirmacion !== 'RESETEAR') {
+            return { error: 'Confirmación inválida. Debes escribir RESETEAR.' };
+          }
+
+          const usuario = uname() || 'Admin';
+          const inicioReset = new Date().toISOString();
+
+          // Orden defensivo: hijos antes que padres (tolera FKs sin CASCADE)
+          const tablas = [
+            'pagos',
+            'cuentas_por_cobrar',
+            'orden_lineas',
+            'invoice_attempts',
+            'mermas',
+            'inventario_mov',
+            'chofer_ubicaciones',
+            'ordenes',
+            'rutas',
+            'produccion',
+            'nomina_recibos',
+            'nomina_periodos',
+            'pagos_proveedores',
+            'cuentas_por_pagar',
+            'movimientos_contables',
+            'costos_historial',
+            'notificaciones',
+            'error_log',
+            'cuarto_frio_stock',
+          ];
+
+          const errores = [];
+
+          for (const tabla of tablas) {
+            const { error } = await supabase.from(tabla).delete().neq('id', 0);
+            if (error) errores.push({ tabla, error: error.message });
+          }
+
+          // Reset stock de cuartos fríos (JSONB → {})
+          const { error: errCF } = await supabase
+            .from('cuartos_frios')
+            .update({ stock: {} })
+            .neq('id', 0);
+          if (errCF) errores.push({ tabla: 'cuartos_frios.stock', error: errCF.message });
+
+          // Reset stock de productos
+          const { error: errProd } = await supabase
+            .from('productos')
+            .update({ stock: 0 })
+            .neq('id', 0);
+          if (errProd) errores.push({ tabla: 'productos.stock', error: errProd.message });
+
+          // Borrar entradas previas de auditoria DESPUÉS de los resets
+          // (queda solo la entry del reset que insertamos a continuación)
+          const { error: errAud } = await supabase.from('auditoria').delete().neq('id', 0);
+          if (errAud) errores.push({ tabla: 'auditoria', error: errAud.message });
+
+          // Audit log del reset (única entrada que sobrevive)
+          const detalle = JSON.stringify({
+            motivo: motivo || 'Sin motivo',
+            tablas_afectadas: tablas,
+            inicio: inicioReset,
+            errores: errores.length > 0 ? errores : null,
+          });
+          const { error: errInsAud } = await supabase.from('auditoria').insert({
+            usuario,
+            accion: 'RESET_SISTEMA',
+            modulo: 'Sistema',
+            detalle,
+          });
+          if (errInsAud) {
+            console.warn('[resetSistema] insert auditoria final falló:', errInsAud.message);
+          }
+
+          rf();
+
+          if (errores.length > 0) {
+            const msg = `Reset parcial: ${errores.length} ${errores.length === 1 ? 'tabla con error' : 'tablas con errores'}`;
+            t()?.error(msg);
+            return { error: msg, partial: true, detalles: errores };
+          }
+
+          return undefined;
+        } catch (e) {
+          console.error('[resetSistema] excepción:', e);
+          t()?.error('Error inesperado durante reset');
+          return { error: e?.message || 'Error inesperado durante reset' };
+        }
+      },
     };
   }
 
