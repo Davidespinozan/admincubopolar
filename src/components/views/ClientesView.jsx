@@ -87,12 +87,24 @@ export function ClientesView({ data, actions }) {
       const k = String(cid || '');
       if (k) map[k] = (map[k] || 0) + 1;
     };
-    (data.ordenes || []).forEach(o => bump(o.clienteId || o.cliente_id));
-    (data.pagos || []).forEach(p => bump(p.clienteId || p.cliente_id));
-    (data.cuentasPorCobrar || []).forEach(c => bump(c.clienteId || c.cliente_id));
-    (data.comodatos || []).forEach(c => bump(c.clienteId || c.cliente_id));
+    (data?.ordenes || []).forEach(o => {
+      if (!o) return;
+      bump(o.clienteId || o.cliente_id);
+    });
+    (data?.pagos || []).forEach(p => {
+      if (!p) return;
+      bump(p.clienteId || p.cliente_id);
+    });
+    (data?.cuentasPorCobrar || []).forEach(c => {
+      if (!c) return;
+      bump(c.clienteId || c.cliente_id);
+    });
+    (data?.comodatos || []).forEach(c => {
+      if (!c) return;
+      bump(c.clienteId || c.cliente_id);
+    });
     return map;
-  }, [data.ordenes, data.pagos, data.cuentasPorCobrar, data.comodatos]);
+  }, [data?.ordenes, data?.pagos, data?.cuentasPorCobrar, data?.comodatos]);
 
   const puedeEliminarCliente = (id) => !clientesConHistorico[String(id)];
 
