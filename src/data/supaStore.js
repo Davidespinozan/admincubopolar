@@ -520,33 +520,39 @@ export function useSupaStore(userId, userName) {
 
       // ── CLIENTES ──
       addCliente: async (c) => {
-        // Si el form ya trae coords (desde autocomplete), úsalas. Si no, geocodificar.
-        let latitud = c.latitud != null && c.latitud !== '' ? Number(c.latitud) : null;
-        let longitud = c.longitud != null && c.longitud !== '' ? Number(c.longitud) : null;
-        if ((latitud == null || longitud == null) && (c.calle || c.colonia)) {
-          const geo = await geocodeDireccion(buildDireccion(c)).catch(() => null);
-          if (geo) { latitud = geo.lat; longitud = geo.lng; }
-        }
+        try {
+          // Si el form ya trae coords (desde autocomplete), úsalas. Si no, geocodificar.
+          let latitud = c.latitud != null && c.latitud !== '' ? Number(c.latitud) : null;
+          let longitud = c.longitud != null && c.longitud !== '' ? Number(c.longitud) : null;
+          if ((latitud == null || longitud == null) && (c.calle || c.colonia)) {
+            const geo = await geocodeDireccion(buildDireccion(c)).catch(() => null);
+            if (geo) { latitud = geo.lat; longitud = geo.lng; }
+          }
 
-        const { data: newCli, error } = await supabase.from('clientes').insert({
-          nombre: c.nombre, rfc: c.rfc, regimen: c.regimen,
-          uso_cfdi: c.usoCfdi || 'G03', cp: c.cp, correo: c.correo,
-          tipo: c.tipo, contacto: c.contacto,
-          nombre_comercial: c.nombreComercial || null,
-          calle: c.calle || null, colonia: c.colonia || null,
-          ciudad: c.ciudad || null, zona: c.zona || null,
-          latitud, longitud,
-          credito_autorizado: c.creditoAutorizado ?? false,
-          limite_credito: Number(c.limiteCredito) || 0,
-        }).select('id').single();
-        if (error) {
-          console.error('[addCliente]', error.message, error.code);
-          t()?.error('Error al crear cliente: ' + error.message);
-          return error;
+          const { data: newCli, error } = await supabase.from('clientes').insert({
+            nombre: c.nombre, rfc: c.rfc, regimen: c.regimen,
+            uso_cfdi: c.usoCfdi || 'G03', cp: c.cp, correo: c.correo,
+            tipo: c.tipo, contacto: c.contacto,
+            nombre_comercial: c.nombreComercial || null,
+            calle: c.calle || null, colonia: c.colonia || null,
+            ciudad: c.ciudad || null, zona: c.zona || null,
+            latitud, longitud,
+            credito_autorizado: c.creditoAutorizado ?? false,
+            limite_credito: Number(c.limiteCredito) || 0,
+          }).select('id').single();
+          if (error) {
+            console.error('[addCliente]', error.message, error.code);
+            t()?.error('Error al crear cliente: ' + error.message);
+            return error;
+          }
+          rf();
+          log('Crear', 'Clientes', `${c.nombre}`);
+          return newCli;
+        } catch (e) {
+          console.error('[addCliente] excepción:', e);
+          t()?.error('Error inesperado al crear cliente');
+          return { message: e?.message || 'Error inesperado' };
         }
-        rf();
-        log('Crear', 'Clientes', `${c.nombre}`);
-        return newCli;
       },
 
       updateCliente: async (id, c) => {
@@ -687,185 +693,256 @@ export function useSupaStore(userId, userName) {
 
       // ── ÓRDENES ──
       addOrden: async (o) => {
-        const items = parseProductos(o.productos);
-        const itemsErr = validateItems(items);
-        if (itemsErr) return { message: itemsErr };
+        try {
+          const items = parseProductos(o.productos);
+          const itemsErr = validateItems(items);
+          if (itemsErr) return { message: itemsErr };
 
-        const [{ data: prods }, { data: pes }] = await Promise.all([
-          supabase.from('productos').select('sku, precio, stock'),
-          supabase.from('precios_esp').select('sku, precio').eq('cliente_id', o.clienteId),
-        ]);
+          const [{ data: prods, error: errProds }, { data: pes, error: errPes }] = await Promise.all([
+            supabase.from('productos').select('sku, precio, stock'),
+            supabase.from('precios_esp').select('sku, precio').eq('cliente_id', o.clienteId),
+          ]);
+          if (errProds) {
+            console.warn('[addOrden] select productos:', errProds.message);
+            t()?.error('No se pudieron leer los productos');
+            return { message: errProds.message };
+          }
+          if (errPes) {
+            console.warn('[addOrden] select precios_esp:', errPes.message);
+            t()?.error('No se pudieron leer los precios especiales');
+            return { message: errPes.message };
+          }
 
-        const built = buildLineas(items, prods || [], pes || []);
-        if (built.error) return { message: built.error };
-        const { lineas, total } = built;
+          const built = buildLineas(items, prods || [], pes || []);
+          if (built.error) return { message: built.error };
+          const { lineas, total } = built;
 
-        const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
-        const folio = formatFolio(seq || 42);
+          const { data: seq, error: errSeq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
+          if (errSeq) {
+            console.warn('[addOrden] rpc nextval:', errSeq.message);
+            t()?.error('No se pudo generar folio');
+            return { message: errSeq.message };
+          }
+          const folio = formatFolio(seq || 42);
 
-        // Build productos string from parsed items
-        const productosStr = o.productos || items.map(i => `${i.qty}×${i.sku}`).join(', ');
+          // Build productos string from parsed items
+          const productosStr = o.productos || items.map(i => `${i.qty}×${i.sku}`).join(', ');
 
-        // Resolve cliente name
-        let clienteNombre = s(o.cliente);
-        if (!clienteNombre && o.clienteId) {
-          const { data: cli } = await supabase.from('clientes').select('nombre').eq('id', o.clienteId).single();
-          clienteNombre = cli?.nombre || 'Público en general';
+          // Resolve cliente name
+          let clienteNombre = s(o.cliente);
+          if (!clienteNombre && o.clienteId) {
+            const { data: cli, error: errCli } = await supabase.from('clientes').select('nombre').eq('id', o.clienteId).single();
+            if (errCli) {
+              console.warn('[addOrden] select clientes (no crítico):', errCli.message);
+            }
+            clienteNombre = cli?.nombre || 'Público en general';
+          }
+          if (!clienteNombre) clienteNombre = 'Público en general';
+
+          // Build insert payload — only include columns that exist in ordenes table
+          const ordenInsert = {
+            folio,
+            cliente_id: o.clienteId || null,
+            cliente_nombre: clienteNombre,
+            productos: productosStr,
+            fecha: o.fecha || new Date().toISOString().slice(0, 10),
+            total,
+            estatus: 'Creada',
+            metodo_pago: o.metodoPago || 'Efectivo',
+            vendedor_id: o.usuarioId || null,
+            tipo_cobro: o.tipoCobro || 'Contado',
+            folio_nota: o.folioNota || null,
+          };
+
+          const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id, folio, cliente_nombre, productos, total, estatus, fecha, metodo_pago, cliente_id, requiere_factura').single();
+          if (e1) { t()?.error('Error al crear orden'); return e1; }
+
+          const { error: e2 } = await supabase.from('orden_lineas').insert(
+            lineas.map(l => ({ ...l, orden_id: newOrd.id }))
+          );
+          if (e2) {
+            // Rollback: borrar la orden creada para evitar orden huérfana sin líneas
+            await supabase.from('ordenes').delete().eq('id', newOrd.id);
+            console.warn('[addOrden] insert orden_lineas, rollback orden:', e2.message);
+            t()?.error('No se pudieron guardar las líneas — orden revertida');
+            return e2;
+          }
+
+          await log('Crear', 'Órdenes', `${folio} — $${total}`);
+          notify('venta', 'Nueva orden creada', `${folio} — ${clienteNombre} — $${total.toLocaleString()}`, '🧾', folio);
+          rf();
+          // Return the created order so callers can use it immediately
+          return { orden: { ...newOrd, cliente: newOrd.cliente_nombre } };
+        } catch (e) {
+          console.error('[addOrden] excepción:', e);
+          t()?.error('Error inesperado al crear orden');
+          return { message: e?.message || 'Error inesperado' };
         }
-        if (!clienteNombre) clienteNombre = 'Público en general';
-
-        // Build insert payload — only include columns that exist in ordenes table
-        const ordenInsert = {
-          folio,
-          cliente_id: o.clienteId || null,
-          cliente_nombre: clienteNombre,
-          productos: productosStr,
-          fecha: o.fecha || new Date().toISOString().slice(0, 10),
-          total,
-          estatus: 'Creada',
-          metodo_pago: o.metodoPago || 'Efectivo',
-          vendedor_id: o.usuarioId || null,
-          tipo_cobro: o.tipoCobro || 'Contado',
-          folio_nota: o.folioNota || null,
-        };
-
-        const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id, folio, cliente_nombre, productos, total, estatus, fecha, metodo_pago, cliente_id, requiere_factura').single();
-        if (e1) { t()?.error('Error al crear orden'); return e1; }
-
-        const { error: e2 } = await supabase.from('orden_lineas').insert(
-          lineas.map(l => ({ ...l, orden_id: newOrd.id }))
-        );
-
-        await log('Crear', 'Órdenes', `${folio} — $${total}`);
-        notify('venta', 'Nueva orden creada', `${folio} — ${clienteNombre} — $${total.toLocaleString()}`, '🧾', folio);
-
-        if (!e2) rf();
-        if (e2) return e2;
-        // Return the created order so callers can use it immediately
-        return { orden: { ...newOrd, cliente: newOrd.cliente_nombre } };
       },
 
       updateOrdenEstatus: async (id, nuevoEst, metodoPago = null, extra = {}) => {
-        const { data: ordenPrev } = await supabase
-          .from('ordenes')
-          .select('estatus, metodo_pago')
-          .eq('id', id)
-          .single();
-
-        let error;
-        if (nuevoEst === 'Asignada') {
-          ({ error } = await supabase.rpc('asignar_orden', { p_orden_id: id, p_ruta_id: null, p_usuario_id: uid() }));
-        } else if (nuevoEst === 'Cancelada') {
-          const { data: ord } = await supabase.from('ordenes').select('estatus').eq('id', id).single();
-          if (ord?.estatus === 'Asignada') {
-            ({ error } = await supabase.rpc('cancelar_orden_asignada', { p_orden_id: id, p_usuario_id: uid() }));
-          } else {
-            ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id));
-          }
-        } else {
-          const updateObj = { estatus: nuevoEst };
-          if (metodoPago) updateObj.metodo_pago = metodoPago;
-          if (extra.folioNota) updateObj.folio_nota = extra.folioNota;
-          ({ error } = await supabase.from('ordenes').update(updateObj).eq('id', id));
-        }
-        if (error) { t()?.error('Error al actualizar orden'); return error; }
-
-        // Auto-registrar ingreso o CxC al cobrar (Entregada)
-        if (nuevoEst === 'Entregada') {
-          const { data: ord } = await supabase
+        try {
+          const { data: ordenPrev, error: errPrev } = await supabase
             .from('ordenes')
-            .select('id, folio, total, cliente_id, metodo_pago, facturama_id')
+            .select('estatus, metodo_pago')
             .eq('id', id)
             .single();
-          if (ord && n(ord.total) > 0) {
-            const cli = ord.cliente_id
-              ? (await supabase.from('clientes').select('nombre').eq('id', ord.cliente_id).single())?.data
-              : null;
-            const mPago = metodoPago || s(ord.metodo_pago) || 'Efectivo';
-            const esCredito = mPago.toLowerCase().includes('crédito') || mPago.toLowerCase().includes('fiado');
-            let downstreamError = null;
+          if (errPrev) {
+            console.warn('[updateOrdenEstatus] select estatus prev:', errPrev.message);
+            t()?.error('No se pudo leer la orden');
+            return errPrev;
+          }
 
-            if (esCredito && ord.cliente_id) {
-              const { data: existingCxc } = await supabase
-                .from('cuentas_por_cobrar')
-                .select('id')
-                .eq('orden_id', id)
-                .maybeSingle();
-
-              if (!existingCxc) {
-                const fechaVenc = new Date();
-                fechaVenc.setDate(fechaVenc.getDate() + 30);
-                const { error: cxcError } = await supabase.from('cuentas_por_cobrar').insert({
-                  cliente_id: ord.cliente_id,
-                  orden_id: id,
-                  fecha_venta: new Date().toISOString().slice(0, 10),
-                  fecha_vencimiento: fechaVenc.toISOString().slice(0, 10),
-                  monto_original: centavos(n(ord.total)),
-                  monto_pagado: 0,
-                  saldo_pendiente: centavos(n(ord.total)),
-                  concepto: `${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
-                  estatus: 'Pendiente',
-                });
-                if (cxcError) {
-                  downstreamError = cxcError;
-                } else {
-                  notify('credito', 'Venta a crédito', `${s(ord.folio)} — ${cli?.nombre || 'Cliente'} — $${n(ord.total).toLocaleString()} a 30 días`, '💳', s(ord.folio));
-                  const { error: saldoError } = await supabase.rpc('increment_saldo', {
-                    p_cli: ord.cliente_id,
-                    p_delta: centavos(n(ord.total)),
-                  });
-                  if (saldoError) downstreamError = saldoError;
-                }
-              }
-            } else {
-              const { data: existingIngreso } = await supabase
-                .from('movimientos_contables')
-                .select('id')
-                .eq('orden_id', id)
-                .eq('tipo', 'Ingreso')
-                .eq('categoria', 'Ventas')
-                .maybeSingle();
-
-              if (!existingIngreso) {
-                const { error: ingresoError } = await supabase.from('movimientos_contables').insert({
-                  fecha: new Date().toISOString().slice(0, 10),
-                  tipo: 'Ingreso', categoria: 'Ventas',
-                  concepto: `Cobro ${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
-                  monto: centavos(n(ord.total)),
-                  orden_id: id,
-                });
-                if (ingresoError) downstreamError = ingresoError;
-              }
+          let error;
+          if (nuevoEst === 'Asignada') {
+            ({ error } = await supabase.rpc('asignar_orden', { p_orden_id: id, p_ruta_id: null, p_usuario_id: uid() }));
+          } else if (nuevoEst === 'Cancelada') {
+            const { data: ord, error: errOrd } = await supabase.from('ordenes').select('estatus').eq('id', id).single();
+            if (errOrd) {
+              console.warn('[updateOrdenEstatus] select para cancelar:', errOrd.message);
+              t()?.error('No se pudo leer la orden para cancelar');
+              return errOrd;
             }
+            if (ord?.estatus === 'Asignada') {
+              ({ error } = await supabase.rpc('cancelar_orden_asignada', { p_orden_id: id, p_usuario_id: uid() }));
+            } else {
+              ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id));
+            }
+          } else {
+            const updateObj = { estatus: nuevoEst };
+            if (metodoPago) updateObj.metodo_pago = metodoPago;
+            if (extra.folioNota) updateObj.folio_nota = extra.folioNota;
+            ({ error } = await supabase.from('ordenes').update(updateObj).eq('id', id));
+          }
+          if (error) { t()?.error('Error al actualizar orden'); return error; }
 
-            if (downstreamError) {
+          // Auto-registrar ingreso o CxC al cobrar (Entregada)
+          if (nuevoEst === 'Entregada') {
+            const { data: ord, error: errOrd } = await supabase
+              .from('ordenes')
+              .select('id, folio, total, cliente_id, metodo_pago, facturama_id')
+              .eq('id', id)
+              .single();
+            if (errOrd) {
+              console.warn('[updateOrdenEstatus] select datos completos:', errOrd.message);
+              // Rollback: restaurar estatus previo
               await supabase.from('ordenes').update({
                 estatus: ordenPrev?.estatus || 'Creada',
-                metodo_pago: ordenPrev?.metodo_pago || ord.metodo_pago,
+                metodo_pago: ordenPrev?.metodo_pago || metodoPago,
               }).eq('id', id);
-              t()?.error('No se pudo sincronizar el cobro: ' + (downstreamError?.message || String(downstreamError)));
-              return downstreamError;
+              t()?.error('No se pudieron leer los datos de la orden — estatus revertido');
+              return errOrd;
+            }
+
+            if (ord && n(ord.total) > 0) {
+              let cli = null;
+              if (ord.cliente_id) {
+                const { data: cliData, error: errCli } = await supabase
+                  .from('clientes').select('nombre').eq('id', ord.cliente_id).single();
+                if (errCli) {
+                  console.warn('[updateOrdenEstatus] select cliente nombre (no crítico):', errCli.message);
+                }
+                cli = cliData;
+              }
+              const mPago = metodoPago || s(ord.metodo_pago) || 'Efectivo';
+              const esCredito = mPago.toLowerCase().includes('crédito') || mPago.toLowerCase().includes('fiado');
+              let downstreamError = null;
+
+              if (esCredito && ord.cliente_id) {
+                const { data: existingCxc, error: errExCxc } = await supabase
+                  .from('cuentas_por_cobrar')
+                  .select('id')
+                  .eq('orden_id', id)
+                  .maybeSingle();
+                if (errExCxc) {
+                  console.warn('[updateOrdenEstatus] select existingCxc:', errExCxc.message);
+                  downstreamError = errExCxc;
+                } else if (!existingCxc) {
+                  const fechaVenc = new Date();
+                  fechaVenc.setDate(fechaVenc.getDate() + 30);
+                  const { error: cxcError } = await supabase.from('cuentas_por_cobrar').insert({
+                    cliente_id: ord.cliente_id,
+                    orden_id: id,
+                    fecha_venta: new Date().toISOString().slice(0, 10),
+                    fecha_vencimiento: fechaVenc.toISOString().slice(0, 10),
+                    monto_original: centavos(n(ord.total)),
+                    monto_pagado: 0,
+                    saldo_pendiente: centavos(n(ord.total)),
+                    concepto: `${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
+                    estatus: 'Pendiente',
+                  });
+                  if (cxcError) {
+                    downstreamError = cxcError;
+                  } else {
+                    notify('credito', 'Venta a crédito', `${s(ord.folio)} — ${cli?.nombre || 'Cliente'} — $${n(ord.total).toLocaleString()} a 30 días`, '💳', s(ord.folio));
+                    const { error: saldoError } = await supabase.rpc('increment_saldo', {
+                      p_cli: ord.cliente_id,
+                      p_delta: centavos(n(ord.total)),
+                    });
+                    if (saldoError) downstreamError = saldoError;
+                  }
+                }
+              } else {
+                const { data: existingIngreso, error: errExIng } = await supabase
+                  .from('movimientos_contables')
+                  .select('id')
+                  .eq('orden_id', id)
+                  .eq('tipo', 'Ingreso')
+                  .eq('categoria', 'Ventas')
+                  .maybeSingle();
+                if (errExIng) {
+                  console.warn('[updateOrdenEstatus] select existingIngreso:', errExIng.message);
+                  downstreamError = errExIng;
+                } else if (!existingIngreso) {
+                  const { error: ingresoError } = await supabase.from('movimientos_contables').insert({
+                    fecha: new Date().toISOString().slice(0, 10),
+                    tipo: 'Ingreso', categoria: 'Ventas',
+                    concepto: `Cobro ${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
+                    monto: centavos(n(ord.total)),
+                    orden_id: id,
+                  });
+                  if (ingresoError) downstreamError = ingresoError;
+                }
+              }
+
+              if (downstreamError) {
+                await supabase.from('ordenes').update({
+                  estatus: ordenPrev?.estatus || 'Creada',
+                  metodo_pago: ordenPrev?.metodo_pago || ord.metodo_pago,
+                }).eq('id', id);
+                t()?.error('No se pudo sincronizar el cobro: ' + (downstreamError?.message || String(downstreamError)));
+                return downstreamError;
+              }
+            }
+
+            // Sync payment status with Facturama if invoice exists
+            if (ord && ord.facturama_id) {
+              try {
+                await backendPost('billing-sync-payment', { ordenId: ord.id });
+              } catch (syncErr) {
+                notify('advertencia', 'Sincronización Facturama', `No se pudo sincronizar el pago de ${s(ord.folio)} con Facturama`, '⚠️', s(ord.folio));
+              }
             }
           }
 
-          // Sync payment status with Facturama if invoice exists
-          if (ord.facturama_id) {
-            try {
-              await backendPost('billing-sync-payment', { ordenId: ord.id });
-            } catch (syncErr) {
-              notify('advertencia', 'Sincronización Facturama', `No se pudo sincronizar el pago de ${s(ord.folio)} con Facturama`, '⚠️', s(ord.folio));
+          if (nuevoEst === 'Facturada') {
+            const { data: ordFact, error: errOrdFact } = await supabase.from('ordenes').select('folio, cliente_nombre').eq('id', id).maybeSingle();
+            if (errOrdFact) {
+              console.warn('[updateOrdenEstatus] select para notify Facturada (no crítico):', errOrdFact.message);
+            } else {
+              notify('factura', 'Orden facturada', `${s(ordFact?.folio)} — ${s(ordFact?.cliente_nombre)}`, '🧾', s(ordFact?.folio));
             }
           }
+
+          await log('Cambiar estatus', 'Órdenes', `Orden #${id} → ${nuevoEst}`);
+
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[updateOrdenEstatus] excepción:', e);
+          t()?.error('Error inesperado al actualizar orden');
+          return { error: e?.message || 'Error inesperado' };
         }
-
-        if (nuevoEst === 'Facturada') {
-          const { data: ordFact } = await supabase.from('ordenes').select('folio, cliente_nombre').eq('id', id).maybeSingle();
-          notify('factura', 'Orden facturada', `${s(ordFact?.folio)} — ${s(ordFact?.cliente_nombre)}`, '🧾', s(ordFact?.folio));
-        }
-
-        await log('Cambiar estatus', 'Órdenes', `Orden #${id} → ${nuevoEst}`);
-
-        rf();
       },
 
       deleteOrden: async (id) => {
@@ -1179,75 +1256,98 @@ export function useSupaStore(userId, userName) {
       },
 
       sacarDeCuartoFrio: async (cfId, sku, cantidad, motivo) => {
-        const { data: row, error: rowErr } = await supabase
-          .from('cuartos_frios').select('stock').eq('id', cfId).single();
-        if (rowErr) { t()?.error('Error al leer cuarto frío'); return rowErr; }
-        const current = (row?.stock && typeof row.stock === 'object') ? row.stock : {};
-        const actual = Number(current[sku] || 0);
-        const qty = Number(cantidad);
-        if (qty <= 0) return new Error('Cantidad inválida');
-        if (actual < qty) {
-          const err = new Error('Inventario insuficiente en cuarto frío');
-          t()?.error(err.message);
-          return err;
+        try {
+          const { data: row, error: rowErr } = await supabase
+            .from('cuartos_frios').select('stock').eq('id', cfId).single();
+          if (rowErr) { t()?.error('Error al leer cuarto frío'); return rowErr; }
+          const current = (row?.stock && typeof row.stock === 'object') ? row.stock : {};
+          const actual = Number(current[sku] || 0);
+          const qty = Number(cantidad);
+          if (qty <= 0) return { message: 'Cantidad inválida' };
+          if (actual < qty) {
+            t()?.error('Inventario insuficiente en cuarto frío');
+            return { message: 'Inventario insuficiente en cuarto frío' };
+          }
+          const updated = {
+            ...current,
+            [sku]: actual - qty,
+          };
+          const { error: updateErr } = await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
+          if (updateErr) { t()?.error('Error al actualizar cuarto frío'); return updateErr; }
+          const { error: movErr } = await supabase.from('inventario_mov').insert({
+            tipo: 'Salida', producto: sku, cantidad: qty,
+            origen: motivo || String(cfId), usuario: uname(),
+          });
+          if (movErr) {
+            await supabase.from('cuartos_frios').update({ stock: current }).eq('id', cfId);
+            t()?.error('Error al registrar movimiento de inventario');
+            return movErr;
+          }
+          log('Salida CF', 'Cuartos Fríos', `${cantidad}×${sku} de ${cfId} — ${motivo || 'Sin motivo'}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[sacarDeCuartoFrio] excepción:', e);
+          t()?.error('Error inesperado al sacar del cuarto frío');
+          return { error: e?.message || 'Error inesperado' };
         }
-        const updated = {
-          ...current,
-          [sku]: actual - qty,
-        };
-        const { error: updateErr } = await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
-        if (updateErr) { t()?.error('Error al actualizar cuarto frío'); return updateErr; }
-        const { error: movErr } = await supabase.from('inventario_mov').insert({
-          tipo: 'Salida', producto: sku, cantidad: qty,
-          origen: motivo || String(cfId), usuario: uname(),
-        });
-        if (movErr) {
-          await supabase.from('cuartos_frios').update({ stock: current }).eq('id', cfId);
-          t()?.error('Error al registrar movimiento de inventario');
-          return movErr;
-        }
-        log('Salida CF', 'Cuartos Fríos', `${cantidad}×${sku} de ${cfId} — ${motivo || 'Sin motivo'}`);
-        rf();
       },
 
       traspasoEntreUbicaciones: async ({ origen, destino, sku, cantidad }) => {
-        const qty = Number(cantidad);
-        if (qty <= 0) return { message: 'Cantidad inválida' };
-        if (origen === destino) return { message: 'Origen y destino deben ser diferentes' };
+        try {
+          const qty = Number(cantidad);
+          if (qty <= 0) return { message: 'Cantidad inválida' };
+          if (origen === destino) return { message: 'Origen y destino deben ser diferentes' };
 
-        const [{ data: rowOrig, error: errO }, { data: rowDest, error: errD }] = await Promise.all([
-          supabase.from('cuartos_frios').select('stock').eq('id', origen).single(),
-          supabase.from('cuartos_frios').select('stock').eq('id', destino).single(),
-        ]);
-        if (errO || errD || !rowOrig || !rowDest) { t()?.error('Error al leer cuartos fríos'); return errO || errD; }
+          const [{ data: rowOrig, error: errO }, { data: rowDest, error: errD }] = await Promise.all([
+            supabase.from('cuartos_frios').select('stock').eq('id', origen).single(),
+            supabase.from('cuartos_frios').select('stock').eq('id', destino).single(),
+          ]);
+          if (errO || errD || !rowOrig || !rowDest) { t()?.error('Error al leer cuartos fríos'); return errO || errD; }
 
-        const stockOrig = (rowOrig?.stock && typeof rowOrig.stock === 'object') ? rowOrig.stock : {};
-        const stockDest = (rowDest?.stock && typeof rowDest.stock === 'object') ? rowDest.stock : {};
-        const disponible = Number(stockOrig[sku] || 0);
-        if (disponible < qty) { t()?.error(`Stock insuficiente: ${disponible} disponible, se requieren ${qty}`); return { message: 'Stock insuficiente' }; }
+          const stockOrig = (rowOrig?.stock && typeof rowOrig.stock === 'object') ? rowOrig.stock : {};
+          const stockDest = (rowDest?.stock && typeof rowDest.stock === 'object') ? rowDest.stock : {};
+          const disponible = Number(stockOrig[sku] || 0);
+          if (disponible < qty) { t()?.error(`Stock insuficiente: ${disponible} disponible, se requieren ${qty}`); return { message: 'Stock insuficiente' }; }
 
-        // Actualizar origen primero
-        const { error: e1 } = await supabase.from('cuartos_frios').update({
-          stock: { ...stockOrig, [sku]: disponible - qty },
-        }).eq('id', origen);
-        if (e1) { t()?.error('Error al descontar de origen'); return e1; }
+          // Actualizar origen primero
+          const { error: e1 } = await supabase.from('cuartos_frios').update({
+            stock: { ...stockOrig, [sku]: disponible - qty },
+          }).eq('id', origen);
+          if (e1) { t()?.error('Error al descontar de origen'); return e1; }
 
-        const { error: e2 } = await supabase.from('cuartos_frios').update({
-          stock: { ...stockDest, [sku]: Number(stockDest[sku] || 0) + qty },
-        }).eq('id', destino);
-        if (e2) {
-          // Rollback origen
-          await supabase.from('cuartos_frios').update({ stock: stockOrig }).eq('id', origen);
-          t()?.error('Error al incrementar destino — traspaso revertido');
-          return e2;
+          const { error: e2 } = await supabase.from('cuartos_frios').update({
+            stock: { ...stockDest, [sku]: Number(stockDest[sku] || 0) + qty },
+          }).eq('id', destino);
+          if (e2) {
+            // Rollback origen
+            await supabase.from('cuartos_frios').update({ stock: stockOrig }).eq('id', origen);
+            t()?.error('Error al incrementar destino — traspaso revertido');
+            return e2;
+          }
+
+          // Registrar movimiento (secundario): si falla NO se hace rollback
+          // de los stocks porque el traspaso real sí ocurrió.
+          const { error: errMov } = await supabase.from('inventario_mov').insert({
+            tipo: 'Traspaso', producto: sku, cantidad: qty,
+            origen: `${origen} → ${destino}`, usuario: uname(),
+          });
+          if (errMov) {
+            console.warn('[traspasoEntreUbicaciones] insert inventario_mov (no crítico):', errMov.message);
+            t()?.error('Traspaso aplicado, pero el movimiento de inventario no se registró.');
+            log('Traspaso', 'Cuartos Fríos', `${qty}×${sku} de ${origen} → ${destino}`);
+            rf();
+            return { error: errMov.message, partial: true };
+          }
+
+          log('Traspaso', 'Cuartos Fríos', `${qty}×${sku} de ${origen} → ${destino}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[traspasoEntreUbicaciones] excepción:', e);
+          t()?.error('Error inesperado en traspaso');
+          return { error: e?.message || 'Error inesperado' };
         }
-
-        await supabase.from('inventario_mov').insert({
-          tipo: 'Traspaso', producto: sku, cantidad: qty,
-          origen: `${origen} → ${destino}`, usuario: uname(),
-        });
-        log('Traspaso', 'Cuartos Fríos', `${qty}×${sku} de ${origen} → ${destino}`);
-        rf();
       },
 
       ajustarExistenciaManual: async ({ sku, nuevaExistencia, motivo }) => {
