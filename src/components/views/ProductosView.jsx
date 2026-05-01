@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, useDebounce, useToast, useConfirm, reporteInventario, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtMoney, useDebounce, useToast, useConfirm, reporteInventario, PAGE_SIZE, Paginator } from './viewsCommon';
 
 export function ProductosView({ data, actions }) {
   const toast = useToast();
@@ -94,8 +94,8 @@ export function ProductosView({ data, actions }) {
         {key:"nombre",label:"Producto",bold:true},
         {key:"tipo",label:"Tipo",badge:true,render:v=><StatusBadge status={v}/>},
         {key:"stock",label:"Stock",render:(v,r)=><span className={`font-semibold ${s(r.tipo)==="Empaque"&&n(v)<200?"text-red-600":"text-slate-800"}`}>{n(v).toLocaleString()}</span>},
-        {key:"costo_unitario",label:"Costo",render:(v,r)=>s(r.tipo)==="Empaque" && n(v)>0?<span className="text-amber-600 font-semibold">${n(v).toFixed(2)}</span>:"—"},
-        {key:"precio",label:"Precio",render:(v,r)=>s(r.tipo)==="Producto Terminado" && n(v)>0?`$${n(v).toFixed(2)}`:"—"},
+        {key:"costo_unitario",label:"Costo",render:(v,r)=>s(r.tipo)==="Empaque" && n(v)>0?<span className="text-amber-600 font-semibold">{fmtMoney(v, { decimals: 2 })}</span>:"—"},
+        {key:"precio",label:"Precio",render:(v,r)=>s(r.tipo)==="Producto Terminado" && n(v)>0?fmtMoney(v, { decimals: 2 }):"—"},
       ]} data={paginated} onRowClick={r=>openEdit(r)}
         emptyMessage={(search?.trim() || filterTipo) ? "Sin resultados" : "Aún no tienes productos"}
         emptyHint={(search?.trim() || filterTipo) ? "Intenta con otra búsqueda o limpia los filtros" : "Crea tu primer producto con el botón de arriba"}

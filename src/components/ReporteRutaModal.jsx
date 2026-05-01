@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Modal, FormBtn, useToast, s, n } from './views/viewsCommon';
+import { Modal, FormBtn, useToast, s, n, fmtMoney } from './views/viewsCommon';
 import { reporteRutaDiaria } from '../utils/exportReports';
 
 export default function ReporteRutaModal({ ruta, data, onClose }) {
@@ -119,15 +119,15 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
               <p className="text-[10px] font-semibold text-emerald-600 uppercase mb-1">Cobrado</p>
-              <p className="text-xl font-extrabold text-emerald-700">${totalCobrado.toLocaleString('es-MX')}</p>
+              <p className="text-xl font-extrabold text-emerald-700">{fmtMoney(totalCobrado)}</p>
             </div>
             <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
               <p className="text-[10px] font-semibold text-amber-600 uppercase mb-1">Crédito</p>
-              <p className="text-xl font-extrabold text-amber-700">${totalCredito.toLocaleString('es-MX')}</p>
+              <p className="text-xl font-extrabold text-amber-700">{fmtMoney(totalCredito)}</p>
             </div>
             <div className="bg-slate-900 rounded-2xl p-4">
               <p className="text-[10px] font-semibold text-slate-300 uppercase mb-1">Total general</p>
-              <p className="text-xl font-extrabold text-white">${totalGeneral.toLocaleString('es-MX')}</p>
+              <p className="text-xl font-extrabold text-white">{fmtMoney(totalGeneral)}</p>
             </div>
           </div>
         </div>
@@ -200,7 +200,7 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
                         <td className="px-3 py-2 font-mono text-xs font-semibold text-blue-600">{s(o.folio || `ORD-${o.id}`)}</td>
                         <td className="px-3 py-2 text-sm text-slate-700">{s(o.cliente || o.cliente_nombre || cli?.nombre || 'Público')}</td>
                         <td className="px-3 py-2"><span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${colorPago}`}>{metodoPago}</span></td>
-                        <td className="text-right px-3 py-2 text-sm font-bold text-slate-800">${n(o.total).toLocaleString('es-MX')}</td>
+                        <td className="text-right px-3 py-2 text-sm font-bold text-slate-800">{fmtMoney(o.total)}</td>
                         <td className="px-3 py-2 text-xs text-slate-500">{s(o.estatus)}</td>
                       </tr>
                     );

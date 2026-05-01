@@ -1,4 +1,4 @@
-import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, fmtDate, useToast, today, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, fmtDate, fmtMoney, useToast, todayISO, PAGE_SIZE, Paginator } from './viewsCommon';
 
 const CATEGORIAS_COSTO = ['Nómina', 'Renta', 'Servicios', 'Gasolina', 'Mantenimiento', 'Empaque', 'Materia Prima', 'Administrativo', 'Otro'];
 const FRECUENCIAS = ['Mensual', 'Quincenal', 'Semanal', 'Único'];
@@ -16,8 +16,8 @@ export function CostosView({ data, actions }) {
 
   const empty = { nombre: '', categoria: 'Servicios', monto: '', frecuencia: 'Mensual', diaCargo: '1', proveedor: '', activo: true };
   const [form, setForm] = useState(empty);
-  const [aplicarForm, setAplicarForm] = useState({ fecha: today(), referencia: '' });
-  const emptyGasto = { concepto: '', categoria: 'Gasolina', monto: '', fecha: today(), referencia: '' };
+  const [aplicarForm, setAplicarForm] = useState({ fecha: todayISO(), referencia: '' });
+  const emptyGasto = { concepto: '', categoria: 'Gasolina', monto: '', fecha: todayISO(), referencia: '' };
   const [gastoForm, setGastoForm] = useState(emptyGasto);
   const [saving, setSaving] = useState(false);
   const [aplicando, setAplicando] = useState(false);
@@ -92,7 +92,7 @@ export function CostosView({ data, actions }) {
   };
 
   const openAplicar = (c) => {
-    setAplicarForm({ fecha: today(), referencia: '' });
+    setAplicarForm({ fecha: todayISO(), referencia: '' });
     setAplicarModal(c);
   };
 
@@ -162,7 +162,7 @@ export function CostosView({ data, actions }) {
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
       <div className="bg-white border border-slate-100 rounded-xl p-4">
         <p className="text-xs text-slate-400 uppercase">Total mes actual</p>
-        <p className="text-xl font-bold text-slate-800">${totalMes.toLocaleString()}</p>
+        <p className="text-xl font-bold text-slate-800">{fmtMoney(totalMes)}</p>
       </div>
       <div className="bg-white border border-slate-100 rounded-xl p-4">
         <p className="text-xs text-slate-400 uppercase">Costos fijos</p>
@@ -216,7 +216,7 @@ export function CostosView({ data, actions }) {
                     {c.proveedor && <p className="text-xs text-slate-400 truncate">Proveedor: {s(c.proveedor)}</p>}
                   </div>
                   <div className="text-right">
-                    <p className="text-lg font-bold text-red-600">${n(c.monto).toLocaleString()}</p>
+                    <p className="text-lg font-bold text-red-600">{fmtMoney(c.monto)}</p>
                     {!c.activo && <span className="text-xs text-slate-400">Inactivo</span>}
                   </div>
                 </div>
@@ -248,7 +248,7 @@ export function CostosView({ data, actions }) {
                       {c.referencia && <p className="text-xs text-slate-400 truncate">Ref: {s(c.referencia)}</p>}
                     </div>
                     <div className="text-right">
-                      <p className="text-sm font-bold text-red-600">-${n(c.monto).toLocaleString()}</p>
+                      <p className="text-sm font-bold text-red-600">{"-" + fmtMoney(c.monto)}</p>
                       <p className="text-xs text-slate-400">{fmtDate(c.fecha || c.createdAt)}</p>
                     </div>
                   </div>
@@ -295,7 +295,7 @@ export function CostosView({ data, actions }) {
           <div className="bg-slate-50 rounded-lg p-3">
             <p className="text-sm font-semibold">{s(aplicarModal.nombre)}</p>
             <p className="text-xs text-slate-500">{s(aplicarModal.categoria)}</p>
-            <p className="text-lg font-bold text-red-600 mt-1">${n(aplicarModal.monto).toLocaleString()}</p>
+            <p className="text-lg font-bold text-red-600 mt-1">{fmtMoney(aplicarModal.monto)}</p>
           </div>
           <FormInput label="Fecha" type="date" value={aplicarForm.fecha} onChange={e => setAplicarForm({ ...aplicarForm, fecha: e.target.value })} />
           <FormInput label="Referencia / Notas" value={aplicarForm.referencia} onChange={e => setAplicarForm({ ...aplicarForm, referencia: e.target.value })} placeholder="Número de factura, recibo, etc." />

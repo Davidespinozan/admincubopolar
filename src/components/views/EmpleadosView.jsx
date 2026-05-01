@@ -1,11 +1,11 @@
-import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, useToast, today } from './viewsCommon';
+import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, useToast, todayISO, fmtMoney } from './viewsCommon';
 
 export function EmpleadosView({ data, actions }) {
   const toast = useToast();
   const [askConfirm, ConfirmEl] = useConfirm();
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(null);
-  const empty = { nombre: "", rfc: "", curp: "", nss: "", puesto: "", depto: "Ventas y Distribución", salarioDiario: "", fechaIngreso: today(), jornada: "Diurna" };
+  const empty = { nombre: "", rfc: "", curp: "", nss: "", puesto: "", depto: "Ventas y Distribución", salarioDiario: "", fechaIngreso: todayISO(), jornada: "Diurna" };
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
   const emps = data.empleados || [];
@@ -57,7 +57,7 @@ export function EmpleadosView({ data, actions }) {
               <div className="flex justify-between items-start gap-2">
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-slate-800 truncate">{s(e.nombre)}</p>
-                  <p className="text-xs text-slate-500 truncate">{s(e.puesto)} · ${n(e.salarioDiario).toFixed(2)}/día</p>
+                  <p className="text-xs text-slate-500 truncate">{s(e.puesto)} · {fmtMoney(e.salarioDiario, { decimals: 2 })}/día</p>
                 </div>
                 <span className={`text-xs px-2 py-1 rounded-full font-semibold ${s(e.estatus) === "Activo" ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>{s(e.estatus)}</span>
               </div>

@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtPct, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 
 export function InventarioView({ data, actions }) {
@@ -155,7 +155,7 @@ export function InventarioView({ data, actions }) {
               <div className="flex justify-between items-center mb-1">
                 <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Tarimas</span>
                 <span className={`text-xs font-bold ${textColorClass}`}>
-                  {ocupado.toFixed(1)}/{capacidad} ({pct}%)
+                  {ocupado.toFixed(1)}/{capacidad} ({fmtPct(ocupado, capacidad)})
                 </span>
               </div>
               <div className="h-2 bg-slate-100 rounded-full overflow-hidden">

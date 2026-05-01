@@ -1,11 +1,11 @@
-import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, today, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
+import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, todayISO, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
 
 export function ContabilidadView({ data, actions }) {
   const toast = useToast();
   const [askConfirm, ConfirmEl] = useConfirm();
   const [showAll, setShowAll] = useState(false);
   const [modal, setModal] = useState(null);
-  const empty = { tipo: "Egreso", categoria: "Proveedores", concepto: "", monto: "", fecha: today() };
+  const empty = { tipo: "Egreso", categoria: "Proveedores", concepto: "", monto: "", fecha: todayISO() };
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -61,15 +61,15 @@ export function ContabilidadView({ data, actions }) {
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
       <div className="bg-emerald-50 rounded-xl p-3 sm:p-4 border border-emerald-200">
         <p className="text-[10px] text-emerald-500 uppercase font-bold">Ingresos</p>
-        <p className="text-lg sm:text-xl font-extrabold text-emerald-700">${totalIngresos.toLocaleString()}</p>
+        <p className="text-lg sm:text-xl font-extrabold text-emerald-700">{fmtMoney(totalIngresos)}</p>
       </div>
       <div className="bg-red-50 rounded-xl p-3 sm:p-4 border border-red-200">
         <p className="text-[10px] text-red-500 uppercase font-bold">Egresos</p>
-        <p className="text-lg sm:text-xl font-extrabold text-red-600">${totalEgresos.toLocaleString()}</p>
+        <p className="text-lg sm:text-xl font-extrabold text-red-600">{fmtMoney(totalEgresos)}</p>
       </div>
       <div className={`col-span-2 sm:col-span-1 rounded-xl p-3 sm:p-4 border ${balance >= 0 ? "bg-blue-50 border-blue-200" : "bg-red-50 border-red-200"}`}>
         <p className="text-[10px] text-slate-500 uppercase font-bold">Balance</p>
-        <p className={`text-xl font-extrabold ${balance >= 0 ? "text-blue-700" : "text-red-600"}`}>${balance.toLocaleString()}</p>
+        <p className={`text-xl font-extrabold ${balance >= 0 ? "text-blue-700" : "text-red-600"}`}>{fmtMoney(balance)}</p>
       </div>
     </div>
 
@@ -79,7 +79,7 @@ export function ContabilidadView({ data, actions }) {
         {Object.entries(egresosPorCat).sort((a, b) => b[1] - a[1]).map(([cat, monto]) => (
           <div key={cat} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
             <span className="text-sm text-slate-600">{cat}</span>
-            <span className="text-sm font-bold text-slate-800">${monto.toLocaleString()}</span>
+            <span className="text-sm font-bold text-slate-800">{fmtMoney(monto)}</span>
           </div>
         ))}
       </div>
@@ -99,12 +99,12 @@ export function ContabilidadView({ data, actions }) {
             <div className="flex justify-between gap-2">
               <span className="text-sm font-semibold text-slate-700 min-w-0 truncate">{s(m.concepto)}</span>
               <div className="flex items-center gap-2 flex-shrink-0">
-                <span className={`text-sm font-bold ${m._tipo === "Ingreso" ? "text-emerald-700" : "text-red-600"}`}>{m._tipo === "Ingreso" ? "+" : "-"}${n(m.monto).toLocaleString()}</span>
+                <span className={`text-sm font-bold ${m._tipo === "Ingreso" ? "text-emerald-700" : "text-red-600"}`}>{(m._tipo === "Ingreso" ? "+" : "-") + fmtMoney(m.monto)}</span>
                 <button onClick={() => askConfirm('Eliminar movimiento','¿Eliminar este movimiento contable?',()=>actions.deleteMovContable(m.id),true)} className="text-red-400 hover:text-red-600 text-xs p-1">✕</button>
               </div>
             </div>
             <div className="flex justify-between mt-0.5">
-              <span className="text-xs text-slate-400">{s(m.fecha)}</span>
+              <span className="text-xs text-slate-400">{fmtDate(m.fecha)}</span>
               <span className={`text-xs ${m._tipo === "Ingreso" ? "text-emerald-600" : "text-red-500"}`}>{s(m.categoria)}</span>
             </div>
           </div>
