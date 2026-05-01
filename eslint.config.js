@@ -32,6 +32,10 @@ export default [
       // Reglas críticas de blindaje (post-incidente CapacityBar)
       'no-undef': 'error',
       'react/jsx-no-undef': 'error',
+      // Marca como "usados" los componentes referenciados en JSX
+      // (sin esto, no-unused-vars reporta falsos positivos en imports JSX)
+      'react/jsx-uses-vars': 'error',
+      'react/jsx-uses-react': 'error',
       // Bonus: detectar imports no usados (warning, no rompe build)
       'no-unused-vars': ['warn', {
         argsIgnorePattern: '^_',

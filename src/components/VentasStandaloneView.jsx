@@ -1,17 +1,14 @@
 import { useState, useMemo, useCallback } from 'react';
-import { s, n, eqId, fmtMoney } from '../utils/safe';
+import { s, n, fmtMoney } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
+import { useToast } from './ui/Toast';
+import NuevaVentaModal from './NuevaVentaModal';
 
 const PAGOS = ["Efectivo", "Transferencia SPEI", "Tarjeta (terminal)", "QR / Link de pago", "Crédito (fiado)"];
-const TIPOS_CLIENTE = ["Tienda", "Restaurante", "Nevería", "Hotel", "Cadena", "Particular", "Otro"];
-const USOS_CFDI = [
-  { val: "G01", label: "G01 — Adquisición de mercancías" },
-  { val: "G03", label: "G03 — Gastos en general" },
-  { val: "S01", label: "S01 — Sin efectos fiscales" },
-];
 const VENTAS_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function VentasStandaloneView({ user, data, actions, onLogout }) {
+  const toast = useToast();
   const [tab, setTab] = useState("ventas");
   const [modal, setModal] = useState(false);
   const [pagoModal, setPagoModal] = useState(null);
@@ -21,19 +18,9 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const [shortUrl, setShortUrl] = useState(null);
   const [generandoLink, setGenerandoLink] = useState(false);
   const [confirmandoCobro, setConfirmandoCobro] = useState(false);
-  const [creandoOrden, setCreandoOrden] = useState(false);
-  const [registrandoCliente, setRegistrandoCliente] = useState(false);
-  const [toast, setToast] = useState("");
+  const [localToast, setLocalToast] = useState("");
 
-  // Order form
-  const [form, setForm] = useState({ clienteId: "", requiereFactura: false });
-  const [lines, setLines] = useState([{ sku: "", qty: 1, precio: 0 }]);
-
-  // New client inline form
-  const [nuevoCliente, setNuevoCliente] = useState(false);
-  const [cliForm, setCliForm] = useState({ nombre: "", contacto: "", tipo: "Tienda", requiereFactura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
-
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
+  const showToast = (msg) => { setLocalToast(msg); setTimeout(() => setLocalToast(""), 3000); };
 
   const isOwnedBy = useCallback((row) => {
     if (!row) return false;
@@ -51,117 +38,9 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
 
   const isAdminPreview = user?.rol === 'Admin';
   const ordenesUsuario = useMemo(() => isAdminPreview ? (data.ordenes || []) : (data.ordenes || []).filter(o => isOwnedBy(o)), [data.ordenes, isOwnedBy, isAdminPreview]);
-  const clientes = useMemo(() => (data.clientes || []).filter(c => c.estatus === "Activo"), [data.clientes]);
-  const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
-
-  const getPrice = useCallback((cId, sku) => {
-    if (cId) { const esp = data.preciosEsp.find(p => eqId(p.clienteId, cId) && p.sku === sku); if (esp) return n(esp.precio); }
-    const prod = data.productos.find(p => p.sku === sku);
-    return prod ? n(prod.precio) : 0;
-  }, [data.preciosEsp, data.productos]);
-
-  const getStock = useCallback((sku) => {
-    if (!sku) return 0;
-    const prod = data.productos.find(p => s(p.sku) === s(sku));
-    return prod ? n(prod.stock) : 0;
-  }, [data.productos]);
-
-  const handleClientChange = (cId) => {
-    setForm(f => ({ ...f, clienteId: cId }));
-    setLines(prev => prev.map(l => ({ ...l, precio: getPrice(cId, l.sku) })));
-    setNuevoCliente(false);
-  };
-  const addLine = () => setLines(prev => [...prev, { sku: "", qty: 1, precio: 0 }]);
-  const updateLine = (idx, field, val) => setLines(prev => prev.map((l, i) => {
-    if (i !== idx) return l;
-    const u = { ...l, [field]: val };
-    if (field === "sku") u.precio = getPrice(form.clienteId, val);
-    return u;
-  }));
-  const removeLine = (idx) => setLines(prev => prev.filter((_, i) => i !== idx));
-
-  const subtotal = useMemo(() => lines.reduce((s, l) => s + (n(l.qty) * n(l.precio)), 0), [lines]);
-  const totalCalc = subtotal; // Hielo: IVA tasa 0%
-  const productosStr = useMemo(() => lines.filter(l => l.sku && l.qty > 0).map(l => `${l.qty}×${l.sku}`).join(", "), [lines]);
-
-  // Register new client and select it using the real Supabase-assigned ID
-  const registrarCliente = async () => {
-    if (registrandoCliente) return;
-    if (!cliForm.nombre.trim()) return;
-    const nuevo = {
-      nombre: cliForm.nombre.trim(),
-      contacto: cliForm.contacto,
-      tipo: cliForm.tipo,
-      rfc: cliForm.requiereFactura ? cliForm.rfc : "XAXX010101000",
-      correo: cliForm.requiereFactura ? cliForm.correo : "",
-      regimen: cliForm.requiereFactura ? cliForm.regimen : "Sin obligaciones",
-      usoCfdi: cliForm.requiereFactura ? cliForm.usoCfdi : "S01",
-      cp: cliForm.cp || "34000",
-    };
-    setRegistrandoCliente(true);
-    try {
-      const result = await actions.addCliente(nuevo);
-      // result is { id } on success or an error object
-      const realId = result?.id ? String(result.id) : null;
-      if (!realId) {
-        showToast('No se pudo registrar el cliente. Intenta de nuevo.');
-        return;
-      }
-      setForm(f => ({ ...f, clienteId: realId, requiereFactura: cliForm.requiereFactura }));
-      setLines(prev => prev.map(l => ({ ...l, precio: getPrice(realId, l.sku) })));
-      setNuevoCliente(false);
-      showToast("Cliente " + cliForm.nombre + " registrado ✓");
-      setCliForm({ nombre: "", contacto: "", tipo: "Tienda", requiereFactura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
-    } catch (e) {
-      console.error('Error registrando cliente:', e);
-      showToast('Error al registrar cliente. Verifica tu conexión.');
-    } finally {
-      setRegistrandoCliente(false);
-    }
-  };
-
-  const crearOrden = async () => {
-    if (creandoOrden) return;
-    if (!form.clienteId) return;
-    if (!lines.some(l => l.sku && l.qty > 0)) return;
-    const cli = (data.clientes || []).find(c => eqId(c.id, form.clienteId));
-    const total = totalCalc;
-    setCreandoOrden(true);
-    try {
-      const result = await actions.addOrden({
-        cliente: s(cli?.nombre), clienteId: form.clienteId,
-        fecha: new Date().toISOString().slice(0, 10),
-        productos: productosStr, total,
-        requiereFactura: form.requiereFactura,
-        usuarioId: user?.id,
-        authId: user?.auth_id,
-      });
-      setModal(false);
-      setForm({ clienteId: "", requiereFactura: false });
-      setLines([{ sku: "", qty: 1, precio: 0 }]);
-      // Auto-open payment modal with the newly created order
-      if (result?.orden) {
-        showToast("Orden creada — ahora cobra");
-        cobrar(result.orden);
-      } else {
-        showToast("Orden creada — " + fmtMoney(total));
-      }
-    } catch (e) {
-      console.error('Error creando orden:', e);
-      showToast('Error al crear orden. Verifica tu conexión.');
-    } finally {
-      setCreandoOrden(false);
-    }
-  };
 
   const cobrar = (ord) => { setPagoModal(ord); setPagoForm({ metodo: "Efectivo", referencia: "" }); setCheckoutUrl(null); setShortUrl(null); };
 
-  const abrirNuevaVenta = () => {
-    setModal(true);
-    setLines([{ sku: "", qty: 1, precio: 0 }]);
-    setForm({ clienteId: "", requiereFactura: false });
-    setNuevoCliente(false);
-  };
   const confirmarCobro = async () => {
     if (!pagoModal) return;
     if (pagoForm.metodo === "QR / Link de pago") {
@@ -200,6 +79,8 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const ordenesHoy = useMemo(() => ordenesUsuario.filter(o => o.fecha && o.fecha.slice(0, 10) === hoy), [ordenesUsuario, hoy]);
   const pendientes = useMemo(() => ordenesUsuario.filter(o => o.estatus === "Creada"), [ordenesUsuario]);
   const ventasHoy = useMemo(() => ordenesHoy.filter(o => o.estatus === "Entregada").reduce((s, o) => s + n(o.total), 0), [ordenesHoy]);
+
+  const abrirNuevaVenta = () => setModal(true);
 
   return (
     <div className={VENTAS_SHELL}>
@@ -294,170 +175,25 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
         <div className="h-8" />
       </div>
 
-      {/* ═══ MODAL NUEVA VENTA ═══ */}
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setModal(false)}>
-          <div className="w-full max-w-lg rounded-t-[30px] border border-slate-200/80 bg-white p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(22,18,15,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Comercial</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Nueva venta</h3>
-            <div className="space-y-4">
-
-              {/* ── CLIENTE ── */}
-              {!nuevoCliente ? (
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Cliente</label>
-                  <select value={form.clienteId} onChange={e => handleClientChange(e.target.value)}
-                    className="w-full px-3 py-3 border border-slate-200 rounded-xl text-sm bg-white">
-                    <option value="">Seleccionar cliente...</option>
-                    {clientes.map(c => <option key={c.id} value={c.id}>{s(c.nombre)}{c.rfc && c.rfc !== "XAXX010101000" ? " · " + s(c.rfc) : ""}</option>)}
-                  </select>
-                  <button onClick={() => setNuevoCliente(true)} className="text-xs text-blue-600 font-bold mt-2">
-                    + Registrar cliente nuevo
-                  </button>
-                </div>
-              ) : (
-                <div className="bg-blue-50 rounded-2xl p-4 border border-blue-200">
-                  <div className="flex justify-between items-center mb-3">
-                    <h4 className="text-sm font-bold text-blue-800">Nuevo cliente</h4>
-                    <button onClick={() => setNuevoCliente(false)} className="text-xs text-blue-500">Cancelar</button>
-                  </div>
-                  <div className="space-y-2.5">
-                    <div>
-                      <label className="block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Nombre *</label>
-                      <input value={cliForm.nombre} onChange={e => setCliForm(f => ({ ...f, nombre: e.target.value }))}
-                        className="w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm bg-white" placeholder="Nombre o razón social" autoFocus />
-                    </div>
-                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Teléfono</label>
-                        <input value={cliForm.contacto} onChange={e => setCliForm(f => ({ ...f, contacto: e.target.value }))}
-                        className="w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm bg-white" placeholder="618 123 4567" type="tel" inputMode="tel" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-bold text-blue-600 uppercase mb-0.5">Tipo</label>
-                        <select value={cliForm.tipo} onChange={e => setCliForm(f => ({ ...f, tipo: e.target.value }))}
-                          className="w-full px-3 py-2.5 border border-blue-200 rounded-xl text-sm bg-white">
-                          {TIPOS_CLIENTE.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Factura toggle */}
-                    <div className="flex items-center justify-between bg-white rounded-xl p-3 border border-blue-200">
-                      <div>
-                        <p className="text-sm font-bold text-slate-800">¿Requiere factura?</p>
-                        <p className="text-[10px] text-slate-400">Se pedirán datos fiscales</p>
-                      </div>
-                      <button onClick={() => setCliForm(f => ({ ...f, requiereFactura: !f.requiereFactura }))}
-                        className={`w-12 h-7 rounded-full transition-all relative ${cliForm.requiereFactura ? "bg-blue-600" : "bg-slate-300"}`}>
-                        <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-all ${cliForm.requiereFactura ? "left-[22px]" : "left-0.5"}`} />
-                      </button>
-                    </div>
-
-                    {/* Datos fiscales (solo si requiere factura) */}
-                    {cliForm.requiereFactura && (
-                      <div className="bg-white rounded-xl p-3 border border-blue-200 space-y-2">
-                        <p className="text-[10px] font-bold text-purple-600 uppercase">Datos fiscales</p>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">RFC *</label>
-                          <input value={cliForm.rfc} onChange={e => setCliForm(f => ({ ...f, rfc: e.target.value.toUpperCase() }))}
-                            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm font-mono" placeholder="XAXX010101000" maxLength={13} />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Correo para factura</label>
-                          <input value={cliForm.correo} onChange={e => setCliForm(f => ({ ...f, correo: e.target.value }))}
-                            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="correo@empresa.com" type="email" />
-                        </div>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Uso CFDI</label>
-                            <select value={cliForm.usoCfdi} onChange={e => setCliForm(f => ({ ...f, usoCfdi: e.target.value }))}
-                              className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white">
-                              {USOS_CFDI.map(u => <option key={u.val} value={u.val}>{u.label}</option>)}
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">C.P.</label>
-                            <input value={cliForm.cp} onChange={e => setCliForm(f => ({ ...f, cp: e.target.value }))}
-                              className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="34000" maxLength={5} />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    <button onClick={registrarCliente} disabled={registrandoCliente || !cliForm.nombre.trim() || (cliForm.requiereFactura && !cliForm.rfc.trim())}
-                      className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm disabled:opacity-40 disabled:cursor-not-allowed">
-                      {registrandoCliente ? 'Registrando…' : 'Registrar cliente y continuar'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Show selected client info */}
-              {form.clienteId && !nuevoCliente && (() => {
-                const cli = (data.clientes || []).find(c => eqId(c.id, form.clienteId));
-                if (!cli) return null;
-                const tieneRfc = cli.rfc && cli.rfc !== "XAXX010101000";
-                return (
-                  <div className="bg-emerald-50 rounded-xl p-3 border border-emerald-200">
-                    <div className="flex justify-between items-center">
-                      <div>
-                        <p className="text-sm font-bold text-slate-800">{s(cli.nombre)}</p>
-                        <p className="text-xs text-slate-500">{tieneRfc ? s(cli.rfc) : "Sin RFC"} {cli.contacto && cli.contacto !== "—" ? " · " + s(cli.contacto) : ""}</p>
-                      </div>
-                      {n(cli.saldo) > 0 && <span className="min-w-[72px] rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white">{"Debe " + fmtMoney(cli.saldo)}</span>}
-                    </div>
-                    {/* Factura toggle for this order */}
-                    {tieneRfc && (
-                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-emerald-200">
-                        <span className="text-xs text-slate-600 font-semibold">Facturar esta venta</span>
-                        <button onClick={() => setForm(f => ({ ...f, requiereFactura: !f.requiereFactura }))}
-                          className={`w-10 h-6 rounded-full transition-all relative ${form.requiereFactura ? "bg-purple-600" : "bg-slate-300"}`}>
-                          <div className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-all ${form.requiereFactura ? "left-[18px]" : "left-0.5"}`} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-
-              {/* ── PRODUCTOS ── */}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Productos</label>
-                {lines.map((l, i) => (
-                  <div key={i} className="mb-2">
-                    <div className="flex items-center gap-2">
-                      <select value={l.sku} onChange={e => updateLine(i, "sku", e.target.value)}
-                        className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
-                        <option value="">Producto...</option>
-                        {prodTerminados.map(p => <option key={p.sku} value={s(p.sku)}>{s(p.nombre)} · ${getPrice(form.clienteId, s(p.sku))}</option>)}
-                      </select>
-                      <input type="number" min="1" value={l.qty} onChange={e => updateLine(i, "qty", parseInt(e.target.value) || 1)}
-                        className="w-14 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center" />
-                      <span className="text-sm font-bold text-slate-600 w-16 text-right">{fmtMoney(n(l.qty) * n(l.precio))}</span>
-                      {lines.length > 1 && <button onClick={() => removeLine(i)} className="text-red-400 text-lg w-6">×</button>}
-                    </div>
-                    {l.sku && <p className="text-[11px] text-slate-500 mt-1 ml-1">Stock: {getStock(l.sku).toLocaleString()} bolsas</p>}
-                  </div>
-                ))}
-                <button onClick={addLine} className="text-xs text-blue-600 font-semibold">+ Agregar producto</button>
-              </div>
-
-              {/* ── TOTALES ── */}
-              <div className="bg-slate-50 rounded-xl p-3 space-y-1">
-                <div className="flex justify-between text-base font-bold text-slate-800"><span>Total</span><span>{fmtMoney(totalCalc)}</span></div>
-                <div className="flex justify-between text-xs text-slate-400"><span>IVA 0% (hielo)</span></div>
-              </div>
-            </div>
-
-            <button onClick={crearOrden} disabled={creandoOrden || !form.clienteId || !lines.some(l => l.sku)}
-              className="w-full mt-4 rounded-[18px] bg-emerald-600 py-3.5 text-sm font-bold text-white disabled:opacity-40 disabled:cursor-not-allowed">
-              {creandoOrden ? "Creando venta…" : form.requiereFactura ? "Crear venta con factura" : "Crear venta"}
-            </button>
-          </div>
-        </div>
-      )}
+      {/* ═══ MODAL NUEVA VENTA (componente compartido) ═══ */}
+      <NuevaVentaModal
+        open={modal}
+        onClose={() => setModal(false)}
+        onSuccess={(orden) => {
+          setModal(false);
+          if (orden) {
+            showToast('Orden creada — ahora cobra');
+            cobrar(orden);
+          } else {
+            showToast('Orden creada');
+          }
+        }}
+        data={data}
+        actions={actions}
+        user={user}
+        toast={toast}
+        variant="standalone"
+      />
 
       {/* ═══ MODAL COBRO ═══ */}
       {pagoModal && (
@@ -503,9 +239,9 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
         </div>
       )}
 
-      {toast && (
+      {localToast && (
         <div className="fixed top-4 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_32px_rgba(5,150,105,0.24)]" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }} role="status" aria-live="polite">
-          {toast}
+          {localToast}
         </div>
       )}
     </div>
