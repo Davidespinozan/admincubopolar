@@ -87,7 +87,6 @@ const AREAS = [
 ];
 
 const ALL_ITEMS = AREAS.flatMap(a => a.items);
-const BOTTOM_PRIMARY = ["dashboard", "ordenes", "produccion", "cobros"];
 const AREA_META = {
   operacion: {
     tagline: 'Cadena fria y despacho',
@@ -147,7 +146,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   const toggleArea = (areaId) => {
     setAreasExpandidas(prev => ({ ...prev, [areaId]: !prev[areaId] }));
   };
-  const [moreOpen, setMoreOpen] = useState(false);
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [alertasOpen, setAlertasOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
 
@@ -164,19 +163,19 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   }, [data.alertas]);
 
   useEffect(() => {
-    if (!alertasOpen && !moreOpen && !notifOpen) return undefined;
+    if (!alertasOpen && !mobileDrawerOpen && !notifOpen) return undefined;
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
         setAlertasOpen(false);
-        setMoreOpen(false);
+        setMobileDrawerOpen(false);
         setNotifOpen(false);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [alertasOpen, moreOpen, notifOpen]);
+  }, [alertasOpen, mobileDrawerOpen, notifOpen]);
 
   const renderView = () => {
     switch (view) {
@@ -206,7 +205,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
     }
   };
 
-  const go = useCallback((id) => { setView(id); setMoreOpen(false); }, []);
+  const go = useCallback((id) => { setView(id); setMobileDrawerOpen(false); }, []);
   const current = ALL_ITEMS.find(n => n.id === view);
   const currentArea = AREAS.find(area => area.items.some(item => item.id === view)) || AREAS[0];
   const currentMeta = AREA_META[currentArea?.id] || AREA_META.operacion;
@@ -296,9 +295,17 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       <header className="sticky top-0 z-30 px-3 pt-2 lg:ml-[300px] lg:px-6 lg:pt-4 xl:ml-[320px]" style={{paddingTop: "max(env(safe-area-inset-top, 0px), 0.5rem)"}}>
         <div className="erp-panel erp-shell-blur flex items-center justify-between gap-2 rounded-[22px] px-4 py-2.5 lg:rounded-[28px] lg:px-5 lg:py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[12px] bg-slate-900 lg:hidden">
-              <img src="/icon-192.png" alt="CuboPolar" className="h-5 w-5" />
-            </div>
+            <button
+              onClick={() => setMobileDrawerOpen(true)}
+              className="lg:hidden flex h-10 w-10 -ml-1 mr-1 flex-shrink-0 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+              aria-label="Abrir menú"
+            >
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="18" x2="20" y2="18" />
+              </svg>
+            </button>
             <p className="font-display truncate text-base font-bold tracking-[-0.04em] text-slate-900 lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
           </div>
           <div className="relative flex flex-shrink-0 items-center gap-2">
@@ -371,86 +378,118 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
         </div>
       </header>
 
+      {/* ═══ DRAWER LATERAL — mobile ═══ */}
+      {mobileDrawerOpen && (
+        <>
+          <div
+            className="lg:hidden fixed inset-0 bg-black/40 z-40 animate-fadeIn"
+            onClick={() => setMobileDrawerOpen(false)}
+          />
+          <aside
+            className="lg:hidden fixed top-0 left-0 bottom-0 w-[85%] max-w-[320px] bg-white z-50 shadow-2xl overflow-y-auto animate-slideInLeft flex flex-col"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menú principal"
+          >
+            {/* Header */}
+            <div className="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between z-10">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="h-9 w-9 flex-shrink-0 rounded-xl bg-slate-900 flex items-center justify-center">
+                  <img src="/icon-192.png" alt="CuboPolar" className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-extrabold text-slate-900 leading-tight">CUBOPOLAR</p>
+                  <p className="text-[10px] uppercase tracking-wider text-slate-400">ERP Operativo</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMobileDrawerOpen(false)}
+                className="h-9 w-9 flex-shrink-0 rounded-xl hover:bg-slate-100 flex items-center justify-center"
+                aria-label="Cerrar menú"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Áreas con módulos */}
+            <nav className="flex-1 px-3 py-3">
+              {AREAS.map(area => (
+                <div key={area.id} className="mb-4">
+                  <p className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                    {area.label}
+                  </p>
+                  <div className="space-y-0.5">
+                    {area.items.map(item => (
+                      <button
+                        key={item.id}
+                        onClick={() => { setView(item.id); setMobileDrawerOpen(false); }}
+                        className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
+                          view === item.id
+                            ? 'bg-slate-900 text-white'
+                            : 'text-slate-700 hover:bg-slate-100 active:bg-slate-200'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </nav>
+
+            {/* Footer: usuario + Ver como + Cerrar sesión */}
+            <div className="border-t border-slate-100 px-3 py-3 sticky bottom-0 bg-white">
+              {user && (
+                <div className="flex items-center gap-3 px-3 py-2 mb-2">
+                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-cyan-200 to-cyan-300 text-slate-900 flex items-center justify-center text-sm font-extrabold">
+                    {(user.nombre || 'U').charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-slate-900 truncate">{user.nombre || 'Usuario'}</p>
+                    <p className="text-xs text-slate-500 truncate">{user.rol || ''}</p>
+                  </div>
+                </div>
+              )}
+              {onViewAs && (
+                <div className="mb-2 px-1">
+                  <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Ver como…</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {["Chofer","Ventas","Producción","Almacén Bolsas"].map(r => (
+                      <button
+                        key={r}
+                        onClick={() => { onViewAs(r); setMobileDrawerOpen(false); }}
+                        className="rounded-xl border border-blue-200 bg-blue-50 px-2 py-2 text-xs font-semibold text-blue-700 active:bg-blue-100"
+                      >
+                        {r}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {onLogout && (
+                <button
+                  onClick={() => { onLogout(); setMobileDrawerOpen(false); }}
+                  className="w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50"
+                >
+                  Cerrar sesión
+                </button>
+              )}
+            </div>
+          </aside>
+        </>
+      )}
+
       {/* ═══ MAIN ═══ */}
-      <main className="px-3 pb-24 pt-4 sm:px-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px]">
+      <main className="px-3 pt-4 sm:px-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px]">
         <div className="relative">
           <div className={`pointer-events-none absolute inset-x-8 top-0 h-16 rounded-[32px] bg-gradient-to-r ${currentMeta.glow} opacity-45 blur-3xl`} />
           <div className="relative"><ChunkErrorBoundary><Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>{renderView()}</Suspense></ChunkErrorBoundary></div>
         </div>
       </main>
 
-      {/* ═══ BOTTOM NAV — mobile ═══ */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 border-t border-blue-200/60 bg-white/96 text-slate-900 backdrop-blur-xl lg:hidden" style={{paddingBottom: "env(safe-area-inset-bottom, 0px)"}}>
-        <div className="flex items-stretch">
-          {BOTTOM_PRIMARY.map(id => {
-            const item = ALL_ITEMS.find(n => n.id === id);
-            if (!item) return null;
-            const Ic = Icons[item.icon] || Icons.Package;
-            const active = view === id && !moreOpen;
-            return (
-              <button key={id} onClick={() => go(id)}
-                className={`flex min-h-[60px] flex-1 flex-col items-center justify-center px-1 py-2 transition-colors ${active ? 'text-blue-600' : 'text-slate-400 active:text-slate-700'}`}>
-                <Ic />
-                <span className="mt-0.5 max-w-full truncate px-0.5 text-[11px] font-semibold leading-none sm:text-xs">{
-                  id === "dashboard" ? "Inicio" :
-                  id === "cobros" ? "Cobrar" :
-                  item.label
-                }</span>
-              </button>
-            );
-          })}
-          <button onClick={() => setMoreOpen(!moreOpen)}
-            className={`flex min-h-[60px] flex-1 flex-col items-center justify-center px-1 py-2 transition-colors ${moreOpen || !BOTTOM_PRIMARY.includes(view) ? 'text-blue-600' : 'text-slate-400 active:text-slate-700'}`}>
-            <Icons.MoreH />
-            <span className="mt-0.5 text-[11px] font-semibold leading-none sm:text-xs">Más</span>
-          </button>
-        </div>
-      </nav>
-
-      {/* ═══ "MÁS" OVERFLOW — mobile ═══ */}
-      {moreOpen && (
-        <div className="fixed inset-0 z-[80] lg:hidden" onClick={() => setMoreOpen(false)}>
-          <div className="absolute inset-0 bg-slate-950/68 backdrop-blur-md" />
-          <div className="absolute bottom-0 left-0 right-0 max-h-[80vh] overflow-y-auto rounded-t-[30px] border-t border-blue-200/80 bg-white text-slate-900 shadow-[0_-24px_60px_rgba(8,20,27,0.24)] safe-bottom" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Más módulos">
-            <div className="mx-auto mb-2 mt-3 h-1 w-10 rounded-full bg-slate-200" />
-            <div className="px-4 pb-4">
-              {AREAS.map(area => (
-                <div key={area.id} className="mb-3">
-                  <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{area.label}</p>
-                  <div className="grid grid-cols-3 gap-2">
-                    {area.items.filter(i => !BOTTOM_PRIMARY.includes(i.id)).map(item => {
-                      const Ic = Icons[item.icon] || Icons.Package;
-                      const active = view === item.id;
-                      return (
-                        <button key={item.id} onClick={() => go(item.id)}
-                          className={`flex min-h-[68px] flex-col items-center justify-center rounded-[18px] py-3 transition-colors ${active ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-slate-50 text-slate-600 active:bg-slate-100'}`}>
-                          <Ic />
-                          <span className="text-[10px] font-semibold mt-1.5 leading-tight text-center truncate max-w-full px-1">{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-              {onViewAs && (
-                <div className="mt-1 border-t border-white/8 pt-3">
-                  <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Ver como...</p>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    {["Chofer","Ventas","Producción","Almacén Bolsas"].map(r => (
-                      <button key={r} onClick={()=>{onViewAs(r);setMoreOpen(false)}} className="rounded-[16px] border border-blue-200 bg-blue-50 px-2 py-2.5 text-xs font-semibold text-blue-700 active:bg-blue-100">{r}</button>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {onLogout && (
-                <button onClick={onLogout} className="mt-2 flex w-full items-center justify-center gap-2 rounded-[16px] border border-red-200 py-3 text-red-600 active:bg-red-50">
-                  <Icons.X /><span className="text-xs font-semibold">Cerrar sesión</span>
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
