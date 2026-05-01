@@ -1358,6 +1358,99 @@ export function useSupaStore(userId, userName) {
         }
       },
 
+      ajustarStockCuarto: async ({ cuartoId, ajustes, motivo }) => {
+        try {
+          if (!cuartoId) return { message: 'Cuarto frío requerido' };
+          if (!Array.isArray(ajustes) || ajustes.length === 0) return { message: 'Sin ajustes' };
+          const motivoTxt = String(motivo || '').trim();
+          if (!motivoTxt) return { message: 'Motivo requerido' };
+
+          const { data: cuarto, error: cfErr } = await supabase
+            .from('cuartos_frios')
+            .select('id,nombre,stock')
+            .eq('id', cuartoId)
+            .single();
+          if (cfErr || !cuarto) { t()?.error('Error al leer cuarto frío'); return cfErr || { message: 'Cuarto no encontrado' }; }
+
+          const stockPrev = (cuarto.stock && typeof cuarto.stock === 'object') ? { ...cuarto.stock } : {};
+          const stockNuevo = { ...stockPrev };
+          const cambiosReales = [];
+
+          for (const a of ajustes) {
+            const sku = String(a?.sku || '').trim();
+            if (!sku) continue;
+            const nueva = Number(a?.nuevaCantidad);
+            if (!Number.isFinite(nueva) || nueva < 0) continue;
+            const actual = Number(stockPrev[sku] || 0);
+            if (nueva === actual) continue;
+            if (nueva === 0) {
+              delete stockNuevo[sku];
+            } else {
+              stockNuevo[sku] = nueva;
+            }
+            cambiosReales.push({ sku, actual, nueva, delta: nueva - actual });
+          }
+
+          if (cambiosReales.length === 0) return { message: 'Sin cambios reales' };
+
+          const { error: updErr } = await supabase
+            .from('cuartos_frios')
+            .update({ stock: stockNuevo })
+            .eq('id', cuartoId);
+          if (updErr) { t()?.error('Error al actualizar stock del cuarto frío'); return updErr; }
+
+          const movRows = cambiosReales.map(c => ({
+            tipo: c.delta >= 0 ? 'Entrada' : 'Salida',
+            producto: c.sku,
+            cantidad: Math.abs(c.delta),
+            origen: `Ajuste ${s(cuarto.nombre)}: ${motivoTxt}`,
+            usuario: uname(),
+          }));
+          const { error: movErr } = await supabase.from('inventario_mov').insert(movRows);
+          if (movErr) {
+            console.warn('[ajustarStockCuarto] insert inventario_mov (no crítico):', movErr.message);
+            t()?.error('Stock ajustado, pero el movimiento de inventario no se registró.');
+          }
+
+          // Sincronizar productos.stock con la suma global (solo SKUs afectados)
+          const skusAfectados = cambiosReales.map(c => c.sku);
+          const { data: cuartosTodos, error: cfTodosErr } = await supabase
+            .from('cuartos_frios')
+            .select('stock');
+          if (!cfTodosErr && Array.isArray(cuartosTodos)) {
+            const totales = {};
+            for (const sku of skusAfectados) totales[sku] = 0;
+            for (const cf of cuartosTodos) {
+              const st = (cf.stock && typeof cf.stock === 'object') ? cf.stock : {};
+              for (const sku of skusAfectados) {
+                totales[sku] += Number(st[sku] || 0);
+              }
+            }
+            const updates = skusAfectados.map(sku =>
+              supabase.from('productos').update({ stock: totales[sku] }).eq('sku', sku)
+            );
+            const results = await Promise.all(updates);
+            const failed = results.find(r => r.error);
+            if (failed?.error) {
+              console.warn('[ajustarStockCuarto] sync productos.stock:', failed.error.message);
+              t()?.error('Stock ajustado, pero la sincronización de productos falló.');
+            }
+          }
+
+          const detalle = cambiosReales
+            .map(c => `${c.sku}: ${c.actual} → ${c.nueva}`)
+            .join(', ');
+          await log('Ajustar', 'Cuartos Fríos', `${s(cuarto.nombre)} — ${detalle}. Motivo: ${motivoTxt}`);
+
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[ajustarStockCuarto] excepción:', e);
+          t()?.error('Error inesperado al ajustar stock del cuarto');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
       ajustarExistenciaManual: async ({ sku, nuevaExistencia, motivo }) => {
         const target = Number(nuevaExistencia);
         if (!sku || Number.isNaN(target) || target < 0) {
