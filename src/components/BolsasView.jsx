@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { s, n } from '../utils/safe';
+import { EmptyState } from './ui/Skeleton';
 
 const BOLSAS_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
@@ -95,6 +96,12 @@ export default function BolsasView({ user, data, actions, onLogout }) {
       </div>
 
       <div className="px-4 pt-4 space-y-4">
+        {(!empaques || empaques.length === 0) && (
+          <EmptyState
+            message="Sin tipos de empaque configurados"
+            hint="Pide a Admin que agregue empaques (EMP-25, EMP-5) al catálogo"
+          />
+        )}
         {empaques.map(p => {
           const mov = movHoy[s(p.sku)] || { entradas: 0, salidas: 0 };
           return (

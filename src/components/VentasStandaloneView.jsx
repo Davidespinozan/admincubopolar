@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { s, n, eqId } from '../utils/safe';
+import { EmptyState } from './ui/Skeleton';
 
 const PAGOS = ["Efectivo", "Transferencia SPEI", "Tarjeta (terminal)", "QR / Link de pago", "Crédito (fiado)"];
 const TIPOS_CLIENTE = ["Tienda", "Restaurante", "Nevería", "Hotel", "Cadena", "Particular", "Otro"];
@@ -154,6 +155,13 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   };
 
   const cobrar = (ord) => { setPagoModal(ord); setPagoForm({ metodo: "Efectivo", referencia: "" }); setCheckoutUrl(null); setShortUrl(null); };
+
+  const abrirNuevaVenta = () => {
+    setModal(true);
+    setLines([{ sku: "", qty: 1, precio: 0 }]);
+    setForm({ clienteId: "", requiereFactura: false });
+    setNuevoCliente(false);
+  };
   const confirmarCobro = async () => {
     if (!pagoModal) return;
     if (pagoForm.metodo === "QR / Link de pago") {
@@ -207,7 +215,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       </div>
 
       <div className="px-4 pt-4 space-y-4">
-        <button onClick={() => { setModal(true); setLines([{ sku: "", qty: 1, precio: 0 }]); setForm({ clienteId: "", requiereFactura: false }); setNuevoCliente(false); }}
+        <button onClick={abrirNuevaVenta}
           className="w-full rounded-[22px] bg-emerald-600 py-4.5 text-base font-extrabold text-white shadow-[0_20px_34px_rgba(5,150,105,0.16)] transition-transform active:scale-[0.98]">
           + Nueva venta
         </button>
@@ -256,7 +264,31 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
             </div>
           ))}
           {(tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : ordenesUsuario).length === 0 && (
-            <p className="text-center text-sm text-slate-400 py-8">Sin órdenes</p>
+            <>
+              {tab === "ventas" && (
+                <EmptyState
+                  message="Sin órdenes pendientes"
+                  hint="Cuando crees una venta a crédito o se asigne entrega, aparecerá aquí"
+                  cta="+ Nueva venta"
+                  onCta={abrirNuevaVenta}
+                />
+              )}
+              {tab === "hoy" && (
+                <EmptyState
+                  message="Aún no hay ventas hoy"
+                  cta="+ Nueva venta"
+                  onCta={abrirNuevaVenta}
+                />
+              )}
+              {tab === "todas" && (
+                <EmptyState
+                  message="No has hecho ventas todavía"
+                  hint="Crea tu primera venta para empezar"
+                  cta="+ Nueva venta"
+                  onCta={abrirNuevaVenta}
+                />
+              )}
+            </>
           )}
         </div>
         <div className="h-8" />

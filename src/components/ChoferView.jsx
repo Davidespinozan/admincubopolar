@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } fro
 import { s, n, fmtMoney } from '../utils/safe';
 import { supabase } from '../lib/supabase';
 import { abrirNavegacion } from '../utils/navegacion';
+import { EmptyState } from './ui/Skeleton';
 const MapaRuta = lazy(() => import('./ui/MapaRuta'));
 
 const PAGOS = ["Efectivo", "Transferencia", "Tarjeta", "QR / Link de pago", "Crédito"];
@@ -617,8 +618,14 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       </div>
       <div className="px-4 pt-4 space-y-3">
         {!miRutaActiva && (
-          <div className="bg-amber-50 border border-amber-200 rounded-[20px] p-4">
-            <p className="text-sm text-amber-700 font-semibold text-center">No tienes ruta asignada para hoy</p>
+          <div className="bg-amber-50 border border-amber-200 rounded-[20px]">
+            <EmptyState
+              icon={<span className="text-4xl">🚚</span>}
+              message="No tienes ruta asignada para hoy"
+              hint="Pide a tu admin que te asigne una ruta para empezar el día"
+              secondaryLabel="Recargar"
+              onSecondary={() => window.location.reload()}
+            />
           </div>
         )}
 
