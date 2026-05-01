@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { Icons } from '../ui/Icons';
-import { StatusBadge, DataTable } from '../ui/Components';
+import { StatusBadge, DataTable, CapacityBar } from '../ui/Components';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, fmtDate, fmtDateTime, fmtMoney, fmtPct } from '../../utils/safe';
