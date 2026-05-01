@@ -12,8 +12,8 @@ Las migraciones del proyecto viven en `supabase/` directamente (no en una subcar
 
 | Migración | Estado |
 |---|---|
-| Última versionada | `040_capacidad_tarimas.sql` |
-| Próximo número libre | `041` |
+| Última versionada | `041_archivo_columnas_huerfanas_rutas.sql` |
+| Próximo número libre | `042` |
 
 Todas las migraciones son idempotentes (`IF NOT EXISTS` en `ADD COLUMN`, `IF EXISTS` en types/triggers, etc.).
 
@@ -46,23 +46,20 @@ Todas las migraciones son idempotentes (`IF NOT EXISTS` en `ADD COLUMN`, `IF EXI
 
 ---
 
-## 🔴 Auditoría: columnas en código sin migración versionada
+## ✅ Resuelto: columnas huérfanas en `rutas` (archivadas en migración 041)
 
-Hallazgo de auditoría rápida. Estas columnas **están en uso en producción** (probablemente agregadas manualmente al Dashboard de Supabase) pero **no existen en ninguna migración versionada del repo**. Son deuda de auditoría — no rompen nada hoy, pero si alguien recrea el ambiente desde 0 (test, staging) faltarán.
+3 columnas que existían en producción pero no estaban en ninguna migración versionada — ahora archivadas en [`041_archivo_columnas_huerfanas_rutas.sql`](../supabase/041_archivo_columnas_huerfanas_rutas.sql) como `ADD COLUMN IF NOT EXISTS`. La migración es NO-OP en producción (las columnas ya existen) y permite replicar el schema en ambientes nuevos.
 
-### Tabla `rutas`
-
-| Columna | Tipo probable | Usos en `supaStore.js` | Estado |
+| Columna | Tipo en migración | Usos en `supaStore.js` | Estado |
 |---|---|---|---|
-| `carga_confirmada_at` | `TIMESTAMPTZ` | 7+ (validación, set, lookup en cierre legacy) | ❌ Huérfana |
-| `carga_confirmada_por` | `UUID` o `BIGINT` | 2 (set en confirmar carga + firma) | ❌ Huérfana |
-| `fecha_fin` | `DATE` | 1 (cierre de ruta) | ❌ Huérfana en `rutas` (la columna `fecha_fin` que sí existe está en `nomina_periodos`) |
+| `carga_confirmada_at` | `TIMESTAMP` | 7+ (validación, set, lookup en cierre legacy) | ✅ Archivada en 041 |
+| `carga_confirmada_por` | `TEXT` | 2 (set en confirmar carga + firma) | ✅ Archivada en 041 |
+| `fecha_fin` | `TIMESTAMP` | 1 (cierre de ruta) | ✅ Archivada en 041 (la `fecha_fin` que sí existe en migración previa es de `nomina_periodos`, no de `rutas`) |
 
-**Acción pendiente**: en una sesión futura, hacer auditoría exhaustiva de TODAS las tablas y crear una migración consolidada (probablemente `041_archivo_columnas_huerfanas.sql`) que documente cada columna huérfana con su tipo correcto. La migración usaría `ADD COLUMN IF NOT EXISTS` para que sea segura ejecutar tanto en producción (no-op porque ya existen) como en ambientes nuevos.
+**Pendiente futuro** (no urgente): hacer auditoría exhaustiva del resto de tablas (ordenes, productos, mermas, clientes, empleados, etc.) por si tienen columnas huérfanas similares. Si aparecen, crear migración(es) siguiendo el mismo patrón.
 
-### Otras tablas verificadas (NO huérfanas)
+### Otras tablas verificadas en spot-check (NO huérfanas)
 
-Spot-checked y todas con migración versionada:
 - `folio_nota` → `029_nombre_comercial_folio_nota.sql` ✅
 - `monto_pagado` / `saldo_pendiente` → `003_empleados_nomina_contabilidad.sql` ✅
 - `facturama_id` → `011_facturama_sync.sql` ✅
