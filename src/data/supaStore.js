@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
-import { parseProductos, validateItems, buildLineas, formatFolio } from './ordenLogic';
+import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload } from './ordenLogic';
 import {
   validateConfirmarCarga,
   validateFirmarCarga,
@@ -748,21 +748,14 @@ export function useSupaStore(userId, userName) {
           if (!clienteNombre) clienteNombre = 'Público en general';
 
           // Build insert payload — only include columns that exist in ordenes table
-          const ordenInsert = {
+          const ordenInsert = buildOrdenPayload(o, {
             folio,
-            cliente_id: o.clienteId || null,
-            cliente_nombre: clienteNombre,
-            productos: productosStr,
-            fecha: o.fecha || new Date().toISOString().slice(0, 10),
+            clienteNombre,
             total,
-            estatus: 'Creada',
-            metodo_pago: o.metodoPago || 'Efectivo',
-            vendedor_id: o.usuarioId || null,
-            tipo_cobro: o.tipoCobro || 'Contado',
-            folio_nota: o.folioNota || null,
-          };
+            productosStr,
+          });
 
-          const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id, folio, cliente_nombre, productos, total, estatus, fecha, metodo_pago, cliente_id, requiere_factura').single();
+          const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id, folio, cliente_nombre, productos, total, estatus, fecha, metodo_pago, cliente_id, requiere_factura, direccion_entrega, referencia_entrega, latitud_entrega, longitud_entrega').single();
           if (e1) { t()?.error('Error al crear orden'); return e1; }
 
           const { error: e2 } = await supabase.from('orden_lineas').insert(

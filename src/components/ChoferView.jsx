@@ -196,12 +196,20 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       }
       const total = items.reduce((s, it) => s + it.cant * it.precio, 0);
       const entregada = s(o.estatus) === 'Entregada' || entregas.some(e => String(e.ordenId) === String(o.id));
-      const direccion = cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '';
+      const direccionCustom = s(o.direccion_entrega || o.direccionEntrega || '');
+      const direccionCliente = cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '';
+      const direccion = direccionCustom || direccionCliente;
+      const referencia = s(o.referencia_entrega || o.referenciaEntrega || '');
+      // Coords: si la orden trae custom (lat/lng_entrega), úsalas; fallback al cliente.
+      const ordLat = o.latitud_entrega ?? o.latitudEntrega;
+      const ordLng = o.longitud_entrega ?? o.longitudEntrega;
+      const latitud = (ordLat !== null && ordLat !== undefined && ordLat !== '') ? Number(ordLat) : cli?.latitud;
+      const longitud = (ordLng !== null && ordLng !== undefined && ordLng !== '') ? Number(ordLng) : cli?.longitud;
       const esCredito = s(o.tipo_cobro || o.tipoCobro) === 'Credito';
       const contacto = s(cli?.contacto || '');
       const nombreComercial = s(cli?.nombre_comercial || cli?.nombreComercial || '');
       return { ...o, clienteNombre, items, totalCalc: total || n(o.total), entregada,
-        latitud: cli?.latitud, longitud: cli?.longitud, direccion, esCredito,
+        latitud, longitud, direccion, referencia, esCredito,
         contacto, nombreComercial };
     });
   }, [misOrdenes, data.clientes, entregas, getPrice]);
@@ -958,12 +966,18 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 </div>
                 <p className="text-lg font-extrabold text-slate-800">{fmtMoney(o.totalCalc)}</p>
               </div>
-              {(o.direccion || o.contacto) && (
+              {(o.direccion || o.contacto || o.referencia) && (
                 <div className="space-y-1.5 mb-3">
                   {o.direccion && (
                     <div className="flex items-start gap-1.5 text-xs text-slate-600">
                       <span className="mt-0.5 flex-shrink-0 text-slate-500">📍</span>
                       <span className="line-clamp-2">{o.direccion}</span>
+                    </div>
+                  )}
+                  {o.referencia && (
+                    <div className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                      <span className="mt-0.5 flex-shrink-0">📝</span>
+                      <span className="line-clamp-2">{o.referencia}</span>
                     </div>
                   )}
                   {o.contacto && (

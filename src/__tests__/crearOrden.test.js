@@ -1,7 +1,7 @@
 // crearOrden.test.js
 // Tests para el flujo de creación de órdenes — lógica pura (sin Supabase)
 import { describe, it, expect } from 'vitest';
-import { parseProductos, validateItems, buildLineas, formatFolio } from '../data/ordenLogic';
+import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload } from '../data/ordenLogic';
 
 // ─── CATÁLOGO DE PRUEBA ───────────────────────────────────────
 const PRODUCTOS = [
@@ -162,6 +162,94 @@ describe('formatFolio', () => {
   it('maneja null/undefined usando 1 como fallback', () => {
     expect(formatFolio(null)).toBe('OV-0001');
     expect(formatFolio(undefined)).toBe('OV-0001');
+  });
+});
+
+// ─── buildOrdenPayload ───────────────────────────────────────
+describe('buildOrdenPayload', () => {
+  const ctx = {
+    folio: 'OV-0042',
+    clienteNombre: 'Acme S.A. de C.V.',
+    total: 1500,
+    productosStr: '10×HC-5K, 3×HC-25K',
+  };
+
+  it('produce payload base con cliente y catálogo', () => {
+    const payload = buildOrdenPayload({ clienteId: 7 }, ctx);
+    expect(payload).toMatchObject({
+      folio: 'OV-0042',
+      cliente_id: 7,
+      cliente_nombre: 'Acme S.A. de C.V.',
+      productos: '10×HC-5K, 3×HC-25K',
+      total: 1500,
+      estatus: 'Creada',
+      tipo_cobro: 'Contado',
+    });
+  });
+
+  it('venta sin dirección custom: 4 campos en null (chofer hereda del cliente)', () => {
+    const payload = buildOrdenPayload({ clienteId: 1 }, ctx);
+    expect(payload.direccion_entrega).toBeNull();
+    expect(payload.referencia_entrega).toBeNull();
+    expect(payload.latitud_entrega).toBeNull();
+    expect(payload.longitud_entrega).toBeNull();
+  });
+
+  it('venta con dirección custom: persiste los 4 campos', () => {
+    const payload = buildOrdenPayload({
+      clienteId: 1,
+      direccionEntrega: 'Av. Revolución 123, Centro, Durango',
+      referenciaEntrega: 'Casa azul, frente al parque',
+      latitudEntrega: 24.0277,
+      longitudEntrega: -104.6532,
+    }, ctx);
+    expect(payload.direccion_entrega).toBe('Av. Revolución 123, Centro, Durango');
+    expect(payload.referencia_entrega).toBe('Casa azul, frente al parque');
+    expect(payload.latitud_entrega).toBe(24.0277);
+    expect(payload.longitud_entrega).toBe(-104.6532);
+  });
+
+  it('venta con solo referencias (sin override de dirección)', () => {
+    // Caso real: chofer ya conoce al cliente, pero hoy hay obra cerca
+    const payload = buildOrdenPayload({
+      clienteId: 1,
+      referenciaEntrega: 'Hoy entrega por la puerta de atrás',
+    }, ctx);
+    expect(payload.direccion_entrega).toBeNull();
+    expect(payload.referencia_entrega).toBe('Hoy entrega por la puerta de atrás');
+    expect(payload.latitud_entrega).toBeNull();
+    expect(payload.longitud_entrega).toBeNull();
+  });
+
+  it('strings vacíos y whitespace se normalizan a null', () => {
+    const payload = buildOrdenPayload({
+      clienteId: 1,
+      direccionEntrega: '   ',
+      referenciaEntrega: '',
+    }, ctx);
+    expect(payload.direccion_entrega).toBeNull();
+    expect(payload.referencia_entrega).toBeNull();
+  });
+
+  it('lat/lng inválidos (NaN, string vacío) se guardan como null', () => {
+    const payload = buildOrdenPayload({
+      clienteId: 1,
+      direccionEntrega: 'X',
+      latitudEntrega: '',
+      longitudEntrega: 'no-numero',
+    }, ctx);
+    expect(payload.latitud_entrega).toBeNull();
+    expect(payload.longitud_entrega).toBeNull();
+  });
+
+  it('respeta tipo_cobro y folio_nota cuando vienen', () => {
+    const payload = buildOrdenPayload({
+      clienteId: 1,
+      tipoCobro: 'Credito',
+      folioNota: 'N-0001',
+    }, ctx);
+    expect(payload.tipo_cobro).toBe('Credito');
+    expect(payload.folio_nota).toBe('N-0001');
   });
 });
 

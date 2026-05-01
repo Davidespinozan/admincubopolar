@@ -80,3 +80,41 @@ export function buildLineas(items, productos = [], preciosEsp = []) {
 export function formatFolio(seq) {
   return `OV-${String(seq || 1).padStart(4, '0')}`;
 }
+
+/**
+ * Construye el payload para INSERT en la tabla ordenes a partir del
+ * objeto de la UI. Función pura (sin Supabase) para que sea testeable.
+ *
+ * Convención: undefined/null/'' en direccion_entrega → la orden hereda
+ * la dirección del cliente. Si trae valor, override.
+ *
+ * @param {Object} o - objeto de la UI (clienteId, fecha, tipoCobro, etc.)
+ * @param {Object} ctx - { folio, clienteNombre, total, productosStr }
+ * @returns {Object} payload listo para .insert()
+ */
+export function buildOrdenPayload(o, ctx) {
+  const dir = typeof o?.direccionEntrega === 'string' ? o.direccionEntrega.trim() : '';
+  const ref = typeof o?.referenciaEntrega === 'string' ? o.referenciaEntrega.trim() : '';
+  const lat = o?.latitudEntrega;
+  const lng = o?.longitudEntrega;
+  const latNum = (lat === '' || lat === null || lat === undefined) ? null : Number(lat);
+  const lngNum = (lng === '' || lng === null || lng === undefined) ? null : Number(lng);
+
+  return {
+    folio: ctx.folio,
+    cliente_id: o.clienteId || null,
+    cliente_nombre: ctx.clienteNombre,
+    productos: ctx.productosStr,
+    fecha: o.fecha || new Date().toISOString().slice(0, 10),
+    total: ctx.total,
+    estatus: 'Creada',
+    metodo_pago: o.metodoPago || 'Efectivo',
+    vendedor_id: o.usuarioId || null,
+    tipo_cobro: o.tipoCobro || 'Contado',
+    folio_nota: o.folioNota || null,
+    direccion_entrega: dir || null,
+    referencia_entrega: ref || null,
+    latitud_entrega: Number.isFinite(latNum) ? latNum : null,
+    longitud_entrega: Number.isFinite(lngNum) ? lngNum : null,
+  };
+}

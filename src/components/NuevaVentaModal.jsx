@@ -1,6 +1,8 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { s, n, eqId, fmtMoney } from '../utils/safe';
+
+const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 
 const TIPOS_CLIENTE = ["Tienda", "Restaurante", "Nevería", "Hotel", "Cadena", "Particular", "Otro"];
 const USOS_CFDI = [
@@ -72,7 +74,13 @@ export default function NuevaVentaModal({
     folioNota: '',
     requiereFactura: false,
     recibido: '',
+    direccionEntrega: '',
+    referenciaEntrega: '',
+    latitudEntrega: null,
+    longitudEntrega: null,
+    direccionTouched: false, // false = sigue heredando del cliente
   });
+  const [editandoDireccion, setEditandoDireccion] = useState(false);
   const [lines, setLines] = useState([{ sku: '', qty: 1, precio: 0 }]);
 
   const [nuevoCliente, setNuevoCliente] = useState(false);
@@ -120,6 +128,17 @@ export default function NuevaVentaModal({
     [data?.clientes, form.clienteId]
   );
 
+  const direccionCliente = useMemo(() => {
+    if (!clienteSeleccionado) return '';
+    return [s(clienteSeleccionado.calle), s(clienteSeleccionado.colonia), s(clienteSeleccionado.ciudad)]
+      .filter(Boolean)
+      .join(', ');
+  }, [clienteSeleccionado]);
+
+  const direccionEfectiva = form.direccionTouched && form.direccionEntrega
+    ? form.direccionEntrega
+    : direccionCliente;
+
   const subtotal = useMemo(
     () => lines.reduce((t, l) => t + (n(l.qty) * n(l.precio)), 0),
     [lines]
@@ -142,11 +161,17 @@ export default function NuevaVentaModal({
       folioNota: '',
       requiereFactura: false,
       recibido: '',
+      direccionEntrega: '',
+      referenciaEntrega: '',
+      latitudEntrega: null,
+      longitudEntrega: null,
+      direccionTouched: false,
     });
     setLines([{ sku: '', qty: 1, precio: 0 }]);
     setNuevoCliente(false);
     setCliForm(cliFormEmpty);
     setRegistrandoCliente(false);
+    setEditandoDireccion(false);
   }, [clienteIdInicial]);
 
   useEffect(() => {
@@ -261,6 +286,8 @@ export default function NuevaVentaModal({
     setSaving(true);
     try {
       const cli = clienteSeleccionado;
+      // Solo persistir dirección custom si el usuario explícitamente la cambió.
+      // Si direccionTouched=false → null en BD → chofer hereda del cliente.
       const payload = {
         cliente: s(cli?.nombre),
         clienteId: form.clienteId,
@@ -272,6 +299,10 @@ export default function NuevaVentaModal({
         tipoCobro: form.tipoCobro || 'Contado',
         folioNota: form.folioNota || null,
         requiereFactura: ft.toggleFactura ? !!form.requiereFactura : undefined,
+        direccionEntrega: form.direccionTouched ? s(form.direccionEntrega) : '',
+        referenciaEntrega: s(form.referenciaEntrega),
+        latitudEntrega: form.direccionTouched ? form.latitudEntrega : null,
+        longitudEntrega: form.direccionTouched ? form.longitudEntrega : null,
       };
       const result = await actions.addOrden?.(payload);
       if (result?.error || result?.message) {
@@ -581,6 +612,81 @@ export default function NuevaVentaModal({
           placeholder="Ej: N-0001"
         />
       )}
+
+      {/* Dirección de entrega: hereda del cliente, override opcional */}
+      <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-bold text-slate-500 uppercase">Entrega a</p>
+          {!editandoDireccion ? (
+            <button
+              type="button"
+              onClick={() => {
+                setEditandoDireccion(true);
+                if (!form.direccionTouched) {
+                  setForm(f => ({ ...f, direccionEntrega: direccionCliente, direccionTouched: true }));
+                }
+              }}
+              className="text-xs text-blue-600 font-bold"
+            >
+              Cambiar dirección
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setEditandoDireccion(false);
+                setForm(f => ({
+                  ...f,
+                  direccionEntrega: '',
+                  latitudEntrega: null,
+                  longitudEntrega: null,
+                  direccionTouched: false,
+                }));
+              }}
+              className="text-xs text-slate-500 font-bold"
+            >
+              Usar la del cliente
+            </button>
+          )}
+        </div>
+
+        {!editandoDireccion ? (
+          <p className="text-sm text-slate-700">
+            {direccionEfectiva || <span className="italic text-slate-400">Sin dirección registrada</span>}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <Suspense fallback={<p className="text-xs text-slate-400">Cargando autocompletar…</p>}>
+              <AddressAutocomplete
+                onSelect={(addr) => {
+                  const formatted = addr?.formatted
+                    || [addr?.calle, addr?.colonia, addr?.ciudad].filter(Boolean).join(', ');
+                  setForm(f => ({
+                    ...f,
+                    direccionEntrega: formatted,
+                    latitudEntrega: addr?.lat ?? null,
+                    longitudEntrega: addr?.lng ?? null,
+                    direccionTouched: true,
+                  }));
+                }}
+              />
+            </Suspense>
+            <FormInput
+              label="O escribe la dirección manualmente"
+              value={form.direccionEntrega}
+              onChange={e => setForm(f => ({ ...f, direccionEntrega: e.target.value, direccionTouched: true }))}
+              placeholder="Av. Revolución 123, Centro, Durango"
+            />
+          </div>
+        )}
+
+        <FormInput
+          label="Referencias para el chofer"
+          value={form.referenciaEntrega}
+          onChange={e => setForm(f => ({ ...f, referenciaEntrega: e.target.value }))}
+          placeholder="Casa azul, frente al parque"
+        />
+      </div>
 
       {ft.calculadoraCambio && form.tipoCobro === 'Contado' && (
         <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
