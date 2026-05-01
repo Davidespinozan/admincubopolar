@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, s, n, fmtDate, useToast } from './viewsCommon';
+import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, s, n, fmtDate, fmtMoney, useToast } from './viewsCommon';
 
 export function FacturacionView({ data, actions }) {
   const toast = useToast();
@@ -56,7 +56,7 @@ const handleReintento = useCallback(async (ordenId) => {
     <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
       <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5 text-center"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase">Por facturar</p><p className="text-xl sm:text-3xl font-extrabold text-amber-600 mt-1 sm:mt-2">{(data.facturacionPendiente || []).length}</p></div>
       <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5 text-center"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase">Facturadas</p><p className="text-xl sm:text-3xl font-extrabold text-emerald-600 mt-1 sm:mt-2">{timbradas}</p></div>
-      <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5 text-center"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase">Facturado</p><p className="text-xl sm:text-3xl font-extrabold text-slate-800 mt-1 sm:mt-2">${totalFact.toLocaleString("es-MX",{minimumFractionDigits:0})}</p></div>
+      <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5 text-center"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase">Facturado</p><p className="text-xl sm:text-3xl font-extrabold text-slate-800 mt-1 sm:mt-2">{fmtMoney(totalFact)}</p></div>
     </div>
 
     {/* Pendientes de timbrar */}
@@ -67,7 +67,7 @@ const handleReintento = useCallback(async (ordenId) => {
         {key:"folio",label:"Folio",render:v=><span className="font-mono text-xs font-bold text-blue-600">{s(v)}</span>},
         {key:"cliente",label:"Cliente",bold:true},
         {key:"rfc",label:"RFC",render:v=><span className="font-mono text-xs text-slate-500">{s(v)}</span>},
-        {key:"fecha",label:"Entrega",render:v=>fmtDate(v)},{key:"total",label:"Total",bold:true,render:v=>`$${n(v).toLocaleString()}`},
+        {key:"fecha",label:"Entrega",render:v=>fmtDate(v)},{key:"total",label:"Total",bold:true,render:v=>fmtMoney(v)},
         {key:"folio",label:"Acción",hideOnMobile:true,render:(v,r)=><div className="flex gap-2">
           <button onClick={(e)=>{e.stopPropagation();openPreview(r)}} className="text-xs font-semibold text-slate-600 bg-slate-50 px-3 py-2 rounded-lg hover:bg-slate-100 min-h-[44px]">Vista previa</button>
           <button onClick={(e)=>{e.stopPropagation();handleTimbrar(v)}} className="text-xs font-semibold text-blue-600 bg-blue-50 px-3 py-2 rounded-lg hover:bg-blue-100 min-h-[44px]">Timbrar CFDI</button>
@@ -167,8 +167,8 @@ const handleReintento = useCallback(async (ordenId) => {
                     <td className="px-3 py-2 font-mono text-xs text-slate-600">{s(l.sku)}</td>
                     <td className="px-3 py-2 text-slate-700">{s(l.nombre_producto || l.sku)}</td>
                     <td className="px-3 py-2 text-right font-semibold">{n(l.qty || l.cantidad)}</td>
-                    <td className="px-3 py-2 text-right">${n(l.precio_unit).toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right font-semibold">${n(l.subtotal || n(l.qty || l.cantidad) * n(l.precio_unit)).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right">{fmtMoney(l.precio_unit, { decimals: 2 })}</td>
+                    <td className="px-3 py-2 text-right font-semibold">{fmtMoney(l.subtotal || n(l.qty || l.cantidad) * n(l.precio_unit))}</td>
                   </tr>)}
                   {lineas.length === 0 && <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400 text-xs">{s(o.productos)}</td></tr>}
                 </tbody>
@@ -178,9 +178,9 @@ const handleReintento = useCallback(async (ordenId) => {
 
           {/* Totales */}
           <div className="bg-slate-50 rounded-xl p-3 space-y-1">
-            <div className="flex justify-between text-sm"><span className="text-slate-500">Subtotal</span><span className="font-semibold">${subtotal.toLocaleString()}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-slate-500">Subtotal</span><span className="font-semibold">{fmtMoney(subtotal)}</span></div>
             <div className="flex justify-between text-sm"><span className="text-slate-500">IVA (0% — hielo)</span><span className="font-semibold">$0</span></div>
-            <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-1"><span>Total</span><span className="text-lg">${n(o.total).toLocaleString()}</span></div>
+            <div className="flex justify-between text-sm font-bold border-t border-slate-200 pt-1"><span>Total</span><span className="text-lg">{fmtMoney(o.total)}</span></div>
           </div>
 
           {/* ClaveProdServ / Régimen */}

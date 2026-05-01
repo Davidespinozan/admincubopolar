@@ -3,7 +3,7 @@ import { Icons } from '../ui/Icons';
 import { StatusBadge, DataTable } from '../ui/Components';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { EmptyState } from '../ui/Skeleton';
-import { s, n, fmtDate, fmtDateTime } from '../../utils/safe';
+import { s, n, fmtDate, fmtDateTime, fmtMoney, fmtPct } from '../../utils/safe';
 
 // ── FIX P3: ALL DERIVED STATE NOW MEMOIZED ──
 // BEFORE: 4 reduce/filter calls ran on every render — even when user
@@ -156,7 +156,7 @@ export default function DashboardView({ data, user, onNavigate }) {
         const g = grupos.get(key);
         g._total += monto;
         g._count += 1;
-        g.msg = `${cliente} te debe $${g._total.toLocaleString()} (${g._count} ${g._count === 1 ? 'factura vencida' : 'facturas vencidas'})`;
+        g.msg = `${cliente} te debe ${fmtMoney(g._total)} (${g._count} ${g._count === 1 ? 'factura vencida' : 'facturas vencidas'})`;
         g.tipo = 'critica';
       } else {
         // Alertas que no son de CxC pasan tal cual
@@ -312,7 +312,7 @@ export default function DashboardView({ data, user, onNavigate }) {
       if (topCliente) {
         acciones.push({
           tipo: 'cobro',
-          texto: `${topCliente[0]} te debe $${topCliente[1].toLocaleString()}`,
+          texto: `${topCliente[0]} te debe ${fmtMoney(topCliente[1])}`,
           cta: 'Cobrar',
           target: 'cobros',
         });
@@ -374,18 +374,18 @@ export default function DashboardView({ data, user, onNavigate }) {
         <div className="grid grid-cols-3 gap-3 md:gap-6">
           <div>
             <p className="text-xs text-slate-500 mb-1">Vendiste</p>
-            <p className="font-display text-xl md:text-2xl font-bold text-slate-900">${n(ventasResumen.semana).toLocaleString()}</p>
+            <p className="font-display text-xl md:text-2xl font-bold text-slate-900">{fmtMoney(ventasResumen.semana)}</p>
           </div>
           <div>
             <p className="text-xs text-slate-500 mb-1">Ganaste (mes)</p>
             <p className={`font-display text-xl md:text-2xl font-bold ${estadoResultados.mes.utilidad >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-              ${estadoResultados.mes.utilidad.toLocaleString()}
+              {fmtMoney(estadoResultados.mes.utilidad)}
             </p>
           </div>
           <div>
             <p className="text-xs text-slate-500 mb-1">Te deben</p>
             <p className={`font-display text-xl md:text-2xl font-bold ${balance.cxcTotal > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
-              ${balance.cxcTotal.toLocaleString()}
+              {fmtMoney(balance.cxcTotal)}
             </p>
           </div>
         </div>
@@ -421,26 +421,26 @@ export default function DashboardView({ data, user, onNavigate }) {
           <div className="space-y-2">
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-sm text-slate-600">Ventas</span>
-              <span className="text-sm font-bold text-emerald-600">+${estadoResultados.mes.ventasTot.toLocaleString()}</span>
+              <span className="text-sm font-bold text-emerald-600">{"+" + fmtMoney(estadoResultados.mes.ventasTot)}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-sm text-slate-600">Costo del hielo</span>
-              <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.costoDeVentas.toLocaleString()}</span>
+              <span className="text-sm font-bold text-red-500">{"-" + fmtMoney(estadoResultados.mes.costoDeVentas)}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100 bg-slate-50 rounded-lg px-2 -mx-2">
               <span className="text-sm font-semibold text-slate-700">Ganancia antes de gastos</span>
               <span className={`text-sm font-bold ${estadoResultados.mes.utilidadBruta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                ${estadoResultados.mes.utilidadBruta.toLocaleString()}
+                {fmtMoney(estadoResultados.mes.utilidadBruta)}
               </span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-sm text-slate-600">Otros gastos</span>
-              <span className="text-sm font-bold text-red-500">-${estadoResultados.mes.gastosOp.toLocaleString()}</span>
+              <span className="text-sm font-bold text-red-500">{"-" + fmtMoney(estadoResultados.mes.gastosOp)}</span>
             </div>
             <div className="-mx-2 flex justify-between rounded-[16px] bg-slate-900 px-3 py-2 text-white">
               <span className="text-sm font-bold text-white/82">Ganancia</span>
               <span className={`text-sm font-extrabold ${estadoResultados.mes.utilidad >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>
-                ${estadoResultados.mes.utilidad.toLocaleString()}
+                {fmtMoney(estadoResultados.mes.utilidad)}
               </span>
             </div>
           </div>
@@ -452,20 +452,20 @@ export default function DashboardView({ data, user, onNavigate }) {
           <div className="space-y-2">
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-sm text-slate-600">Cobrado hoy en efectivo</span>
-              <span className="text-sm font-bold text-emerald-600">${balance.efectivoHoy.toLocaleString()}</span>
+              <span className="text-sm font-bold text-emerald-600">{fmtMoney(balance.efectivoHoy)}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-sm text-slate-600">Te deben</span>
-              <span className="text-sm font-bold text-amber-600">${balance.cxcTotal.toLocaleString()}</span>
+              <span className="text-sm font-bold text-amber-600">{fmtMoney(balance.cxcTotal)}</span>
             </div>
             <div className="flex justify-between py-1.5 border-b border-slate-100">
               <span className="text-sm text-slate-600">Debes</span>
-              <span className="text-sm font-bold text-red-500">${balance.cxpTotal.toLocaleString()}</span>
+              <span className="text-sm font-bold text-red-500">{fmtMoney(balance.cxpTotal)}</span>
             </div>
             <div className="-mx-2 flex justify-between rounded-[16px] bg-slate-900 px-3 py-2 text-white">
               <span className="text-sm font-bold text-white/82">Saldo a favor</span>
               <span className={`text-sm font-extrabold ${balance.posicion >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>
-                ${balance.posicion.toLocaleString()}
+                {fmtMoney(balance.posicion)}
               </span>
             </div>
           </div>
@@ -525,7 +525,7 @@ export default function DashboardView({ data, user, onNavigate }) {
                       <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden mb-1">
                         <div className={`h-full ${colorClass} transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
                       </div>
-                      <p className="text-xs text-slate-500">{ocupado.toFixed(1)}/{capacidad} tarimas ({pct}%)</p>
+                      <p className="text-xs text-slate-500">{ocupado.toFixed(1)}/{capacidad} tarimas ({fmtPct(ocupado, capacidad)})</p>
                     </div>
                   );
                 })()}

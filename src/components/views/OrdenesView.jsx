@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, eqId, fmtDate, useDebounce, useToast, reporteVentas, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, useCallback, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, eqId, fmtDate, fmtMoney, useDebounce, useToast, reporteVentas, PAGE_SIZE, Paginator } from './viewsCommon';
 
 export function OrdenesView({ data, actions, user }) {
   const toast = useToast();
@@ -203,7 +203,7 @@ export function OrdenesView({ data, actions, user }) {
           });
           return <span className="text-xs text-slate-600">{partes.join(', ')}</span>;
         }},
-        {key:"total",label:"Total",bold:true,render:v=>`$${n(v).toLocaleString()}`},
+        {key:"total",label:"Total",bold:true,render:v=>fmtMoney(v)},
         {key:"estatus",label:"Estatus",badge:true,render:(v,r)=><div className="flex items-center gap-2 flex-wrap"><StatusBadge status={v}/><span className="hidden md:inline">{v==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">Asignar ruta</button></>}{v==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"entrega")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar entrega</button>}{v==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">→ Facturar</button>}</span></div>},
         {key:"ruta",label:"Ruta",hideOnMobile:true},
       ]} data={paginated}
@@ -266,7 +266,7 @@ export function OrdenesView({ data, actions, user }) {
           {form.clienteId && (() => {
             const cli = data.clientes.find(c => String(c.id) === String(form.clienteId));
             if (!cli?.credito_autorizado) return null;
-            return <div className="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-xl px-3 py-2 text-xs text-purple-700 font-semibold">💳 Crédito autorizado · Límite ${n(cli.limite_credito).toLocaleString()} · Saldo pendiente ${n(cli.saldo).toLocaleString()}</div>;
+            return <div className="flex items-center gap-2 bg-purple-50 border border-purple-200 rounded-xl px-3 py-2 text-xs text-purple-700 font-semibold">💳 Crédito autorizado · Límite {fmtMoney(cli.limite_credito)} · Saldo pendiente {fmtMoney(cli.saldo)}</div>;
           })()}
 
           {form.clienteId && (
@@ -311,7 +311,7 @@ export function OrdenesView({ data, actions, user }) {
                   {prodOpts.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
                 <input type="number" min="1" value={l.qty} onChange={e=>updateLine(i,"qty",parseInt(e.target.value)||1)} className="w-16 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center min-h-[44px] bg-white" />
-                <span className="text-sm font-semibold text-slate-700 w-20 text-right">${(n(l.qty)*n(l.precio)).toLocaleString()}</span>
+                <span className="text-sm font-semibold text-slate-700 w-20 text-right">{fmtMoney(n(l.qty) * n(l.precio))}</span>
                 {lines.length>1&&<button onClick={()=>removeLine(i)} className="text-red-400 hover:text-red-600 text-lg min-w-[28px]">×</button>}
               </div>
               {l.sku && <p className="text-[11px] text-slate-500 mt-1.5 ml-1">Stock disponible: {getStock(l.sku).toLocaleString()} bolsas</p>}
@@ -325,7 +325,7 @@ export function OrdenesView({ data, actions, user }) {
           <div className="bg-slate-900 rounded-xl p-4 mt-2">
             <div className="flex justify-between items-baseline">
               <span className="text-sm font-medium text-slate-300">Total</span>
-              <span className="text-2xl font-bold text-white">${totalCalc.toLocaleString()}</span>
+              <span className="text-2xl font-bold text-white">{fmtMoney(totalCalc)}</span>
             </div>
             <div className="text-xs text-slate-400 mt-1">IVA 0% (hielo)</div>
           </div>
@@ -363,14 +363,14 @@ export function OrdenesView({ data, actions, user }) {
                       return (
                         <div key={i} className="flex justify-between text-xs">
                           <span className="text-slate-700">{n(l.qty)}× {prod ? s(prod.nombre) : s(l.sku)}</span>
-                          <span className="font-mono text-slate-600">${(n(l.qty) * n(l.precio)).toLocaleString()}</span>
+                          <span className="font-mono text-slate-600">{fmtMoney(n(l.qty) * n(l.precio))}</span>
                         </div>
                       );
                     })}
                   </div>
                   <div className="border-t border-slate-200 pt-2 mt-2 flex justify-between">
                     <span className="font-semibold text-slate-700">Total</span>
-                    <span className="font-bold text-slate-900 text-base">${totalCalc.toLocaleString()}</span>
+                    <span className="font-bold text-slate-900 text-base">{fmtMoney(totalCalc)}</span>
                   </div>
                 </div>
               );
@@ -395,7 +395,7 @@ export function OrdenesView({ data, actions, user }) {
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={()=>setPagoModal(null)}>
         <div className="bg-white w-full max-w-md rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
           <h3 className="font-bold text-lg text-slate-800 mb-1">Cobrar orden {s(pagoModal.folio)}</h3>
-          <p className="text-sm text-slate-500 mb-4">{s(pagoModal.cliente)} &mdash; <span className="font-bold text-slate-800">${n(pagoModal.total).toLocaleString()}</span></p>
+          <p className="text-sm text-slate-500 mb-4">{s(pagoModal.cliente)} &mdash; <span className="font-bold text-slate-800">{fmtMoney(pagoModal.total)}</span></p>
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">M&eacute;todo de pago</label>
           <div className="grid grid-cols-2 gap-2 mb-4">
             {["Efectivo","Transferencia SPEI","Tarjeta (terminal)","QR / Link de pago","Crédito (fiado)"].map(m=>(
@@ -419,7 +419,7 @@ export function OrdenesView({ data, actions, user }) {
               <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
               <div className="grid grid-cols-2 gap-2">
                 <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); toast?.success('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
-                <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por $${n(pagoModal.total).toLocaleString()} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>
+                <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por ${fmtMoney(pagoModal.total)} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>
               </div>
             </div>
           )}

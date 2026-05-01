@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, FormBtn, EmptyState, s, n, useToast } from './viewsCommon';
+import { useState, useMemo, Modal, FormBtn, EmptyState, s, n, fmtMoney, useToast } from './viewsCommon';
 
 export function NominaView({ data, actions }) {
   const toast = useToast();
@@ -62,7 +62,7 @@ export function NominaView({ data, actions }) {
       estatus: "Borrador", // Enum: Borrador, Calculada, Pagado
     });
     if (result !== null) return; // Error toast ya mostrado en store
-    toast?.success(`Nómina semana ${numeroSemana} generada: $${nuevoTotal.toLocaleString()}`);
+    toast?.success(`Nómina semana ${numeroSemana} generada: ${fmtMoney(nuevoTotal)}`);
   };
 
   const pagarPeriodo = async (p) => {
@@ -109,7 +109,7 @@ export function NominaView({ data, actions }) {
     </div>
     <div className="bg-white rounded-xl p-5 border border-slate-100">
       <p className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Total semanal estimado</p>
-      <p className="text-3xl font-extrabold text-slate-800">${totalSemanal.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+      <p className="text-3xl font-extrabold text-slate-800">{fmtMoney(totalSemanal, { decimals: 2 })}</p>
       <p className="text-xs text-slate-400 mt-1">{emps.filter(e => s(e.estatus) === "Activo").length} empleados activos · Salario × 7 días</p>
     </div>
 
@@ -125,7 +125,7 @@ export function NominaView({ data, actions }) {
             <div className="flex justify-between items-center">
               <div>
                 <p className="text-sm font-semibold text-slate-800">Semana {n(p.numeroSemana)} — {n(p.ejercicio)}</p>
-                <p className="text-xs text-slate-500">{s(p.fechaInicio)} al {s(p.fechaFin)} · ${n(p.totalNeto).toLocaleString()}</p>
+                <p className="text-xs text-slate-500">{s(p.fechaInicio)} al {s(p.fechaFin)} · {fmtMoney(p.totalNeto)}</p>
                 <p className="text-xs text-slate-400 mt-1">{recibosP.length}/{empsActivos} recibos generados</p>
               </div>
               <div className="flex gap-2">
@@ -149,7 +149,7 @@ export function NominaView({ data, actions }) {
               <p className="text-sm font-semibold text-slate-800">Semana {n(p.numeroSemana)} — {n(p.ejercicio)}</p>
               <p className="text-xs text-slate-400">{s(p.fechaInicio)} al {s(p.fechaFin)}</p>
             </div>
-            <p className="text-sm font-bold text-emerald-700">${n(p.totalNeto).toLocaleString()}</p>
+            <p className="text-sm font-bold text-emerald-700">{fmtMoney(p.totalNeto)}</p>
           </div>
         ))}
       </div>
@@ -161,7 +161,7 @@ export function NominaView({ data, actions }) {
       if (dEmps.length === 0) return null;
       const totalDepto = dEmps.reduce((s, e) => s + n(e.salarioDiario) * 7, 0);
       return (<div key={d}>
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-4 mb-2">{d} — {dEmps.length} empleados · ${totalDepto.toLocaleString()}/sem</h3>
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-4 mb-2">{d} — {dEmps.length} empleados · {fmtMoney(totalDepto)}/sem</h3>
         <div className="space-y-1.5">
           {dEmps.map(e => (
             <div key={e.id} className="bg-white rounded-lg p-3 border border-slate-100 flex justify-between items-center">
@@ -170,8 +170,8 @@ export function NominaView({ data, actions }) {
                 <p className="text-xs text-slate-400">{s(e.puesto)}</p>
               </div>
               <div className="text-right">
-                <p className="text-sm font-bold text-slate-800">${(n(e.salarioDiario) * 7).toLocaleString()}</p>
-                <p className="text-[10px] text-slate-400">${n(e.salarioDiario).toFixed(2)}/día</p>
+                <p className="text-sm font-bold text-slate-800">{fmtMoney(n(e.salarioDiario) * 7)}</p>
+                <p className="text-[10px] text-slate-400">{fmtMoney(e.salarioDiario, { decimals: 2 })}/día</p>
               </div>
             </div>
           ))}
@@ -199,7 +199,7 @@ export function NominaView({ data, actions }) {
                       <p className="text-xs text-slate-400">{emp ? s(emp.puesto) : ""}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-lg font-bold text-emerald-600">${n(r.netoAPagar || r.neto_a_pagar).toLocaleString()}</p>
+                      <p className="text-lg font-bold text-emerald-600">{fmtMoney(r.netoAPagar || r.neto_a_pagar)}</p>
                       <p className="text-[10px] text-slate-400">Neto a pagar</p>
                     </div>
                   </div>
@@ -210,11 +210,11 @@ export function NominaView({ data, actions }) {
                     </div>
                     <div className="bg-white rounded-lg p-2 text-center">
                       <p className="text-slate-400">Percepciones</p>
-                      <p className="font-bold text-blue-600">${n(r.percepciones).toLocaleString()}</p>
+                      <p className="font-bold text-blue-600">{fmtMoney(r.percepciones)}</p>
                     </div>
                     <div className="bg-white rounded-lg p-2 text-center">
                       <p className="text-slate-400">Deducciones</p>
-                      <p className="font-bold text-red-600">${n(r.imss).toLocaleString()}</p>
+                      <p className="font-bold text-red-600">{fmtMoney(r.imss)}</p>
                     </div>
                   </div>
                 </div>

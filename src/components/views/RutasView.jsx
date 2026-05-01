@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, useDebounce, useToast, reporteRutas } from './viewsCommon';
+import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, fmtDate, fmtMoney, useDebounce, useToast, reporteRutas } from './viewsCommon';
 import { ordenarPorProximidad } from '../../utils/geocoding';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 const ReporteRutaModal = lazy(() => import('../ReporteRutaModal'));
@@ -30,7 +30,7 @@ function AsignarOrdenesModal({ ruta, ordenes, onClose, onConfirm }) {
                     <span className="font-mono text-xs font-bold text-blue-600">{s(o.folio)}</span>
                     <span className="text-sm font-semibold text-slate-700 ml-2">{s(o.cliente)}</span>
                   </div>
-                  <span className="text-sm font-bold">${n(o.total).toLocaleString()}</span>
+                  <span className="text-sm font-bold">{fmtMoney(o.total)}</span>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">{s(o.productos)}</p>
               </div>
@@ -784,12 +784,12 @@ export function RutasView({ data, actions }) {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-mono text-xs font-bold text-blue-600">{s(o.folio)}</span>
                       <span className="text-xs font-semibold text-slate-700">{s(o.clienteNombre)}</span>
-                      <span className="text-xs text-slate-400">{s(o.fecha)}</span>
+                      <span className="text-xs text-slate-400">{fmtDate(o.fecha)}</span>
                     </div>
                     {o.dir && <p className="text-xs text-slate-500 truncate mt-0.5">📍 {o.dir}</p>}
                     <p className="text-xs text-slate-400 truncate">{s(o.productos)}</p>
                   </div>
-                  <span className="text-xs font-bold text-slate-700 flex-shrink-0">${n(o.total).toLocaleString()}</span>
+                  <span className="text-xs font-bold text-slate-700 flex-shrink-0">{fmtMoney(o.total)}</span>
                 </button>
               );
             })}

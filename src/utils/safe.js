@@ -50,6 +50,35 @@ export const money = (v) => {
   return Number.isFinite(num) ? num : 0;
 };
 
+// ── Money formatter (display): 1250.5 → "$1,250" o "$1,250.50"
+// Default: sin decimales (totales, cards, dashboards).
+// Con decimals=2: precios unitarios, nómina.
+// signo=false: número formateado sin "$" (para cuando ya hay otro símbolo en JSX).
+export const fmtMoney = (v, { decimals = 0, signo = true } = {}) => {
+  const num = money(v);
+  const formateado = num.toLocaleString('es-MX', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+  return signo ? `$${formateado}` : formateado;
+};
+
+// ── Percent calculator + formatter: fmtPct(85, 100) → "85%"
+// Maneja división por cero retornando "—".
+export const fmtPct = (numerador, denominador = 100, { decimals = 0 } = {}) => {
+  const num = Number(numerador);
+  const den = Number(denominador);
+  if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) return '—';
+  const pct = (num / den) * 100;
+  return `${pct.toFixed(decimals)}%`;
+};
+
+// ── Today as ISO (YYYY-MM-DD) — para inputs type="date".
+export const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
+
 // ── ID comparison: PostgreSQL serial → int, UUID → string
 // Supabase JS client returns numbers for serial PKs but strings for UUIDs.
 // form selects always store strings. Comparing 1 === "1" → false.

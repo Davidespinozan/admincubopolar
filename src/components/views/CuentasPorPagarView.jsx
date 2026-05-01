@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 
 const CATEGORIAS_CXP = ['Proveedores', 'Servicios', 'Renta', 'Otro'];
 const METODOS_PAGO = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta'];
@@ -135,12 +135,12 @@ export function CuentasPorPagarView({ data, actions }) {
     <div className="grid grid-cols-2 gap-3">
       <div className="bg-red-50 rounded-xl p-4 border border-red-200">
         <p className="text-[10px] text-red-500 uppercase font-bold">Por pagar</p>
-        <p className="text-xl font-extrabold text-red-700">${totalPorPagar.toLocaleString()}</p>
+        <p className="text-xl font-extrabold text-red-700">{fmtMoney(totalPorPagar)}</p>
         <p className="text-xs text-red-600 mt-1">{cxpPendientes.length} cuentas pendientes</p>
       </div>
       <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
         <p className="text-[10px] text-emerald-500 uppercase font-bold">Pagado este mes</p>
-        <p className="text-xl font-extrabold text-emerald-700">${pagadoEsteMes.toLocaleString()}</p>
+        <p className="text-xl font-extrabold text-emerald-700">{fmtMoney(pagadoEsteMes)}</p>
       </div>
     </div>
 
@@ -181,19 +181,19 @@ export function CuentasPorPagarView({ data, actions }) {
                 </span>
               </div>
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-slate-500">Total: ${n(cxp.montoOriginal).toLocaleString()}</span>
-                <span className="font-bold text-red-700">Saldo: ${n(cxp.saldoPendiente).toLocaleString()}</span>
+                <span className="text-slate-500">Total: {fmtMoney(cxp.montoOriginal)}</span>
+                <span className="font-bold text-red-700">Saldo: {fmtMoney(cxp.saldoPendiente)}</span>
               </div>
               {n(cxp.montoPagado) > 0 && (
                 <div className="mb-2">
                   <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                     <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, pctPagado)}%` }} />
                   </div>
-                  <p className="text-xs text-slate-400 mt-1">Pagado: ${n(cxp.montoPagado).toLocaleString()} ({Math.round(pctPagado)}%)</p>
+                  <p className="text-xs text-slate-400 mt-1">Pagado: {fmtMoney(cxp.montoPagado)} ({fmtPct(cxp.montoPagado, cxp.montoOriginal)})</p>
                 </div>
               )}
               <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-400">Vence: {s(cxp.fechaVencimiento) || 'Sin fecha'}</span>
+                <span className="text-xs text-slate-400">Vence: {cxp.fechaVencimiento ? fmtDate(cxp.fechaVencimiento) : 'Sin fecha'}</span>
                 <div className="flex gap-2">
                   <button onClick={() => openEdit(cxp)} className="px-3 py-2 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg min-h-[36px]">Editar</button>
                   <button onClick={() => openPago(cxp)} className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg min-h-[36px]">Pagar</button>
@@ -223,7 +223,7 @@ export function CuentasPorPagarView({ data, actions }) {
               </div>
               <span className="text-xs px-2 py-1 rounded-full font-semibold bg-emerald-200 text-emerald-700">Pagada</span>
             </div>
-            <p className="text-sm font-bold text-emerald-700 mt-1">${n(cxp.montoOriginal).toLocaleString()}</p>
+            <p className="text-sm font-bold text-emerald-700 mt-1">{fmtMoney(cxp.montoOriginal)}</p>
           </div>
         ))}
         <Paginator page={page} total={cxpPagadas.length} onPage={setPage} />
@@ -242,10 +242,10 @@ export function CuentasPorPagarView({ data, actions }) {
           <div key={p.id} className="bg-red-50 rounded-lg p-3 border border-red-100 overflow-hidden">
             <div className="flex justify-between gap-2">
               <span className="text-sm font-semibold text-slate-700 min-w-0 truncate">{s(p.referencia) || 'Pago a proveedor'}</span>
-              <span className="text-sm font-bold text-red-700 flex-shrink-0">-${n(p.monto).toLocaleString()}</span>
+              <span className="text-sm font-bold text-red-700 flex-shrink-0">{"-" + fmtMoney(p.monto)}</span>
             </div>
             <div className="flex justify-between mt-0.5">
-              <span className="text-xs text-slate-400 truncate">{s(p.fecha)} • {s(p.metodoPago)}</span>
+              <span className="text-xs text-slate-400 truncate">{fmtDate(p.fecha)} • {s(p.metodoPago)}</span>
             </div>
           </div>
         ))}
@@ -287,7 +287,7 @@ export function CuentasPorPagarView({ data, actions }) {
           <div className="bg-slate-50 rounded-lg p-3">
             <p className="text-sm font-semibold">{s(pagoModal.proveedor)}</p>
             <p className="text-xs text-slate-500">{s(pagoModal.concepto)}</p>
-            <p className="text-lg font-bold text-red-700 mt-1">Saldo: ${n(pagoModal.saldoPendiente).toLocaleString()}</p>
+            <p className="text-lg font-bold text-red-700 mt-1">Saldo: {fmtMoney(pagoModal.saldoPendiente)}</p>
           </div>
           <FormInput label="Monto a pagar *" type="number" value={pagoForm.monto} onChange={e => setPagoForm({ ...pagoForm, monto: e.target.value })} error={errors.monto} />
           <FormSelect label="Método de pago" options={METODOS_PAGO} value={pagoForm.metodo} onChange={e => setPagoForm({ ...pagoForm, metodo: e.target.value })} />

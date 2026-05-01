@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, eqId, useDebounce, useToast, reporteClientes, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, fmtMoney, useDebounce, useToast, reporteClientes, PAGE_SIZE, Paginator } from './viewsCommon';
 import AddressAutocomplete from '../ui/AddressAutocomplete';
 
 export function ClientesView({ data, actions }) {
@@ -106,8 +106,8 @@ export function ClientesView({ data, actions }) {
         {key:"nombre",label:"Cliente",bold:true,render:(_,row)=><div><span className="font-semibold">{s(row.nombre)}</span>{row.nombre_comercial&&<span className="block text-xs text-slate-400">{s(row.nombre_comercial)}</span>}</div>},
         {key:"rfc",label:"RFC",render:v=><span className="font-mono text-xs text-slate-500">{s(v)}</span>},
         {key:"tipo",label:"Tipo"},{key:"contacto",label:"Contacto"},
-        {key:"saldo",label:"Saldo",bold:true,render:v=>v?`$${n(v).toLocaleString()}`:"$0"},
-        {key:"credito_autorizado",label:"Crédito",render:(_,row)=>row.credito_autorizado?<span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">✓ ${n(row.limite_credito).toLocaleString()}</span>:<span className="text-xs text-slate-400">—</span>},
+        {key:"saldo",label:"Saldo",bold:true,render:v=>v?fmtMoney(v):"$0"},
+        {key:"credito_autorizado",label:"Crédito",render:(_,row)=>row.credito_autorizado?<span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{"✓ " + fmtMoney(row.limite_credito)}</span>:<span className="text-xs text-slate-400">—</span>},
         {key:"estatus",label:"Estatus",badge:true,render:v=><StatusBadge status={v}/>},
       ]} data={paginated} onRowClick={r=>openEdit(r)}
         emptyMessage={(search?.trim() || filterTipo) ? "Sin resultados" : "Aún no tienes clientes"}

@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, useToast } from './viewsCommon';
+import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast } from './viewsCommon';
 
 export function CobrosView({ data, actions }) {
   const toast = useToast();
@@ -63,12 +63,12 @@ export function CobrosView({ data, actions }) {
     <div className="grid grid-cols-2 gap-3">
       <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
         <p className="text-[10px] text-amber-500 uppercase font-bold">Por cobrar</p>
-        <p className="text-xl font-extrabold text-amber-700">${totalPendiente.toLocaleString()}</p>
+        <p className="text-xl font-extrabold text-amber-700">{fmtMoney(totalPendiente)}</p>
         <p className="text-xs text-amber-600 mt-1">{cxcPendientes.length} cuentas pendientes</p>
       </div>
       <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
         <p className="text-[10px] text-emerald-500 uppercase font-bold">Cobrado hoy</p>
-        <p className="text-xl font-extrabold text-emerald-700">${totalCobradoHoy.toLocaleString()}</p>
+        <p className="text-xl font-extrabold text-emerald-700">{fmtMoney(totalCobradoHoy)}</p>
       </div>
     </div>
 
@@ -91,7 +91,7 @@ export function CobrosView({ data, actions }) {
         )}
         {cxcPendientes.map(cxc => {
           const cli = clientes[cxc.clienteId];
-          const pctPagado = (n(cxc.montoPagado) / n(cxc.montoOriginal)) * 100;
+          const pctPagadoNum = n(cxc.montoOriginal) > 0 ? (n(cxc.montoPagado) / n(cxc.montoOriginal)) * 100 : 0;
           return (
             <div key={cxc.id} className="bg-white rounded-xl p-4 border border-slate-100">
               <div className="flex justify-between items-start gap-2 mb-2">
@@ -104,19 +104,19 @@ export function CobrosView({ data, actions }) {
                 </span>
               </div>
               <div className="flex justify-between text-sm mb-2">
-                <span className="text-slate-500">Total: ${n(cxc.montoOriginal).toLocaleString()}</span>
-                <span className="font-bold text-amber-700">Saldo: ${n(cxc.saldoPendiente).toLocaleString()}</span>
+                <span className="text-slate-500">Total: {fmtMoney(cxc.montoOriginal)}</span>
+                <span className="font-bold text-amber-700">Saldo: {fmtMoney(cxc.saldoPendiente)}</span>
               </div>
               {n(cxc.montoPagado) > 0 && (
                 <div className="mb-2">
                   <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, pctPagado)}%` }} />
+                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.min(100, pctPagadoNum)}%` }} />
                   </div>
-                  <p className="text-xs text-slate-400 mt-1">Pagado: ${n(cxc.montoPagado).toLocaleString()} ({Math.round(pctPagado)}%)</p>
+                  <p className="text-xs text-slate-400 mt-1">Pagado: {fmtMoney(cxc.montoPagado)} ({fmtPct(cxc.montoPagado, cxc.montoOriginal)})</p>
                 </div>
               )}
               <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-400">Vence: {s(cxc.fechaVencimiento)}</span>
+                <span className="text-xs text-slate-400">Vence: {fmtDate(cxc.fechaVencimiento)}</span>
                 <button onClick={() => openCobro(cxc)} className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg min-h-[36px]">Cobrar</button>
               </div>
             </div>
@@ -139,10 +139,10 @@ export function CobrosView({ data, actions }) {
             <div key={p.id} className="bg-emerald-50 rounded-lg p-3 border border-emerald-100 overflow-hidden">
               <div className="flex justify-between gap-2">
                 <span className="text-sm font-semibold text-slate-700 min-w-0 truncate">{s(cli?.nombre) || 'Cliente'}</span>
-                <span className="text-sm font-bold text-emerald-700 flex-shrink-0">+${n(p.monto).toLocaleString()}</span>
+                <span className="text-sm font-bold text-emerald-700 flex-shrink-0">{"+" + fmtMoney(p.monto)}</span>
               </div>
               <div className="flex justify-between gap-2 mt-0.5">
-                <span className="text-xs text-slate-400 truncate">{s(p.fecha)} • {s(p.metodoPago) || 'Efectivo'}</span>
+                <span className="text-xs text-slate-400 truncate">{fmtDate(p.fecha)} • {s(p.metodoPago) || 'Efectivo'}</span>
                 <span className="text-xs text-emerald-600 truncate max-w-[120px] text-right flex-shrink-0">{s(p.referencia)}</span>
               </div>
             </div>
@@ -157,7 +157,7 @@ export function CobrosView({ data, actions }) {
           <div className="bg-slate-50 rounded-lg p-3">
             <p className="text-sm font-semibold">{s(clientes[cobroModal.clienteId]?.nombre) || 'Cliente'}</p>
             <p className="text-xs text-slate-500">{s(cobroModal.concepto)}</p>
-            <p className="text-lg font-bold text-amber-700 mt-1">Saldo: ${n(cobroModal.saldoPendiente).toLocaleString()}</p>
+            <p className="text-lg font-bold text-amber-700 mt-1">Saldo: {fmtMoney(cobroModal.saldoPendiente)}</p>
           </div>
           <FormInput label="Monto a cobrar *" type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} error={errors.monto} />
           <FormSelect label="Método de pago" options={METODOS} value={form.metodo} onChange={e => setForm({ ...form, metodo: e.target.value })} />

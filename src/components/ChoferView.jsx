@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
-import { s, n } from '../utils/safe';
+import { s, n, fmtMoney } from '../utils/safe';
 import { supabase } from '../lib/supabase';
 import { abrirNavegacion } from '../utils/navegacion';
 const MapaRuta = lazy(() => import('./ui/MapaRuta'));
@@ -501,7 +501,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         cp: vForm.factura ? vForm.cp : "",
       };
       setEntregas(prev => [...prev, venta]);
-      showToast("Venta exprés: $" + total.toLocaleString() + (vForm.factura ? " (factura)" : ""));
+      showToast("Venta exprés: " + fmtMoney(total) + (vForm.factura ? " (factura)" : ""));
       setVentaModal(false);
       setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
     } finally {
@@ -871,7 +871,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><line x1="9" y1="4" x2="9" y2="17"/><line x1="15" y1="7" x2="15" y2="20"/></svg>
               {mapaVisible ? 'Ocultar mapa' : 'Ver mapa'}
             </button>
-            <div className="text-right"><p className="text-lg font-extrabold">${totalCobrado.toLocaleString()}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>
+            <div className="text-right"><p className="text-lg font-extrabold">{fmtMoney(totalCobrado)}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>
           </div>
         </div>
         <div className="flex items-center gap-3 rounded-[18px] border border-white/10 bg-white/8 p-3">
@@ -908,7 +908,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                     : <span className="inline-block text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full mt-0.5">💵 Cobrar</span>
                   }
                 </div>
-                <p className="text-lg font-extrabold text-slate-800">${o.totalCalc.toLocaleString()}</p>
+                <p className="text-lg font-extrabold text-slate-800">{fmtMoney(o.totalCalc)}</p>
               </div>
               <div className="flex flex-wrap gap-1 mb-3">
                 {o.items.map((it, i) => <span key={i} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{it.cant}× {it.sku} · ${it.precio}</span>)}
@@ -940,7 +940,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <div key={e.ordenId || e.id} className="bg-emerald-50/90 rounded-[20px] p-3 border border-emerald-200 mb-2">
               <div className="flex justify-between items-center">
                 <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="text-[10px] text-slate-400 ml-1">Nota: {e.folioNota}</span>}<span className="text-sm font-semibold text-slate-700 ml-2">{s(e.cliente)}</span>{e.express && <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded ml-1">Exprés</span>}{e.factura && <span className="text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded ml-1">Factura</span>}</div>
-                <div className="text-right flex items-center gap-2">{e.fotoEntrega && <span className="text-emerald-500 text-xs">📷</span>}<div><p className="text-sm font-bold">${n(e.total).toLocaleString()}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div></div>
+                <div className="text-right flex items-center gap-2">{e.fotoEntrega && <span className="text-emerald-500 text-xs">📷</span>}<div><p className="text-sm font-bold">{fmtMoney(e.total)}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div></div>
               </div>
             </div>
           ))}
@@ -985,7 +985,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <p className="erp-kicker text-slate-400">Cobro</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900">Entregar a {entregaModal.clienteNombre}</h3>
             <div className="flex flex-wrap gap-1 my-3">{entregaModal.items.map((it, i) => <span key={i} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{it.cant}× {it.sku} · ${it.precio}</span>)}</div>
-            <p className="text-3xl font-extrabold text-slate-800 mb-4">${entregaModal.totalCalc.toLocaleString()}</p>
+            <p className="text-3xl font-extrabold text-slate-800 mb-4">{fmtMoney(entregaModal.totalCalc)}</p>
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Folio de nota (opcional)</label>
               <input value={folioNota} onChange={e=>setFolioNota(e.target.value)} className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Ej: N-0001" />
@@ -1016,7 +1016,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
-                  <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por $${entregaModal.totalCalc.toLocaleString()} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 WhatsApp</a>
+                  <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por ${fmtMoney(entregaModal.totalCalc)} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 WhatsApp</a>
                 </div>
                 <button onClick={() => { setCheckoutUrl(null); setShortUrl(null); setEntregaModal(null); }} className="w-full py-2 text-xs text-slate-500 font-semibold">Cerrar</button>
               </div>
@@ -1103,9 +1103,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               </div>
               {vForm.cant && n(vForm.cant) > 0 && n(vForm.cant) <= (restante[vForm.sku] || 0) && (
                 <div className="bg-blue-50 rounded-xl p-3 text-center space-y-0.5">
-                  <p className="text-xs text-slate-500">Subtotal: ${(n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)).toLocaleString()}</p>
-                  <p className="text-xs text-slate-500">IVA 16%: ${((Math.round((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) * 16) / 100)).toLocaleString()}</p>
-                  <p className="text-2xl font-extrabold text-slate-800">${((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) + (Math.round((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) * 16) / 100)).toLocaleString()}</p>
+                  <p className="text-xs text-slate-500">Subtotal: {fmtMoney(n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku))}</p>
+                  <p className="text-xs text-slate-500">IVA 16%: {fmtMoney(Math.round((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) * 16) / 100)}</p>
+                  <p className="text-2xl font-extrabold text-slate-800">{fmtMoney((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) + (Math.round((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) * 16) / 100))}</p>
                 </div>
               )}
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pago</label>
@@ -1189,16 +1189,16 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           </div>
           <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Cobros</h3>
-            {Object.entries(cobrosPorMetodo).map(([m, v]) => <div key={m} className="flex justify-between text-sm py-0.5"><span className="text-slate-500">{m}</span><span className="font-bold">${v.toLocaleString()}</span></div>)}
-            <div className="border-t border-slate-200 pt-2 mt-2 flex justify-between"><span className="text-sm font-bold text-slate-700">Efectivo a entregar</span><span className="text-xl font-extrabold text-emerald-600">${(cobrosPorMetodo["Efectivo"]||0).toLocaleString()}</span></div>
-            {totalCredito > 0 && <div className="flex justify-between text-sm mt-1"><span className="text-amber-600 font-semibold">Crédito</span><span className="font-bold text-amber-600">${totalCredito.toLocaleString()}</span></div>}
+            {Object.entries(cobrosPorMetodo).map(([m, v]) => <div key={m} className="flex justify-between text-sm py-0.5"><span className="text-slate-500">{m}</span><span className="font-bold">{fmtMoney(v)}</span></div>)}
+            <div className="border-t border-slate-200 pt-2 mt-2 flex justify-between"><span className="text-sm font-bold text-slate-700">Efectivo a entregar</span><span className="text-xl font-extrabold text-emerald-600">{fmtMoney(cobrosPorMetodo["Efectivo"]||0)}</span></div>
+            {totalCredito > 0 && <div className="flex justify-between text-sm mt-1"><span className="text-amber-600 font-semibold">Crédito</span><span className="font-bold text-amber-600">{fmtMoney(totalCredito)}</span></div>}
           </div>
           <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Detalle ({entregas.length})</h3>
             {entregas.map(e => (
               <div key={e.ordenId||e.id} className="flex justify-between text-xs items-center py-1.5 border-b border-slate-50">
                 <div><span className="font-mono text-slate-400">#{s(e.folio)}</span><span className="ml-1.5 text-slate-700 font-semibold">{s(e.cliente)}</span></div>
-                <div className="text-right"><span className="font-bold">${n(e.total).toLocaleString()}</span><span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded ${e.pago==="Crédito"?"bg-amber-100 text-amber-700":"bg-slate-100 text-slate-500"}`}>{e.pago}</span></div>
+                <div className="text-right"><span className="font-bold">{fmtMoney(e.total)}</span><span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded ${e.pago==="Crédito"?"bg-amber-100 text-amber-700":"bg-slate-100 text-slate-500"}`}>{e.pago}</span></div>
               </div>
             ))}
           </div>
