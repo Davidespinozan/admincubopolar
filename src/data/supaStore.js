@@ -1017,8 +1017,24 @@ export function useSupaStore(userId, userName) {
       },
 
       producirYCongelar: async (p) => {
-        const err = await a.addProduccion(p);
-        if (!err && p.destino) await a.meterACuartoFrio(p.destino, p.sku, Number(p.cantidad));
+        const errProd = await a.addProduccion(p);
+        if (errProd) return errProd;
+
+        if (p.destino) {
+          const errMeter = await a.meterACuartoFrio(p.destino, p.sku, Number(p.cantidad));
+          if (errMeter) {
+            // La producción ya quedó registrada pero no entró al CF.
+            // Rollback completo (eliminar la producción) es complejo y puede
+            // confundir; admin puede meterla al CF manualmente desde Inventario.
+            console.warn('[producirYCongelar] producción ok pero meterACuartoFrio falló:', errMeter?.message || errMeter);
+            return {
+              error: errMeter?.message || 'Producción registrada pero no entró al cuarto frío',
+              partial: true,
+            };
+          }
+        }
+
+        return undefined;
       },
 
       // ── TRANSFORMACIÓN: barra → hielo triturado/picado ──
@@ -2231,56 +2247,101 @@ export function useSupaStore(userId, userName) {
 
       // ── MERMAS ──
       registrarMerma: async (sku, cantidad, causa, origen, fotoUrl) => {
-        const { error } = await supabase.from('mermas').insert({
-          sku,
-          cantidad: Number(cantidad),
-          causa,
-          origen,
-          foto_url: fotoUrl || '',
-          usuario_id: uid() || null,
-        });
-        if (error) { t()?.error('Error al registrar merma'); return error; }
+        try {
+          const { data: mermaRow, error } = await supabase.from('mermas').insert({
+            sku,
+            cantidad: Number(cantidad),
+            causa,
+            origen,
+            foto_url: fotoUrl || '',
+            usuario_id: uid() || null,
+          }).select('id').single();
+          if (error) {
+            console.warn('[registrarMerma] insert mermas:', error.message);
+            t()?.error('Error al registrar merma');
+            return error;
+          }
+          const mermaId = mermaRow?.id;
 
-        // Descontar del inventario en cuartos fríos
-        const qty = Number(cantidad);
-        if (qty > 0) {
-          const { data: cuartos } = await supabase.from('cuartos_frios').select('id, stock').order('id');
-          if (cuartos && cuartos.length > 0) {
-            const changes = [];
-            let remaining = qty;
-            for (const cf of cuartos) {
-              if (remaining <= 0) break;
-              const available = Number((cf.stock || {})[sku] || 0);
-              if (available > 0) {
-                const toTake = Math.min(available, remaining);
-                remaining -= toTake;
-                changes.push({ cuarto_id: cf.id, sku, delta: -toTake, tipo: 'Merma', origen: causa || origen || 'Merma', usuario: uname() });
+          // Descontar del inventario en cuartos fríos. Si falla, hacemos
+          // rollback de la merma (DELETE) — son operaciones críticas que
+          // deben ir juntas o no ir.
+          const qty = Number(cantidad);
+          if (qty > 0) {
+            const { data: cuartos, error: errCfs } = await supabase
+              .from('cuartos_frios').select('id, stock').order('id');
+            if (errCfs) {
+              if (mermaId) await supabase.from('mermas').delete().eq('id', mermaId);
+              console.warn('[registrarMerma] select cuartos_frios, rollback merma:', errCfs.message);
+              t()?.error('No se pudo leer cuartos fríos — merma revertida');
+              return { error: errCfs.message };
+            }
+
+            if (cuartos && cuartos.length > 0) {
+              const changes = [];
+              let remaining = qty;
+              for (const cf of cuartos) {
+                if (remaining <= 0) break;
+                const available = Number((cf.stock || {})[sku] || 0);
+                if (available > 0) {
+                  const toTake = Math.min(available, remaining);
+                  remaining -= toTake;
+                  changes.push({ cuarto_id: cf.id, sku, delta: -toTake, tipo: 'Merma', origen: causa || origen || 'Merma', usuario: uname() });
+                }
+              }
+              if (changes.length > 0) {
+                const { error: errRpc } = await supabase.rpc('update_stocks_atomic', { p_changes: changes });
+                if (errRpc) {
+                  if (mermaId) await supabase.from('mermas').delete().eq('id', mermaId);
+                  console.warn('[registrarMerma] rpc update_stocks_atomic, rollback merma:', errRpc.message);
+                  t()?.error('No se pudo descontar el inventario — merma revertida');
+                  return { error: errRpc.message };
+                }
               }
             }
-            if (changes.length > 0) {
-              await supabase.rpc('update_stocks_atomic', { p_changes: changes });
+
+            // Registrar egreso contable por el costo de la merma.
+            // Si esto falla NO hacemos rollback: la merma + descuento son
+            // críticos y ya están bien. El asiento contable es secundario y
+            // puede regenerarse manualmente desde admin.
+            const { data: prod, error: errProd } = await supabase
+              .from('productos').select('costo_unitario, nombre').eq('sku', sku).maybeSingle();
+            if (errProd) {
+              console.warn('[registrarMerma] select costo unit (no crítico):', errProd.message);
+            } else {
+              const costoUnit = Number(prod?.costo_unitario || 0);
+              if (costoUnit > 0) {
+                const costoMerma = centavos(qty * costoUnit);
+                const { error: errEgr } = await supabase.from('movimientos_contables').insert({
+                  fecha: new Date().toISOString().slice(0, 10),
+                  tipo: 'Egreso',
+                  categoria: 'Mermas',
+                  concepto: `Merma ${qty}× ${sku}${prod?.nombre ? ` (${prod.nombre})` : ''} — ${causa || origen || 'Sin causa'}`,
+                  monto: costoMerma,
+                });
+                if (errEgr) {
+                  console.warn('[registrarMerma] insert egreso contable (no crítico):', errEgr.message);
+                  notify('advertencia', 'Asiento contable pendiente', `Merma ${qty}× ${sku} — egreso contable no se registró, regístralo manual.`, '⚠️', sku);
+                  t()?.error('Merma registrada, pero el egreso contable no. Regístralo manual.');
+                  // Continuamos al éxito: side effects principales sí ocurrieron.
+                  await checkStockBajo([sku]);
+                  rf();
+                  return { error: errEgr.message, partial: true };
+                }
+              }
             }
           }
 
-          // Registrar egreso contable por el costo de la merma
-          const { data: prod } = await supabase.from('productos').select('costo_unitario, nombre').eq('sku', sku).maybeSingle();
-          const costoUnit = Number(prod?.costo_unitario || 0);
-          if (costoUnit > 0) {
-            const costoMerma = centavos(qty * costoUnit);
-            await supabase.from('movimientos_contables').insert({
-              fecha: new Date().toISOString().slice(0, 10),
-              tipo: 'Egreso',
-              categoria: 'Mermas',
-              concepto: `Merma ${qty}× ${sku}${prod?.nombre ? ` (${prod.nombre})` : ''} — ${causa || origen || 'Sin causa'}`,
-              monto: costoMerma,
-            });
-          }
+          notify('merma', 'Merma registrada', `${cantidad}× ${sku} — ${causa || origen || 'Sin causa'}`, '⚠️', sku);
+          log('Registrar', 'Mermas', `${cantidad}×${sku} — ${causa}`);
+          await checkStockBajo([sku]);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[registrarMerma] excepción:', e);
+          t()?.error('Error inesperado al registrar merma');
+          return { error: e?.message || 'Error inesperado' };
         }
-
-        notify('merma', 'Merma registrada', `${cantidad}× ${sku} — ${causa || origen || 'Sin causa'}`, '⚠️', sku);
-        log('Registrar', 'Mermas', `${cantidad}×${sku} — ${causa}`);
-        await checkStockBajo([sku]);
-        rf();
       },
 
       deleteMerma: async (id) => {
@@ -2490,50 +2551,92 @@ export function useSupaStore(userId, userName) {
 
       // ── ALMACÉN BOLSAS ──
       movimientoBolsa: async (sku, cantidad, tipo, motivo, costo, proveedor, esCredito) => {
-        const { data: prod } = await supabase.from('productos').select('id, stock').eq('sku', sku).single();
-        if (!prod) return;
-        const newStock = tipo === 'Entrada'
-          ? Number(prod.stock) + Number(cantidad)
-          : Math.max(0, Number(prod.stock) - Number(cantidad));
-        await supabase.from('productos').update({ stock: newStock }).eq('id', prod.id);
-        await supabase.from('inventario_mov').insert({
-          tipo, producto: sku, cantidad: Number(cantidad),
-          origen: motivo, usuario: uname(),
-        });
-
-        // Auto-registrar movimiento contable cuando es compra de empaques (Entrada)
-        if (tipo === 'Entrada' && Number(costo) > 0) {
-          const hoy = new Date().toISOString().slice(0, 10);
-          const montoTotal = centavos(Number(costo));
-          
-          if (esCredito && proveedor) {
-            // Compra a crédito: crear cuenta por pagar (no egreso aún)
-            const fechaVenc = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-            await supabase.from('cuentas_por_pagar').insert({
-              proveedor: proveedor,
-              concepto: `Compra empaques: ${cantidad}×${sku}`,
-              monto_original: montoTotal,
-              monto_pagado: 0,
-              saldo_pendiente: montoTotal,
-              fecha_emision: hoy,
-              fecha_vencimiento: fechaVenc,
-              categoria: 'Proveedores',
-              estatus: 'Pendiente',
-            });
-            log('Compra crédito', 'Almacén Bolsas', `${cantidad}×${sku} → CxP: $${Number(costo)} — ${proveedor}`);
-          } else {
-            // Compra de contado: egreso directo
-            await supabase.from('movimientos_contables').insert({
-              fecha: hoy,
-              tipo: 'Egreso', categoria: 'Proveedores',
-              concepto: `Compra empaques: ${cantidad}×${sku}${proveedor ? ' — ' + proveedor : ''}`,
-              monto: montoTotal,
-            });
+        try {
+          const { data: prod, error: errProd } = await supabase
+            .from('productos').select('id, stock').eq('sku', sku).single();
+          if (errProd || !prod) {
+            const msg = errProd?.message || `Producto no encontrado: ${sku}`;
+            console.warn('[movimientoBolsa] select productos:', msg);
+            t()?.error('No se encontró el producto');
+            return { error: msg };
           }
-        }
+          const prevStock = Number(prod.stock || 0);
+          const newStock = tipo === 'Entrada'
+            ? prevStock + Number(cantidad)
+            : Math.max(0, prevStock - Number(cantidad));
 
-        log(tipo, 'Almacén Bolsas', `${sku} x${cantidad} — ${motivo}`);
-        rf();
+          const { error: errUpd } = await supabase
+            .from('productos').update({ stock: newStock }).eq('id', prod.id);
+          if (errUpd) {
+            console.warn('[movimientoBolsa] update stock:', errUpd.message);
+            t()?.error('No se pudo actualizar el stock');
+            return { error: errUpd.message || 'Error actualizando stock' };
+          }
+
+          const { error: errMov } = await supabase.from('inventario_mov').insert({
+            tipo, producto: sku, cantidad: Number(cantidad),
+            origen: motivo, usuario: uname(),
+          });
+          if (errMov) {
+            // Rollback del stock al valor previo
+            await supabase.from('productos').update({ stock: prevStock }).eq('id', prod.id);
+            console.warn('[movimientoBolsa] insert inventario_mov, rollback stock:', errMov.message);
+            t()?.error('No se pudo registrar el movimiento — stock revertido');
+            return { error: errMov.message || 'Error registrando movimiento' };
+          }
+
+          // Auto-registrar movimiento contable cuando es compra de empaques (Entrada)
+          // Si esto falla NO se hace rollback de stock+mov: la operación principal
+          // ya quedó. El consumer recibe { error, partial: true } y puede mostrar
+          // "movimiento ok, contabilidad pendiente".
+          if (tipo === 'Entrada' && Number(costo) > 0) {
+            const hoy = new Date().toISOString().slice(0, 10);
+            const montoTotal = centavos(Number(costo));
+
+            if (esCredito && proveedor) {
+              const fechaVenc = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+              const { error: errCxp } = await supabase.from('cuentas_por_pagar').insert({
+                proveedor: proveedor,
+                concepto: `Compra empaques: ${cantidad}×${sku}`,
+                monto_original: montoTotal,
+                monto_pagado: 0,
+                saldo_pendiente: montoTotal,
+                fecha_emision: hoy,
+                fecha_vencimiento: fechaVenc,
+                categoria: 'Proveedores',
+                estatus: 'Pendiente',
+              });
+              if (errCxp) {
+                console.warn('[movimientoBolsa] insert CxP (parcial):', errCxp.message);
+                t()?.error('Movimiento registrado, pero la cuenta por pagar no se creó. Regístrala desde Cuentas por Pagar.');
+                rf();
+                return { error: errCxp.message, partial: true };
+              }
+              log('Compra crédito', 'Almacén Bolsas', `${cantidad}×${sku} → CxP: $${Number(costo)} — ${proveedor}`);
+            } else {
+              const { error: errEgr } = await supabase.from('movimientos_contables').insert({
+                fecha: hoy,
+                tipo: 'Egreso', categoria: 'Proveedores',
+                concepto: `Compra empaques: ${cantidad}×${sku}${proveedor ? ' — ' + proveedor : ''}`,
+                monto: montoTotal,
+              });
+              if (errEgr) {
+                console.warn('[movimientoBolsa] insert egreso (parcial):', errEgr.message);
+                t()?.error('Movimiento registrado, pero el egreso contable no se creó. Regístralo desde Movimientos.');
+                rf();
+                return { error: errEgr.message, partial: true };
+              }
+            }
+          }
+
+          log(tipo, 'Almacén Bolsas', `${sku} x${cantidad} — ${motivo}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[movimientoBolsa] excepción:', e);
+          t()?.error('Error inesperado al registrar movimiento');
+          return { error: e?.message || 'Error inesperado' };
+        }
       },
 
       // ── CERRAR RUTA COMPLETA (chofer) ──
