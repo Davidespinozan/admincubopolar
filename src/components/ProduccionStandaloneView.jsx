@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { s, n } from '../utils/safe';
 import { puedeAgregarAlCuarto, tarimasOcupadasEnCuarto, colorTarimasUso } from '../utils/tarimas';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
+import { EmptyState } from './ui/Skeleton';
 
 // empaqueMap se deriva dinámicamente de data.productos.empaque_sku
 const PRODUCCION_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf3f6_0%,#e5edf1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
@@ -479,7 +480,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             </div>
 
             {tableroDemanda.length === 0 ? (
-              <p className="text-xs text-slate-400 text-center py-3">Sin productos terminados configurados</p>
+              <EmptyState
+                message="Sin productos terminados configurados"
+                hint="Pide a Admin que agregue productos terminados al catálogo"
+              />
             ) : (
               <div className="space-y-2">
                 {tableroDemanda.map(r => (
@@ -534,10 +538,13 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           )}
 
           {prodHoy.length === 0 && (
-            <div className="bg-white/78 rounded-[28px] p-8 text-center border border-slate-200/80 shadow-[0_14px_28px_rgba(8,19,27,0.05)]">
-              <p className="text-3xl mb-2">🧊</p>
-              <p className="text-sm text-slate-400">Aún no has registrado producción hoy</p>
-            </div>
+            <EmptyState
+              message="Aún no has registrado producción hoy"
+              icon={<span className="text-4xl">🧊</span>}
+              hint="Cuando produzcas hielo en el día, aparecerá aquí el detalle"
+              cta="+ Ya produje hielo"
+              onCta={() => { resetFormProd(); setModal(true); }}
+            />
           )}
         </>)}
 
@@ -654,10 +661,13 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           </button>
 
           {transformaciones.length === 0 ? (
-            <div className="bg-white/78 rounded-[28px] p-8 text-center border border-slate-200/80">
-              <p className="text-3xl mb-2">🧊</p>
-              <p className="text-sm text-slate-400">Sin transformaciones registradas</p>
-            </div>
+            <EmptyState
+              message="Sin transformaciones registradas"
+              icon={<span className="text-4xl">🧊</span>}
+              hint="Las transformaciones de barras a triturado quedan aquí"
+              cta="+ Nueva transformación"
+              onCta={() => setTransModal(true)}
+            />
           ) : (
             <div className="space-y-2">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Historial ({transformaciones.length})</h3>
@@ -954,7 +964,11 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               ))}
             </div>
           ) : (
-            <p className="text-center text-sm text-slate-400 py-8">Sin mermas hoy</p>
+            <EmptyState
+              message="Buen turno"
+              icon={<span className="text-4xl">✅</span>}
+              hint="No has registrado mermas hoy"
+            />
           )}
         </>)}
 
@@ -1035,7 +1049,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿Qué entró? (Insumo)</label>
                 {insumos.length === 0 ? (
-                  <p className="text-xs text-slate-400 italic">Sin insumos registrados en el catálogo</p>
+                  <EmptyState
+                    message="Sin insumos en el catálogo"
+                    hint="Pide a Admin que agregue barras (kg) al catálogo"
+                  />
                 ) : (
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                     {insumos.map(p => (
