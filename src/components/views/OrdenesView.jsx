@@ -1,12 +1,56 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, s, fmtDate, fmtMoney, useDebounce, useToast, reporteVentas, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormBtn, useConfirm, s, fmtDate, fmtMoney, useDebounce, useToast, reporteVentas, PAGE_SIZE, Paginator } from './viewsCommon';
 import NuevaVentaModal from '../NuevaVentaModal';
+import EditarVentaModal from '../EditarVentaModal';
 
 export function OrdenesView({ data, actions, user }) {
   const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(false);
+  const [editarOrden, setEditarOrden] = useState(null);
+  const [cancelarOrden, setCancelarOrden] = useState(null);
+  const [motivoCancelar, setMotivoCancelar] = useState('');
+  const [cancelando, setCancelando] = useState(false);
   const [search, setSearch] = useState("");
-  const [filterEst, setFilterEst] = useState("");
+  const [filterEst, setFilterEst] = useState("activas"); // activas | todas | <estatus>
   const [page, setPage] = useState(0);
+
+  const ordenesEstado = useMemo(() => {
+    const map = {};
+    const pagosByOrden = {};
+    (data?.pagos || []).forEach(p => {
+      if (!p) return;
+      const oid = String(p.ordenId || p.orden_id || '');
+      if (oid) pagosByOrden[oid] = (pagosByOrden[oid] || 0) + 1;
+    });
+    const cxcByOrden = {};
+    (data?.cuentasPorCobrar || []).forEach(c => {
+      if (!c) return;
+      const oid = String(c.ordenId || c.orden_id || '');
+      if (oid) cxcByOrden[oid] = c;
+    });
+    (data?.ordenes || []).forEach(o => {
+      if (!o) return;
+      const id = String(o.id);
+      const estatus = s(o.estatus);
+      const tienePagos = !!pagosByOrden[id];
+      const cxc = cxcByOrden[id] || null;
+      const cxcConPagos = cxc && Number(cxc.montoPagado || cxc.monto_pagado || 0) > 0;
+      const enRuta = !!(o.rutaId || o.ruta_id);
+      map[id] = {
+        estatus,
+        puedeEditar: estatus === 'Creada',
+        puedeCancelar: !['Cancelada', 'Entregada', 'Facturada'].includes(estatus) && !cxcConPagos && !(tienePagos && !cxc),
+        puedeEliminar: estatus === 'Creada' && !tienePagos && !cxc && !enRuta,
+        razonNoCancela: cxcConPagos
+          ? 'Tiene pagos parciales. Anula los pagos primero.'
+          : (tienePagos && !cxc ? 'Venta de contado pagada. Registra una devolución.' : null),
+        razonNoElimina: tienePagos
+          ? 'Tiene pagos asociados'
+          : cxc ? 'Tiene cuenta por cobrar' : enRuta ? 'Está en una ruta asignada' : (estatus !== 'Creada' ? `Estatus ${estatus}` : null),
+      };
+    });
+    return map;
+  }, [data?.ordenes, data?.pagos, data?.cuentasPorCobrar]);
 
   const dSearch = useDebounce(search);
 
@@ -49,9 +93,14 @@ export function OrdenesView({ data, actions, user }) {
 
   const filtered = useMemo(() => {
     const q = dSearch?.toLowerCase() || "";
-    return data.ordenes.filter(o => {
+    return (data.ordenes || []).filter(o => {
+      if (!o) return false;
       const ms = !q || s(o.folio).toLowerCase().includes(q) || s(o.cliente).toLowerCase().includes(q);
-      const me = !filterEst || o.estatus === filterEst; return ms && me;
+      let me = true;
+      if (filterEst === 'activas') me = s(o.estatus) !== 'Cancelada';
+      else if (filterEst === 'todas') me = true;
+      else if (filterEst) me = o.estatus === filterEst;
+      return ms && me;
     });
   }, [data.ordenes, dSearch, filterEst]);
 
@@ -68,7 +117,11 @@ export function OrdenesView({ data, actions, user }) {
     <PageHeader title="Ventas" subtitle="Crear venta, cobrar y asignar entregas" action={openModal} actionLabel="Nueva orden" extraButtons={exportBtns} />
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
       <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>{setSearch(e.target.value);setPage(0)}} placeholder="Buscar folio o cliente..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
-      <select value={filterEst} onChange={e=>{setFilterEst(e.target.value);setPage(0)}} className="border border-slate-200 rounded-xl px-3 py-3 md:py-2.5 text-sm text-slate-600 bg-white focus:outline-none focus:border-blue-400 min-h-[44px]"><option value="">Todos</option>{["Creada","Asignada","Entregada","Facturada"].map(st=><option key={st}>{st}</option>)}</select>
+      <select value={filterEst} onChange={e=>{setFilterEst(e.target.value);setPage(0)}} className="border border-slate-200 rounded-xl px-3 py-3 md:py-2.5 text-sm text-slate-600 bg-white focus:outline-none focus:border-blue-400 min-h-[44px]">
+        <option value="activas">Activas</option>
+        <option value="todas">Todas (incl. canceladas)</option>
+        {["Creada","Asignada","Entregada","Facturada","Cancelada"].map(st=><option key={st} value={st}>{st}</option>)}
+      </select>
     </div>
     <div className="bg-white border border-slate-100 rounded-2xl p-4 sm:p-5">
       <DataTable columns={[
@@ -90,6 +143,77 @@ export function OrdenesView({ data, actions, user }) {
         {key:"total",label:"Total",bold:true,render:v=>fmtMoney(v)},
         {key:"estatus",label:"Estatus",badge:true,render:(v,r)=><div className="flex items-center gap-2 flex-wrap"><StatusBadge status={v}/><span className="hidden md:inline">{v==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">Asignar ruta</button></>}{v==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"entrega")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar entrega</button>}{v==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">→ Facturar</button>}</span></div>},
         {key:"ruta",label:"Ruta",hideOnMobile:true},
+        {key:"acciones",label:"",render:(_,row)=>{
+          const est = ordenesEstado[String(row.id)] || {};
+          return <div className="flex gap-1 justify-end" onClick={(e)=>e.stopPropagation()}>
+            {est.puedeEditar ? (
+              <button
+                onClick={()=>setEditarOrden(row)}
+                aria-label="Editar orden"
+                title="Editar"
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+              >
+                <Icons.Edit />
+              </button>
+            ) : (
+              <button
+                disabled
+                aria-label="No editable"
+                title={`Solo se puede editar en estatus Creada (actual: ${s(row.estatus)})`}
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
+              >
+                <Icons.Edit />
+              </button>
+            )}
+            {est.puedeCancelar ? (
+              <button
+                onClick={()=>{ setCancelarOrden(row); setMotivoCancelar(''); }}
+                aria-label="Cancelar orden"
+                title="Cancelar"
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-amber-600 hover:bg-amber-50 transition-colors"
+              >
+                <span className="text-base leading-none">⊘</span>
+              </button>
+            ) : (
+              <button
+                disabled
+                aria-label="No se puede cancelar"
+                title={est.razonNoCancela || `No se puede cancelar (estatus ${s(row.estatus)})`}
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
+              >
+                <span className="text-base leading-none opacity-50">⊘</span>
+              </button>
+            )}
+            {est.puedeEliminar ? (
+              <button
+                onClick={()=>askConfirm(
+                  'Eliminar permanentemente',
+                  `¿Eliminar la orden ${s(row.folio)} permanentemente? Esta acción no se puede deshacer.`,
+                  async ()=>{
+                    const result = await actions.deleteOrden(row.id);
+                    if (result?.error) { toast?.error(result.error); return; }
+                    toast?.success('Orden eliminada');
+                  },
+                  true
+                )}
+                aria-label="Eliminar permanentemente"
+                title="Eliminar permanentemente"
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <span className="text-base leading-none">🗑</span>
+              </button>
+            ) : (
+              <button
+                disabled
+                aria-label="No se puede eliminar"
+                title={est.razonNoElimina ? `No se puede eliminar — ${est.razonNoElimina}. Usa Cancelar.` : 'No se puede eliminar'}
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
+              >
+                <span className="text-base leading-none opacity-50">🗑</span>
+              </button>
+            )}
+          </div>;
+        }},
       ]} data={paginated}
       cardSubtitle={r => {
         const est = r.estatus;
@@ -117,6 +241,67 @@ export function OrdenesView({ data, actions, user }) {
       />
       <Paginator page={page} total={filtered.length} onPage={setPage} />
     </div>
+
+    {ConfirmEl}
+
+    <EditarVentaModal
+      open={!!editarOrden}
+      onClose={()=>setEditarOrden(null)}
+      orden={editarOrden}
+      data={data}
+      actions={actions}
+      user={user}
+      toast={toast}
+      onSuccess={()=>{ toast?.success('Orden actualizada'); setEditarOrden(null); }}
+    />
+
+    <Modal open={!!cancelarOrden} onClose={()=>{ if (cancelando) return; setCancelarOrden(null); setMotivoCancelar(''); }} title="Cancelar orden">
+      {cancelarOrden && (
+        <div className="space-y-3">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900">
+            <p className="font-bold mb-1">¿Cancelar orden {s(cancelarOrden.folio)}?</p>
+            <p className="text-xs">
+              {s(cancelarOrden.estatus) === 'Asignada'
+                ? 'El stock se regresará al cuarto frío de origen.'
+                : 'No hay stock que regresar (la orden no fue asignada todavía).'}
+            </p>
+            <p className="text-xs mt-1">
+              Cliente: <span className="font-semibold">{s(cancelarOrden.cliente)}</span> · Total: <span className="font-semibold">{fmtMoney(cancelarOrden.total)}</span>
+            </p>
+          </div>
+          <FormInput
+            label="Motivo de la cancelación *"
+            value={motivoCancelar}
+            onChange={(e)=>setMotivoCancelar(e.target.value)}
+            placeholder="Ej: Cliente canceló pedido, error de captura, ..."
+          />
+          <div className="flex justify-end gap-2 mt-4">
+            <FormBtn onClick={()=>{ if (cancelando) return; setCancelarOrden(null); setMotivoCancelar(''); }}>Volver</FormBtn>
+            <button
+              onClick={async ()=>{
+                if (cancelando) return;
+                const motivo = motivoCancelar.trim();
+                if (!motivo) { toast?.error('Captura el motivo'); return; }
+                setCancelando(true);
+                try {
+                  const result = await actions.cancelarOrden({ ordenId: cancelarOrden.id, motivo });
+                  if (result?.error) { toast?.error(result.error); return; }
+                  toast?.success('Orden cancelada');
+                  setCancelarOrden(null);
+                  setMotivoCancelar('');
+                } finally {
+                  setCancelando(false);
+                }
+              }}
+              disabled={cancelando || !motivoCancelar.trim()}
+              className="px-4 py-2.5 text-sm font-bold rounded-xl bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {cancelando ? 'Cancelando…' : 'Cancelar orden'}
+            </button>
+          </div>
+        </div>
+      )}
+    </Modal>
 
     <NuevaVentaModal
       open={modal}

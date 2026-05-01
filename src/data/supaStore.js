@@ -960,10 +960,227 @@ export function useSupaStore(userId, userName) {
       },
 
       deleteOrden: async (id) => {
-        const { error } = await supabase.from('ordenes').delete().eq('id', id);
-        if (error) { t()?.error('Error al eliminar orden'); return error; }
-        log('Eliminar', 'Órdenes', `ID ${id}`);
-        rf();
+        try {
+          const { error } = await supabase.from('ordenes').delete().eq('id', id);
+          if (error) {
+            const msg = error.code === '23503'
+              ? 'No se puede eliminar — la orden tiene pagos, CxC o ruta asignada. Usa Cancelar.'
+              : (error.message || 'Error al eliminar orden');
+            t()?.error(msg);
+            return { error: msg };
+          }
+          log('Eliminar', 'Órdenes', `ID ${id}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          const msg = e?.message || 'Error inesperado al eliminar orden';
+          t()?.error(msg);
+          return { error: msg };
+        }
+      },
+
+      // Cancela una orden con motivo. Usa updateOrdenEstatus internamente
+      // para reusar el reverso de stock vía RPC cuando estatus == 'Asignada'.
+      // Bloquea cancelación si hay pagos directos o CxC con monto_pagado > 0.
+      cancelarOrden: async ({ ordenId, motivo } = {}) => {
+        try {
+          if (!ordenId) return { error: 'Orden requerida' };
+          const motivoTxt = String(motivo || '').trim();
+          if (!motivoTxt) return { error: 'Motivo requerido' };
+
+          // Leer orden + estatus actual
+          const { data: orden, error: errOrd } = await supabase
+            .from('ordenes')
+            .select('id, folio, estatus, ruta_id')
+            .eq('id', ordenId)
+            .single();
+          if (errOrd || !orden) {
+            const msg = errOrd?.message || 'Orden no encontrada';
+            t()?.error(msg);
+            return { error: msg };
+          }
+
+          const estatusActual = s(orden.estatus);
+          if (estatusActual === 'Cancelada') {
+            return { error: 'Esta orden ya está cancelada' };
+          }
+          if (estatusActual === 'Entregada' || estatusActual === 'Facturada') {
+            return { error: 'No se puede cancelar una orden ya entregada o facturada. Registra una devolución.' };
+          }
+
+          // Validar CxC: si tiene pagos parciales (monto_pagado > 0), bloquear
+          const { data: cxcRows, error: errCxc } = await supabase
+            .from('cuentas_por_cobrar')
+            .select('id, monto_pagado, monto_original')
+            .eq('orden_id', ordenId);
+          if (errCxc) {
+            console.warn('[cancelarOrden] select cxc:', errCxc.message);
+          }
+          const cxc = (cxcRows || [])[0] || null;
+          if (cxc && Number(cxc.monto_pagado) > 0) {
+            return { error: 'Esta venta tiene pagos parciales. Anula los pagos primero.' };
+          }
+
+          // Validar pagos directos (contado) sin CxC asociada
+          const { data: pagosRows, error: errPag } = await supabase
+            .from('pagos')
+            .select('id')
+            .eq('orden_id', ordenId);
+          if (errPag) {
+            console.warn('[cancelarOrden] select pagos:', errPag.message);
+          }
+          if ((pagosRows || []).length > 0 && !cxc) {
+            return { error: 'Esta venta de contado ya está pagada. Registra una devolución.' };
+          }
+
+          // Borrar CxC sin pagos (ya validamos monto_pagado === 0 arriba)
+          if (cxc) {
+            const { error: errDelCxc } = await supabase
+              .from('cuentas_por_cobrar')
+              .delete()
+              .eq('id', cxc.id);
+            if (errDelCxc) {
+              console.warn('[cancelarOrden] delete cxc:', errDelCxc.message);
+              t()?.error('No se pudo borrar la CxC asociada');
+              return { error: errDelCxc.message };
+            }
+          }
+
+          // Cambio de estatus a Cancelada — reusa updateOrdenEstatus que
+          // dispara el RPC de reverso de stock cuando viene de 'Asignada'.
+          const errEst = await actionsRef.current?.updateOrdenEstatus?.(ordenId, 'Cancelada');
+          if (errEst && (errEst.error || errEst.message)) {
+            const msg = errEst.error || errEst.message;
+            t()?.error(msg);
+            return { error: msg };
+          }
+
+          // Anotar contexto de cancelación (columnas de migración 043)
+          const cancelada_at = new Date().toISOString();
+          const cancelada_por = uname() || 'Admin';
+          const { error: errAnot } = await supabase
+            .from('ordenes')
+            .update({
+              motivo_cancelacion: motivoTxt,
+              cancelada_at,
+              cancelada_por,
+            })
+            .eq('id', ordenId);
+          if (errAnot) {
+            console.warn('[cancelarOrden] update anotaciones:', errAnot.message);
+            t()?.error('Cancelación aplicada, pero las anotaciones no se guardaron');
+          }
+
+          // Audit
+          await log('Cancelar', 'Órdenes',
+            `${s(orden.folio) || ordenId} — ${motivoTxt}${estatusActual === 'Asignada' ? ' (stock revertido)' : ''}`
+          );
+
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[cancelarOrden] excepción:', e);
+          t()?.error('Error inesperado al cancelar orden');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // Edita orden en estatus 'Creada': UPDATE campos top-level + reemplazo
+      // de líneas (DELETE + INSERT). Recalcula total desde las líneas nuevas.
+      updateOrden: async (ordenId, payload = {}) => {
+        try {
+          if (!ordenId) return { error: 'Orden requerida' };
+
+          const { data: ord, error: errOrd } = await supabase
+            .from('ordenes')
+            .select('estatus')
+            .eq('id', ordenId)
+            .single();
+          if (errOrd || !ord) {
+            const msg = errOrd?.message || 'Orden no encontrada';
+            t()?.error(msg);
+            return { error: msg };
+          }
+          if (s(ord.estatus) !== 'Creada') {
+            return { error: 'Solo se pueden editar órdenes en estatus Creada' };
+          }
+
+          const { lines, ...resto } = payload;
+
+          // Si vienen líneas nuevas, recalcular total y validar SKUs/precios
+          let totalNuevo = null;
+          let lineasNuevas = null;
+          if (Array.isArray(lines)) {
+            const items = lines
+              .filter(l => l && l.sku && Number(l.qty || l.cantidad) > 0)
+              .map(l => ({ qty: Number(l.qty || l.cantidad), sku: String(l.sku) }));
+            const itemsErr = validateItems(items);
+            if (itemsErr) return { error: itemsErr };
+
+            const [{ data: prods }, { data: pes }] = await Promise.all([
+              supabase.from('productos').select('sku, precio, stock'),
+              supabase.from('precios_esp').select('sku, precio').eq('cliente_id', resto.clienteId || resto.cliente_id || null),
+            ]);
+            const built = buildLineas(items, prods || [], pes || []);
+            if (built.error) return { error: built.error };
+            totalNuevo = built.total;
+            lineasNuevas = built.lineas;
+          }
+
+          // Construir UPDATE de campos top-level (solo los que vinieron)
+          const updateFields = {};
+          if (resto.cliente !== undefined) updateFields.cliente_nombre = resto.cliente;
+          if (resto.clienteId !== undefined) updateFields.cliente_id = resto.clienteId || null;
+          if (resto.fecha !== undefined) updateFields.fecha = resto.fecha;
+          if (resto.tipoCobro !== undefined) updateFields.tipo_cobro = resto.tipoCobro;
+          if (resto.folioNota !== undefined) updateFields.folio_nota = resto.folioNota || null;
+          if (resto.direccionEntrega !== undefined) updateFields.direccion_entrega = resto.direccionEntrega || null;
+          if (resto.referenciaEntrega !== undefined) updateFields.referencia_entrega = resto.referenciaEntrega || null;
+          if (resto.latitudEntrega !== undefined) updateFields.latitud_entrega = resto.latitudEntrega ?? null;
+          if (resto.longitudEntrega !== undefined) updateFields.longitud_entrega = resto.longitudEntrega ?? null;
+          if (lineasNuevas) {
+            updateFields.total = totalNuevo;
+            updateFields.productos = lineasNuevas.map(l => `${l.cantidad}×${l.sku}`).join(', ');
+          }
+
+          if (Object.keys(updateFields).length > 0) {
+            const { error: errUpd } = await supabase
+              .from('ordenes')
+              .update(updateFields)
+              .eq('id', ordenId);
+            if (errUpd) {
+              t()?.error('No se pudieron actualizar los datos de la orden');
+              return { error: errUpd.message };
+            }
+          }
+
+          // Reemplazo atómico-ish de líneas: DELETE + INSERT
+          if (lineasNuevas) {
+            const { error: errDel } = await supabase
+              .from('orden_lineas')
+              .delete()
+              .eq('orden_id', ordenId);
+            if (errDel) {
+              t()?.error('No se pudieron borrar las líneas previas');
+              return { error: errDel.message };
+            }
+            const { error: errIns } = await supabase
+              .from('orden_lineas')
+              .insert(lineasNuevas.map(l => ({ ...l, orden_id: ordenId })));
+            if (errIns) {
+              t()?.error('Error al insertar líneas nuevas — orden quedó sin líneas');
+              return { error: errIns.message, partial: true };
+            }
+          }
+
+          await log('Editar', 'Órdenes', `ID ${ordenId}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[updateOrden] excepción:', e);
+          t()?.error('Error inesperado al editar orden');
+          return { error: e?.message || 'Error inesperado' };
+        }
       },
 
       // ── PRODUCCIÓN ──
