@@ -603,10 +603,23 @@ export function useSupaStore(userId, userName) {
       },
 
       deleteCliente: async (id) => {
-        const { error } = await supabase.from('clientes').delete().eq('id', id);
-        if (error) { t()?.error('Error al eliminar cliente'); return error; }
-        log('Eliminar', 'Clientes', `ID ${id}`);
-        rf();
+        try {
+          const { error } = await supabase.from('clientes').delete().eq('id', id);
+          if (error) {
+            const msg = error.code === '23503'
+              ? 'No se puede eliminar — el cliente tiene órdenes, pagos o comodatos asociados. Usa Desactivar.'
+              : (error.message || 'Error al eliminar cliente');
+            t()?.error(msg);
+            return { error: msg };
+          }
+          log('Eliminar', 'Clientes', `ID ${id}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          const msg = e?.message || 'Error inesperado al eliminar cliente';
+          t()?.error(msg);
+          return { error: msg };
+        }
       },
 
       // ── PRODUCTOS ──
@@ -2599,10 +2612,23 @@ export function useSupaStore(userId, userName) {
       },
 
       deleteEmpleado: async (id) => {
-        const { error } = await supabase.from('empleados').delete().eq('id', id);
-        if (error) { t()?.error('Error al eliminar empleado'); return error; }
-        log('Eliminar', 'Empleados', `ID ${id}`);
-        rf();
+        try {
+          const { error } = await supabase.from('empleados').delete().eq('id', id);
+          if (error) {
+            const msg = error.code === '23503'
+              ? 'No se puede eliminar — el empleado tiene rutas, órdenes o nómina asociada. Usa Desactivar.'
+              : (error.message || 'Error al eliminar empleado');
+            t()?.error(msg);
+            return { error: msg };
+          }
+          log('Eliminar', 'Empleados', `ID ${id}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          const msg = e?.message || 'Error inesperado al eliminar empleado';
+          t()?.error(msg);
+          return { error: msg };
+        }
       },
 
       // ── NÓMINA ──
