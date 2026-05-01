@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { s, n, eqId } from '../utils/safe';
+import { s, n, eqId, fmtMoney } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
 
 const PAGOS = ["Efectivo", "Transferencia SPEI", "Tarjeta (terminal)", "QR / Link de pago", "Crédito (fiado)"];
@@ -144,7 +144,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
         showToast("Orden creada — ahora cobra");
         cobrar(result.orden);
       } else {
-        showToast("Orden creada — $" + total.toLocaleString());
+        showToast("Orden creada — " + fmtMoney(total));
       }
     } catch (e) {
       console.error('Error creando orden:', e);
@@ -209,7 +209,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
           <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs">Salir</button>
         </div>
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200/70">Vendido hoy</p><p className="mt-1.5 text-[1.8rem] font-extrabold">${ventasHoy.toLocaleString()}</p></div>
+          <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200/70">Vendido hoy</p><p className="mt-1.5 text-[1.8rem] font-extrabold">{fmtMoney(ventasHoy)}</p></div>
           <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200/70">Pendientes</p><p className="mt-1.5 text-[1.8rem] font-extrabold">{pendientes.length}</p><p className="text-xs text-stone-300">órdenes por cobrar</p></div>
         </div>
       </div>
@@ -242,7 +242,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                   <p className="text-xs text-slate-400 mt-0.5">{s(o.productos)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-extrabold text-slate-800">${n(o.total).toLocaleString()}</p>
+                  <p className="text-sm font-extrabold text-slate-800">{fmtMoney(o.total)}</p>
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
                     o.estatus === "Creada" ? "bg-blue-100 text-blue-700" :
                     o.estatus === "Asignada" ? "bg-amber-100 text-amber-700" :
@@ -406,7 +406,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                         <p className="text-sm font-bold text-slate-800">{s(cli.nombre)}</p>
                         <p className="text-xs text-slate-500">{tieneRfc ? s(cli.rfc) : "Sin RFC"} {cli.contacto && cli.contacto !== "—" ? " · " + s(cli.contacto) : ""}</p>
                       </div>
-                      {n(cli.saldo) > 0 && <span className="min-w-[72px] rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white">Debe ${n(cli.saldo).toLocaleString()}</span>}
+                      {n(cli.saldo) > 0 && <span className="min-w-[72px] rounded-lg bg-amber-600 px-3 py-1 text-xs font-bold text-white">{"Debe " + fmtMoney(cli.saldo)}</span>}
                     </div>
                     {/* Factura toggle for this order */}
                     {tieneRfc && (
@@ -435,7 +435,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                       </select>
                       <input type="number" min="1" value={l.qty} onChange={e => updateLine(i, "qty", parseInt(e.target.value) || 1)}
                         className="w-14 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center" />
-                      <span className="text-sm font-bold text-slate-600 w-16 text-right">${(n(l.qty) * n(l.precio)).toLocaleString()}</span>
+                      <span className="text-sm font-bold text-slate-600 w-16 text-right">{fmtMoney(n(l.qty) * n(l.precio))}</span>
                       {lines.length > 1 && <button onClick={() => removeLine(i)} className="text-red-400 text-lg w-6">×</button>}
                     </div>
                     {l.sku && <p className="text-[11px] text-slate-500 mt-1 ml-1">Stock: {getStock(l.sku).toLocaleString()} bolsas</p>}
@@ -446,7 +446,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
 
               {/* ── TOTALES ── */}
               <div className="bg-slate-50 rounded-xl p-3 space-y-1">
-                <div className="flex justify-between text-base font-bold text-slate-800"><span>Total</span><span>${totalCalc.toLocaleString()}</span></div>
+                <div className="flex justify-between text-base font-bold text-slate-800"><span>Total</span><span>{fmtMoney(totalCalc)}</span></div>
                 <div className="flex justify-between text-xs text-slate-400"><span>IVA 0% (hielo)</span></div>
               </div>
             </div>
@@ -466,7 +466,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
             <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
             <p className="erp-kicker text-slate-400">Cobranza</p>
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-1">Cobrar {s(pagoModal.folio)}</h3>
-            <p className="text-sm text-slate-500 mb-4">{s(pagoModal.cliente)} — <span className="font-bold text-slate-800">${n(pagoModal.total).toLocaleString()}</span>
+            <p className="text-sm text-slate-500 mb-4">{s(pagoModal.cliente)} — <span className="font-bold text-slate-800">{fmtMoney(pagoModal.total)}</span>
               {pagoModal.requiereFactura && <span className="ml-2 text-xs bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded">FACTURA</span>}
             </p>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Método de pago</label>
@@ -490,7 +490,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                 <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
-                  <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por $${n(pagoModal.total).toLocaleString()} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>
+                  <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por ${fmtMoney(pagoModal.total)} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>
                 </div>
                 <button onClick={() => { setCheckoutUrl(null); setShortUrl(null); setPagoModal(null); }} className="w-full py-2 text-xs text-slate-500 font-semibold">Cerrar</button>
               </div>

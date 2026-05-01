@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '../lib/supabase';
-import { s, n } from '../utils/safe';
+import { s, n, fmtDate, fmtPct } from '../utils/safe';
 import { puedeAgregarAlCuarto, tarimasOcupadasEnCuarto, colorTarimasUso } from '../utils/tarimas';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
 import { EmptyState } from './ui/Skeleton';
@@ -620,7 +620,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                       <div className="flex justify-between items-center mb-1">
                         <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Tarimas</span>
                         <span className={`text-xs font-bold ${textColorClass}`}>
-                          {ocupado.toFixed(1)}/{capacidad} ({pct}%)
+                          {ocupado.toFixed(1)}/{capacidad} ({fmtPct(ocupado, capacidad)})
                         </span>
                       </div>
                       <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
@@ -677,7 +677,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 return (
                   <div key={t.id} className="bg-white/84 rounded-[22px] p-4 border border-slate-200/80 shadow-[0_8px_18px_rgba(8,19,27,0.04)]">
                     <div className="flex items-center justify-between mb-2">
-                      <p className="text-xs font-bold text-slate-500">{t.folio || t.id} · {s(t.fecha).slice(0, 10)}</p>
+                      <p className="text-xs font-bold text-slate-500">{t.folio || t.id} · {fmtDate(t.fecha)}</p>
                       <span className={`text-xs font-extrabold px-2 py-0.5 rounded-lg border ${rendColor}`}>{rend}%</span>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
@@ -956,7 +956,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   <div className="flex justify-between items-start">
                     <div>
                       <p className="text-sm font-bold text-red-700">{m.cantidad}× {m.sku}</p>
-                      <p className="text-xs text-slate-500">{m.causa} · {m.origen} · {s(m.fecha) || 'Hoy'}</p>
+                      <p className="text-xs text-slate-500">{m.causa} · {m.origen} · {m.fecha ? fmtDate(m.fecha) : 'Hoy'}</p>
                     </div>
                     {m.fotoUrl && <img src={m.fotoUrl} alt="Evidencia" className="w-10 h-10 object-cover rounded-lg border border-red-300" />}
                   </div>

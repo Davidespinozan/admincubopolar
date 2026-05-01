@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
-import { s, n, fmtMoney } from '../utils/safe';
+import { s, n, fmtMoney, fmtDate } from '../utils/safe';
 import { supabase } from '../lib/supabase';
 import { abrirNavegacion } from '../utils/navegacion';
 import { EmptyState } from './ui/Skeleton';
@@ -1178,7 +1178,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       <div className={CHOFER_SHELL}>
         <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
           <div className="flex items-center justify-between">
-            <div><p className="erp-kicker text-cyan-200/70">Paso 3 de 3</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cierre de ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)} · {new Date().toLocaleDateString("es-MX")}</p></div>
+            <div><p className="erp-kicker text-cyan-200/70">Paso 3 de 3</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cierre de ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)} · {fmtDate(new Date())}</p></div>
             {!rutaCerrada && <button onClick={() => setStep("ruta")} className="text-xs bg-white/8 border border-white/10 px-3 py-1.5 rounded-full">← Volver</button>}
           </div>
         </div>
