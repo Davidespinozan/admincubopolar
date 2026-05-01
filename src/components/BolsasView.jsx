@@ -7,6 +7,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
   const [modal, setModal] = useState(null); // "entrada" | "salida"
   const [form, setForm] = useState({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
   const [toast, setToast] = useState("");
+  const [registrando, setRegistrando] = useState(false);
 
   const empaques = useMemo(() => data.productos.filter(p => s(p.tipo) === "Empaque"), [data.productos]);
   const empaqueSKUs = useMemo(() => new Set(empaques.map(e => s(e.sku))), [empaques]);
@@ -43,26 +44,36 @@ export default function BolsasView({ user, data, actions, onLogout }) {
     return r;
   }, [historial, empaques]);
 
-  const registrar = () => {
+  const registrar = async () => {
+    if (registrando) return;
     if (!form.cantidad || n(form.cantidad) <= 0) return;
     const esEntrada = modal === "entrada";
     const motivo = esEntrada ? "Recepción de compra" : (form.destino || "Producción");
 
-    actions.movimientoBolsa(
-      form.sku, 
-      n(form.cantidad), 
-      esEntrada ? "Entrada" : "Salida", 
-      motivo, 
-      esEntrada ? n(form.costo) : 0,
-      form.proveedor || null,
-      form.esCredito
-    );
+    setRegistrando(true);
+    try {
+      await actions.movimientoBolsa(
+        form.sku,
+        n(form.cantidad),
+        esEntrada ? "Entrada" : "Salida",
+        motivo,
+        esEntrada ? n(form.costo) : 0,
+        form.proveedor || null,
+        form.esCredito
+      );
 
-    // El historial se actualiza automáticamente via realtime desde inventarioMov
-
-    showToast((esEntrada ? "+" : "-") + form.cantidad + " " + form.sku + (form.esCredito ? " (crédito)" : ""));
-    setModal(null);
-    setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
+      // El historial se actualiza automáticamente via realtime desde inventarioMov
+      // NOTA: movimientoBolsa no retorna estado de error — un 4xx/5xx de Supabase
+      // pasa silencioso. Ver docs/STANDALONE_DEUDA_TECNICA.md.
+      showToast((esEntrada ? "+" : "-") + form.cantidad + " " + form.sku + (form.esCredito ? " (crédito)" : ""));
+      setModal(null);
+      setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
+    } catch (e) {
+      console.error('Error registrando movimiento bolsa:', e);
+      showToast('Error al registrar. Verifica tu conexión.');
+    } finally {
+      setRegistrando(false);
+    }
   };
 
   const stockActual = (sku) => n(empaques.find(p => s(p.sku) === sku)?.stock || 0);
@@ -212,9 +223,9 @@ export default function BolsasView({ user, data, actions, onLogout }) {
               )}
             </div>
             <button onClick={registrar}
-              disabled={!form.cantidad || n(form.cantidad) <= 0 || (modal === "salida" && n(form.cantidad) > stockActual(form.sku))}
-              className={`w-full py-4 text-white font-bold rounded-xl text-base mt-4 disabled:opacity-40 ${modal === "entrada" ? "bg-emerald-600" : "bg-red-500"}`}>
-              {modal === "entrada" ? "✓ Registrar entrada" : "✓ Registrar salida"}
+              disabled={registrando || !form.cantidad || n(form.cantidad) <= 0 || (modal === "salida" && n(form.cantidad) > stockActual(form.sku))}
+              className={`w-full py-4 text-white font-bold rounded-xl text-base mt-4 disabled:opacity-40 disabled:cursor-not-allowed ${modal === "entrada" ? "bg-emerald-600" : "bg-red-500"}`}>
+              {registrando ? "Registrando…" : modal === "entrada" ? "✓ Registrar entrada" : "✓ Registrar salida"}
             </button>
           </div>
         </div>
