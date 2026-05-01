@@ -1,4 +1,4 @@
-import { useState, Icons, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, useToast, todayISO, fmtMoney } from './viewsCommon';
+import { useState, useMemo, Icons, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, useToast, todayISO, fmtMoney } from './viewsCommon';
 
 export function EmpleadosView({ data, actions }) {
   const toast = useToast();
@@ -10,6 +10,41 @@ export function EmpleadosView({ data, actions }) {
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
   const emps = data.empleados || [];
+
+  // Cuenta movimientos asociados a cada empleado para decidir si se puede DELETE.
+  // BD bloquea con FK 23503 si hay rutas (chofer/ayudante), órdenes (vendedor) o nómina.
+  const empleadosConHistorico = useMemo(() => {
+    const map = {};
+    const bump = (eid) => {
+      const k = String(eid || '');
+      if (k) map[k] = (map[k] || 0) + 1;
+    };
+    (data.rutas || []).forEach(r => {
+      bump(r.choferId || r.chofer_id);
+      bump(r.ayudanteId || r.ayudante_id);
+    });
+    (data.ordenes || []).forEach(o => bump(o.vendedor_id || o.vendedorId));
+    (data.nominaRecibos || []).forEach(n => bump(n.empleadoId || n.empleado_id));
+    return map;
+  }, [data.rutas, data.ordenes, data.nominaRecibos]);
+
+  const puedeEliminarEmp = (id) => !empleadosConHistorico[String(id)];
+
+  const eliminarEmpleado = (e) => {
+    askConfirm(
+      'Eliminar permanentemente',
+      `¿Eliminar a "${s(e.nombre)}" permanentemente? Esta acción no se puede deshacer.`,
+      async () => {
+        const result = await actions.deleteEmpleado(e.id);
+        if (result?.error) {
+          toast?.error(result.error);
+          return;
+        }
+        toast?.success('Empleado eliminado');
+      },
+      true
+    );
+  };
 
   const toggleEstatusEmp = (e) => {
     const esActivo = s(e.estatus) !== "Inactivo";
@@ -85,6 +120,8 @@ export function EmpleadosView({ data, actions }) {
         <div className="space-y-2">
           {dEmps.map(e => {
             const esActivo = s(e.estatus) !== "Inactivo";
+            const puedeEliminar = puedeEliminarEmp(e.id);
+            const movs = empleadosConHistorico[String(e.id)] || 0;
             return (
             <div key={e.id} onClick={() => openEdit(e)}
               className="bg-white rounded-xl p-4 border border-slate-100 cursor-pointer hover:border-blue-300 transition-all">
@@ -118,6 +155,25 @@ export function EmpleadosView({ data, actions }) {
                   >
                     {esActivo ? <span className="text-base leading-none">⏸</span> : <Icons.UserCheck />}
                   </button>
+                  {puedeEliminar ? (
+                    <button
+                      onClick={() => eliminarEmpleado(e)}
+                      aria-label="Eliminar permanentemente"
+                      title="Eliminar permanentemente"
+                      className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <span className="text-base leading-none">🗑</span>
+                    </button>
+                  ) : (
+                    <button
+                      disabled
+                      aria-label="No se puede eliminar — tiene histórico"
+                      title={`No se puede eliminar — tiene ${movs} ${movs === 1 ? 'movimiento' : 'movimientos'}. Usa Desactivar.`}
+                      className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
+                    >
+                      <span className="text-base leading-none opacity-50">🗑</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -142,25 +198,46 @@ export function EmpleadosView({ data, actions }) {
       <div className="space-y-3 border-t border-slate-200 pt-4 mt-5">
         {modal !== "new" && (() => {
           const esActivo = s(modal?.estatus) !== "Inactivo";
+          const puedeEliminar = puedeEliminarEmp(modal.id);
           return (
-            <button onClick={() => askConfirm(
-                esActivo ? "Desactivar empleado" : "Activar empleado",
-                esActivo
-                  ? `¿Desactivar "${s(modal.nombre)}"? Su histórico se conserva.`
-                  : `¿Activar "${s(modal.nombre)}"?`,
-                async () => {
-                  try {
-                    await actions.updateEmpleado(modal.id, { estatus: esActivo ? "Inactivo" : "Activo" });
-                    toast?.success(esActivo ? "Empleado desactivado" : "Empleado activado");
-                    setModal(null);
-                  } catch (ex) {
-                    toast?.error("Error: " + (ex?.message || (esActivo ? "No se pudo desactivar" : "No se pudo activar")));
-                  }
-                },
-                esActivo
-              )} className={`w-full px-4 py-2.5 text-sm font-bold rounded-xl border transition-colors ${esActivo ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-200" : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"}`}>
-              {esActivo ? "⏸ Desactivar empleado" : "✓ Activar empleado"}
-            </button>
+            <div className="space-y-2">
+              <button onClick={() => askConfirm(
+                  esActivo ? "Desactivar empleado" : "Activar empleado",
+                  esActivo
+                    ? `¿Desactivar "${s(modal.nombre)}"? Su histórico se conserva.`
+                    : `¿Activar "${s(modal.nombre)}"?`,
+                  async () => {
+                    try {
+                      await actions.updateEmpleado(modal.id, { estatus: esActivo ? "Inactivo" : "Activo" });
+                      toast?.success(esActivo ? "Empleado desactivado" : "Empleado activado");
+                      setModal(null);
+                    } catch (ex) {
+                      toast?.error("Error: " + (ex?.message || (esActivo ? "No se pudo desactivar" : "No se pudo activar")));
+                    }
+                  },
+                  esActivo
+                )} className={`w-full px-4 py-2.5 text-sm font-bold rounded-xl border transition-colors ${esActivo ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-200" : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"}`}>
+                {esActivo ? "⏸ Desactivar empleado" : "✓ Activar empleado"}
+              </button>
+              {puedeEliminar && (
+                <button onClick={() => askConfirm(
+                    "Eliminar permanentemente",
+                    `¿Eliminar a "${s(modal.nombre)}" permanentemente? Esta acción no se puede deshacer.`,
+                    async () => {
+                      const result = await actions.deleteEmpleado(modal.id);
+                      if (result?.error) {
+                        toast?.error(result.error);
+                        return;
+                      }
+                      toast?.success("Empleado eliminado");
+                      setModal(null);
+                    },
+                    true
+                  )} className="w-full px-4 py-2.5 text-sm font-bold rounded-xl bg-red-700 text-white hover:bg-red-800 transition-colors">
+                  🗑 Eliminar permanentemente
+                </button>
+              )}
+            </div>
           );
         })()}
       </div>

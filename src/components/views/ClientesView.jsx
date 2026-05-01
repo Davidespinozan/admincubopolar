@@ -79,6 +79,39 @@ export function ClientesView({ data, actions }) {
     }
   };
 
+  // Cuenta movimientos asociados a cada cliente para decidir si se puede DELETE.
+  // BD bloquea con FK 23503 si hay órdenes / pagos / CxC / comodatos.
+  const clientesConHistorico = useMemo(() => {
+    const map = {};
+    const bump = (cid) => {
+      const k = String(cid || '');
+      if (k) map[k] = (map[k] || 0) + 1;
+    };
+    (data.ordenes || []).forEach(o => bump(o.clienteId || o.cliente_id));
+    (data.pagos || []).forEach(p => bump(p.clienteId || p.cliente_id));
+    (data.cuentasPorCobrar || []).forEach(c => bump(c.clienteId || c.cliente_id));
+    (data.comodatos || []).forEach(c => bump(c.clienteId || c.cliente_id));
+    return map;
+  }, [data.ordenes, data.pagos, data.cuentasPorCobrar, data.comodatos]);
+
+  const puedeEliminarCliente = (id) => !clientesConHistorico[String(id)];
+
+  const eliminarCliente = (c) => {
+    askConfirm(
+      'Eliminar permanentemente',
+      `¿Eliminar a "${s(c.nombre)}" permanentemente? Esta acción no se puede deshacer.`,
+      async () => {
+        const result = await actions.deleteCliente(c.id);
+        if (result?.error) {
+          toast?.error(result.error);
+          return;
+        }
+        toast?.success('Cliente eliminado');
+      },
+      true
+    );
+  };
+
   const toggleEstatus = (c) => {
     const esActivo = s(c.estatus) !== "Inactivo";
     askConfirm(
@@ -140,6 +173,8 @@ export function ClientesView({ data, actions }) {
         {key:"estatus",label:"Estatus",badge:true,render:v=><StatusBadge status={v}/>},
         {key:"acciones",label:"",render:(_,row)=>{
           const esActivo = s(row.estatus) !== "Inactivo";
+          const puedeEliminar = puedeEliminarCliente(row.id);
+          const movs = clientesConHistorico[String(row.id)] || 0;
           return <div className="flex gap-1 justify-end" onClick={(e)=>e.stopPropagation()}>
             <button
               onClick={()=>openEdit(row)}
@@ -157,6 +192,25 @@ export function ClientesView({ data, actions }) {
             >
               {esActivo ? <span className="text-base leading-none">⏸</span> : <Icons.UserCheck />}
             </button>
+            {puedeEliminar ? (
+              <button
+                onClick={()=>eliminarCliente(row)}
+                aria-label="Eliminar permanentemente"
+                title="Eliminar permanentemente"
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+              >
+                <span className="text-base leading-none">🗑</span>
+              </button>
+            ) : (
+              <button
+                disabled
+                aria-label="No se puede eliminar — tiene histórico"
+                title={`No se puede eliminar — tiene ${movs} ${movs === 1 ? 'movimiento' : 'movimientos'}. Usa Desactivar.`}
+                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
+              >
+                <span className="text-base leading-none opacity-50">🗑</span>
+              </button>
+            )}
           </div>;
         }},
       ]} data={paginated} onRowClick={r=>openEdit(r)}
@@ -283,8 +337,9 @@ export function ClientesView({ data, actions }) {
 
           {modal !== "new" && (() => {
             const esActivo = s(modal?.estatus) !== "Inactivo";
+            const puedeEliminar = puedeEliminarCliente(modal.id);
             return (
-              <div className="border-t border-slate-200 pt-4 mt-6">
+              <div className="border-t border-slate-200 pt-4 mt-6 space-y-2">
                 <button onClick={() => askConfirm(
                     esActivo ? "Desactivar cliente" : "Activar cliente",
                     esActivo
@@ -303,6 +358,24 @@ export function ClientesView({ data, actions }) {
                   )} className={`w-full px-4 py-2.5 text-sm font-bold rounded-xl border transition-colors ${esActivo ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-200" : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"}`}>
                   {esActivo ? "⏸ Desactivar cliente" : "✓ Activar cliente"}
                 </button>
+                {puedeEliminar && (
+                  <button onClick={() => askConfirm(
+                      "Eliminar permanentemente",
+                      `¿Eliminar a "${s(modal.nombre)}" permanentemente? Esta acción no se puede deshacer.`,
+                      async () => {
+                        const result = await actions.deleteCliente(modal.id);
+                        if (result?.error) {
+                          toast?.error(result.error);
+                          return;
+                        }
+                        toast?.success("Cliente eliminado");
+                        setModal(null);
+                      },
+                      true
+                    )} className="w-full px-4 py-2.5 text-sm font-bold rounded-xl bg-red-700 text-white hover:bg-red-800 transition-colors">
+                    🗑 Eliminar permanentemente
+                  </button>
+                )}
               </div>
             );
           })()}
