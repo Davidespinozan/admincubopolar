@@ -18,6 +18,10 @@ export function InventarioView({ data, actions }) {
   const [traspasando, setTraspasando] = useState(false);
   const [savingCf, setSavingCf] = useState(false);
   const [ajustando, setAjustando] = useState(false);
+  const [stockModal, setStockModal] = useState(null);
+  const [stockForm, setStockForm] = useState({ cantidades: {}, motivo: '' });
+  const [stockErrors, setStockErrors] = useState({});
+  const [savingStock, setSavingStock] = useState(false);
 
   const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
 
@@ -80,6 +84,61 @@ export function InventarioView({ data, actions }) {
     setAjusteErrors({});
   };
 
+  const abrirAjusteStock = (cf) => {
+    const cantidades = {};
+    for (const p of prodTerminados) {
+      const sku = s(p.sku);
+      const qty = cf.stock ? n(cf.stock[sku]) : 0;
+      cantidades[sku] = String(qty);
+    }
+    setStockModal(cf);
+    setStockForm({ cantidades, motivo: '' });
+    setStockErrors({});
+  };
+
+  const confirmarAjusteStock = async () => {
+    if (savingStock) return;
+    if (!stockModal) return;
+
+    const e = {};
+    if (!s(stockForm.motivo).trim()) e.motivo = 'Motivo requerido';
+
+    const ajustes = [];
+    const stockActual = stockModal.stock || {};
+    for (const p of prodTerminados) {
+      const sku = s(p.sku);
+      const raw = stockForm.cantidades[sku];
+      if (raw === '' || raw === undefined || raw === null) continue;
+      const nueva = Number(raw);
+      if (!Number.isFinite(nueva) || nueva < 0) {
+        e[`q_${sku}`] = 'Inválido';
+        continue;
+      }
+      const actual = n(stockActual[sku]);
+      if (nueva !== actual) ajustes.push({ sku, nuevaCantidad: nueva });
+    }
+
+    if (Object.keys(e).length) { setStockErrors(e); return; }
+    if (ajustes.length === 0) { toast?.error('No hay cambios para guardar'); return; }
+
+    setSavingStock(true);
+    try {
+      const err = await actions.ajustarStockCuarto?.({
+        cuartoId: stockModal.id,
+        ajustes,
+        motivo: s(stockForm.motivo).trim(),
+      });
+      if (err) {
+        toast?.error(err.message || 'No se pudo ajustar el stock');
+        return;
+      }
+      toast?.success(`Stock actualizado (${ajustes.length} ${ajustes.length === 1 ? 'cambio' : 'cambios'})`);
+      setStockModal(null);
+    } finally {
+      setSavingStock(false);
+    }
+  };
+
   const confirmarAjuste = async () => {
     if (ajustando) return;
     if (!ajusteModal) return;
@@ -132,6 +191,9 @@ export function InventarioView({ data, actions }) {
             <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">{n(cf.temp, -50, 10)}°C</span>
           </div>
           <div className="flex items-center gap-1">
+            <button aria-label="Ajustar stock del cuarto frío" onClick={e=>{e.stopPropagation();abrirAjusteStock(cf);}} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:bg-slate-50 rounded-lg transition-colors">
+              <Icons.Package />
+            </button>
             <button aria-label="Editar cuarto frío" onClick={e=>{e.stopPropagation();setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad_tarimas:String(n(cf.capacidad_tarimas) || '')});setCfModal(cf);}} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-colors">
               <Icons.Edit />
             </button>
@@ -275,6 +337,60 @@ export function InventarioView({ data, actions }) {
       <div className="flex justify-end gap-2 mt-5">
         <FormBtn onClick={()=>setAjusteModal(null)}>Cancelar</FormBtn>
         <FormBtn primary onClick={confirmarAjuste} loading={ajustando}>Guardar ajuste</FormBtn>
+      </div>
+    </Modal>
+
+    {/* Modal: Ajuste granular de stock por cuarto frío */}
+    <Modal open={!!stockModal} onClose={()=>setStockModal(null)} title={"Ajustar stock — " + s(stockModal?.nombre)}>
+      <div className="space-y-3">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
+          <p className="text-xs text-blue-700">Edita la cantidad de cada SKU en este cuarto frío. Solo se guardan los cambios.</p>
+        </div>
+        <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
+          {prodTerminados.length === 0 ? (
+            <p className="text-xs text-slate-400 italic">No hay productos terminados configurados.</p>
+          ) : prodTerminados.map(p => {
+            const sku = s(p.sku);
+            const actual = n(stockModal?.stock?.[sku]);
+            const raw = stockForm.cantidades[sku];
+            const nueva = raw === '' || raw === undefined || raw === null ? actual : Number(raw);
+            const delta = Number.isFinite(nueva) ? nueva - actual : 0;
+            const errKey = `q_${sku}`;
+            return (
+              <div key={sku} className="flex items-center gap-2 py-1 border-b border-slate-100 last:border-0">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-slate-700 truncate">{s(p.nombre)}</div>
+                  <div className="font-mono text-[10px] text-slate-400">{sku} · actual: {actual.toLocaleString()}</div>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  value={stockForm.cantidades[sku] ?? ''}
+                  onChange={ev=>setStockForm(f=>({...f, cantidades: {...f.cantidades, [sku]: ev.target.value}}))}
+                  className={`w-20 px-2 py-1.5 text-sm text-right border rounded-lg ${stockErrors[errKey] ? 'border-red-400' : 'border-slate-200'}`}
+                />
+                <div className="w-14 text-right">
+                  {delta !== 0 && Number.isFinite(delta) && (
+                    <span className={`text-xs font-bold ${delta > 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                      {delta > 0 ? '+' : ''}{delta.toLocaleString()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <FormInput
+          label="Motivo del ajuste *"
+          value={stockForm.motivo}
+          onChange={e=>setStockForm({...stockForm, motivo: e.target.value})}
+          error={stockErrors.motivo}
+          placeholder="Ej: Conteo físico semanal"
+        />
+      </div>
+      <div className="flex justify-end gap-2 mt-5">
+        <FormBtn onClick={()=>setStockModal(null)}>Cancelar</FormBtn>
+        <FormBtn primary onClick={confirmarAjusteStock} loading={savingStock}>Guardar cambios</FormBtn>
       </div>
     </Modal>
   </div>);
