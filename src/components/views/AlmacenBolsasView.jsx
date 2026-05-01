@@ -2,6 +2,11 @@ import { useMemo, PageHeader, s, n } from './viewsCommon';
 
 export function AlmacenBolsasView({ data }) {
   const bolsas = (data.productos || []).filter(p => s(p.tipo) === "Empaque");
+  const productosBySku = useMemo(() => {
+    const map = {};
+    (data.productos || []).forEach(p => { if (p?.sku) map[s(p.sku)] = s(p.nombre); });
+    return map;
+  }, [data.productos]);
   const movs = useMemo(() => (data.inventarioMov || []).filter(m => bolsas.some(b => s(b.sku) === s(m.producto))).slice(0, 30), [data.inventarioMov, bolsas]);
   const prodHoy = useMemo(() => (data.produccion || []).filter(p => s(p.fecha) === new Date().toISOString().slice(0, 10)), [data.produccion]);
 
@@ -84,12 +89,18 @@ export function AlmacenBolsasView({ data }) {
 
     {movs.length > 0 && (<div className="bg-white border border-slate-100 rounded-2xl p-4">
       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Movimientos de almacén</h3>
-      {movs.map(m => (
+      {movs.map(m => {
+        const nom = productosBySku[s(m.producto)];
+        return (
         <div key={m.id} className="flex justify-between items-center gap-2 py-2 border-b border-slate-50 last:border-0">
-          <div className="min-w-0 truncate"><span className={`text-sm font-bold ${s(m.tipo) === "Entrada" ? "text-emerald-600" : "text-red-600"}`}>{s(m.tipo) === "Entrada" ? "+" : "-"}{n(m.cantidad)}</span> <span className="text-sm text-slate-600 ml-1">{s(m.producto)}</span></div>
+          <div className="min-w-0">
+            <div className="truncate"><span className={`text-sm font-bold ${s(m.tipo) === "Entrada" ? "text-emerald-600" : "text-red-600"}`}>{s(m.tipo) === "Entrada" ? "+" : "-"}{n(m.cantidad)}</span> <span className="text-sm text-slate-600 ml-1">{nom || s(m.producto)}</span></div>
+            {nom && <div className="font-mono text-[11px] text-slate-400 mt-0.5 truncate">{s(m.producto)}</div>}
+          </div>
           <div className="text-right flex-shrink-0"><span className="text-xs text-slate-400">{s(m.origen)} · {s(m.usuario)}</span></div>
         </div>
-      ))}
+      );
+      })}
     </div>)}
   </div>);
 }
