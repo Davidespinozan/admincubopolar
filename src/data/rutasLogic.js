@@ -76,3 +76,128 @@ export function calcTotalesCobro(cobros = []) {
   const totalCobrado = centavos(totalEfectivo + totalTransferencia + totalCredito);
   return { totalEfectivo, totalTransferencia, totalCredito, totalCobrado };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers para confirmarCargaRuta / firmarCarga / solicitarFirmaCarga
+//
+// Estos helpers reflejan EXACTAMENTE el comportamiento actual del store.
+// Si una validación parece floja (ej. permitir cargaReal {}) es a propósito:
+// el código original lo permite y no se arregla aquí (fuera de scope de la
+// fase Bloque 4 PR 4a).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Valida los argumentos de entrada de confirmarCargaRuta / solicitarFirmaCarga.
+ * @param {string|number} rutaId
+ * @param {Record<string, number>} cargaReal
+ * @returns {{error: string} | null}
+ */
+export function validateConfirmarCarga(rutaId, cargaReal) {
+  if (!rutaId) return { error: 'Datos de carga inválidos' };
+  if (!cargaReal || typeof cargaReal !== 'object') return { error: 'Datos de carga inválidos' };
+  return null;
+}
+
+/**
+ * Valida los argumentos de entrada de firmarCarga.
+ * Refleja los 3 checks actuales: rutaId, firma o motivoExcepcion, justificación.
+ * @param {string|number} rutaId
+ * @param {string|null} firmaBase64
+ * @param {{excepcion?: boolean, motivoExcepcion?: string}} opciones
+ * @returns {{error: string} | null}
+ */
+export function validateFirmarCarga(rutaId, firmaBase64, opciones = {}) {
+  if (!rutaId) return { error: 'Sin ruta' };
+  if (!firmaBase64 && !opciones?.excepcion) return { error: 'Sin firma' };
+  if (opciones?.excepcion && !String(opciones?.motivoExcepcion || '').trim()) {
+    return { error: 'Sin justificación' };
+  }
+  return null;
+}
+
+/**
+ * Determina si una ruta puede ser firmada.
+ * Refleja exactamente los checks de firmarCarga (líneas 1648-1666 en supaStore.js):
+ * - ruta existe
+ * - carga_confirmada_at no truthy (cubre firma normal y excepción previas)
+ * - carga_real existe y tiene al menos un SKU
+ * @param {object|null} ruta
+ * @returns {{ ok: true, cargaReal: object } | { ok: false, razon: string }}
+ */
+export function puedeFirmarRuta(ruta) {
+  if (!ruta) return { ok: false, razon: 'No encontrada' };
+  if (ruta.carga_confirmada_at) return { ok: false, razon: 'Ya confirmada' };
+  const cargaReal = (ruta.carga_real && typeof ruta.carga_real === 'object') ? ruta.carga_real : {};
+  if (Object.keys(cargaReal).length === 0) return { ok: false, razon: 'Sin carga' };
+  return { ok: true, cargaReal };
+}
+
+/**
+ * Verifica si cargaReal excede la suma de carga_autorizada + extra_autorizado.
+ * Devuelve el primer SKU que exceda (early return) o null si todo OK.
+ * Refleja la lógica usada en confirmarCargaRuta y solicitarFirmaCarga.
+ * @param {Record<string, number>} cargaReal
+ * @param {Record<string, number>|null|undefined} autorizada
+ * @param {Record<string, number>|null|undefined} extra
+ * @returns {{ sku: string, max: number, qty: number } | null}
+ */
+export function excedeAutorizacion(cargaReal, autorizada, extra) {
+  const aut = (autorizada && typeof autorizada === 'object') ? autorizada : {};
+  const ext = (extra && typeof extra === 'object') ? extra : {};
+  for (const [sku, qty] of Object.entries(cargaReal || {})) {
+    const max = Number(aut[sku] || 0) + Number(ext[sku] || 0);
+    const q = Number(qty);
+    if (q > max) {
+      return { sku, max, qty: q };
+    }
+  }
+  return null;
+}
+
+/**
+ * Calcula los `changes` para descontar inventario de cuartos fríos al cargar
+ * una ruta, distribuyendo entre los cuartos en orden y respetando el stock
+ * disponible por SKU. Si algún SKU no tiene suficiente stock total, lo
+ * acumula en `faltantes` (con cantidad restante por descontar).
+ *
+ * @param {Record<string, number>} cargaReal — { sku: cantidadACargar }
+ * @param {Array<{id, stock: Record<string, number>}>} cuartos — ordenados por prioridad
+ * @param {{folio: string, usuario: string, origenSuffix?: string}} contexto
+ * @returns {{ changes: Array, faltantes: Array<{sku, falta}> }}
+ */
+export function calcularChangesInventario(cargaReal, cuartos, contexto = {}) {
+  const folio = contexto.folio || '';
+  const usuario = contexto.usuario || 'Sistema';
+  const origenSuffix = contexto.origenSuffix || '';
+  const origen = `Carga ruta ${folio}${origenSuffix}`;
+
+  const changes = [];
+  const faltantes = [];
+
+  for (const [sku, qtyNeeded] of Object.entries(cargaReal || {})) {
+    let remaining = Number(qtyNeeded);
+    if (remaining <= 0) continue;
+    for (const cf of (cuartos || [])) {
+      if (remaining <= 0) break;
+      const stockObj = (cf?.stock && typeof cf.stock === 'object') ? cf.stock : {};
+      const available = Number(stockObj[sku] || 0);
+      if (available > 0) {
+        const toTake = Math.min(available, remaining);
+        remaining -= toTake;
+        changes.push({
+          cuarto_id: cf.id,
+          sku,
+          delta: -toTake,
+          tipo: 'Salida',
+          origen,
+          usuario,
+        });
+      }
+    }
+    if (remaining > 0) {
+      faltantes.push({ sku, falta: remaining });
+    }
+  }
+
+  return { changes, faltantes };
+}
