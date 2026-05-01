@@ -4,6 +4,13 @@ import { backendPost } from '../lib/backend';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio } from './ordenLogic';
+import {
+  validateConfirmarCarga,
+  validateFirmarCarga,
+  puedeFirmarRuta,
+  excedeAutorizacion,
+  calcularChangesInventario,
+} from './rutasLogic';
 import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
 
 // ═══════════════════════════════════════════════════════════════
@@ -1467,9 +1474,10 @@ export function useSupaStore(userId, userName) {
 
       confirmarCargaRuta: async (rutaId, cargaReal) => {
         // cargaReal: { "HC-25K": 80, "HC-5K": 50, ... } — lo que el chofer realmente cargó
-        if (!rutaId || !cargaReal || typeof cargaReal !== 'object') {
+        const inputErr = validateConfirmarCarga(rutaId, cargaReal);
+        if (inputErr) {
           t()?.error('Datos de carga inválidos');
-          return new Error('Datos de carga inválidos');
+          return new Error(inputErr.error);
         }
 
         // Obtener la ruta para validar
@@ -1494,14 +1502,10 @@ export function useSupaStore(userId, userName) {
         }
 
         // Validar que cargaReal no excede carga_autorizada + extra_autorizado
-        const autorizada = (ruta.carga_autorizada && typeof ruta.carga_autorizada === 'object') ? ruta.carga_autorizada : {};
-        const extra = (ruta.extra_autorizado && typeof ruta.extra_autorizado === 'object') ? ruta.extra_autorizado : {};
-        for (const [sku, qty] of Object.entries(cargaReal)) {
-          const max = Number(autorizada[sku] || 0) + Number(extra[sku] || 0);
-          if (Number(qty) > max) {
-            t()?.error(`No puedes cargar ${qty} de ${sku}. Máximo autorizado: ${max}`);
-            return new Error(`Excede autorización: ${sku}`);
-          }
+        const exceso = excedeAutorizacion(cargaReal, ruta.carga_autorizada, ruta.extra_autorizado);
+        if (exceso) {
+          t()?.error(`No puedes cargar ${exceso.qty} de ${exceso.sku}. Máximo autorizado: ${exceso.max}`);
+          return new Error(`Excede autorización: ${exceso.sku}`);
         }
 
         // Obtener cuartos fríos para calcular distribución del descuento
@@ -1517,31 +1521,15 @@ export function useSupaStore(userId, userName) {
         }
 
         // Calcular cambios distribuyendo el descuento entre cuartos fríos
-        const changes = [];
-        for (const [sku, qtyNeeded] of Object.entries(cargaReal)) {
-          let remaining = Number(qtyNeeded);
-          if (remaining <= 0) continue;
-          for (const cf of cuartos) {
-            if (remaining <= 0) break;
-            const stockObj = (cf.stock && typeof cf.stock === 'object') ? cf.stock : {};
-            const available = Number(stockObj[sku] || 0);
-            if (available > 0) {
-              const toTake = Math.min(available, remaining);
-              remaining -= toTake;
-              changes.push({
-                cuarto_id: cf.id,
-                sku,
-                delta: -toTake,
-                tipo: 'Salida',
-                origen: `Carga ruta ${ruta.folio}`,
-                usuario: uname() || 'Chofer',
-              });
-            }
-          }
-          if (remaining > 0) {
-            t()?.error(`Inventario insuficiente para cargar ${qtyNeeded} de ${sku}`);
-            return new Error(`Stock insuficiente: ${sku}`);
-          }
+        const { changes, faltantes } = calcularChangesInventario(cargaReal, cuartos, {
+          folio: ruta.folio,
+          usuario: uname() || 'Chofer',
+        });
+        if (faltantes.length > 0) {
+          const f = faltantes[0];
+          const qtyNeeded = Number(cargaReal[f.sku]);
+          t()?.error(`Inventario insuficiente para cargar ${qtyNeeded} de ${f.sku}`);
+          return new Error(`Stock insuficiente: ${f.sku}`);
         }
 
         // Aplicar descuentos atómicamente
@@ -1582,7 +1570,8 @@ export function useSupaStore(userId, userName) {
       solicitarFirmaCarga: async (rutaId, cargaReal) => {
         // El chofer marca su carga real y solicita firma. La ruta queda en
         // 'Pendiente firma'. NO descuenta inventario aún. Eso lo hace firmarCarga.
-        if (!rutaId || !cargaReal || typeof cargaReal !== 'object') {
+        const inputErr = validateConfirmarCarga(rutaId, cargaReal);
+        if (inputErr) {
           t()?.error('Datos de carga inválidos');
           return new Error('Datos inválidos');
         }
@@ -1602,14 +1591,10 @@ export function useSupaStore(userId, userName) {
         }
 
         // Validar que cargaReal no excede autorizado + extra
-        const autorizada = (ruta.carga_autorizada && typeof ruta.carga_autorizada === 'object') ? ruta.carga_autorizada : {};
-        const extra = (ruta.extra_autorizado && typeof ruta.extra_autorizado === 'object') ? ruta.extra_autorizado : {};
-        for (const [sku, qty] of Object.entries(cargaReal)) {
-          const max = Number(autorizada[sku] || 0) + Number(extra[sku] || 0);
-          if (Number(qty) > max) {
-            t()?.error(`No puedes cargar ${qty} de ${sku}. Máximo: ${max}`);
-            return new Error(`Excede autorización: ${sku}`);
-          }
+        const exceso = excedeAutorizacion(cargaReal, ruta.carga_autorizada, ruta.extra_autorizado);
+        if (exceso) {
+          t()?.error(`No puedes cargar ${exceso.qty} de ${exceso.sku}. Máximo: ${exceso.max}`);
+          return new Error(`Excede autorización: ${exceso.sku}`);
         }
 
         // Guardar carga real + cambiar estatus + timestamp de solicitud
@@ -1632,17 +1617,13 @@ export function useSupaStore(userId, userName) {
       firmarCarga: async (rutaId, firmaBase64, opciones = {}) => {
         // Producción/Admin firma la carga. Esto sí descuenta inventario.
         // opciones: { excepcion: bool, motivoExcepcion: string }
-        if (!rutaId) {
-          t()?.error('Ruta inválida');
-          return new Error('Sin ruta');
-        }
-        if (!firmaBase64 && !opciones.excepcion) {
-          t()?.error('Firma requerida');
-          return new Error('Sin firma');
-        }
-        if (opciones.excepcion && !s(opciones.motivoExcepcion).trim()) {
-          t()?.error('Justificación requerida para carga sin firma');
-          return new Error('Sin justificación');
+        const inputErr = validateFirmarCarga(rutaId, firmaBase64, opciones);
+        if (inputErr) {
+          // Mensajes específicos al usuario según qué falló
+          if (inputErr.error === 'Sin ruta') t()?.error('Ruta inválida');
+          else if (inputErr.error === 'Sin firma') t()?.error('Firma requerida');
+          else if (inputErr.error === 'Sin justificación') t()?.error('Justificación requerida para carga sin firma');
+          return new Error(inputErr.error);
         }
 
         const { data: ruta, error: rutaErr } = await supabase
@@ -1654,16 +1635,14 @@ export function useSupaStore(userId, userName) {
           t()?.error('Ruta no encontrada');
           return rutaErr || new Error('No encontrada');
         }
-        if (ruta.carga_confirmada_at) {
-          t()?.error('Carga ya confirmada anteriormente');
-          return new Error('Ya confirmada');
-        }
 
-        const cargaReal = (ruta.carga_real && typeof ruta.carga_real === 'object') ? ruta.carga_real : {};
-        if (Object.keys(cargaReal).length === 0) {
-          t()?.error('No hay carga real registrada');
-          return new Error('Sin carga');
+        const checkRuta = puedeFirmarRuta(ruta);
+        if (!checkRuta.ok) {
+          if (checkRuta.razon === 'Ya confirmada') t()?.error('Carga ya confirmada anteriormente');
+          else if (checkRuta.razon === 'Sin carga') t()?.error('No hay carga real registrada');
+          return new Error(checkRuta.razon);
         }
+        const cargaReal = checkRuta.cargaReal;
 
         // Descontar inventario de cuartos fríos
         const { data: cuartos, error: cfErr } = await supabase
@@ -1677,31 +1656,15 @@ export function useSupaStore(userId, userName) {
           return new Error('Sin cuartos fríos');
         }
 
-        const changes = [];
-        for (const [sku, qtyNeeded] of Object.entries(cargaReal)) {
-          let remaining = Number(qtyNeeded);
-          if (remaining <= 0) continue;
-          for (const cf of cuartos) {
-            if (remaining <= 0) break;
-            const stockObj = (cf.stock && typeof cf.stock === 'object') ? cf.stock : {};
-            const available = Number(stockObj[sku] || 0);
-            if (available > 0) {
-              const toTake = Math.min(available, remaining);
-              remaining -= toTake;
-              changes.push({
-                cuarto_id: cf.id,
-                sku,
-                delta: -toTake,
-                tipo: 'Salida',
-                origen: `Carga ruta ${ruta.folio}` + (opciones.excepcion ? ' (sin firma)' : ''),
-                usuario: uname() || 'Sistema',
-              });
-            }
-          }
-          if (remaining > 0) {
-            t()?.error(`Inventario insuficiente: ${sku}`);
-            return new Error(`Stock insuficiente: ${sku}`);
-          }
+        const { changes, faltantes } = calcularChangesInventario(cargaReal, cuartos, {
+          folio: ruta.folio,
+          usuario: uname() || 'Sistema',
+          origenSuffix: opciones.excepcion ? ' (sin firma)' : '',
+        });
+        if (faltantes.length > 0) {
+          const f = faltantes[0];
+          t()?.error(`Inventario insuficiente: ${f.sku}`);
+          return new Error(`Stock insuficiente: ${f.sku}`);
         }
 
         if (changes.length > 0) {
