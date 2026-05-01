@@ -48,6 +48,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [folioNota, setFolioNota] = useState("");
   const [rutaCerrada, setRutaCerrada] = useState(false);
   const [cerrandoRuta, setCerrandoRuta] = useState(false);
+  const [enviandoFirma, setEnviandoFirma] = useState(false);
   const [toast, setToast] = useState("");
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
@@ -357,40 +358,50 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
   // Permite que Producción/Admin firme la carga
   const enviarFirma = async (esExcepcion = false) => {
-    if (esExcepcion) {
-      if (!motivoExcepcion.trim()) {
-        showToast('Captura el motivo de la excepción');
+    if (enviandoFirma) return;
+    if (esExcepcion && !motivoExcepcion.trim()) {
+      showToast('Captura el motivo de la excepción');
+      return;
+    }
+    if (!esExcepcion && !firmaTienePuntos) {
+      showToast('Dibuja la firma antes de confirmar');
+      return;
+    }
+    const canvas = !esExcepcion ? firmaCanvasRef.current : null;
+    if (!esExcepcion && !canvas) return;
+
+    setEnviandoFirma(true);
+    try {
+      if (esExcepcion) {
+        const result = await actions.firmarCarga?.(miRutaActiva.id, null, {
+          excepcion: true,
+          motivoExcepcion: motivoExcepcion.trim(),
+        });
+        if (result && result.message) {
+          showToast('Error: ' + result.message);
+          return;
+        }
+        showToast('Carga registrada (sin firma, con justificación)');
+        setExcepcionModal(false);
+        setMotivoExcepcion('');
         return;
       }
-      const result = await actions.firmarCarga?.(miRutaActiva.id, null, {
-        excepcion: true,
-        motivoExcepcion: motivoExcepcion.trim(),
-      });
+
+      const firmaBase64 = canvas.toDataURL('image/png');
+      const result = await actions.firmarCarga?.(miRutaActiva.id, firmaBase64);
       if (result && result.message) {
         showToast('Error: ' + result.message);
         return;
       }
-      showToast('Carga registrada (sin firma, con justificación)');
-      setExcepcionModal(false);
-      setMotivoExcepcion('');
-      return;
+      showToast('Firma registrada. Inventario descontado.');
+      setFirmaModal(false);
+      setFirmaTienePuntos(false);
+    } catch (e) {
+      console.error('Error enviando firma:', e);
+      showToast('Error al firmar. Verifica tu conexión.');
+    } finally {
+      setEnviandoFirma(false);
     }
-
-    if (!firmaTienePuntos) {
-      showToast('Dibuja la firma antes de confirmar');
-      return;
-    }
-    const canvas = firmaCanvasRef.current;
-    if (!canvas) return;
-    const firmaBase64 = canvas.toDataURL('image/png');
-    const result = await actions.firmarCarga?.(miRutaActiva.id, firmaBase64);
-    if (result && result.message) {
-      showToast('Error: ' + result.message);
-      return;
-    }
-    showToast('Firma registrada. Inventario descontado.');
-    setFirmaModal(false);
-    setFirmaTienePuntos(false);
   };
 
   const limpiarFirma = () => {
@@ -788,7 +799,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               <div className="flex gap-2 mt-3">
                 <button onClick={limpiarFirma} className="flex-1 py-2.5 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl">Limpiar</button>
                 <button onClick={() => setFirmaModal(false)} className="flex-1 py-2.5 bg-slate-200 text-slate-700 text-sm font-bold rounded-xl">Cancelar</button>
-                <button onClick={() => enviarFirma(false)} disabled={!firmaTienePuntos} className="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl disabled:opacity-40">Confirmar</button>
+                <button onClick={() => enviarFirma(false)} disabled={enviandoFirma || !firmaTienePuntos} className="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed">{enviandoFirma ? 'Firmando…' : 'Confirmar'}</button>
               </div>
             </div>
           </div>
@@ -810,7 +821,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               />
               <div className="flex gap-2 mt-4">
                 <button onClick={() => { setExcepcionModal(false); setMotivoExcepcion(''); }} className="flex-1 py-2.5 bg-slate-200 text-slate-700 text-sm font-bold rounded-xl">Cancelar</button>
-                <button onClick={() => enviarFirma(true)} disabled={!motivoExcepcion.trim()} className="flex-1 py-2.5 bg-red-600 text-white text-sm font-bold rounded-xl disabled:opacity-40">Cargar sin firma</button>
+                <button onClick={() => enviarFirma(true)} disabled={enviandoFirma || !motivoExcepcion.trim()} className="flex-1 py-2.5 bg-red-600 text-white text-sm font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed">{enviandoFirma ? 'Firmando…' : 'Cargar sin firma'}</button>
               </div>
             </div>
           </div>
