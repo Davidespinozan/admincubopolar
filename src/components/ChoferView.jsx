@@ -11,12 +11,31 @@ const REGIMENES = ["Régimen General", "Régimen Simplificado", "Sin obligacione
 const USOS_CFDI = ["G01", "G03", "S01", "P01"];
 const CHOFER_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf4f6_0%,#e3eef1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
-// Extrae primer secuencia de 10+ dígitos del campo contacto libre.
-// Retorna null si no hay número parseable.
+// Extrae teléfono de un campo libre. Acepta formatos:
+//   "6671234567" | "667-123-4567" | "(667) 123-4567" | "+52 667 123 4567"
+//   "Juan Pérez 6671234567" | "Juan Pérez 667-123-4567"
+// Retorna solo dígitos (10 mínimo) o null si no hay número parseable.
 function extraerTelefono(contacto) {
   if (!contacto) return null;
-  const match = String(contacto).match(/\d{10,}/);
-  return match ? match[0] : null;
+  const str = String(contacto);
+
+  // Limpiar separadores comunes: guiones, espacios, paréntesis, puntos, +
+  const limpio = str.replace(/[\s\-().+]/g, '');
+
+  // Buscar 10 o más dígitos consecutivos
+  const match = limpio.match(/\d{10,}/);
+  if (!match) return null;
+
+  let tel = match[0];
+
+  // Si empieza con 52 (LADA México) y tiene 12+ dígitos, quitarle el 52
+  // Esto normaliza "+52 667 1234567" a "6671234567"
+  if (tel.length >= 12 && tel.startsWith('52')) {
+    tel = tel.slice(2);
+  }
+
+  // Devolver solo los primeros 10 dígitos (cubre LADAs MX)
+  return tel.slice(0, 10);
 }
 
 export default function ChoferView({ user, data, actions, onLogout }) {
