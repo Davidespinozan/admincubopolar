@@ -23,16 +23,21 @@ export default function BolsasView({ user, data, actions, onLogout }) {
         const sku = s(m.producto || m.sku);
         return fecha.startsWith(hoyStr) && empaqueSKUs.has(sku);
       })
-      .map(m => ({
-        id: m.id,
-        tipo: s(m.tipo).toLowerCase() === 'entrada' ? 'entrada' : 'salida',
-        sku: s(m.producto || m.sku),
-        cantidad: Math.abs(n(m.cantidad)),
-        motivo: s(m.origen),
-        hora: new Date(m.createdAt || m.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" })
-      }))
+      .map(m => {
+        const sku = s(m.producto || m.sku);
+        const prod = empaques.find(e => s(e.sku) === sku);
+        return {
+          id: m.id,
+          tipo: s(m.tipo).toLowerCase() === 'entrada' ? 'entrada' : 'salida',
+          sku,
+          nombre: prod ? s(prod.nombre) : '',
+          cantidad: Math.abs(n(m.cantidad)),
+          motivo: s(m.origen),
+          hora: new Date(m.createdAt || m.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+        };
+      })
       .sort((a, b) => b.id - a.id);
-  }, [data.inventarioMov, empaqueSKUs]);
+  }, [data.inventarioMov, empaqueSKUs, empaques]);
 
   const movHoy = useMemo(() => {
     const r = {};
@@ -151,7 +156,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
                 <div key={h.id} className={`rounded-[20px] p-3 border ${h.tipo === "entrada" ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
                   <div className="flex justify-between items-center">
                     <span className={`text-sm font-bold ${h.tipo === "entrada" ? "text-emerald-600" : "text-red-600"}`}>
-                      {h.tipo === "entrada" ? "+" : "-"}{h.cantidad.toLocaleString()} {h.sku}
+                      {h.tipo === "entrada" ? "+" : "-"}{h.cantidad.toLocaleString()} {h.nombre ? `${h.nombre} (${h.sku})` : h.sku}
                     </span>
                     <span className="text-xs text-slate-400">{h.hora}</span>
                   </div>

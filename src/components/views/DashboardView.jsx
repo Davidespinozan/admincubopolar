@@ -173,6 +173,11 @@ export default function DashboardView({ data, user, onNavigate }) {
 
   // ── FIX P7: .slice() inside JSX creates new array ref every render ──
   const recentMov = useMemo(() => data.inventarioMov.slice(0, 5), [data.inventarioMov]);
+  const productosBySku = useMemo(() => {
+    const map = {};
+    (data.productos || []).forEach(p => { if (p?.sku) map[s(p.sku)] = s(p.nombre); });
+    return map;
+  }, [data.productos]);
 
   const ventasResumen = useMemo(() => {
     const hoyStr = new Date().toISOString().slice(0, 10);
@@ -558,12 +563,30 @@ export default function DashboardView({ data, user, onNavigate }) {
         <DataTable columns={[
           { key: "fecha", label: "Fecha", hideOnMobile: true, render: v => fmtDateTime(v) },
           { key: "tipo", label: "Tipo", badge: true, render: v => <StatusBadge status={v} /> },
-          { key: "producto", label: "Producto", bold: true, primary: true },
+          { key: "producto", label: "Producto", bold: true, primary: true, render: v => {
+            const nom = productosBySku[s(v)];
+            return (
+              <div>
+                <div className="font-semibold text-slate-800">{nom || s(v)}</div>
+                {nom && <div className="font-mono text-[11px] text-slate-400 mt-0.5">{s(v)}</div>}
+              </div>
+            );
+          } },
           { key: "cantidad", label: "Cant.", render: v => {const num=n(v,-999999);return<span className={`font-mono font-semibold ${num>0?"text-emerald-600":num<0?"text-red-500":"text-slate-600"}`}>{num>0?`+${num}`:num}</span>} },
           { key: "origen", label: "Ref.", hideOnMobile: true },
           { key: "usuario", label: "Usuario", hideOnMobile: true },
         ]} data={recentMov}
-        cardTitle={r => {const num=n(r.cantidad,-999999);return `${num>0?'+'+num:num} ${s(r.producto)}`}}
+        cardTitle={r => {
+          const num = n(r.cantidad, -999999);
+          const nom = productosBySku[s(r.producto)];
+          const cant = num > 0 ? `+${num}` : `${num}`;
+          return (
+            <div>
+              <div>{cant} {nom || s(r.producto)}</div>
+              {nom && <div className="font-mono text-[11px] text-slate-400 mt-0.5">{s(r.producto)}</div>}
+            </div>
+          );
+        }}
         cardSubtitle={r => <span className="text-xs text-slate-400">{fmtDateTime(r.fecha)} · {s(r.origen)}</span>}
         />
       </div>
