@@ -19,14 +19,21 @@ export function EmpleadosView({ data, actions }) {
       const k = String(eid || '');
       if (k) map[k] = (map[k] || 0) + 1;
     };
-    (data.rutas || []).forEach(r => {
+    (data?.rutas || []).forEach(r => {
+      if (!r) return;
       bump(r.choferId || r.chofer_id);
       bump(r.ayudanteId || r.ayudante_id);
     });
-    (data.ordenes || []).forEach(o => bump(o.vendedor_id || o.vendedorId));
-    (data.nominaRecibos || []).forEach(n => bump(n.empleadoId || n.empleado_id));
+    (data?.ordenes || []).forEach(o => {
+      if (!o) return;
+      bump(o.vendedor_id || o.vendedorId);
+    });
+    (data?.nominaRecibos || []).forEach(rec => {
+      if (!rec) return;
+      bump(rec.empleadoId || rec.empleado_id);
+    });
     return map;
-  }, [data.rutas, data.ordenes, data.nominaRecibos]);
+  }, [data?.rutas, data?.ordenes, data?.nominaRecibos]);
 
   const puedeEliminarEmp = (id) => !empleadosConHistorico[String(id)];
 
