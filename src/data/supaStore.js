@@ -3177,7 +3177,6 @@ export function useSupaStore(userId, userName) {
             'costos_historial',
             'notificaciones',
             'error_log',
-            'cuarto_frio_stock',
           ];
 
           const errores = [];
