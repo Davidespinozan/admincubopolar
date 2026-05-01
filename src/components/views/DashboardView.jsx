@@ -369,22 +369,22 @@ export default function DashboardView({ data, user, onNavigate }) {
       )}
 
       {/* ═══ ZONA 2: ESTA SEMANA (números clave en una sola línea) ═══ */}
-      <div className="mb-4 md:mb-6 rounded-[24px] border border-slate-200/80 bg-white p-4 md:p-5">
+      <div className="mb-4 md:mb-6 rounded-[24px] border border-slate-200/80 bg-white p-3 sm:p-4 md:p-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-3">Esta semana</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-6">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3 md:gap-6">
           <div>
             <p className="text-xs text-slate-500 mb-1">Vendiste</p>
-            <p className="font-display text-lg sm:text-xl md:text-2xl font-bold text-slate-900">{fmtMoney(ventasResumen.semana)}</p>
+            <p className="font-display text-base sm:text-xl md:text-2xl font-bold text-slate-900">{fmtMoney(ventasResumen.semana)}</p>
           </div>
           <div>
             <p className="text-xs text-slate-500 mb-1">Ganaste (mes)</p>
-            <p className={`font-display text-lg sm:text-xl md:text-2xl font-bold ${estadoResultados.mes.utilidad >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+            <p className={`font-display text-base sm:text-xl md:text-2xl font-bold ${estadoResultados.mes.utilidad >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
               {fmtMoney(estadoResultados.mes.utilidad)}
             </p>
           </div>
           <div>
             <p className="text-xs text-slate-500 mb-1">Te deben</p>
-            <p className={`font-display text-lg sm:text-xl md:text-2xl font-bold ${balance.cxcTotal > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+            <p className={`font-display text-base sm:text-xl md:text-2xl font-bold ${balance.cxcTotal > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
               {fmtMoney(balance.cxcTotal)}
             </p>
           </div>
