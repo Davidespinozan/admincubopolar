@@ -8,6 +8,7 @@ export function ClientesView({ data, actions }) {
   const [modal, setModal] = useState(null);
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
+  const [filterEstatus, setFilterEstatus] = useState("Activos"); // Activos | Inactivos | Todos
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
   const [geocoding, setGeocoding] = useState(false);
@@ -78,14 +79,37 @@ export function ClientesView({ data, actions }) {
     }
   };
 
+  const toggleEstatus = (c) => {
+    const esActivo = s(c.estatus) !== "Inactivo";
+    askConfirm(
+      esActivo ? "Desactivar cliente" : "Activar cliente",
+      esActivo
+        ? `¿Desactivar a "${s(c.nombre)}"? Su histórico se conserva, ya no aparecerá en listas activas.`
+        : `¿Activar a "${s(c.nombre)}"?`,
+      async () => {
+        const err = await actions.updateCliente(c.id, { estatus: esActivo ? "Inactivo" : "Activo" });
+        if (err && (err.message || err.code)) {
+          toast?.error(esActivo ? "No se pudo desactivar" : "No se pudo activar");
+          return;
+        }
+        toast?.success(esActivo ? "Cliente desactivado" : "Cliente activado");
+      },
+      esActivo
+    );
+  };
+
   const filtered = useMemo(() => {
     const q = dSearch?.toLowerCase() || "";
     return (data.clientes || []).filter(c => {
       const ms = !q || s(c.nombre).toLowerCase().includes(q) || s(c.nombre_comercial).toLowerCase().includes(q) || s(c.rfc).toLowerCase().includes(q);
       const mt = !filterTipo || c.tipo === filterTipo;
-      return ms && mt;
+      const inactivo = s(c.estatus) === "Inactivo";
+      const me = filterEstatus === "Todos"
+        || (filterEstatus === "Activos" && !inactivo)
+        || (filterEstatus === "Inactivos" && inactivo);
+      return ms && mt && me;
     });
-  }, [data.clientes, dSearch, filterTipo]);
+  }, [data.clientes, dSearch, filterTipo, filterEstatus]);
 
   const paginated = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
@@ -101,6 +125,11 @@ export function ClientesView({ data, actions }) {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 sm:gap-3 mb-4">
         <div className="flex-1 relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span><input value={search} onChange={e=>{setSearch(e.target.value);setPage(0)}} placeholder="Buscar nombre, comercial o RFC..." className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 min-h-[44px]" /></div>
         <select value={filterTipo} onChange={e=>{setFilterTipo(e.target.value);setPage(0)}} className="border border-slate-200 rounded-xl px-3 py-3 md:py-2.5 text-sm text-slate-600 focus:outline-none focus:border-blue-400 min-h-[44px] min-w-[140px] sm:min-w-0"><option value="">Todos los tipos</option>{["Tienda","Restaurante","Cadena","Hotel","Nevería","General"].map(t=><option key={t}>{t}</option>)}</select>
+        <select value={filterEstatus} onChange={e=>{setFilterEstatus(e.target.value);setPage(0)}} className="px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white min-h-[44px]">
+          <option value="Activos">Activos</option>
+          <option value="Inactivos">Inactivos</option>
+          <option value="Todos">Todos</option>
+        </select>
       </div>
       <DataTable columns={[
         {key:"nombre",label:"Cliente",bold:true,render:(_,row)=><div><span className="font-semibold">{s(row.nombre)}</span>{row.nombre_comercial&&<span className="block text-xs text-slate-400">{s(row.nombre_comercial)}</span>}</div>},
@@ -109,6 +138,27 @@ export function ClientesView({ data, actions }) {
         {key:"saldo",label:"Saldo",bold:true,render:v=>v?fmtMoney(v):"$0"},
         {key:"credito_autorizado",label:"Crédito",render:(_,row)=>row.credito_autorizado?<span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{"✓ " + fmtMoney(row.limite_credito)}</span>:<span className="text-xs text-slate-400">—</span>},
         {key:"estatus",label:"Estatus",badge:true,render:v=><StatusBadge status={v}/>},
+        {key:"acciones",label:"",render:(_,row)=>{
+          const esActivo = s(row.estatus) !== "Inactivo";
+          return <div className="flex gap-1 justify-end" onClick={(e)=>e.stopPropagation()}>
+            <button
+              onClick={()=>openEdit(row)}
+              aria-label="Editar cliente"
+              title="Editar"
+              className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+            >
+              <Icons.Edit />
+            </button>
+            <button
+              onClick={()=>toggleEstatus(row)}
+              aria-label={esActivo ? "Desactivar cliente" : "Activar cliente"}
+              title={esActivo ? "Desactivar" : "Activar"}
+              className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors ${esActivo ? "text-red-500 hover:bg-red-50" : "text-emerald-600 hover:bg-emerald-50"}`}
+            >
+              {esActivo ? <span className="text-base leading-none">⏸</span> : <Icons.UserCheck />}
+            </button>
+          </div>;
+        }},
       ]} data={paginated} onRowClick={r=>openEdit(r)}
         emptyMessage={(search?.trim() || filterTipo) ? "Sin resultados" : "Aún no tienes clientes"}
         emptyHint={(search?.trim() || filterTipo) ? "Intenta con otra búsqueda o limpia los filtros" : "Crea tu primer cliente con el botón de arriba"}
@@ -231,18 +281,31 @@ export function ClientesView({ data, actions }) {
             <FormInput label="Límite de crédito ($)" type="number" value={form.limiteCredito} onChange={e=>setForm({...form,limiteCredito:e.target.value})} placeholder="0.00" />
           )}
 
-          {modal !== "new" && (
-            <div className="border-t border-slate-200 pt-4 mt-6">
-              <button onClick={() => askConfirm("Desactivar cliente", `¿Desactivar "${s(modal.nombre)}"?`, async () => {
-                  const err = await actions.updateCliente(modal.id, { estatus: "Inactivo" });
-                  if (err) { toast?.error("No se pudo desactivar el cliente"); return; }
-                  toast?.success("Cliente desactivado");
-                  setModal(null);
-                }, true)} className="w-full px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200 transition-colors">
-                🗑 Desactivar cliente
-              </button>
-            </div>
-          )}
+          {modal !== "new" && (() => {
+            const esActivo = s(modal?.estatus) !== "Inactivo";
+            return (
+              <div className="border-t border-slate-200 pt-4 mt-6">
+                <button onClick={() => askConfirm(
+                    esActivo ? "Desactivar cliente" : "Activar cliente",
+                    esActivo
+                      ? `¿Desactivar "${s(modal.nombre)}"? Su histórico se conserva.`
+                      : `¿Activar "${s(modal.nombre)}"?`,
+                    async () => {
+                      const err = await actions.updateCliente(modal.id, { estatus: esActivo ? "Inactivo" : "Activo" });
+                      if (err && (err.message || err.code)) {
+                        toast?.error(esActivo ? "No se pudo desactivar el cliente" : "No se pudo activar el cliente");
+                        return;
+                      }
+                      toast?.success(esActivo ? "Cliente desactivado" : "Cliente activado");
+                      setModal(null);
+                    },
+                    esActivo
+                  )} className={`w-full px-4 py-2.5 text-sm font-bold rounded-xl border transition-colors ${esActivo ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-200" : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"}`}>
+                  {esActivo ? "⏸ Desactivar cliente" : "✓ Activar cliente"}
+                </button>
+              </div>
+            );
+          })()}
         </div>
       )}
 
