@@ -10,6 +10,7 @@ import {
   puedeFirmarRuta,
   excedeAutorizacion,
   calcularChangesInventario,
+  calcDevolucionLegacy,
 } from './rutasLogic';
 import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
 
@@ -2990,23 +2991,7 @@ export function useSupaStore(userId, userName) {
 
           if (esLegacy && carga && typeof carga === 'object') {
             // ── COMPORTAMIENTO LEGACY (rutas viejas que descontaron al autorizar) ──
-            const entregadoPorSku = {};
-            for (const e of (entregas || [])) {
-              for (const it of (e.items || [])) {
-                entregadoPorSku[it.sku] = (entregadoPorSku[it.sku] || 0) + Number(it.cant || it.qty || 0);
-              }
-            }
-            const mermaPorSku = {};
-            for (const m of (mermasArr || [])) {
-              mermaPorSku[m.sku] = (mermaPorSku[m.sku] || 0) + Number(m.cant || 0);
-            }
-            const devueltoPorSku = {};
-            for (const [sku, cargado] of Object.entries(carga)) {
-              const entregado = entregadoPorSku[sku] || 0;
-              const merma = mermaPorSku[sku] || 0;
-              const devuelto = Number(cargado) - entregado - merma;
-              if (devuelto > 0) devueltoPorSku[sku] = devuelto;
-            }
+            const devueltoPorSku = calcDevolucionLegacy(carga, entregas, mermasArr);
             if (Object.keys(devueltoPorSku).length > 0) {
               const { data: cfs, error: cfErr } = await supabase.from('cuartos_frios').select('id').limit(1);
               if (cfErr) throw cfErr;

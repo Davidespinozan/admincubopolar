@@ -201,3 +201,101 @@ export function calcularChangesInventario(cargaReal, cuartos, contexto = {}) {
 
   return { changes, faltantes };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers para cerrarRutaCompleta
+//
+// Reflejan el comportamiento actual del store. agruparMermasPorSku NO se usa
+// en el refactor del store (extraído como utility testeada para uso futuro
+// si se decide mergear duplicados; hoy el código inserta una fila de mermas
+// por cada item del array sin agrupar).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Clasifica las entregas según sean ventas express u órdenes existentes.
+ * Refleja exactamente la regla de cerrarRutaCompleta:
+ *   const esVentaExpress = Boolean(e?.express) || !e?.ordenId;
+ *
+ * @param {Array<object>|null|undefined} entregas
+ * @returns {{ conOrden: object[], ventasExpress: object[] }}
+ */
+export function clasificarEntregas(entregas) {
+  const conOrden = [];
+  const ventasExpress = [];
+  for (const e of (entregas || [])) {
+    const esVentaExpress = Boolean(e?.express) || !e?.ordenId;
+    if (esVentaExpress) ventasExpress.push(e);
+    else conOrden.push(e);
+  }
+  return { conOrden, ventasExpress };
+}
+
+/**
+ * Agrupa mermas por SKU sumando cantidades.
+ *
+ * NOTA: hoy cerrarRutaCompleta NO agrupa — registra cada merma individual
+ * como una fila distinta en `mermas` table. Este helper es utility para
+ * casos donde haga falta agregar (ej. cálculo de devolución legacy o
+ * decisión futura de mergear). NO cambia el comportamiento del store.
+ *
+ * @param {Array<{sku, cant}>|null|undefined} mermas
+ * @returns {Record<string, number>}
+ */
+export function agruparMermasPorSku(mermas) {
+  const result = {};
+  for (const m of (mermas || [])) {
+    const sku = m?.sku;
+    if (!sku) continue;
+    const cant = Number(m?.cant);
+    const safe = Number.isFinite(cant) ? cant : 0;
+    result[sku] = (result[sku] || 0) + safe;
+  }
+  return result;
+}
+
+/**
+ * Calcula la devolución al cuarto frío para rutas legacy (creadas antes del
+ * modelo "carga real" donde el inventario se descontaba al autorizar).
+ *
+ * Para cada SKU en `carga`, devuelto = cargado - entregado - mermado.
+ * Solo se incluyen SKUs con sobrante > 0 (negativos y ceros se omiten).
+ *
+ * Refleja exactamente las líneas 2991-3009 de cerrarRutaCompleta. NO se
+ * llama si la ruta es moderna — el caller decide eso vía select previo.
+ *
+ * @param {Record<string, number>|null|undefined} carga
+ * @param {Array<{items: Array<{sku, cant, qty?}>}>|null|undefined} entregas
+ * @param {Array<{sku, cant}>|null|undefined} mermas
+ * @returns {Record<string, number>}  // solo SKUs con sobrante positivo
+ */
+export function calcDevolucionLegacy(carga, entregas, mermas) {
+  const result = {};
+  if (!carga || typeof carga !== 'object') return result;
+
+  // Sumar entregado por SKU
+  const entregadoPorSku = {};
+  for (const e of (entregas || [])) {
+    for (const it of (e?.items || [])) {
+      const sku = it?.sku;
+      if (!sku) continue;
+      const cant = Number(it?.cant ?? it?.qty);
+      const safe = Number.isFinite(cant) ? cant : 0;
+      entregadoPorSku[sku] = (entregadoPorSku[sku] || 0) + safe;
+    }
+  }
+
+  // Sumar mermado por SKU
+  const mermaPorSku = agruparMermasPorSku(mermas);
+
+  // Calcular sobrante por SKU
+  for (const [sku, cargado] of Object.entries(carga)) {
+    const c = Number(cargado);
+    if (!Number.isFinite(c)) continue;
+    const entregado = entregadoPorSku[sku] || 0;
+    const merma = mermaPorSku[sku] || 0;
+    const sobrante = c - entregado - merma;
+    if (sobrante > 0) result[sku] = sobrante;
+  }
+
+  return result;
+}

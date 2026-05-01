@@ -11,6 +11,9 @@ import {
   puedeFirmarRuta,
   excedeAutorizacion,
   calcularChangesInventario,
+  clasificarEntregas,
+  agruparMermasPorSku,
+  calcDevolucionLegacy,
 } from '../data/rutasLogic';
 
 // ─── formatDevolucion ─────────────────────────────────────────
@@ -334,5 +337,184 @@ describe('calcularChangesInventario', () => {
     const r = calcularChangesInventario(cargaReal, cuartos, { folio: 'R-007', usuario: 'X' });
     expect(r.changes).toEqual([]);
     expect(r.faltantes).toEqual([]);
+  });
+});
+
+// ─── clasificarEntregas ────────────────────────────────────────
+describe('clasificarEntregas', () => {
+  it('null → vacíos', () => {
+    expect(clasificarEntregas(null)).toEqual({ conOrden: [], ventasExpress: [] });
+    expect(clasificarEntregas(undefined)).toEqual({ conOrden: [], ventasExpress: [] });
+  });
+
+  it('array vacío → vacíos', () => {
+    expect(clasificarEntregas([])).toEqual({ conOrden: [], ventasExpress: [] });
+  });
+
+  it('e.express === true → ventasExpress', () => {
+    const e = { express: true, ordenId: 99, total: 100 };
+    const r = clasificarEntregas([e]);
+    expect(r.ventasExpress).toEqual([e]);
+    expect(r.conOrden).toEqual([]);
+  });
+
+  it('e.ordenId falsy (varios casos) → ventasExpress', () => {
+    const cases = [
+      { ordenId: null, total: 100 },
+      { ordenId: undefined, total: 100 },
+      { ordenId: 0, total: 100 },
+      { ordenId: '', total: 100 },
+      { total: 100 }, // sin ordenId
+    ];
+    const r = clasificarEntregas(cases);
+    expect(r.ventasExpress).toHaveLength(5);
+    expect(r.conOrden).toHaveLength(0);
+  });
+
+  it('e.ordenId truthy y e.express falsy → conOrden', () => {
+    const e = { ordenId: 42, total: 100 };
+    const r = clasificarEntregas([e]);
+    expect(r.conOrden).toEqual([e]);
+    expect(r.ventasExpress).toEqual([]);
+  });
+
+  it('mezcla de tipos en mismo array', () => {
+    const arr = [
+      { ordenId: 1 },                 // conOrden
+      { ordenId: 2, express: true },  // ventasExpress (express gana)
+      { ordenId: null },              // ventasExpress
+      { ordenId: 3 },                 // conOrden
+      { express: true },              // ventasExpress
+    ];
+    const r = clasificarEntregas(arr);
+    expect(r.conOrden).toHaveLength(2);
+    expect(r.ventasExpress).toHaveLength(3);
+    expect(r.conOrden.map(e => e.ordenId)).toEqual([1, 3]);
+  });
+});
+
+// ─── agruparMermasPorSku ───────────────────────────────────────
+describe('agruparMermasPorSku', () => {
+  it('null o vacío → {}', () => {
+    expect(agruparMermasPorSku(null)).toEqual({});
+    expect(agruparMermasPorSku([])).toEqual({});
+  });
+
+  it('SKUs únicos → suma trivial', () => {
+    const r = agruparMermasPorSku([
+      { sku: 'HC-5K', cant: 3 },
+      { sku: 'HC-25K', cant: 2 },
+    ]);
+    expect(r).toEqual({ 'HC-5K': 3, 'HC-25K': 2 });
+  });
+
+  it('mismo SKU en múltiples mermas → suma acumulada', () => {
+    const r = agruparMermasPorSku([
+      { sku: 'HC-5K', cant: 3 },
+      { sku: 'HC-5K', cant: 2 },
+      { sku: 'HC-5K', cant: 5 },
+    ]);
+    expect(r).toEqual({ 'HC-5K': 10 });
+  });
+
+  it('mermas sin sku se ignoran', () => {
+    const r = agruparMermasPorSku([
+      { sku: 'HC-5K', cant: 3 },
+      { sku: '', cant: 100 },
+      { cant: 50 },
+      { sku: null, cant: 7 },
+    ]);
+    expect(r).toEqual({ 'HC-5K': 3 });
+  });
+
+  it('cant no numérico o falsy se trata como 0', () => {
+    const r = agruparMermasPorSku([
+      { sku: 'HC-5K', cant: 3 },
+      { sku: 'HC-5K', cant: 'mucho' },
+      { sku: 'HC-5K' }, // sin cant
+      { sku: 'HC-5K', cant: null },
+    ]);
+    expect(r).toEqual({ 'HC-5K': 3 });
+  });
+});
+
+// ─── calcDevolucionLegacy ──────────────────────────────────────
+describe('calcDevolucionLegacy', () => {
+  it('carga vacía o null → {}', () => {
+    expect(calcDevolucionLegacy({}, [], [])).toEqual({});
+    expect(calcDevolucionLegacy(null, [], [])).toEqual({});
+  });
+
+  it('SKU cargado pero no entregado ni mermado → devuelve todo', () => {
+    const r = calcDevolucionLegacy({ 'HC-5K': 100 }, [], []);
+    expect(r).toEqual({ 'HC-5K': 100 });
+  });
+
+  it('SKU completamente entregado → no aparece en output', () => {
+    const r = calcDevolucionLegacy(
+      { 'HC-5K': 100 },
+      [{ items: [{ sku: 'HC-5K', cant: 100 }] }],
+      []
+    );
+    expect(r).toEqual({});
+  });
+
+  it('SKU con sobrante negativo (entregaron + mermaron más) → omitido', () => {
+    const r = calcDevolucionLegacy(
+      { 'HC-5K': 50 },
+      [{ items: [{ sku: 'HC-5K', cant: 60 }] }],
+      [{ sku: 'HC-5K', cant: 5 }]
+    );
+    expect(r).toEqual({});
+  });
+
+  it('múltiples entregas con mismo SKU → suma correcta', () => {
+    const r = calcDevolucionLegacy(
+      { 'HC-5K': 100 },
+      [
+        { items: [{ sku: 'HC-5K', cant: 30 }] },
+        { items: [{ sku: 'HC-5K', cant: 25 }] },
+        { items: [{ sku: 'HC-5K', cant: 15 }] },
+      ],
+      [{ sku: 'HC-5K', cant: 10 }]
+    );
+    // 100 - (30+25+15) - 10 = 20
+    expect(r).toEqual({ 'HC-5K': 20 });
+  });
+
+  it('mezcla compleja con múltiples SKUs y items', () => {
+    const r = calcDevolucionLegacy(
+      { 'HC-5K': 100, 'HC-25K': 50, 'HC-10K': 30, 'HC-1K': 10 },
+      [
+        { items: [{ sku: 'HC-5K', cant: 60 }, { sku: 'HC-25K', cant: 20 }] },
+        { items: [{ sku: 'HC-5K', cant: 20 }, { sku: 'HC-10K', cant: 30 }] },
+      ],
+      [{ sku: 'HC-25K', cant: 10 }]
+    );
+    // HC-5K:  100 - 80 - 0  = 20  (devuelve)
+    // HC-25K: 50  - 20 - 10 = 20  (devuelve)
+    // HC-10K: 30  - 30 - 0  = 0   (omitido)
+    // HC-1K:  10  - 0  - 0  = 10  (devuelve, no se entregó nada)
+    expect(r).toEqual({ 'HC-5K': 20, 'HC-25K': 20, 'HC-1K': 10 });
+  });
+
+  it('items con cant en formato qty (compat con shape viejo)', () => {
+    const r = calcDevolucionLegacy(
+      { 'HC-5K': 50 },
+      [{ items: [{ sku: 'HC-5K', qty: 30 }] }],
+      []
+    );
+    // 50 - 30 = 20
+    expect(r).toEqual({ 'HC-5K': 20 });
+  });
+
+  it('items sin sku se ignoran', () => {
+    const r = calcDevolucionLegacy(
+      { 'HC-5K': 50 },
+      [{ items: [{ cant: 30 }, { sku: 'HC-5K', cant: 10 }] }],
+      []
+    );
+    // 50 - 10 = 40 (el item sin sku no se cuenta)
+    expect(r).toEqual({ 'HC-5K': 40 });
   });
 });
