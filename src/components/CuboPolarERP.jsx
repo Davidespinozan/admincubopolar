@@ -3,6 +3,7 @@ import { Icons } from './ui/Icons';
 import { useConfirm } from './ui/Modal';
 import DashboardView from './views/DashboardView';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
+import { logErrorToDb } from '../utils/errorLog';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
 const ClientesView      = lazy(() => import('./views/ClientesView.jsx').then(m => ({ default: m.ClientesView })));
@@ -30,13 +31,100 @@ if (typeof window !== 'undefined') {
   window.addEventListener('vite:preloadError', () => window.location.reload());
 }
 
+// Boundary alrededor del Suspense que renderiza la vista activa.
+// - Si el error ES de chunk loading (deploy stale), auto-reload (comportamiento previo).
+// - Si el error es de render (ReferenceError, etc., como CapacityBar), muestra
+//   UI inline para que el chrome del admin (sidebar/topbar/drawer) se preserve y
+//   el usuario pueda navegar a otra vista o reintentar.
+function isChunkError(err) {
+  const msg = err?.message || '';
+  return msg.includes('MIME')
+    || msg.includes('Failed to fetch')
+    || msg.includes('dynamically imported');
+}
+
 class ChunkErrorBoundary extends Component {
-  componentDidCatch(err) {
-    if (err?.message?.includes('MIME') || err?.message?.includes('Failed to fetch') || err?.message?.includes('dynamically imported')) {
-      window.location.reload();
+  state = { hasError: false, error: null };
+
+  static getDerivedStateFromError(error) {
+    if (isChunkError(error)) {
+      // Chunk error: vamos a recargar; no hace falta marcar hasError.
+      return null;
     }
+    return { hasError: true, error };
   }
-  render() { return this.props.children; }
+
+  componentDidCatch(error, info) {
+    if (isChunkError(error)) {
+      window.location.reload();
+      return;
+    }
+    logErrorToDb(error, info, { tipo: 'boundary', boundary: 'view', view: this.props.viewName || 'unknown' });
+  }
+
+  handleRetry = () => {
+    this.setState({ hasError: false, error: null });
+  };
+
+  handleReload = () => {
+    window.location.reload();
+  };
+
+  handleCopyDetails = () => {
+    const { error } = this.state;
+    const text = [
+      `Error: ${error?.message || 'Unknown error'}`,
+      `Stack: ${error?.stack || 'No stack'}`,
+      `URL: ${typeof window !== 'undefined' ? window.location.href : ''}`,
+      `Time: ${new Date().toISOString()}`,
+    ].join('\n\n');
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(text).catch(() => {});
+    }
+  };
+
+  render() {
+    if (!this.state.hasError) return this.props.children;
+
+    const isDev = import.meta.env.DEV;
+    const { error } = this.state;
+    return (
+      <div className="p-4 sm:p-6 max-w-2xl mx-auto">
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-5 sm:p-6">
+          <div className="flex items-start gap-3 mb-3">
+            <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-lg font-bold text-red-900">Algo salió mal en esta vista</h2>
+              <p className="text-sm text-red-800 mt-1">
+                Ocurrió un error al renderizar el contenido. Puedes intentar de nuevo o navegar a otra sección desde el menú.
+              </p>
+            </div>
+          </div>
+          {isDev && error && (
+            <details className="mb-4 text-xs">
+              <summary className="cursor-pointer text-red-700 font-semibold">Detalles técnicos (solo dev)</summary>
+              <pre className="mt-2 p-3 bg-red-100 rounded text-red-900 overflow-auto max-h-60">{error.message}{'\n\n'}{error.stack}</pre>
+            </details>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <button onClick={this.handleRetry} className="px-4 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-slate-800 min-h-[44px]">
+              Intentar de nuevo
+            </button>
+            <button onClick={this.handleReload} className="px-4 py-2.5 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-200 min-h-[44px]">
+              Recargar página
+            </button>
+            <button onClick={this.handleCopyDetails} className="px-4 py-2.5 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl hover:bg-slate-200 min-h-[44px]">
+              Copiar detalles
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 }
 
 /*
