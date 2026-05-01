@@ -115,9 +115,11 @@ export function OrdenesView({ data, actions, user }) {
     const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
     setSaving(true);
     try {
-      const err = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc,usuarioId:user?.id||null,tipoCobro:form.tipoCobro||"Contado",folioNota:form.folioNota||null});
-      if (err) {
-        toast?.error(err.message || "No se pudo crear la orden");
+      const result = await actions.addOrden({cliente:s(cli?.nombre),clienteId:form.clienteId,fecha:form.fecha||new Date().toISOString().slice(0,10),productos:productosStr,total:totalCalc,usuarioId:user?.id||null,tipoCobro:form.tipoCobro||"Contado",folioNota:form.folioNota||null});
+      // addOrden retorna { orden } en éxito, { error } o { message } en fallo.
+      // No tratar { orden } como error (truthy pero exitoso).
+      if (result?.error || result?.message) {
+        toast?.error(result.error || result.message || "No se pudo crear la orden");
         return;
       }
       toast?.success("Orden creada");
