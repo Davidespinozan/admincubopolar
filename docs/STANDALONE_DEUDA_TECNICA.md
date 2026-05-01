@@ -1,27 +1,37 @@
 # Deuda técnica: vistas standalone
 
-Este documento lista deuda técnica detectada en las vistas standalone (mobile-first usadas a diario por el equipo en campo) que no se atacó en su fase original y queda pendiente para fases dedicadas.
+Este documento lista deuda técnica detectada en las vistas standalone (mobile-first usadas a diario por el equipo en campo) y el estado actual del refactor del data layer.
 
 ---
 
-## Fase Standalone Robustez (data layer)
+## Fase Standalone Robustez (data layer) — ✅ COMPLETA
 
 Tras investigación previa al PR 1 detectamos que el alcance original sobreestimó el problema. La realidad:
-- **2 funciones eran fire-and-forget puro** (críticas)
-- **3 estaban parcialmente robustas** (chequeaban algunos errores, no todos)
-- **3 ya estaban OK** (el bug venía del consumer, ya arreglado en Fase Standalone UX)
+- **2 funciones eran fire-and-forget puro** (críticas) — atendidas en PR 1
+- **3 estaban parcialmente robustas** (chequeaban algunos errores, no todos) — atendidas en PR 1 y PR 2
+- **3 ya estaban OK** (el bug venía del consumer, ya arreglado en Fase Standalone UX) — atendidas cosméticamente en PR 2
 
-### ✅ PR 1 — Standalone Robustez Core (commit en main)
+### ✅ PR 1 — Standalone Robustez Core
 
 Refactorizadas con patrón estándar (try/catch + chequeo `.error` en cada llamada Supabase + rollback selectivo + retorno consistente `{ error, partial? }` o `undefined`).
 
-| Función | Antes | Después |
-|---|---|---|
-| `movimientoBolsa` ([supaStore.js:2492](../src/data/supaStore.js#L2492)) | Fire-and-forget puro (4 ops sin chequeo) | try/catch envolvente, chequeo en select/update/insert, rollback de stock si insert mov falla, `{ error, partial }` si falla CxP/egreso (operación principal sí quedó) |
-| `producirYCongelar` ([supaStore.js:1019](../src/data/supaStore.js#L1019)) | Wrapper de 4 líneas que descartaba el error de `meterACuartoFrio` | Propaga el error de `addProduccion`. Si producción ok pero `meterACuartoFrio` falla, retorna `{ error, partial }` (admin debe meter manual desde Inventario) |
-| `registrarMerma` ([supaStore.js:2233](../src/data/supaStore.js#L2233)) | Solo chequeaba el insert principal, ignoraba 4 ops posteriores | try/catch envolvente. Rollback de la merma (DELETE) si falla `select cuartos_frios` o `rpc update_stocks_atomic`. Asiento contable es secundario: si falla, retorna `{ error, partial }` con notify de advertencia, las ops principales sí quedan |
+| Función | Cambio principal |
+|---|---|
+| `movimientoBolsa` ([supaStore.js:2492](../src/data/supaStore.js#L2492)) | try/catch envolvente, chequeo en select/update/insert, rollback de stock si insert mov falla, `{ error, partial }` si falla CxP/egreso |
+| `producirYCongelar` ([supaStore.js:1019](../src/data/supaStore.js#L1019)) | Propaga error de `addProduccion`. Si producción ok pero `meterACuartoFrio` falla → `{ error, partial }` |
+| `registrarMerma` ([supaStore.js:2233](../src/data/supaStore.js#L2233)) | try/catch envolvente. Rollback DELETE de la merma si falla `select cuartos_frios` o `rpc update_stocks_atomic`. Asiento contable es secundario |
 
-**Patrón estándar aplicado:**
+### ✅ PR 2 — Standalone Robustez Consistencia
+
+| Función | Cambio principal |
+|---|---|
+| `addOrden` ([supaStore.js:689](../src/data/supaStore.js#L689)) | try/catch envolvente. Chequeo en selects iniciales (productos, precios_esp, rpc nextval, clientes). **Rollback DELETE de la orden** si falla insert `orden_lineas` (evita orden huérfana sin líneas) |
+| `updateOrdenEstatus` ([supaStore.js:777](../src/data/supaStore.js#L777)) | try/catch envolvente. Chequeo en TODOS los selects intermedios (estatus prev, datos completos, cliente nombre, existing CxC, existing ingreso, folio Facturada). Rollback de estatus si falla read post-update |
+| `addCliente` ([supaStore.js:522](../src/data/supaStore.js#L522)) | try/catch envolvente defensivo. Lógica interna sin cambio (ya chequeaba error en insert) |
+| `traspasoEntreUbicaciones` ([supaStore.js:1197](../src/data/supaStore.js#L1197)) | try/catch envolvente. Chequeo agregado al insert `inventario_mov`. Si falla movimiento (secundario), retorna `{ error, partial }` sin rollback de stocks (el traspaso real sí ocurrió) |
+| `sacarDeCuartoFrio` ([supaStore.js:1165](../src/data/supaStore.js#L1165)) | try/catch envolvente. Validaciones tempranas pasan de `new Error(...)` a `{ message }` para consistencia con el resto del store |
+
+### Patrón estándar aplicado
 
 ```js
 funcionX: async (params) => {
@@ -53,41 +63,27 @@ funcionX: async (params) => {
 }
 ```
 
-**Convención de retorno:**
+### Convención de retorno
+
 - `undefined` → éxito completo
-- `{ error: msg }` → fallo crítico, operación NO se hizo (rollback aplicado)
-- `{ error: msg, partial: true }` → operación principal SÍ quedó pero un side-effect secundario falló (asiento contable, notify, etc.)
+- `{ error: msg }` o `{ message: msg }` → fallo crítico, operación NO se hizo (rollback aplicado)
+- `{ error, partial: true }` → operación principal SÍ quedó pero un side-effect secundario falló (asiento contable, notify, etc.)
+- `{ orden: {...} }` (caso específico de `addOrden`) — éxito + retorna la orden creada
 
 Compatible con consumers existentes que usan `if (err) { ... }` — el `undefined` sigue siendo falsy.
 
 ---
 
-### ⏳ PR 2 — Standalone Robustez Consistencia (pendiente)
+### Otras funciones revisadas (NO requirieron refactor)
 
-Funciones parcialmente robustas (ya chequean errores en operaciones críticas, pero falta endurecer rollback en casos secundarios o agregar `return { ok: true }` por consistencia):
-
-| Función | Línea | Acción pendiente |
-|---|---|---|
-| `addOrden` | [689](../src/data/supaStore.js#L689) | Si insert `orden_lineas` falla DESPUÉS de crear la orden (línea 735-737), agregar rollback `DELETE FROM ordenes WHERE id = newOrd.id` para evitar orden huérfana sin líneas |
-| `updateOrdenEstatus` | [748](../src/data/supaStore.js#L748) | Defensivos: agregar chequeos en selects intermedios (estatus prev, datos completos, cliente nombre, factura folio) |
-| `addCliente` | [522](../src/data/supaStore.js#L522) | Solo cosmético: cambiar `return newCli` a `return { ok: true, id: newCli.id }` para consistencia. Bug original ya estaba en consumer (resuelto en Standalone Fix #3 UX). |
-| `traspasoEntreUbicaciones` | [1197](../src/data/supaStore.js#L1197) | Solo cosmético: agregar `return { ok: true }` en éxito. Insert mov también debe chequear error (omisión menor). |
-| `sacarDeCuartoFrio` | [1165](../src/data/supaStore.js#L1165) | Solo cosmético: agregar `return { ok: true }` en éxito. Lógica ya OK con rollback. |
-
-**Estimación PR 2:** ~1 hora.
-
----
-
-### Otras funciones revisadas (NO requieren refactor)
-
-Ya tienen el patrón correcto (chequeos + rollback donde aplica):
+Ya tenían el patrón correcto (chequeos + rollback donde aplica):
 - `addProduccion` ([879](../src/data/supaStore.js#L879)) — chequea principal y rollback de stock empaque
 - `meterACuartoFrio` ([1144](../src/data/supaStore.js#L1144)) — chequea, rollback
 - `addTransformacion` ([1030](../src/data/supaStore.js#L1030)) — chequea cada paso, rollback
 - `firmarCarga` ([1516](../src/data/supaStore.js#L1516)) — patrón de referencia con rollback de inventario via RPC
 - `crearCheckoutPago` ([1737](../src/data/supaStore.js#L1737)) — try/catch externo, retorna `{ error }` o payload
 - `confirmarCargaRuta` ([1352](../src/data/supaStore.js#L1352)) — validaciones extensas, chequeo en cada paso
-- `cerrarRutaCompleta` ([2540](../src/data/supaStore.js#L2540)) — try/catch envolvente extenso con rollback masivo (función de >300 líneas, no inspeccionada al detalle)
+- `cerrarRutaCompleta` ([2540](../src/data/supaStore.js#L2540)) — try/catch envolvente extenso con rollback masivo
 
 **No inspeccionadas a fondo** (consumidas por admin, no por standalones — fuera de scope):
 - `cobrarCxC`, `aplicarCostoFijo`, `pagarCuentaPorPagar`, `pagarNomina`. Si en algún momento se reportan bugs ahí, vale la pena auditarlas.
@@ -99,6 +95,10 @@ Ya tienen el patrón correcto (chequeos + rollback donde aplica):
 ### Doble-submit en ChoferView.enviarFirma — ✅ Resuelto
 
 Atendido en Standalone Fix #4 UX. Ya tiene `enviandoFirma` + try/catch + guard.
+
+### Bug pre-existente en OrdenesView (admin) — ⏳ Pendiente
+
+`OrdenesView.jsx:118-122` usa `if (err) { toast?.error(...) }` después de `addOrden`, pero `addOrden` retorna `{ orden }` (truthy) en éxito. El admin SIEMPRE muestra "No se pudo crear la orden" tras crear una orden, aunque la orden sí se cree. Fix: cambiar el chequeo a `if (err?.message || err?.error)` o desestructurar `result.orden`. Detectado durante PR 2 pero fuera de scope. Bajo impacto si Santiago no está usando intensamente el admin desde mobile.
 
 ### Inconsistencia de formato (dinero/fecha) en standalones — ⏳ Pendiente
 
