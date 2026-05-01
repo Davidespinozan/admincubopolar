@@ -309,9 +309,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             <p className="font-display truncate text-base font-bold tracking-[-0.04em] text-slate-900 lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
           </div>
           <div className="relative flex flex-shrink-0 items-center gap-2">
-            <div className="relative">
-              <BotonFirmasPendientes user={user} data={data} actions={actions} />
-            </div>
+            <BotonFirmasPendientes user={user} data={data} actions={actions} />
             <button onClick={() => { setAlertasOpen(!alertasOpen); setNotifOpen(false); }} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
               <Icons.Bell />{alertasActivas.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />}
             </button>
