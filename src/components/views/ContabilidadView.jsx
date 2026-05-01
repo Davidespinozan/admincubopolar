@@ -48,13 +48,17 @@ export function ContabilidadView({ data, actions }) {
 
   return (<div className="space-y-4">
     {ConfirmEl}
-    <div className="flex items-center justify-between flex-wrap gap-2">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <h2 className="text-lg font-bold text-slate-800">Ingresos / Egresos</h2>
-      <div className="flex gap-2 flex-wrap">
-        <button onClick={() => reporteFinanciero(cont, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
-        <button onClick={() => reporteFinanciero(cont, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
-        <button onClick={() => openNew("Ingreso")} className="px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Ingreso</button>
-        <button onClick={() => openNew("Egreso")} className="px-3 py-2 bg-red-500 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Gasto</button>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
+        <div className="flex gap-2">
+          <button onClick={() => reporteFinanciero(cont, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
+          <button onClick={() => reporteFinanciero(cont, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={() => openNew("Ingreso")} className="flex-1 sm:flex-none px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Ingreso</button>
+          <button onClick={() => openNew("Egreso")} className="flex-1 sm:flex-none px-3 py-2 bg-red-500 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Gasto</button>
+        </div>
       </div>
     </div>
 

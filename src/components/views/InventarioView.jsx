@@ -111,16 +111,16 @@ export function InventarioView({ data, actions }) {
 
   return (<div>
     {ConfirmEl}
-    <div className="flex items-center justify-between mb-4">
+    <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
       <div><h2 className="text-lg font-bold text-slate-800">Inventario</h2><p className="text-xs text-slate-400">Cuartos fríos, existencias y movimientos</p></div>
-      <div className="flex gap-2">
-        <button onClick={()=>{setCfForm({nombre:"",temp:"-10",capacidad:"0"});setCfModal("new")}} className="px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Cuarto Frío</button>
+      <div className="flex flex-wrap gap-2">
+        <button onClick={()=>{setCfForm({nombre:"",temp:"-10",capacidad:"0"});setCfModal("new")}} className="flex-1 sm:flex-none px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Cuarto Frío</button>
         <button onClick={()=>{
           const cfs = (data.cuartosFrios || []).map(c => s(c.id));
           const firstSku = (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado")[0]?.sku || "";
           setTraspasoForm({origen: cfs[0] || "", destino: cfs[1] || cfs[0] || "", sku: s(firstSku), cantidad:""});
           setTraspasoModal(true); setTraspasoErrors({});
-        }} className="px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl min-h-[44px]">Traspaso</button>
+        }} className="flex-1 sm:flex-none px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl min-h-[44px]">Traspaso</button>
       </div>
     </div>
     <div className="flex sm:grid sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6 overflow-x-auto sm:overflow-x-visible pb-1 sm:pb-0 snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0">
@@ -132,10 +132,10 @@ export function InventarioView({ data, actions }) {
             <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">{n(cf.temp, -50, 10)}°C</span>
           </div>
           <div className="flex items-center gap-1">
-            <button onClick={e=>{e.stopPropagation();setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad_tarimas:String(n(cf.capacidad_tarimas) || '')});setCfModal(cf);}} className="p-1 text-slate-500 hover:text-blue-600">
+            <button aria-label="Editar cuarto frío" onClick={e=>{e.stopPropagation();setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad_tarimas:String(n(cf.capacidad_tarimas) || '')});setCfModal(cf);}} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-colors">
               <Icons.Edit />
             </button>
-            <button onClick={e=>{e.stopPropagation();askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cf.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cf.id); toast?.success('Cuarto frío eliminado');}, true)}} className="p-1 text-red-500 hover:text-red-700">
+            <button aria-label="Eliminar cuarto frío" onClick={e=>{e.stopPropagation();askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cf.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cf.id); toast?.success('Cuarto frío eliminado');}, true)}} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors">
               <Icons.X />
             </button>
           </div>
