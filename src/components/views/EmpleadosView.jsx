@@ -211,7 +211,7 @@ export function EmpleadosView({ data, actions }) {
         <FormSelect label="Jornada" options={["Diurna", "Nocturna", "Mixta"]} value={form.jornada} onChange={e => setForm({ ...form, jornada: e.target.value })} />
       </div>
       <div className="space-y-3 border-t border-slate-200 pt-4 mt-5">
-        {modal !== "new" && (() => {
+        {modal && modal !== "new" && (() => {
           const esActivo = s(modal?.estatus) !== "Inactivo";
           const puedeEliminar = puedeEliminarEmp(modal.id);
           return (

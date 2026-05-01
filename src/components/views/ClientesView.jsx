@@ -347,7 +347,7 @@ export function ClientesView({ data, actions }) {
             <FormInput label="Límite de crédito ($)" type="number" value={form.limiteCredito} onChange={e=>setForm({...form,limiteCredito:e.target.value})} placeholder="0.00" />
           )}
 
-          {modal !== "new" && (() => {
+          {modal && modal !== "new" && (() => {
             const esActivo = s(modal?.estatus) !== "Inactivo";
             const puedeEliminar = puedeEliminarCliente(modal.id);
             return (
