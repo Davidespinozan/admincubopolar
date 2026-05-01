@@ -392,7 +392,10 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             aria-label="Menú principal"
           >
             {/* Header */}
-            <div className="sticky top-0 bg-white border-b border-slate-100 px-4 py-3 flex items-center justify-between z-10">
+            <div
+              className="sticky top-0 bg-white border-b border-slate-100 px-4 pb-3 flex items-center justify-between z-10"
+              style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)" }}
+            >
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="h-9 w-9 flex-shrink-0 rounded-xl bg-slate-900 flex items-center justify-center">
                   <img src="/icon-192.png" alt="CuboPolar" className="h-5 w-5" />
@@ -441,7 +444,10 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             </nav>
 
             {/* Footer: usuario + Ver como + Cerrar sesión */}
-            <div className="border-t border-slate-100 px-3 py-3 sticky bottom-0 bg-white">
+            <div
+              className="border-t border-slate-100 px-3 pt-3 sticky bottom-0 bg-white"
+              style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.75rem)" }}
+            >
               {user && (
                 <div className="flex items-center gap-3 px-3 py-2 mb-2">
                   <div className="h-9 w-9 rounded-full bg-gradient-to-br from-cyan-200 to-cyan-300 text-slate-900 flex items-center justify-center text-sm font-extrabold">
