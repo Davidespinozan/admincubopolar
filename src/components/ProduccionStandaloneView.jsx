@@ -22,7 +22,9 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const [fotoMermaProdPreview, setFotoMermaProdPreview] = useState('');
   const [guardandoProd, setGuardandoProd] = useState(false);
   const [tForm, setTForm] = useState({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
+  const [haciendoTraspaso, setHaciendoTraspaso] = useState(false);
   const [sacarForm, setSacarForm] = useState({ sku: "", cantidad: "", motivo: "Carga a ruta" });
+  const [haciendoSalida, setHaciendoSalida] = useState(false);
 
   // Simulated pending cargas from chofers (vacío — no usar mock data con SKUs hardcodeados)
   const [cargasPendientes, setCargasPendientes] = useState([]);
@@ -102,6 +104,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       const mermaErr = await actions.registrarMerma(mForm.sku, cant, mForm.causa, s(user?.nombre), filePath);
       if (mermaErr) {
         await supabase.storage.from('mermas').remove([filePath]);
+        showToast('No se pudo registrar la merma. Intenta de nuevo.');
         return;
       }
 
@@ -240,14 +243,21 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   }, [data.productos, transForm.input_sku]);
 
   const registrarTransformacion = async () => {
+    if (guardandoTrans) return;
     if (!transForm.input_sku || !transForm.output_sku || transInputKg <= 0 || transOutputKg <= 0) return;
     setGuardandoTrans(true);
-    const err = await actions.addTransformacion({ ...transForm, input_kg: transInputKg, output_kg: transOutputKg });
-    setGuardandoTrans(false);
-    if (err && err.message) { showToast('Error: ' + err.message); return; }
-    showToast(`Transformación: ${transInputKg}kg ${transForm.input_sku} → ${transOutputKg}kg ${transForm.output_sku}`);
-    setTransModal(false);
-    setTransForm({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", notas: "" });
+    try {
+      const err = await actions.addTransformacion({ ...transForm, input_kg: transInputKg, output_kg: transOutputKg });
+      if (err && err.message) { showToast('Error: ' + err.message); return; }
+      showToast(`Transformación: ${transInputKg}kg ${transForm.input_sku} → ${transOutputKg}kg ${transForm.output_sku}`);
+      setTransModal(false);
+      setTransForm({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", notas: "" });
+    } catch (e) {
+      console.error('Error transformación:', e);
+      showToast('Error en transformación. Verifica tu conexión.');
+    } finally {
+      setGuardandoTrans(false);
+    }
   };
   const cuartos = data.cuartosFrios || [];
 
@@ -268,6 +278,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   }, [data.productos, bolsaSku]);
 
   const registrarProduccion = async () => {
+    if (guardandoProd) return;
     if (!form.cantidad || n(form.cantidad) <= 0) return;
     if (bolsaSku && n(form.cantidad) > stockBolsa) return;
 
@@ -293,13 +304,21 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
     // Sin merma: comportamiento original (atómico)
     if (!form.conMerma) {
-      actions.producirYCongelar({
-        turno: form.turno, maquina: form.maquina, sku: form.sku,
-        cantidad: form.cantidad, destino: form.destino,
-      });
-      showToast(cant + " " + form.sku + " → " + cfNombre);
-      setModal(false);
-      resetFormProd();
+      setGuardandoProd(true);
+      try {
+        await actions.producirYCongelar({
+          turno: form.turno, maquina: form.maquina, sku: form.sku,
+          cantidad: form.cantidad, destino: form.destino,
+        });
+        showToast(cant + " " + form.sku + " → " + cfNombre);
+        setModal(false);
+        resetFormProd();
+      } catch (e) {
+        console.error('Error registrando producción:', e);
+        showToast('Error al registrar producción. Verifica tu conexión.');
+      } finally {
+        setGuardandoProd(false);
+      }
       return;
     }
 
@@ -351,24 +370,42 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     }
   };
 
-  const hacerTraspaso = () => {
+  const hacerTraspaso = async () => {
+    if (haciendoTraspaso) return;
     if (!tForm.cantidad || n(tForm.cantidad) <= 0 || tForm.origen === tForm.destino) return;
-    if (actions.traspasoEntreUbicaciones) actions.traspasoEntreUbicaciones(tForm);
     const origenN = cuartos.find(cf => s(cf.id) === tForm.origen)?.nombre || tForm.origen;
     const destinoN = cuartos.find(cf => s(cf.id) === tForm.destino)?.nombre || tForm.destino;
-    showToast(tForm.cantidad + " " + tForm.sku + ": " + origenN + " → " + destinoN);
-    setTraspasoModal(false);
-    setTForm({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
+    setHaciendoTraspaso(true);
+    try {
+      if (actions.traspasoEntreUbicaciones) await actions.traspasoEntreUbicaciones(tForm);
+      showToast(tForm.cantidad + " " + tForm.sku + ": " + origenN + " → " + destinoN);
+      setTraspasoModal(false);
+      setTForm({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
+    } catch (e) {
+      console.error('Error en traspaso:', e);
+      showToast('Error en traspaso. Verifica tu conexión.');
+    } finally {
+      setHaciendoTraspaso(false);
+    }
   };
 
-  const hacerSalida = () => {
+  const hacerSalida = async () => {
+    if (haciendoSalida) return;
     if (!sacarForm.cantidad || n(sacarForm.cantidad) <= 0 || !sacarModal) return;
-    if (actions.sacarDeCuartoFrio) {
-      actions.sacarDeCuartoFrio(sacarModal.cfId, sacarForm.sku, sacarForm.cantidad, sacarForm.motivo);
+    setHaciendoSalida(true);
+    try {
+      if (actions.sacarDeCuartoFrio) {
+        await actions.sacarDeCuartoFrio(sacarModal.cfId, sacarForm.sku, sacarForm.cantidad, sacarForm.motivo);
+      }
+      showToast("Salida: " + sacarForm.cantidad + " " + sacarForm.sku + " de " + sacarModal.cfNombre);
+      setSacarModal(null);
+      setSacarForm({ sku: "", cantidad: "", motivo: "Carga a ruta" });
+    } catch (e) {
+      console.error('Error en salida:', e);
+      showToast('Error al sacar del congelador. Verifica tu conexión.');
+    } finally {
+      setHaciendoSalida(false);
     }
-    showToast("Salida: " + sacarForm.cantidad + " " + sacarForm.sku + " de " + sacarModal.cfNombre);
-    setSacarModal(null);
-    setSacarForm({ sku: "", cantidad: "", motivo: "Carga a ruta" });
   };
 
   return (
@@ -844,9 +881,9 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               <input type="number" inputMode="numeric" value={tForm.cantidad} onChange={e => setTForm(f => ({ ...f, cantidad: e.target.value }))}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" />
             </div>
-            <button onClick={hacerTraspaso} disabled={!tForm.cantidad || n(tForm.cantidad) <= 0 || tForm.origen === tForm.destino}
-              className="w-full py-3.5 bg-blue-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">
-              Mover
+            <button onClick={hacerTraspaso} disabled={haciendoTraspaso || !tForm.cantidad || n(tForm.cantidad) <= 0 || tForm.origen === tForm.destino}
+              className="w-full py-3.5 bg-blue-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40 disabled:cursor-not-allowed">
+              {haciendoTraspaso ? 'Trasladando…' : 'Mover'}
             </button>
           </div>
         </div>
@@ -886,9 +923,9 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 </div>
               </div>
             </div>
-            <button onClick={hacerSalida} disabled={!sacarForm.cantidad || n(sacarForm.cantidad) <= 0}
-              className="w-full py-3.5 bg-amber-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">
-              Sacar del congelador
+            <button onClick={hacerSalida} disabled={haciendoSalida || !sacarForm.cantidad || n(sacarForm.cantidad) <= 0}
+              className="w-full py-3.5 bg-amber-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40 disabled:cursor-not-allowed">
+              {haciendoSalida ? 'Sacando…' : 'Sacar del congelador'}
             </button>
           </div>
         </div>
