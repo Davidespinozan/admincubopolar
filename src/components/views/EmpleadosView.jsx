@@ -9,29 +9,36 @@ export function EmpleadosView({ data, actions }) {
   const empty = { nombre: "", rfc: "", curp: "", nss: "", puesto: "", depto: "Ventas y Distribución", salarioDiario: "", fechaIngreso: todayISO(), jornada: "Diurna" };
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
-  const emps = data.empleados || [];
+  const emps = Array.isArray(data?.empleados) ? data.empleados.filter(e => e && typeof e === 'object') : [];
 
   // Cuenta movimientos asociados a cada empleado para decidir si se puede DELETE.
   // BD bloquea con FK 23503 si hay rutas (chofer/ayudante), órdenes (vendedor) o nómina.
   const empleadosConHistorico = useMemo(() => {
     const map = {};
-    const bump = (eid) => {
-      const k = String(eid || '');
-      if (k) map[k] = (map[k] || 0) + 1;
-    };
-    (data?.rutas || []).forEach(r => {
-      if (!r) return;
-      bump(r.choferId || r.chofer_id);
-      bump(r.ayudanteId || r.ayudante_id);
-    });
-    (data?.ordenes || []).forEach(o => {
-      if (!o) return;
-      bump(o.vendedor_id || o.vendedorId);
-    });
-    (data?.nominaRecibos || []).forEach(rec => {
-      if (!rec) return;
-      bump(rec.empleadoId || rec.empleado_id);
-    });
+    try {
+      const bump = (eid) => {
+        const k = String(eid || '');
+        if (k) map[k] = (map[k] || 0) + 1;
+      };
+      const rutas = Array.isArray(data?.rutas) ? data.rutas : [];
+      const ordenes = Array.isArray(data?.ordenes) ? data.ordenes : [];
+      const nomR = Array.isArray(data?.nominaRecibos) ? data.nominaRecibos : [];
+      for (const r of rutas) {
+        if (!r || typeof r !== 'object') continue;
+        bump(r.choferId ?? r.chofer_id);
+        bump(r.ayudanteId ?? r.ayudante_id);
+      }
+      for (const o of ordenes) {
+        if (!o || typeof o !== 'object') continue;
+        bump(o.vendedor_id ?? o.vendedorId);
+      }
+      for (const rec of nomR) {
+        if (!rec || typeof rec !== 'object') continue;
+        bump(rec.empleadoId ?? rec.empleado_id);
+      }
+    } catch (err) {
+      console.error('[EmpleadosView] fallo computando empleadosConHistorico:', err);
+    }
     return map;
   }, [data?.rutas, data?.ordenes, data?.nominaRecibos]);
 
@@ -94,6 +101,7 @@ export function EmpleadosView({ data, actions }) {
   };
 
   const filtered = emps.filter(e => {
+    if (!e) return false;
     const q = search.toLowerCase();
     const ms = !q || s(e.nombre).toLowerCase().includes(q) || s(e.puesto).toLowerCase().includes(q) || s(e.depto).toLowerCase().includes(q);
     const inactivo = s(e.estatus) === "Inactivo";
@@ -102,7 +110,7 @@ export function EmpleadosView({ data, actions }) {
       || (filterEstatus === "Inactivos" && inactivo);
     return ms && me;
   });
-  const deptos = [...new Set(emps.map(e => s(e.depto)))];
+  const deptos = [...new Set(emps.map(e => s(e?.depto)).filter(Boolean))];
 
   return (<div className="space-y-4">
     {ConfirmEl}
@@ -120,7 +128,7 @@ export function EmpleadosView({ data, actions }) {
     </div>
 
     {deptos.map(d => {
-      const dEmps = filtered.filter(e => s(e.depto) === d);
+      const dEmps = filtered.filter(e => e && s(e.depto) === d);
       if (dEmps.length === 0) return null;
       return (<div key={d}>
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-4 mb-2">{d} ({dEmps.length})</h3>
