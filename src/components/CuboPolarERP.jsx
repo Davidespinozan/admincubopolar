@@ -67,9 +67,9 @@ const AREAS = [
   },
   { id: "finanzas", label: "Finanzas", icon: "Wallet", color: "amber",
     items: [
-      { id: "contabilidad", label: "Movimientos de dinero", icon: "Calculator" },
-      { id: "cobros", label: "Te deben", icon: "DollarSign" },
-      { id: "proveedores", label: "Debes", icon: "CreditCard" },
+      { id: "contabilidad", label: "Movimientos", icon: "Calculator" },
+      { id: "cobros", label: "Por cobrar", icon: "DollarSign" },
+      { id: "proveedores", label: "Por pagar", icon: "CreditCard" },
       { id: "costos", label: "Costos", icon: "Receipt" },
       { id: "facturacion", label: "Facturación", icon: "FileText" },
       { id: "conciliacion", label: "Cortes", icon: "ClipboardCheck" },
@@ -79,8 +79,8 @@ const AREAS = [
   { id: "equipo", label: "Equipo", icon: "Users", color: "purple",
     items: [
       { id: "empleados", label: "Empleados", icon: "UserCheck" },
-      { id: "kardex", label: "Historial inventario", icon: "ClipboardCheck" },
-      { id: "auditoria", label: "Historial sistema", icon: "Shield" },
+      { id: "kardex", label: "Kardex", icon: "ClipboardCheck" },
+      { id: "auditoria", label: "Auditoría", icon: "Shield" },
       { id: "configuracion", label: "Ajustes", icon: "Settings" },
     ]
   },
@@ -394,8 +394,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                 <span className="mt-0.5 max-w-full truncate px-0.5 text-[11px] font-semibold leading-none sm:text-xs">{
                   id === "dashboard" ? "Inicio" :
                   id === "cobros" ? "Cobrar" :
-                  id === "produccion" ? "Prod." :
-                  item.label.split(" ")[0]
+                  item.label
                 }</span>
               </button>
             );
@@ -426,7 +425,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                         <button key={item.id} onClick={() => go(item.id)}
                           className={`flex min-h-[68px] flex-col items-center justify-center rounded-[18px] py-3 transition-colors ${active ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-slate-50 text-slate-600 active:bg-slate-100'}`}>
                           <Ic />
-                          <span className="text-[10px] font-semibold mt-1.5 leading-tight text-center truncate max-w-full px-1">{item.label.split(" ")[0]}</span>
+                          <span className="text-[10px] font-semibold mt-1.5 leading-tight text-center truncate max-w-full px-1">{item.label}</span>
                         </button>
                       );
                     })}
