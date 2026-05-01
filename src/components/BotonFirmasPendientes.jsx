@@ -169,7 +169,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
 
       {/* Dropdown con lista */}
       {abierto && (
-        <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-[20px] shadow-[0_20px_50px_rgba(3,14,19,0.18)] border border-slate-200 overflow-hidden z-50">
+        <div className="absolute top-full right-0 mt-2 w-[calc(100vw-32px)] sm:w-80 bg-white rounded-[20px] shadow-[0_20px_50px_rgba(3,14,19,0.18)] border border-slate-200 overflow-hidden z-50">
           <div className="bg-slate-900 px-4 py-3 text-white">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-200">
               {esAdmin ? 'Esperando firma de Producción' : 'Firmas de carga'}
@@ -266,7 +266,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
             </p>
 
             {/* Resumen de carga */}
-            <div className="bg-slate-50 rounded-xl p-3 mb-3 max-h-32 overflow-y-auto">
+            <div className="bg-slate-50 rounded-xl p-3 mb-3 max-h-40 sm:max-h-32 overflow-y-auto">
               <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Carga reportada</p>
               {(() => {
                 const cargaReal = (rutaSeleccionada.carga_real && typeof rutaSeleccionada.carga_real === 'object') ? rutaSeleccionada.carga_real : {};
@@ -302,7 +302,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
                   ctxRef.current = ctx;
                 }
               }}
-              className="w-full h-40 border-2 border-slate-300 rounded-xl bg-white touch-none"
+              className="w-full h-48 sm:h-40 border-2 border-slate-300 rounded-xl bg-white touch-none"
               onMouseDown={e => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 ctxRef.current.beginPath();
