@@ -11,6 +11,14 @@ const REGIMENES = ["Régimen General", "Régimen Simplificado", "Sin obligacione
 const USOS_CFDI = ["G01", "G03", "S01", "P01"];
 const CHOFER_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf4f6_0%,#e3eef1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
+// Extrae primer secuencia de 10+ dígitos del campo contacto libre.
+// Retorna null si no hay número parseable.
+function extraerTelefono(contacto) {
+  if (!contacto) return null;
+  const match = String(contacto).match(/\d{10,}/);
+  return match ? match[0] : null;
+}
+
 export default function ChoferView({ user, data, actions, onLogout }) {
   const [stepOverride, setStepOverride] = useState(null);
   const [confirmadoCarga, setConfirmadoCarga] = useState(false);
@@ -171,8 +179,11 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       const entregada = s(o.estatus) === 'Entregada' || entregas.some(e => String(e.ordenId) === String(o.id));
       const direccion = cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '';
       const esCredito = s(o.tipo_cobro || o.tipoCobro) === 'Credito';
+      const contacto = s(cli?.contacto || '');
+      const nombreComercial = s(cli?.nombre_comercial || cli?.nombreComercial || '');
       return { ...o, clienteNombre, items, totalCalc: total || n(o.total), entregada,
-        latitud: cli?.latitud, longitud: cli?.longitud, direccion, esCredito };
+        latitud: cli?.latitud, longitud: cli?.longitud, direccion, esCredito,
+        contacto, nombreComercial };
     });
   }, [misOrdenes, data.clientes, entregas, getPrice]);
 
@@ -928,6 +939,48 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 </div>
                 <p className="text-lg font-extrabold text-slate-800">{fmtMoney(o.totalCalc)}</p>
               </div>
+              {(o.direccion || o.contacto) && (
+                <div className="space-y-1.5 mb-3">
+                  {o.direccion && (
+                    <div className="flex items-start gap-1.5 text-xs text-slate-600">
+                      <span className="mt-0.5 flex-shrink-0 text-slate-500">📍</span>
+                      <span className="line-clamp-2">{o.direccion}</span>
+                    </div>
+                  )}
+                  {o.contacto && (
+                    <div className="flex items-center gap-1.5 text-xs text-slate-600 flex-wrap">
+                      <span className="flex-shrink-0">👤</span>
+                      <span className="flex-1 min-w-0 truncate">{o.contacto}</span>
+                      {(() => {
+                        const tel = extraerTelefono(o.contacto);
+                        if (!tel) return null;
+                        return (
+                          <div className="flex gap-1.5">
+                            <a
+                              href={`tel:${tel}`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="px-2 py-1 bg-slate-900 text-white text-[10px] font-bold rounded-md flex items-center gap-1"
+                              aria-label="Llamar"
+                            >
+                              📞 Llamar
+                            </a>
+                            <a
+                              href={`https://wa.me/52${tel}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="px-2 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-md flex items-center gap-1"
+                              aria-label="WhatsApp"
+                            >
+                              💬 WA
+                            </a>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex flex-wrap gap-1 mb-3">
                 {o.items.map((it, i) => <span key={i} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{it.cant}× {it.sku} · ${it.precio}</span>)}
               </div>
