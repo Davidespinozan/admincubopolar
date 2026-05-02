@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, s, n, fmtDate, fmtMoney, useToast } from './viewsCommon';
+import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, EmptyState, s, n, fmtDate, fmtMoney, useToast } from './viewsCommon';
 
 export function FacturacionView({ data, actions }) {
   const toast = useToast();
@@ -62,7 +62,11 @@ const handleReintento = useCallback(async (ordenId) => {
     {/* Pendientes de timbrar */}
     <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5 mb-4">
       <h3 className="text-sm font-bold text-slate-700 mb-4">Pendientes de factura</h3>
-      {(data.facturacionPendiente || []).length===0?<p className="text-sm text-slate-400 text-center py-6">Todo facturado ✓</p>:
+      {(data.facturacionPendiente || []).length===0?
+        <EmptyState
+          message="Aún no hay órdenes facturables"
+          hint="Las órdenes con toggle 'Facturar' activado y entregadas aparecerán aquí para timbrar."
+        />:
       <DataTable columns={[
         {key:"folio",label:"Folio",render:v=><span className="font-mono text-xs font-bold text-blue-600">{s(v)}</span>},
         {key:"cliente",label:"Cliente",bold:true},
@@ -132,7 +136,8 @@ const handleReintento = useCallback(async (ordenId) => {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="bg-blue-50 rounded-xl p-3">
               <p className="text-[10px] font-bold text-blue-400 uppercase mb-1">Emisor</p>
-              <p className="text-sm font-bold text-slate-800">Cubo Polar S.A. de C.V.</p>
+              <p className="text-sm font-bold text-slate-800">{s(data?.configEmpresa?.razonSocial) || 'Cubo Polar S.A. de C.V.'}</p>
+              {data?.configEmpresa?.rfc && <p className="font-mono text-xs text-slate-500 mt-0.5">{s(data.configEmpresa.rfc)}</p>}
             </div>
             <div className="bg-slate-50 rounded-xl p-3">
               <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Receptor</p>
