@@ -7,6 +7,7 @@ import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayl
 import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
 import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion } from './devolucionesLogic';
+import { calcularEsperadoPorRuta, validateCierre, buildCierrePayload, buildPagosSnapshot, fechaCierreDesdeRuta } from './cierreCajaLogic';
 import {
   validateConfirmarCarga,
   validateFirmarCarga,
@@ -79,6 +80,7 @@ const EMPTY = {
   notificaciones: [],
   choferUbicaciones: [],
   devoluciones: [],
+  cierresDiarios: [],
   contabilidad: { ingresos: [], egresos: [] },
   configEmpresa: null,
 };
@@ -126,7 +128,7 @@ export function useSupaStore(userId, userName, userRol) {
         .maybeSingle();
 
       // Tablas opcionales
-      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam, notif, chUbi, devs] = await Promise.all([
+      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam, notif, chUbi, devs, cierres] = await Promise.all([
         safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('empleados').select('*').order('id')),
@@ -144,6 +146,7 @@ export function useSupaStore(userId, userName, userRol) {
         safeRows(supabase.from('notificaciones').select('*').order('id', { ascending: false }).limit(100)),
         safeRows(supabase.from('chofer_ubicaciones').select('*').order('created_at', { ascending: false }).limit(50)),
         safeRows(supabase.from('devoluciones').select('*').order('id', { ascending: false }).limit(200)),
+        safeRows(supabase.from('cierres_diarios').select('*').order('id', { ascending: false }).limit(200)),
       ]);
       const clientes  = cli;
       const productos = prod;
@@ -438,6 +441,17 @@ export function useSupaStore(userId, userName, userRol) {
           ...toCamel(d),
           total: Number(d.total),
         })),
+        cierresDiarios: (cierres || []).map(c => ({
+          ...toCamel(c),
+          esperadoEfectivo: Number(c.esperado_efectivo),
+          esperadoTransferencia: Number(c.esperado_transferencia),
+          esperadoCredito: Number(c.esperado_credito),
+          esperadoTotal: Number(c.esperado_total),
+          contadoEfectivo: Number(c.contado_efectivo),
+          contadoTransferencia: Number(c.contado_transferencia),
+          contadoTotal: Number(c.contado_total),
+          diferencia: Number(c.diferencia),
+        })),
         contabilidad: contabilidadObj,
         configEmpresa: configEmpresaRow ? toCamel(configEmpresaRow) : null,
       });
@@ -499,7 +513,7 @@ export function useSupaStore(userId, userName, userRol) {
       'produccion', 'inventario_mov', 'pagos', 'auditoria',
       'cuartos_frios', 'comodatos', 'leads', 'empleados',
       'movimientos_contables', 'mermas', 'nomina_periodos', 'cuentas_por_cobrar',
-      'cuentas_por_pagar', 'costos_fijos', 'devoluciones',
+      'cuentas_por_pagar', 'costos_fijos', 'devoluciones', 'cierres_diarios',
     ];
     let debounceTimer = null;
     const debouncedFetch = () => {
@@ -3439,6 +3453,136 @@ export function useSupaStore(userId, userName, userRol) {
         } catch (e) {
           console.error('[registrarDevolucion] excepción:', e);
           t()?.error('Error inesperado al registrar devolución');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // ── CIERRE DE CAJA POR RUTA ──
+      // Registra el corte de caja oficial de una ruta. Compara contado
+      // físico (capturado por admin) vs esperado del sistema (suma de
+      // pagos.metodo_pago de las órdenes de la ruta).
+      // UNIQUE(fecha, ruta_id) impide cerrar dos veces la misma ruta.
+      cerrarCajaRuta: async (payload = {}) => {
+        const guard = requireAdmin();
+        if (guard) { t()?.error(guard.error); return guard; }
+
+        const { rutaId, contadoEfectivo, contadoTransferencia, motivoDiferencia, notas } = payload;
+        try {
+          if (!rutaId) return { error: 'Ruta requerida' };
+
+          // 1. SELECT ruta + verificar estatus terminal y que no haya cierre previo
+          const { data: ruta, error: errRuta } = await supabase
+            .from('rutas')
+            .select('id, folio, chofer_id, estatus, fecha_fin, created_at')
+            .eq('id', rutaId)
+            .single();
+          if (errRuta || !ruta) {
+            return { error: errRuta?.message || 'Ruta no encontrada' };
+          }
+          const estTerminales = ['Completada', 'Cerrada'];
+          if (!estTerminales.includes(s(ruta.estatus))) {
+            const msg = `Solo se cierra caja de rutas Completadas o Cerradas (estatus actual: ${s(ruta.estatus)})`;
+            t()?.error(msg);
+            return { error: msg };
+          }
+
+          const fechaCierre = fechaCierreDesdeRuta(ruta);
+
+          // 2. Verificar que NO haya cierre previo (defensa adicional al UNIQUE)
+          const { data: prev, error: errPrev } = await supabase
+            .from('cierres_diarios')
+            .select('id')
+            .eq('ruta_id', rutaId)
+            .eq('fecha', fechaCierre)
+            .maybeSingle();
+          if (errPrev) {
+            console.warn('[cerrarCajaRuta] check cierre previo:', errPrev.message);
+          } else if (prev) {
+            const msg = 'Esta ruta ya tiene cierre de caja registrado para esta fecha';
+            t()?.error(msg);
+            return { error: msg };
+          }
+
+          // 3. SELECT órdenes de la ruta + pagos asociados
+          const { data: ordenesRuta, error: errOrd } = await supabase
+            .from('ordenes')
+            .select('id, folio')
+            .eq('ruta_id', rutaId);
+          if (errOrd) {
+            t()?.error('No se pudieron leer órdenes de la ruta');
+            return { error: errOrd.message };
+          }
+          const ordenIds = (ordenesRuta || []).map(o => o.id);
+          const ordenFolioPorId = Object.fromEntries((ordenesRuta || []).map(o => [String(o.id), s(o.folio)]));
+
+          let pagosDeRuta = [];
+          if (ordenIds.length > 0) {
+            const { data: pagos, error: errPag } = await supabase
+              .from('pagos')
+              .select('id, monto, metodo_pago, orden_id, fecha, created_at')
+              .in('orden_id', ordenIds);
+            if (errPag) {
+              t()?.error('No se pudieron leer pagos de la ruta');
+              return { error: errPag.message };
+            }
+            pagosDeRuta = pagos || [];
+          }
+
+          // 4. Calcular esperado (puro)
+          const esperado = calcularEsperadoPorRuta(pagosDeRuta);
+          const contado = {
+            efectivo: Number(contadoEfectivo || 0),
+            transferencia: Number(contadoTransferencia || 0),
+          };
+
+          // 5. Validar (puro)
+          const validErr = validateCierre({ esperado, contado, motivoDiferencia });
+          if (validErr) {
+            t()?.error(validErr.error);
+            return validErr;
+          }
+
+          // 6. Construir payload + snapshot
+          const pagosSnapshot = buildPagosSnapshot(pagosDeRuta, ordenFolioPorId);
+          const insertPayload = buildCierrePayload({
+            ruta,
+            fechaCierre,
+            esperado,
+            contado,
+            motivoDiferencia,
+            notas,
+            usuario: uname() || 'Admin',
+            pagosSnapshot,
+          });
+
+          // 7. INSERT
+          const { data: cierreRow, error: errIns } = await supabase
+            .from('cierres_diarios')
+            .insert(insertPayload)
+            .select('id, diferencia')
+            .single();
+          if (errIns || !cierreRow) {
+            // 23505 = unique violation (otra invocación ganó la carrera)
+            if (errIns?.code === '23505') {
+              return { error: 'Esta ruta ya tiene cierre de caja registrado para esta fecha' };
+            }
+            console.warn('[cerrarCajaRuta] insert:', errIns?.message);
+            t()?.error('No se pudo registrar el cierre');
+            return { error: errIns?.message || 'Error al registrar cierre' };
+          }
+
+          // 8. Audit
+          const dif = Number(cierreRow.diferencia || 0);
+          const difTxt = dif === 0 ? 'cuadrado' : dif > 0 ? `sobrante $${dif}` : `faltante $${Math.abs(dif)}`;
+          await log('Cierre caja', 'Conciliación',
+            `${s(ruta.folio) || `Ruta ${rutaId}`} (${fechaCierre}) — ${difTxt}${motivoDiferencia ? ` — ${s(motivoDiferencia)}` : ''}`
+          );
+
+          rf();
+          return { cierreId: cierreRow.id, diferencia: dif };
+        } catch (e) {
+          console.error('[cerrarCajaRuta] excepción:', e);
+          t()?.error('Error inesperado al cerrar caja');
           return { error: e?.message || 'Error inesperado' };
         }
       },
