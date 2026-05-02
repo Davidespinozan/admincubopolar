@@ -1035,7 +1035,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               ) : (
                 <label className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
                   <span className="text-lg">📷</span> Foto del comprobante
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f=e.target.files?.[0]; if(f){const r=new FileReader();r.onload=ev=>setFotoTransf(ev.target.result);r.readAsDataURL(f)}}} />
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f=e.target.files?.[0]; if(f){ if(f.size > 5*1024*1024){ showToast('Foto muy grande, máx 5MB','error'); e.target.value=''; return; } const r=new FileReader();r.onload=ev=>setFotoTransf(ev.target.result);r.readAsDataURL(f)}}} />
                 </label>
               )}
             </div>}
@@ -1070,7 +1070,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               ) : (
                 <label className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
                   <span className="text-lg">📷</span> Foto de nota o entrega
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f=e.target.files?.[0]; if(f){const r=new FileReader();r.onload=ev=>setFotoEntrega(ev.target.result);r.readAsDataURL(f)}}} />
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f=e.target.files?.[0]; if(f){ if(f.size > 5*1024*1024){ showToast('Foto muy grande, máx 5MB','error'); e.target.value=''; return; } const r=new FileReader();r.onload=ev=>setFotoEntrega(ev.target.result);r.readAsDataURL(f)}}} />
                 </label>
               )}
             </div>
@@ -1178,7 +1178,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               ) : (
                 <label className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer mb-3">
                   <span className="text-lg">📷</span> Tomar foto de evidencia
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f=e.target.files?.[0]; if(f){const r=new FileReader();r.onload=ev=>setFotoMerma(ev.target.result);r.readAsDataURL(f)}}} />
+                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f=e.target.files?.[0]; if(f){ if(f.size > 5*1024*1024){ showToast('Foto muy grande, máx 5MB','error'); e.target.value=''; return; } const r=new FileReader();r.onload=ev=>setFotoMerma(ev.target.result);r.readAsDataURL(f)}}} />
                 </label>
               )}
             </div>

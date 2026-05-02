@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, lazy, Suspense } from 'react'
 import LoginScreen from './components/Login'
 import CuboPolarERP from './components/CuboPolarERP'
 import { useSupaStore } from './data/supaStore'
+import { supabase } from './lib/supabase'
 
 // Lazy-load role-specific views — reduces initial bundle for admin by ~40%
 const ChoferView = lazy(() => import('./components/ChoferView'))
@@ -26,7 +27,7 @@ function RoleFallback() {
 function App() {
   const [user, setUser] = useState(null)
   const [adminViewAs, setAdminViewAs] = useState(null)
-  const { data, actions, loading, error } = useSupaStore(user?.id, user?.nombre)
+  const { data, actions, loading, error } = useSupaStore(user?.id, user?.nombre, user?.rol)
 
   // ── Detector de offline/online ──
   // Listener global para mostrar banner cuando se cae la red. NO implementa
@@ -178,7 +179,14 @@ function App() {
 
   const isAdmin = user.rol === 'Admin'
   const effectiveRole = adminViewAs || user.rol
-  const handleLogout = () => isAdmin && adminViewAs ? setAdminViewAs(null) : setUser(null)
+  const handleLogout = async () => {
+    if (isAdmin && adminViewAs) {
+      setAdminViewAs(null)
+      return
+    }
+    try { await supabase?.auth?.signOut() } catch { /* best-effort: continuar aunque falle */ }
+    setUser(null)
+  }
 
   const adminBar = isAdmin && adminViewAs ? (
     <div className="fixed top-0 left-0 right-0 z-[9999] border-b border-white/10 bg-slate-950/92 px-4 py-2 text-cyan-50 erp-shell-blur shadow-[0_14px_30px_rgba(8,20,27,0.28)]">
@@ -237,7 +245,7 @@ function App() {
       user={user}
       data={data}
       actions={actions}
-      onLogout={() => setUser(null)}
+      onLogout={handleLogout}
       onViewAs={isAdmin ? setAdminViewAs : null}
     />
   )

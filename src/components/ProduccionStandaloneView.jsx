@@ -101,6 +101,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const registrarMerma = async () => {
     if (!mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMermaFile) return;
+    if (fotoMermaFile.size > 5 * 1024 * 1024) {
+      showToast('Foto muy grande, máx 5MB');
+      return;
+    }
     const cant = n(mForm.cantidad);
     const authOwner = s(user?.auth_id || user?.id || 'usuario');
     const ext = (fotoMermaFile.name?.split('.').pop() || 'jpg').toLowerCase();
@@ -348,6 +352,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     const merma = n(form.mermaCantidad);
     if (merma <= 0 || merma > cant) return;
     if (!fotoMermaProdFile) return;
+    if (fotoMermaProdFile.size > 5 * 1024 * 1024) {
+      showToast('Foto muy grande, máx 5MB');
+      return;
+    }
 
     setGuardandoProd(true);
     try {

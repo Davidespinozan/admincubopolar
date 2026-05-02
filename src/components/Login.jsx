@@ -27,37 +27,20 @@ export default function LoginScreen({ onLogin }) {
 
       // Auth OK — get user profile (nombre + rol) from usuarios table
       const { data: perfiles } = await supabase.from('usuarios').select('*').eq('email', email.trim().toLowerCase());
-      
+
       if (perfiles && perfiles.length > 0) {
-        // Has profile with rol assigned
         onLogin({
           ...perfiles[0],
           auth_id: perfiles[0]?.auth_id || authData.user.id,
           authUserId: authData.user.id,
         });
       } else {
-        // Auto-create profile
-        const profile = {
-          nombre: email.split('@')[0],
-          email: email.trim().toLowerCase(),
-          auth_id: authData.user.id,
-          rol: 'Sin asignar',
-          estatus: 'Activo',
-        };
-        
-        const { data: created, error: createErr } = await supabase.from('usuarios').insert(profile).select().single();
-        
-        if (created) {
-          onLogin({
-            ...created,
-            auth_id: created?.auth_id || authData.user.id,
-            authUserId: authData.user.id,
-          });
-        } else {
-          // Table might not exist — still let them in
-          console.warn("Could not create profile:", createErr?.message);
-          onLogin({ id: authData.user.id, ...profile, auth_id: authData.user.id, authUserId: authData.user.id });
-        }
+        // Sin perfil → cuenta no autorizada. Cerramos la sesión Supabase
+        // para que el JWT no quede activo en localStorage.
+        await supabase.auth.signOut();
+        setErr("Cuenta no autorizada. Contacta al administrador.");
+        setLoading(false);
+        return;
       }
 
     } catch (e) {

@@ -80,7 +80,7 @@ const EMPTY = {
   configEmpresa: null,
 };
 
-export function useSupaStore(userId, userName) {
+export function useSupaStore(userId, userName, userRol) {
   const [data, setData] = useState(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -88,6 +88,8 @@ export function useSupaStore(userId, userName) {
   uidRef.current = userId;
   const userNameRef = useRef(userName || '');
   userNameRef.current = userName || '';
+  const userRolRef = useRef(userRol || '');
+  userRolRef.current = userRol || '';
 
   const toast = useToast();
   const toastRef = useRef(toast);
@@ -515,10 +517,17 @@ export function useSupaStore(userId, userName) {
   if (!actionsRef.current) {
     const uid   = () => uidRef.current;
     const uname = () => userNameRef.current || 'Usuario';
+    const urol  = () => userRolRef.current || '';
     const rf    = () => fetchAll();
     const t     = () => toastRef.current;
     const log   = (accion, modulo, detalle) =>
       supabase.from('auditoria').insert({ usuario: uname(), accion, modulo, detalle }).then(() => {});
+
+    // Defensa en profundidad: además de RLS, valida rol en cliente para
+    // acciones destructivas. Devuelve el shape estándar { error } si rechaza.
+    const requireAdmin = () => urol() === 'Admin'
+      ? null
+      : { error: 'Solo Admin puede ejecutar esta acción' };
 
     // Helper: insert notification (fire-and-forget, never blocks caller)
     const notify = (tipo, titulo, mensaje, icono, referencia) =>
@@ -3099,6 +3108,8 @@ export function useSupaStore(userId, userName) {
       },
 
       deleteEmpleado: async (id) => {
+        const guard = requireAdmin();
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           const { error } = await supabase.from('empleados').delete().eq('id', id);
           if (error) {
@@ -3669,6 +3680,8 @@ export function useSupaStore(userId, userName) {
       },
 
       updateConfigEmpresa: async (payload = {}) => {
+        const guard = requireAdmin();
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           const update = {};
           if (payload.razonSocial      !== undefined) update.razon_social      = String(payload.razonSocial || '').trim();
@@ -3712,6 +3725,8 @@ export function useSupaStore(userId, userName) {
       // antes de operar con datos reales.
       // Requiere confirmacion === 'RESETEAR' para activarse.
       resetSistema: async ({ confirmacion, motivo = '' } = {}) => {
+        const guard = requireAdmin();
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           if (confirmacion !== 'RESETEAR') {
             return { error: 'Confirmación inválida. Debes escribir RESETEAR.' };
@@ -3763,12 +3778,10 @@ export function useSupaStore(userId, userName) {
             .neq('id', 0);
           if (errProd) errores.push({ tabla: 'productos.stock', error: errProd.message });
 
-          // Borrar entradas previas de auditoria DESPUÉS de los resets
-          // (queda solo la entry del reset que insertamos a continuación)
-          const { error: errAud } = await supabase.from('auditoria').delete().neq('id', 0);
-          if (errAud) errores.push({ tabla: 'auditoria', error: errAud.message });
+          // Auditoria NO se borra: cumplimiento SAT y trazabilidad histórica.
+          // El reset solo agrega la entrada de RESET_SISTEMA al historial.
 
-          // Audit log del reset (única entrada que sobrevive)
+          // Audit log del reset
           const detalle = JSON.stringify({
             motivo: motivo || 'Sin motivo',
             tablas_afectadas: tablas,
