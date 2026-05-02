@@ -20,6 +20,19 @@ export function ContabilidadView({ data, actions }) {
 
   const openNew = (tipo) => { setForm({ ...empty, tipo }); setErrors({}); setModal("new"); };
 
+  const openEdit = (m) => {
+    const tipo = s(m._tipo) || s(m.tipo) || 'Egreso';
+    setForm({
+      tipo,
+      categoria: s(m.categoria) || (tipo === 'Ingreso' ? 'Ventas' : 'Proveedores'),
+      concepto: s(m.concepto),
+      monto: String(n(m.monto)),
+      fecha: s(m.fecha) || todayISO(),
+    });
+    setErrors({});
+    setModal(m);
+  };
+
   const save = async () => {
     if (saving) return;
     const e = {};
@@ -28,8 +41,20 @@ export function ContabilidadView({ data, actions }) {
     if (Object.keys(e).length) { setErrors(e); return; }
     setSaving(true);
     try {
-      await actions.addMovContable({ ...form, monto: parseFloat(form.monto) });
-      toast?.success(form.tipo === "Ingreso" ? "Ingreso registrado" : "Gasto registrado");
+      const payload = { ...form, monto: parseFloat(form.monto) };
+      let err;
+      if (modal === "new") {
+        err = await actions.addMovContable(payload);
+      } else {
+        err = await actions.updateMovContable(modal.id, payload);
+      }
+      if (err && (err.error || err.message || err.code)) {
+        toast?.error(err.error || err.message || 'No se pudo guardar');
+        return;
+      }
+      toast?.success(modal === "new"
+        ? (form.tipo === "Ingreso" ? "Ingreso registrado" : "Gasto registrado")
+        : "Movimiento actualizado");
       setModal(null);
     } catch(ex) {
       toast?.error('Error: ' + (ex?.message || 'No se pudo guardar'));
@@ -104,7 +129,8 @@ export function ContabilidadView({ data, actions }) {
               <span className="text-sm font-semibold text-slate-700 min-w-0 truncate">{s(m.concepto)}</span>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className={`text-sm font-bold ${m._tipo === "Ingreso" ? "text-emerald-700" : "text-red-600"}`}>{(m._tipo === "Ingreso" ? "+" : "-") + fmtMoney(m.monto)}</span>
-                <button onClick={() => askConfirm('Eliminar movimiento','¿Eliminar este movimiento contable?',()=>actions.deleteMovContable(m.id),true)} className="text-red-400 hover:text-red-600 text-xs p-1">✕</button>
+                <button onClick={() => openEdit(m)} title="Editar" aria-label="Editar movimiento" className="text-slate-500 hover:text-blue-600 text-sm p-1">✏️</button>
+                <button onClick={() => askConfirm('Eliminar movimiento','¿Eliminar este movimiento contable?',()=>actions.deleteMovContable(m.id),true)} className="text-red-400 hover:text-red-600 text-xs p-1" title="Eliminar" aria-label="Eliminar movimiento">✕</button>
               </div>
             </div>
             <div className="flex justify-between mt-0.5">
@@ -117,14 +143,14 @@ export function ContabilidadView({ data, actions }) {
       {!showAll && todos.length > PAGE_SIZE && <button onClick={() => setShowAll(true)} className="mt-2 w-full text-center text-xs text-blue-600 font-semibold py-2">Ver todos ({todos.length} movimientos)</button>}
     </div>
 
-    <Modal open={!!modal} onClose={() => setModal(null)} title={form.tipo === "Ingreso" ? "Registrar ingreso" : "Registrar gasto"}>
+    <Modal open={!!modal} onClose={() => setModal(null)} title={modal === "new" ? (form.tipo === "Ingreso" ? "Registrar ingreso" : "Registrar gasto") : `Editar ${form.tipo === "Ingreso" ? "ingreso" : "gasto"}`}>
       <div className="space-y-3">
         <FormInput label="Fecha" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} />
         <FormSelect label="Categoría" options={form.tipo === "Ingreso" ? CATS_INGRESO : CATS_EGRESO} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })} />
         <FormInput label="Concepto *" value={form.concepto} onChange={e => setForm({ ...form, concepto: e.target.value })} placeholder="Ej: Pago de diesel ruta norte" error={errors.concepto} />
         <FormInput label="Monto *" type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} placeholder="0.00" error={errors.monto} />
       </div>
-      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save} loading={saving}>{form.tipo === "Ingreso" ? "Registrar ingreso" : "Registrar gasto"}</FormBtn></div>
+      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save} loading={saving}>{modal === "new" ? (form.tipo === "Ingreso" ? "Registrar ingreso" : "Registrar gasto") : "Guardar cambios"}</FormBtn></div>
     </Modal>
   </div>);
 }
