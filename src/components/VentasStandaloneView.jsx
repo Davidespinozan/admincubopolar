@@ -150,23 +150,18 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                 <EmptyState
                   message="Sin órdenes pendientes"
                   hint="Cuando crees una venta a crédito o se asigne entrega, aparecerá aquí"
-                  cta="+ Nueva venta"
-                  onCta={abrirNuevaVenta}
                 />
               )}
               {tab === "hoy" && (
                 <EmptyState
                   message="Aún no hay ventas hoy"
-                  cta="+ Nueva venta"
-                  onCta={abrirNuevaVenta}
+                  hint="Usa el botón verde de arriba para registrar la primera del día"
                 />
               )}
               {tab === "todas" && (
                 <EmptyState
                   message="No has hecho ventas todavía"
-                  hint="Crea tu primera venta para empezar"
-                  cta="+ Nueva venta"
-                  onCta={abrirNuevaVenta}
+                  hint="Usa el botón verde de arriba para crear tu primera venta"
                 />
               )}
             </>
