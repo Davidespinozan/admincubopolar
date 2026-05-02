@@ -17,6 +17,8 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
 
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
+  const dropdownRef = useRef(null);
+  const triggerRef = useRef(null);
 
   const puedeFirmar = user?.rol === 'Producción' || user?.rol === 'Admin';
   const esProduccion = user?.rol === 'Producción';
@@ -77,6 +79,56 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
       }
     }
   }, [rutasPendientes, puedeFirmar, rutaSeleccionada]);
+
+  // Click fuera del dropdown + Escape → cerrar.
+  // Listener se registra en el siguiente frame (rAF) para evitar que el
+  // mismo click que abrió el dropdown lo cierre inmediatamente.
+  useEffect(() => {
+    if (!abierto) return;
+    let cancelado = false;
+    const handleClickOutside = (e) => {
+      const dd = dropdownRef.current;
+      const trigger = triggerRef.current;
+      if (!dd) return;
+      if (dd.contains(e.target)) return;
+      if (trigger && trigger.contains(e.target)) return;
+      setAbierto(false);
+    };
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') setAbierto(false);
+    };
+    const raf = requestAnimationFrame(() => {
+      if (cancelado) return;
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleEscape);
+    });
+    return () => {
+      cancelado = true;
+      cancelAnimationFrame(raf);
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [abierto]);
+
+  // Escape para los 2 modales internos (advertenciaAdmin + rutaSeleccionada).
+  // Cuando hay firma en curso (firmando=true), Escape NO cierra para evitar
+  // que el usuario crea que canceló cuando la firma ya está enviándose.
+  useEffect(() => {
+    const algunoAbierto = !!advertenciaAdmin || !!rutaSeleccionada;
+    if (!algunoAbierto) return;
+    if (firmando) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (rutaSeleccionada) {
+        setRutaSeleccionada(null);
+        setFirmaTienePuntos(false);
+      } else if (advertenciaAdmin) {
+        setAdvertenciaAdmin(null);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [advertenciaAdmin, rutaSeleccionada, firmando]);
 
   if (!puedeFirmar) return null;
 
@@ -150,6 +202,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
       {!mostrarBannerUrgente && (
         <>
       <button
+        ref={triggerRef}
         onClick={() => setAbierto(!abierto)}
         className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/8 border border-white/10 text-cyan-200 hover:bg-white/12 transition-colors"
         title="Firmas pendientes"
@@ -169,7 +222,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
 
       {/* Dropdown con lista */}
       {abierto && (
-        <div className="absolute top-full right-0 mt-2 w-[calc(100vw-32px)] sm:w-80 bg-white rounded-[20px] shadow-[0_20px_50px_rgba(3,14,19,0.18)] border border-slate-200 overflow-hidden z-50">
+        <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-[calc(100vw-32px)] sm:w-80 bg-white rounded-[20px] shadow-[0_20px_50px_rgba(3,14,19,0.18)] border border-slate-200 overflow-hidden z-50">
           <div className="bg-slate-900 px-4 py-3 text-white">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-200">
               {esAdmin ? 'Esperando firma de Producción' : 'Firmas de carga'}

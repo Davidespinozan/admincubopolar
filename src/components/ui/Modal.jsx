@@ -1,8 +1,20 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Icons } from './Icons';
 import { BtnSpinner } from './Skeleton';
 
-export default function Modal({ open, onClose, title, wide, children }) {
+export default function Modal({ open, onClose, title, wide, children, closeOnEscape = true }) {
+  // Cierre con tecla Escape. Default activo. Componentes que tengan
+  // saving en curso o forms grandes a medio llenar pueden pasar
+  // closeOnEscape={false} (o closeOnEscape={!saving}) para bloquearlo.
+  useEffect(() => {
+    if (!open || !closeOnEscape) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, closeOnEscape, onClose]);
+
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[90] flex items-end md:items-center justify-center" onClick={onClose}>
@@ -89,6 +101,18 @@ export function FormBtn({ children, primary, danger, ghost, onClick, disabled, l
 // Usage: <ConfirmDialog open={showConfirm} onClose={()=>set(false)} onConfirm={doDelete} title="..." message="..." danger />
 export function ConfirmDialog({ open, onClose, onConfirm, title, message, confirmLabel, danger }) {
   const [loading, setLoading] = useState(false);
+  // Escape cancela. NO ejecuta onConfirm (no hay riesgo de borrado accidental).
+  // Si hay un onConfirm async corriendo (loading=true), Escape no cierra para
+  // evitar que el usuario crea que canceló cuando ya se está ejecutando.
+  useEffect(() => {
+    if (!open || loading) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, loading, onClose]);
+
   if (!open) return null;
   const handleConfirm = async () => {
     setLoading(true);
