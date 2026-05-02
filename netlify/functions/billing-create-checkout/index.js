@@ -47,16 +47,27 @@ export const handler = async (event) => {
         line_items: buildStripeLineItems(),
       });
 
-      upsertPaymentIntent({
-        orden_id: ordenId,
-        provider: 'stripe',
-        provider_reference: session.id,
-        status: session.status || 'open',
-        amount: canonicalAmount,
-        currency,
-        checkout_url: session.url,
-        raw_payload: session,
-      }).catch(() => {});
+      // Persistencia bloqueante: si falla, el shortUrl /pagar/:id no
+      // funciona después. Mejor fallar ruidosamente que entregar un link
+      // que se rompe en silencio.
+      try {
+        await upsertPaymentIntent({
+          orden_id: ordenId,
+          provider: 'stripe',
+          provider_reference: session.id,
+          status: session.status || 'open',
+          amount: canonicalAmount,
+          currency,
+          checkout_url: session.url,
+          raw_payload: session,
+        });
+      } catch (persistErr) {
+        console.error('[billing-create-checkout] persistencia stripe falló:', persistErr?.message || persistErr);
+        return serverError(
+          'Checkout creado pero no se pudo guardar. Reintenta o usa el link directo.',
+          persistErr?.message || String(persistErr)
+        );
+      }
 
       return ok({ provider: 'stripe', checkoutUrl: session.url, reference: session.id });
     }
@@ -88,16 +99,24 @@ export const handler = async (event) => {
         },
       });
 
-      upsertPaymentIntent({
-        orden_id: ordenId,
-        provider: 'mercadopago',
-        provider_reference: String(result.id),
-        status: result.status || 'pending',
-        amount: canonicalAmount,
-        currency,
-        checkout_url: result.init_point || result.sandbox_init_point || null,
-        raw_payload: result,
-      }).catch(() => {});
+      try {
+        await upsertPaymentIntent({
+          orden_id: ordenId,
+          provider: 'mercadopago',
+          provider_reference: String(result.id),
+          status: result.status || 'pending',
+          amount: canonicalAmount,
+          currency,
+          checkout_url: result.init_point || result.sandbox_init_point || null,
+          raw_payload: result,
+        });
+      } catch (persistErr) {
+        console.error('[billing-create-checkout] persistencia mercadopago falló:', persistErr?.message || persistErr);
+        return serverError(
+          'Checkout creado pero no se pudo guardar. Reintenta o usa el link directo.',
+          persistErr?.message || String(persistErr)
+        );
+      }
 
       return ok({
         provider: 'mercadopago',
