@@ -5,6 +5,7 @@ import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden } from './ordenLogic';
 import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
+import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
 import {
   validateConfirmarCarga,
   validateFirmarCarga,
@@ -1400,21 +1401,100 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       updateProduccion: async (id, fields) => {
-        const allowed = ['turno','maquina','sku','cantidad','estatus'];
-        const upd = {};
-        for (const k of allowed) if (fields[k] !== undefined) upd[k] = fields[k];
-        if (upd.cantidad) upd.cantidad = Number(upd.cantidad);
+        // SKU NO es editable: cambiar SKU requeriría revertir stock. Si
+        // admin se equivoca, debe Eliminar (con reverso) y volver a registrar.
+        // Cantidad sí editable pero NO toca stock — admin ajusta manualmente
+        // via InventarioView si la corrección lo amerita.
+        // Construcción del payload pura — extraída a produccionLogic.
+        const upd = buildUpdateFieldsProduccion(fields);
+        if (!upd) return { error: 'Nada que actualizar' };
         const { error } = await supabase.from('produccion').update(upd).eq('id', id);
         if (error) { t()?.error('Error al actualizar producción'); return error; }
-        log('Editar', 'Producción', `ID ${id}`);
+        log('Editar', 'Producción', `ID ${id} — ${Object.keys(upd).join(', ')}`);
         rf();
       },
 
+      // Borra producción regresando el stock al cuarto frío disponible
+      // (FIFO inverso multi-cuarto). Si el stock ya se consumió y no hay
+      // suficiente disponible, la migración 047 hace RAISE EXCEPTION y
+      // la eliminación falla con mensaje claro.
       deleteProduccion: async (id) => {
-        const { error } = await supabase.from('produccion').delete().eq('id', id);
-        if (error) { t()?.error('Error al eliminar registro de producción'); return error; }
-        log('Eliminar', 'Producción', `ID ${id}`);
-        rf();
+        try {
+          if (!id) return { error: 'Producción requerida' };
+
+          // 1. SELECT producción
+          const { data: prod, error: errSel } = await supabase
+            .from('produccion')
+            .select('id, folio, sku, cantidad, tipo')
+            .eq('id', id)
+            .single();
+          if (errSel || !prod) {
+            return { error: errSel?.message || 'Producción no encontrada' };
+          }
+
+          const sku = s(prod.sku);
+          const cant = n(prod.cantidad);
+          const folio = s(prod.folio) || `ID ${id}`;
+          // Las transformaciones tienen tipo='Transformacion' y otra lógica
+          // de stock; aquí solo manejamos producción normal.
+          const esTransformacion = s(prod.tipo) === 'Transformacion';
+
+          // 2. Borrado sin reverso si no hay nada que revertir
+          if (esTransformacion || !sku || cant <= 0) {
+            const { error: errDel } = await supabase.from('produccion').delete().eq('id', id);
+            if (errDel) { t()?.error('Error al eliminar producción'); return { error: errDel.message }; }
+            await log('Eliminar (sin reverso)', 'Producción', `${folio} — ${esTransformacion ? 'transformación' : 'sin cantidad/SKU'}`);
+            rf();
+            return undefined;
+          }
+
+          // 3. FIFO inverso: distribuir el descuento entre cuartos con stock
+          const { data: cuartos, error: errCfs } = await supabase
+            .from('cuartos_frios')
+            .select('id, nombre, stock')
+            .order('id');
+          if (errCfs) {
+            t()?.error('No se pudieron leer cuartos fríos');
+            return { error: errCfs.message };
+          }
+          // Distribución pura — extraída a produccionLogic.
+          const { changes, faltante } = calcReversoChangesProduccion(
+            { sku, cantidad: cant, folio },
+            cuartos || [],
+            uname() || 'Admin'
+          );
+          if (faltante > 0) {
+            const msg = `No se puede eliminar: faltan ${faltante} ${sku} en cuartos fríos (probablemente ya se vendió o salió).`;
+            t()?.error(msg);
+            return { error: msg };
+          }
+
+          // 4. Aplicar reverso
+          if (changes.length > 0) {
+            const { error: errRpc } = await supabase.rpc('update_stocks_atomic', { p_changes: changes });
+            if (errRpc) {
+              console.warn('[deleteProduccion] rpc update_stocks_atomic:', errRpc.message);
+              t()?.error('No se pudo regresar el stock — producción NO eliminada');
+              return { error: 'No se pudo regresar el stock — producción NO eliminada. ' + (errRpc.message || '') };
+            }
+          }
+
+          // 5. Borrar la fila
+          const { error: errDel } = await supabase.from('produccion').delete().eq('id', id);
+          if (errDel) {
+            console.warn('[deleteProduccion] CRÍTICO: stock revertido pero producción no se pudo borrar:', errDel);
+            t()?.error('Stock regresado pero la producción no se pudo borrar. Revísalo en Supabase.');
+            return { error: 'Stock regresado pero la producción no se pudo borrar. Revísalo en Supabase.' };
+          }
+
+          await log('Eliminar con reverso', 'Producción', `${folio} — ${cant}×${sku}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[deleteProduccion] excepción:', e);
+          t()?.error('Error inesperado al eliminar producción');
+          return { error: e?.message || 'Error inesperado' };
+        }
       },
 
       producirYCongelar: async (p) => {
