@@ -18,3 +18,4 @@ export { ContabilidadView } from './ContabilidadView';
 export { CobrosView } from './CobrosView';
 export { CostosView } from './CostosView';
 export { CuentasPorPagarView } from './CuentasPorPagarView';
+export { DevolucionesView } from './DevolucionesView';

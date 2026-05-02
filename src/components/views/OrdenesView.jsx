@@ -1,6 +1,7 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormBtn, useConfirm, s, fmtDate, fmtMoney, useDebounce, useToast, reporteVentas, extraerTelefono, PAGE_SIZE, Paginator } from './viewsCommon';
 import NuevaVentaModal from '../NuevaVentaModal';
 import EditarVentaModal from '../EditarVentaModal';
+import DevolucionModal from '../DevolucionModal';
 
 export function OrdenesView({ data, actions, user }) {
   const toast = useToast();
@@ -10,6 +11,7 @@ export function OrdenesView({ data, actions, user }) {
   const [cancelarOrden, setCancelarOrden] = useState(null);
   const [motivoCancelar, setMotivoCancelar] = useState('');
   const [cancelando, setCancelando] = useState(false);
+  const [devolverOrden, setDevolverOrden] = useState(null);
   const [search, setSearch] = useState("");
   const [filterEst, setFilterEst] = useState("activas"); // activas | todas | <estatus>
   const [page, setPage] = useState(0);
@@ -201,6 +203,27 @@ export function OrdenesView({ data, actions, user }) {
                 <span className="text-base leading-none opacity-50">⊘</span>
               </button>
             )}
+            {(s(row.estatus) === 'Entregada' || s(row.estatus) === 'Facturada') && (
+              row.tieneDevolucion || row.tiene_devolucion ? (
+                <button
+                  disabled
+                  aria-label="Devolución registrada"
+                  title="Esta orden ya tiene una devolución registrada"
+                  className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-violet-300 cursor-not-allowed"
+                >
+                  <span className="text-base leading-none">↩</span>
+                </button>
+              ) : (
+                <button
+                  onClick={() => setDevolverOrden(row)}
+                  aria-label="Registrar devolución"
+                  title="Registrar devolución"
+                  className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-violet-600 hover:bg-violet-50 transition-colors"
+                >
+                  <span className="text-base leading-none">↩</span>
+                </button>
+              )
+            )}
             {est.puedeEliminar ? (
               <button
                 onClick={()=>askConfirm(
@@ -332,6 +355,15 @@ export function OrdenesView({ data, actions, user }) {
       user={user}
       toast={toast}
       variant="admin"
+    />
+
+    <DevolucionModal
+      open={!!devolverOrden}
+      orden={devolverOrden}
+      data={data}
+      actions={actions}
+      onClose={() => setDevolverOrden(null)}
+      onSuccess={() => setDevolverOrden(null)}
     />
 
     {/* MODAL DE COBRO - VENTAS */}

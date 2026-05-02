@@ -6,6 +6,7 @@ import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, validateMarcarNoEntregada, buildNoEntregaPayload, calcReversoChangesNoEntrega } from './ordenLogic';
 import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
+import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion } from './devolucionesLogic';
 import {
   validateConfirmarCarga,
   validateFirmarCarga,
@@ -77,6 +78,7 @@ const EMPTY = {
   invoiceAttempts: [],
   notificaciones: [],
   choferUbicaciones: [],
+  devoluciones: [],
   contabilidad: { ingresos: [], egresos: [] },
   configEmpresa: null,
 };
@@ -124,7 +126,7 @@ export function useSupaStore(userId, userName, userRol) {
         .maybeSingle();
 
       // Tablas opcionales
-      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam, notif, chUbi] = await Promise.all([
+      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam, notif, chUbi, devs] = await Promise.all([
         safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('empleados').select('*').order('id')),
@@ -141,6 +143,7 @@ export function useSupaStore(userId, userName, userRol) {
         safeRows(supabase.from('camiones').select('*').order('id')),
         safeRows(supabase.from('notificaciones').select('*').order('id', { ascending: false }).limit(100)),
         safeRows(supabase.from('chofer_ubicaciones').select('*').order('created_at', { ascending: false }).limit(50)),
+        safeRows(supabase.from('devoluciones').select('*').order('id', { ascending: false }).limit(200)),
       ]);
       const clientes  = cli;
       const productos = prod;
@@ -431,6 +434,10 @@ export function useSupaStore(userId, userName, userRol) {
         camiones: (cam || []).map(toCamel),
         notificaciones: (notif || []).map(toCamel),
         choferUbicaciones: (chUbi || []).map(toCamel),
+        devoluciones: (devs || []).map(d => ({
+          ...toCamel(d),
+          total: Number(d.total),
+        })),
         contabilidad: contabilidadObj,
         configEmpresa: configEmpresaRow ? toCamel(configEmpresaRow) : null,
       });
@@ -492,7 +499,7 @@ export function useSupaStore(userId, userName, userRol) {
       'produccion', 'inventario_mov', 'pagos', 'auditoria',
       'cuartos_frios', 'comodatos', 'leads', 'empleados',
       'movimientos_contables', 'mermas', 'nomina_periodos', 'cuentas_por_cobrar',
-      'cuentas_por_pagar', 'costos_fijos',
+      'cuentas_por_pagar', 'costos_fijos', 'devoluciones',
     ];
     let debounceTimer = null;
     const debouncedFetch = () => {
@@ -3222,6 +3229,216 @@ export function useSupaStore(userId, userName, userRol) {
         } catch (e) {
           console.error('[borrarMermaConReverso] excepción:', e);
           t()?.error('Error inesperado al borrar merma');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // ── DEVOLUCIONES POST-ENTREGA ──
+      // Registra una devolución de cliente: regresa stock al cuarto frío
+      // destino y ajusta finanzas según tipo de reembolso.
+      // Solo Admin (require_admin). Una orden solo puede tener UNA devolución
+      // (MVP) — la flag `tiene_devolucion` bloquea la siguiente.
+      // Si la orden estaba Facturada, se marca requiere_nota_credito=true
+      // y queda pendiente generar CFDI tipo E (integración futura).
+      registrarDevolucion: async (payload = {}) => {
+        const guard = requireAdmin();
+        if (guard) { t()?.error(guard.error); return guard; }
+
+        const { ordenId, items, motivo, tipoReembolso, cuartoDestino, notas } = payload;
+        try {
+          if (!ordenId) return { error: 'Orden requerida' };
+
+          // 1. SELECT orden + lineas en paralelo
+          const [{ data: orden, error: errOrd }, { data: lineas, error: errLin }] = await Promise.all([
+            supabase
+              .from('ordenes')
+              .select('id, folio, estatus, metodo_pago, total, cliente_id, tiene_devolucion')
+              .eq('id', ordenId)
+              .single(),
+            supabase
+              .from('orden_lineas')
+              .select('sku, cantidad, precio_unit, subtotal')
+              .eq('orden_id', ordenId),
+          ]);
+          if (errOrd || !orden) {
+            return { error: errOrd?.message || 'Orden no encontrada' };
+          }
+          if (errLin) {
+            console.warn('[registrarDevolucion] select orden_lineas:', errLin.message);
+            t()?.error('No se pudieron leer las líneas de la orden');
+            return { error: errLin.message };
+          }
+
+          // Normalizar líneas para usar precio_unitario en helpers
+          const lineasOriginales = (lineas || []).map(l => ({
+            sku: l.sku,
+            cantidad: Number(l.cantidad),
+            precio_unitario: Number(l.precio_unit),
+          }));
+
+          // 2. Validación pura
+          const validErr = validateDevolucion({
+            orden,
+            items,
+            lineasOriginales,
+            motivo,
+            tipoReembolso,
+            cuartoDestino,
+          });
+          if (validErr) {
+            t()?.error(validErr.error);
+            return validErr;
+          }
+
+          const folio = s(orden.folio) || `ID ${ordenId}`;
+          const usuario = uname() || 'Admin';
+          const total = calcTotalDevolucion(items, lineasOriginales);
+          if (total <= 0) {
+            return { error: 'Total devuelto inválido' };
+          }
+
+          // 3. Calcular changes de stock + ajuste financiero
+          const { changes } = calcDevolucionChanges(items, cuartoDestino, usuario, folio);
+          const ajuste = calcAjustePago({
+            orden,
+            totalDevuelto: total,
+            tipoReembolso,
+          });
+
+          // 4. INSERT devoluciones (registro principal)
+          const itemsConPrecio = items.map(it => {
+            const orig = lineasOriginales.find(l => l.sku === it.sku);
+            const precio = Number(it.precio_unitario ?? orig?.precio_unitario ?? 0);
+            return {
+              sku: it.sku,
+              cantidad: Number(it.cantidad),
+              precio_unitario: precio,
+              subtotal: centavos(Number(it.cantidad) * precio),
+            };
+          });
+          const { data: devRow, error: errDev } = await supabase
+            .from('devoluciones')
+            .insert({
+              orden_id: ordenId,
+              cliente_id: orden.cliente_id || null,
+              motivo: String(motivo).trim(),
+              tipo_reembolso: tipoReembolso,
+              total,
+              items: itemsConPrecio,
+              cuarto_destino: cuartoDestino,
+              usuario,
+              notas: s(notas).trim() || null,
+              requiere_nota_credito: ajuste.requiereNotaCredito,
+            })
+            .select('id')
+            .single();
+          if (errDev || !devRow) {
+            console.warn('[registrarDevolucion] insert devoluciones:', errDev?.message);
+            t()?.error('No se pudo registrar la devolución');
+            return { error: errDev?.message || 'Error al registrar devolución' };
+          }
+          const devolucionId = devRow.id;
+
+          // 5. Aplicar reverso de stock (delta positivo)
+          if (changes.length > 0) {
+            const { error: errRpc } = await supabase.rpc('update_stocks_atomic', { p_changes: changes });
+            if (errRpc) {
+              // Rollback: borrar la devolución insertada
+              await supabase.from('devoluciones').delete().eq('id', devolucionId);
+              console.warn('[registrarDevolucion] rpc update_stocks_atomic:', errRpc.message);
+              t()?.error('No se pudo regresar el stock — devolución revertida');
+              return { error: 'No se pudo regresar el stock — devolución revertida. ' + (errRpc.message || '') };
+            }
+          }
+
+          // 6. Ajuste financiero según tipo
+          let ajustePartial = false;
+          let ajusteMsg = null;
+
+          if (ajuste.accion === 'egreso' && total > 0) {
+            const { error: errEgr } = await supabase.from('movimientos_contables').insert({
+              fecha: todayLocalISO(),
+              tipo: 'Egreso',
+              categoria: 'Devoluciones',
+              concepto: ajuste.conceptoEgreso || `Devolución cliente ${folio}`,
+              monto: total,
+              orden_id: ordenId,
+            });
+            if (errEgr) {
+              // Stock + devolución ya están bien; el egreso contable es secundario.
+              // Best-effort: avisar y continuar (mismo patrón que registrarMerma).
+              console.warn('[registrarDevolucion] insert egreso (parcial):', errEgr.message);
+              notify('advertencia', 'Asiento contable pendiente',
+                `Devolución ${folio} — egreso contable no se registró, regístralo manual.`,
+                '⚠️', folio);
+              ajustePartial = true;
+              ajusteMsg = 'Devolución registrada y stock regresado, pero el egreso contable no. Regístralo manual.';
+            }
+
+            // Si era venta a crédito, además reducir CxC
+            if (ajuste.ajustaCxC && orden.cliente_id) {
+              const { data: cxc, error: errCxc } = await supabase
+                .from('cuentas_por_cobrar')
+                .select('id, monto_pagado, monto_original, saldo_pendiente, estatus')
+                .eq('orden_id', ordenId)
+                .maybeSingle();
+              if (!errCxc && cxc) {
+                const nuevoMontoOriginal = centavos(Number(cxc.monto_original) - total);
+                const nuevoSaldo = centavos(Math.max(0, Number(cxc.saldo_pendiente) - total));
+                const pagado = Number(cxc.monto_pagado || 0);
+                const nuevoEstatus = nuevoMontoOriginal <= 0 ? 'Pagada'
+                  : pagado >= nuevoMontoOriginal ? 'Pagada'
+                  : pagado > 0 ? 'Parcial'
+                  : 'Pendiente';
+                const { error: errUpdCxc } = await supabase
+                  .from('cuentas_por_cobrar')
+                  .update({
+                    monto_original: Math.max(0, nuevoMontoOriginal),
+                    saldo_pendiente: nuevoSaldo,
+                    estatus: nuevoEstatus,
+                  })
+                  .eq('id', cxc.id);
+                if (!errUpdCxc) {
+                  await supabase.rpc('increment_saldo', { p_cli: orden.cliente_id, p_delta: -total });
+                } else {
+                  console.warn('[registrarDevolucion] update CxC (parcial):', errUpdCxc.message);
+                  ajustePartial = true;
+                  ajusteMsg = 'Devolución registrada pero la CxC no se ajustó. Revísala manualmente.';
+                }
+              }
+            }
+          }
+
+          // 7. Marcar la orden con flag (idempotente: si falla, devolución
+          //    ya está bien — no rompemos por esto).
+          const { error: errFlag } = await supabase
+            .from('ordenes')
+            .update({ tiene_devolucion: true })
+            .eq('id', ordenId);
+          if (errFlag) {
+            console.warn('[registrarDevolucion] update orden.tiene_devolucion (no crítico):', errFlag.message);
+          }
+
+          // 8. Audit
+          const itemsTxt = items.map(it => `${it.cantidad}×${it.sku}`).join(', ');
+          await log('Devolución', 'Órdenes',
+            `${folio} — ${tipoReembolso} — ${itemsTxt} — $${total} — ${s(motivo).trim()}`
+          );
+
+          if (ajuste.requiereNotaCredito) {
+            notify('credito', 'Nota de crédito pendiente',
+              `${folio} — Genera CFDI tipo E desde Facturación cuando esté integrado.`,
+              '📄', folio);
+          }
+
+          rf();
+          if (ajustePartial) {
+            return { partial: true, error: ajusteMsg, devolucionId };
+          }
+          return { devolucionId };
+        } catch (e) {
+          console.error('[registrarDevolucion] excepción:', e);
+          t()?.error('Error inesperado al registrar devolución');
           return { error: e?.message || 'Error inesperado' };
         }
       },
