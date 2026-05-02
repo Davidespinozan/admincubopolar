@@ -7,7 +7,6 @@ import {
   calcIVA,
   buildCfdiItem,
   PAYMENT_FORM_MAP,
-  PAYMENT_METHOD_MAP,
 } from '../../netlify/functions/_lib/invoiceLogic';
 
 // ─── isValidRfc ───────────────────────────────────────────────

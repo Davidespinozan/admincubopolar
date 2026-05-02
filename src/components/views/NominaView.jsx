@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, FormBtn, EmptyState, s, n, fmtMoney, useToast } from './viewsCommon';
+import { useState, useMemo, Modal, EmptyState, s, n, fmtMoney, useToast } from './viewsCommon';
 
 export function NominaView({ data, actions }) {
   const toast = useToast();
@@ -20,11 +20,6 @@ export function NominaView({ data, actions }) {
     if (!periodoSeleccionado) return [];
     return recibos.filter(r => n(r.periodoId) === n(periodoSeleccionado.id));
   }, [recibos, periodoSeleccionado]);
-
-  const empsConRecibo = useMemo(() => {
-    const ids = new Set(recibosPeriodo.map(r => n(r.empleadoId)));
-    return ids;
-  }, [recibosPeriodo]);
 
   const generarNuevaSemana = async () => {
     const hoy = new Date();

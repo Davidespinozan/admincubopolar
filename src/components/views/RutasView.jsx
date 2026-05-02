@@ -1,6 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, fmtDate, fmtMoney, useDebounce, useToast, reporteRutas } from './viewsCommon';
-import { ordenarPorProximidad } from '../../utils/geocoding';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 const ReporteRutaModal = lazy(() => import('../ReporteRutaModal'));
 
@@ -113,7 +112,6 @@ export function RutasView({ data, actions }) {
   }, [data.cuartosFrios, prodTerminados]);
 
   // Demanda calculada de los clientes seleccionados (sus órdenes pendientes)
-  const estatusPendientesSet = useMemo(() => new Set(["creada","asignada","pendiente","en proceso","en_proceso","enprogreso"]), []);
   const demandaSeleccionados = useMemo(() => {
     const acc = {};
     for (const p of prodTerminados) acc[s(p.sku)] = 0;
@@ -274,7 +272,7 @@ export function RutasView({ data, actions }) {
     // Derivar clientes asignados de las órdenes seleccionadas (sin duplicados)
     const clientesVistos = new Set();
     const clientesAsignados = [];
-    form.ordenesIds.forEach((oid, idx) => {
+    form.ordenesIds.forEach((oid) => {
       const ord = (data.ordenes || []).find(o => String(o.id) === String(oid));
       const cid = ord?.clienteId || ord?.cliente_id;
       if (cid && !clientesVistos.has(String(cid))) {

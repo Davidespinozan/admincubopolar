@@ -11,10 +11,6 @@ export function CobrosView({ data, actions }) {
     (data.cuentasPorCobrar || []).filter(c => c.estatus !== 'Pagada'),
     [data.cuentasPorCobrar]
   );
-  const cxcPagadas = useMemo(() =>
-    (data.cuentasPorCobrar || []).filter(c => c.estatus === 'Pagada'),
-    [data.cuentasPorCobrar]
-  );
   const pagosRecientes = useMemo(() =>
     (data.pagos || []).slice(0, 50),
     [data.pagos]
