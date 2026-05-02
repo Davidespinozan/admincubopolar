@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
-import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload } from './ordenLogic';
+import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden } from './ordenLogic';
+import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
 import {
   validateConfirmarCarga,
   validateFirmarCarga,
@@ -1057,37 +1058,26 @@ export function useSupaStore(userId, userName) {
           }
 
           const estatusActual = s(orden.estatus);
-          if (estatusActual === 'Cancelada') {
-            return { error: 'Esta orden ya está cancelada' };
-          }
-          if (estatusActual === 'Entregada' || estatusActual === 'Facturada') {
-            return { error: 'No se puede cancelar una orden ya entregada o facturada. Registra una devolución.' };
-          }
 
-          // Validar CxC: si tiene pagos parciales (monto_pagado > 0), bloquear
-          const { data: cxcRows, error: errCxc } = await supabase
-            .from('cuentas_por_cobrar')
-            .select('id, monto_pagado, monto_original')
-            .eq('orden_id', ordenId);
-          if (errCxc) {
-            console.warn('[cancelarOrden] select cxc:', errCxc.message);
-          }
+          // Lectura paralela de CxC + pagos para validación atómica
+          const [{ data: cxcRows, error: errCxc }, { data: pagosRows, error: errPag }] = await Promise.all([
+            supabase.from('cuentas_por_cobrar').select('id, monto_pagado, monto_original').eq('orden_id', ordenId),
+            supabase.from('pagos').select('id').eq('orden_id', ordenId),
+          ]);
+          if (errCxc) console.warn('[cancelarOrden] select cxc:', errCxc.message);
+          if (errPag) console.warn('[cancelarOrden] select pagos:', errPag.message);
+
           const cxc = (cxcRows || [])[0] || null;
-          if (cxc && Number(cxc.monto_pagado) > 0) {
-            return { error: 'Esta venta tiene pagos parciales. Anula los pagos primero.' };
-          }
+          const hayPagosDirectos = (pagosRows || []).length > 0;
 
-          // Validar pagos directos (contado) sin CxC asociada
-          const { data: pagosRows, error: errPag } = await supabase
-            .from('pagos')
-            .select('id')
-            .eq('orden_id', ordenId);
-          if (errPag) {
-            console.warn('[cancelarOrden] select pagos:', errPag.message);
-          }
-          if ((pagosRows || []).length > 0 && !cxc) {
-            return { error: 'Esta venta de contado ya está pagada. Registra una devolución.' };
-          }
+          // Validación pura — extraída a ordenLogic.validateCancelacion
+          const validationErr = validateCancelacion({
+            estatusActual,
+            cxc,
+            hayPagosDirectos,
+            motivo: motivoTxt,
+          });
+          if (validationErr) return validationErr;
 
           // Borrar CxC sin pagos (ya validamos monto_pagado === 0 arriba)
           if (cxc) {
@@ -1112,15 +1102,10 @@ export function useSupaStore(userId, userName) {
           }
 
           // Anotar contexto de cancelación (columnas de migración 043)
-          const cancelada_at = new Date().toISOString();
-          const cancelada_por = uname() || 'Admin';
+          const anotacion = buildAnotacionCancelacion(motivoTxt, uname() || 'Admin');
           const { error: errAnot } = await supabase
             .from('ordenes')
-            .update({
-              motivo_cancelacion: motivoTxt,
-              cancelada_at,
-              cancelada_por,
-            })
+            .update(anotacion)
             .eq('id', ordenId);
           if (errAnot) {
             console.warn('[cancelarOrden] update anotaciones:', errAnot.message);
@@ -1157,9 +1142,10 @@ export function useSupaStore(userId, userName) {
             t()?.error(msg);
             return { error: msg };
           }
-          if (s(ord.estatus) !== 'Creada') {
-            return { error: 'Solo se pueden editar órdenes en estatus Creada' };
-          }
+
+          // Validación pura — extraída a ordenLogic.validateEdicionOrden
+          const edicionErr = validateEdicionOrden(s(ord.estatus));
+          if (edicionErr) return edicionErr;
 
           const { lines, ...resto } = payload;
 
@@ -1167,9 +1153,7 @@ export function useSupaStore(userId, userName) {
           let totalNuevo = null;
           let lineasNuevas = null;
           if (Array.isArray(lines)) {
-            const items = lines
-              .filter(l => l && l.sku && Number(l.qty || l.cantidad) > 0)
-              .map(l => ({ qty: Number(l.qty || l.cantidad), sku: String(l.sku) }));
+            const items = parseLineasEdicion(lines);
             const itemsErr = validateItems(items);
             if (itemsErr) return { error: itemsErr };
 
@@ -1183,21 +1167,8 @@ export function useSupaStore(userId, userName) {
             lineasNuevas = built.lineas;
           }
 
-          // Construir UPDATE de campos top-level (solo los que vinieron)
-          const updateFields = {};
-          if (resto.cliente !== undefined) updateFields.cliente_nombre = resto.cliente;
-          if (resto.clienteId !== undefined) updateFields.cliente_id = resto.clienteId || null;
-          if (resto.fecha !== undefined) updateFields.fecha = resto.fecha;
-          if (resto.tipoCobro !== undefined) updateFields.tipo_cobro = resto.tipoCobro;
-          if (resto.folioNota !== undefined) updateFields.folio_nota = resto.folioNota || null;
-          if (resto.direccionEntrega !== undefined) updateFields.direccion_entrega = resto.direccionEntrega || null;
-          if (resto.referenciaEntrega !== undefined) updateFields.referencia_entrega = resto.referenciaEntrega || null;
-          if (resto.latitudEntrega !== undefined) updateFields.latitud_entrega = resto.latitudEntrega ?? null;
-          if (resto.longitudEntrega !== undefined) updateFields.longitud_entrega = resto.longitudEntrega ?? null;
-          if (lineasNuevas) {
-            updateFields.total = totalNuevo;
-            updateFields.productos = lineasNuevas.map(l => `${l.cantidad}×${l.sku}`).join(', ');
-          }
+          // Construir UPDATE — extraído a ordenLogic.buildUpdateFieldsOrden
+          const updateFields = buildUpdateFieldsOrden(resto, lineasNuevas, totalNuevo);
 
           if (Object.keys(updateFields).length > 0) {
             const { error: errUpd } = await supabase
@@ -2870,15 +2841,16 @@ export function useSupaStore(userId, userName) {
           const origen = s(merma.origen);
           const fecha = s(merma.fecha);
 
-          // Defensivo: si por alguna razón cantidad ≤ 0 (no debería por
-          // CHECK constraint), borrar sin reverso
-          if (cant <= 0) {
+          // Validación pura — extraída a mermasLogic.validarMermaParaReverso.
+          // Defensivo: si cantidad ≤ 0 (no debería por CHECK), borrar sin reverso.
+          const validErr = validarMermaParaReverso({ ...merma, sku, cantidad: cant });
+          if (validErr) {
             const { error: errDel } = await supabase.from('mermas').delete().eq('id', id);
             if (errDel) {
               t()?.error('Error al borrar merma');
               return { error: errDel.message };
             }
-            await log('Borrar (sin reverso)', 'Mermas', `ID ${id} — cantidad ${cant}`);
+            await log('Borrar (sin reverso)', 'Mermas', `ID ${id} — ${validErr.error}`);
             rf();
             return undefined;
           }
@@ -2893,20 +2865,20 @@ export function useSupaStore(userId, userName) {
             t()?.error('No se pudieron leer cuartos fríos');
             return { error: errCfs.message };
           }
-          if (!cuartos || cuartos.length === 0) {
+          // Selección pura — extraída a mermasLogic.seleccionarCuartoFIFOInverso
+          const cuartoDestino = seleccionarCuartoFIFOInverso(cuartos);
+          if (!cuartoDestino) {
             return { error: 'No hay cuartos fríos activos para regresar el stock' };
           }
-          const cuartoDestino = cuartos[0];
 
+          // Construcción del change pura — extraída a mermasLogic.buildReversoMermaChange
+          const change = buildReversoMermaChange(
+            { ...merma, sku, cantidad: cant, causa },
+            cuartoDestino,
+            uname() || 'Admin'
+          );
           const { error: errRpc } = await supabase.rpc('update_stocks_atomic', {
-            p_changes: [{
-              cuarto_id: cuartoDestino.id,
-              sku,
-              delta: cant,
-              tipo: 'Reverso merma',
-              origen: `Borrado merma id=${id} (${causa || 'sin causa'})`,
-              usuario: uname() || 'Admin',
-            }],
+            p_changes: [change],
           });
           if (errRpc) {
             console.warn('[borrarMermaConReverso] rpc update_stocks_atomic:', errRpc.message);
@@ -2917,7 +2889,8 @@ export function useSupaStore(userId, userName) {
           // 3. DELETE de movimiento contable asociado (best-effort, match único)
           let avisoMovsMultiples = false;
           try {
-            const conceptoMatch = `Merma ${cant}× ${sku}`;
+            // Match pura — extraída a mermasLogic.matchConceptoMerma
+            const conceptoMatch = matchConceptoMerma({ sku, cantidad: cant });
             const { data: movs } = await supabase
               .from('movimientos_contables')
               .select('id')
@@ -2926,9 +2899,11 @@ export function useSupaStore(userId, userName) {
               .gte('fecha', fecha)
               .lte('fecha', fecha);
 
-            if (movs && movs.length === 1) {
-              await supabase.from('movimientos_contables').delete().eq('id', movs[0].id);
-            } else if (movs && movs.length > 1) {
+            // Decisión pura — extraída a mermasLogic.decidirBorrarMovimientoContable
+            const decision = decidirBorrarMovimientoContable(movs);
+            if (decision.accion === 'delete') {
+              await supabase.from('movimientos_contables').delete().eq('id', decision.id);
+            } else if (decision.accion === 'aviso') {
               avisoMovsMultiples = true;
               console.warn(`[borrarMermaConReverso] múltiples egresos contables matchean merma ${id}, ninguno borrado`);
             }

@@ -122,3 +122,4 @@ CREATE INDEX idx_mermas_ruta_id ON mermas(ruta_id) WHERE ruta_id IS NOT NULL;
 1. **Antes de tocar BD**: leer la sección relevante. Cada acción dice claramente si requiere SQL en producción.
 2. **Cada SQL marcado "no ejecutar aún"**: revisar el contexto antes, hacer backup, y solo entonces correr en Supabase.
 3. **Mantener el doc actualizado**: cuando se ejecute una acción, mover su sección a un changelog (o eliminar si quedó completa).
+exportReports.js bundle 298KB → lazy load solo cuando se exporta
