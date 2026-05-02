@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
-import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden } from './ordenLogic';
+import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, validateMarcarNoEntregada, buildNoEntregaPayload, calcReversoChangesNoEntrega } from './ordenLogic';
 import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
 import {
@@ -1189,6 +1189,111 @@ export function useSupaStore(userId, userName, userRol) {
         } catch (e) {
           console.error('[cancelarOrden] excepción:', e);
           t()?.error('Error inesperado al cancelar orden');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // Marca una orden como No entregada (cliente cerrado/ausente/rechazo).
+      // Solo aplica desde 'Asignada' o 'En ruta' (validado por FSM).
+      //
+      // Stock se devuelve al cuarto frío INMEDIATAMENTE (decisión S1).
+      // Discrepancia física durante el viaje de regreso del camión es
+      // aceptable: nadie consulta cuarto durante ruta activa.
+      // Trazabilidad de qué regresa físicamente:
+      //   SELECT * FROM ordenes WHERE estatus='No entregada' AND ruta_id=X.
+      marcarNoEntregada: async (ordenId, motivo, reagendar = false) => {
+        try {
+          if (!ordenId) return { error: 'Orden requerida' };
+
+          // 1. Leer orden + líneas
+          const { data: orden, error: errOrd } = await supabase
+            .from('ordenes')
+            .select('id, folio, estatus, ruta_id')
+            .eq('id', ordenId)
+            .single();
+          if (errOrd || !orden) {
+            return { error: errOrd?.message || 'Orden no encontrada' };
+          }
+
+          // 2. Validación pura (FSM + motivo)
+          const validErr = validateMarcarNoEntregada(orden, motivo);
+          if (validErr) {
+            t()?.error(validErr.error);
+            return validErr;
+          }
+
+          const folio = s(orden.folio) || `ID ${ordenId}`;
+
+          // 3. Leer líneas para devolver stock
+          const { data: lineas, error: errLin } = await supabase
+            .from('orden_lineas')
+            .select('sku, cantidad')
+            .eq('orden_id', ordenId);
+          if (errLin) {
+            console.warn('[marcarNoEntregada] select orden_lineas:', errLin.message);
+            t()?.error('No se pudieron leer las líneas de la orden');
+            return { error: errLin.message };
+          }
+
+          // 4. Calcular reverso (devolución al primer cuarto activo)
+          const { data: cuartos, error: errCfs } = await supabase
+            .from('cuartos_frios')
+            .select('id, nombre, stock')
+            .order('id');
+          if (errCfs) {
+            t()?.error('No se pudieron leer cuartos fríos');
+            return { error: errCfs.message };
+          }
+          const { changes } = calcReversoChangesNoEntrega(
+            lineas || [],
+            cuartos || [],
+            uname() || 'Chofer',
+            folio
+          );
+
+          // 5. Aplicar reverso (entrada al cuarto). Si no hay líneas o el
+          // total es 0, simplemente saltamos sin RPC.
+          if (changes.length > 0) {
+            const { error: errRpc } = await supabase.rpc('update_stocks_atomic', {
+              p_changes: changes,
+            });
+            if (errRpc) {
+              console.warn('[marcarNoEntregada] rpc update_stocks_atomic:', errRpc.message);
+              t()?.error('No se pudo devolver el stock — orden NO marcada');
+              return { error: 'No se pudo devolver el stock — orden NO marcada. ' + (errRpc.message || '') };
+            }
+          }
+
+          // 6. UPDATE orden (estatus + tracking)
+          const payload = buildNoEntregaPayload(motivo, reagendar);
+          const { error: errUpd } = await supabase
+            .from('ordenes')
+            .update(payload)
+            .eq('id', ordenId);
+          if (errUpd) {
+            // Best-effort revert del stock para no dejar discrepancia
+            if (changes.length > 0) {
+              const reverse = changes.map(c => ({ ...c, delta: -c.delta, tipo: 'Rollback no entregada', origen: `Rollback ${folio}` }));
+              await supabase.rpc('update_stocks_atomic', { p_changes: reverse });
+            }
+            console.warn('[marcarNoEntregada] update orden:', errUpd.message);
+            t()?.error('No se pudo marcar como No entregada — stock revertido');
+            return { error: errUpd.message };
+          }
+
+          // 7. Audit
+          const cantTxt = changes.length > 0
+            ? changes.map(c => `${c.delta}×${c.sku}`).join(', ')
+            : 'sin líneas';
+          await log('No entregada', 'Órdenes',
+            `${folio} — ${s(motivo)}${reagendar ? ' (reagendar)' : ''} — devuelto: ${cantTxt}`
+          );
+
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[marcarNoEntregada] excepción:', e);
+          t()?.error('Error inesperado al marcar como No entregada');
           return { error: e?.message || 'Error inesperado' };
         }
       },
