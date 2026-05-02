@@ -837,7 +837,7 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, us
     // Firma digital capturada
     try {
       doc.addImage(ruta.firma_carga, 'PNG', firmaXDer, firmaY, firmaW, firmaH);
-    } catch (e) {
+    } catch {
       doc.setDrawColor(150);
       doc.line(firmaXDer, firmaY + firmaH - 5, firmaXDer + firmaW, firmaY + firmaH - 5);
     }

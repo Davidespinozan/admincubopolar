@@ -213,7 +213,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
     try {
       const saved = localStorage.getItem('cubopolar_sidebar_areas');
       if (saved) return JSON.parse(saved);
-    } catch (e) {}
+    } catch { /* noop */ }
     // Default: Operación y Comercial abiertas, Finanzas y Equipo cerradas
     return { operacion: true, comercial: true, finanzas: false, equipo: false };
   });
@@ -222,7 +222,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   useEffect(() => {
     try {
       localStorage.setItem('cubopolar_sidebar_areas', JSON.stringify(areasExpandidas));
-    } catch (e) {}
+    } catch { /* noop */ }
   }, [areasExpandidas]);
 
   // Si el usuario navega a un módulo dentro de un área cerrada, abrirla automáticamente
@@ -231,8 +231,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
     if (currentArea && !areasExpandidas[currentArea.id]) {
       setAreasExpandidas(prev => ({ ...prev, [currentArea.id]: true }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [view]);
+  }, [view, areasExpandidas]);
 
   const toggleArea = (areaId) => {
     setAreasExpandidas(prev => ({ ...prev, [areaId]: !prev[areaId] }));
@@ -301,7 +300,6 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   const current = ALL_ITEMS.find(n => n.id === view);
   const currentArea = AREAS.find(area => area.items.some(item => item.id === view)) || AREAS[0];
   const currentMeta = AREA_META[currentArea?.id] || AREA_META.operacion;
-  const AreaIcon = Icons[currentArea?.icon] || Icons.Dashboard;
 
   return (
     <div className="min-h-screen text-slate-900">

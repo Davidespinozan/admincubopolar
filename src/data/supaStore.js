@@ -459,13 +459,13 @@ export function useSupaStore(userId, userName) {
             const { data } = supabase.auth.onAuthStateChange((event, s) => {
               if (s?.access_token && !cancelled) {
                 fetchAll();
-                try { data.subscription.unsubscribe(); } catch (e) {}
+                try { data.subscription.unsubscribe(); } catch { /* noop */ }
               }
             });
             sub = data && data.subscription;
             return;
           }
-        } catch (e) {
+        } catch {
           // ignore and continue to fetch
         }
       }
@@ -474,7 +474,7 @@ export function useSupaStore(userId, userName) {
 
     run();
 
-    return () => { cancelled = true; if (sub && sub.unsubscribe) try { sub.unsubscribe(); } catch (e) {} };
+    return () => { cancelled = true; if (sub && sub.unsubscribe) try { sub.unsubscribe(); } catch { /* noop */ } };
   }, [fetchAll, userId]);
 
   // ── Realtime subscriptions ──────────────────────────────────
@@ -990,7 +990,7 @@ export function useSupaStore(userId, userName) {
             if (ord && ord.facturama_id) {
               try {
                 await backendPost('billing-sync-payment', { ordenId: ord.id });
-              } catch (syncErr) {
+              } catch {
                 notify('advertencia', 'Sincronización Facturama', `No se pudo sincronizar el pago de ${s(ord.folio)} con Facturama`, '⚠️', s(ord.folio));
               }
             }
@@ -3120,7 +3120,7 @@ export function useSupaStore(userId, userName) {
 
       // ── NÓMINA ──
       addNominaPeriodo: async (p) => {
-        const { data: row, error } = await supabase.from('nomina_periodos').insert(p).select().single();
+        const { error } = await supabase.from('nomina_periodos').insert(p).select().single();
         if (error) { 
           console.error('[addNominaPeriodo]', error.message, error.code, error.details);
           t()?.error('Error al crear período de nómina: ' + error.message); 

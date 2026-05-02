@@ -13,7 +13,6 @@ const CHOFER_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradi
 
 export default function ChoferView({ user, data, actions, onLogout }) {
   const [stepOverride, setStepOverride] = useState(null);
-  const [confirmadoCarga, setConfirmadoCarga] = useState(false);
 
   // Fase 18 paso 3: Carga real + firma
   const [cargaRealForm, setCargaRealForm] = useState({});
@@ -102,30 +101,6 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     if (!miRutaActiva) return {};
     return miRutaActiva.extra_autorizado || miRutaActiva.extraAutorizado || {};
   }, [miRutaActiva]);
-
-  // Clientes asignados a la ruta (con info de contacto)
-  const clientesAsignados = useMemo(() => {
-    if (!miRutaActiva) return [];
-    const asignados = miRutaActiva.clientes_asignados || miRutaActiva.clientesAsignados || [];
-    if (!Array.isArray(asignados)) return [];
-    return asignados.map((item, idx) => {
-      const clienteId = item.clienteId || item;
-      const cliente = (data.clientes || []).find(c => String(c.id) === String(clienteId));
-      return {
-        id: clienteId,
-        orden: item.orden || idx + 1,
-        nombre: cliente ? s(cliente.nombre) : `Cliente #${clienteId}`,
-        contacto: cliente ? s(cliente.contacto) : "",
-        correo: cliente ? s(cliente.correo) : "",
-        tipo: cliente ? s(cliente.tipo) : "",
-        calle: cliente ? s(cliente.calle) : "",
-        colonia: cliente ? s(cliente.colonia) : "",
-        ciudad: cliente ? s(cliente.ciudad) : "",
-        latitud: cliente?.latitud,
-        longitud: cliente?.longitud,
-      };
-    }).sort((a, b) => a.orden - b.orden);
-  }, [miRutaActiva, data.clientes]);
 
   // Carga total = autorizada + extra (lo que administración aprobó)
   const cargaTotal = useMemo(() => {
@@ -282,14 +257,6 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const pendientes = ordenesConDetalle.filter(o => !o.entregada);
   const entregadasList = ordenesConDetalle.filter(o => o.entregada);
 
-  // Necesita por SKU (for loading screen)
-  const necesitaPorSku = useMemo(() => {
-    const t = {};
-    for (const p of productos) t[s(p.sku)] = 0;
-    for (const o of pendientes) for (const it of o.items) t[it.sku] = (t[it.sku] || 0) + it.cant;
-    return t;
-  }, [pendientes, productos]);
-
 
 
   const entregadoTotal = useMemo(() => {
@@ -319,17 +286,6 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   }, [productos, cargaTotal, entregadoTotal, mermaTotal]);
 
   // ── ACTIONS ──
-  const iniciarRuta = () => {
-    // Usa la carga autorizada por administración, no input del chofer
-    if (!Object.values(cargaTotal).some(v => n(v) > 0)) {
-      showToast("No hay carga autorizada. Contacte a administración.", "error");
-      return;
-    }
-    setConfirmadoCarga(true);
-    setStep("ruta");
-    showToast("Carga confirmada. Ruta iniciada.");
-  };
-
   const solicitarFirma = async () => {
     if (solicitandoFirma) return;
 
@@ -361,7 +317,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         return;
       }
       showToast('Firma solicitada. Espera a Producción.');
-    } catch (err) {
+    } catch {
       showToast('No se pudo solicitar firma');
     } finally {
       setSolicitandoFirma(false);
@@ -606,7 +562,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       }
       setRutaCerrada(true);
       showToast("Reporte enviado ✓");
-    } catch (err) {
+    } catch {
       showToast("No se pudo cerrar la ruta");
     } finally {
       setCerrandoRuta(false);

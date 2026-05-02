@@ -142,7 +142,7 @@ export default function MapaPedidos({ ordenes = [], choferUbicaciones = [] }) {
     return () => {
       if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Actualizar marcadores cuando cambian las órdenes (sin re-montar el mapa)
   useEffect(() => {

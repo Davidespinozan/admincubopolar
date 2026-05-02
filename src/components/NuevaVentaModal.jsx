@@ -176,8 +176,7 @@ export default function NuevaVentaModal({
 
   useEffect(() => {
     if (open) reset();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, reset]);
 
   const handleClose = () => {
     if (saving || registrandoCliente) return;

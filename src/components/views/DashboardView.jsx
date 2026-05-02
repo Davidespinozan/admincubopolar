@@ -3,7 +3,7 @@ import { Icons } from '../ui/Icons';
 import { StatusBadge, DataTable, CapacityBar } from '../ui/Components';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { EmptyState } from '../ui/Skeleton';
-import { s, n, fmtDate, fmtDateTime, fmtMoney, fmtPct } from '../../utils/safe';
+import { s, n, fmtDateTime, fmtMoney, fmtPct } from '../../utils/safe';
 
 // ── FIX P3: ALL DERIVED STATE NOW MEMOIZED ──
 // BEFORE: 4 reduce/filter calls ran on every render — even when user

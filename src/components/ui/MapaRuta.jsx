@@ -159,7 +159,7 @@ export default function MapaRuta({ paradas = [] }) {
       driverMark.current  = null;
       routeLayer.current  = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="relative rounded-[22px] overflow-hidden border border-slate-200/80 shadow-[0_12px_32px_rgba(8,20,27,0.12)]" style={{ height: 340 }}>

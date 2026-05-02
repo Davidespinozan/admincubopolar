@@ -76,7 +76,6 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modal, traspasoModal, guardandoProd, haciendoTraspaso]);
 
   const clearFotoMerma = () => {
