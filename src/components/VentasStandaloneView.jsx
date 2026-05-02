@@ -97,7 +97,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
 
       <div className="px-4 pt-4 space-y-4">
         <button onClick={abrirNuevaVenta}
-          className="w-full rounded-[22px] bg-emerald-600 py-4.5 text-base font-extrabold text-white shadow-[0_20px_34px_rgba(5,150,105,0.16)] transition-transform active:scale-[0.98]">
+          className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-[22px] bg-emerald-600 hover:bg-emerald-700 px-6 sm:px-10 py-4 sm:py-3.5 text-base sm:text-sm font-extrabold text-white shadow-[0_20px_34px_rgba(5,150,105,0.16)] transition-all active:scale-[0.98]">
           + Nueva venta
         </button>
 
