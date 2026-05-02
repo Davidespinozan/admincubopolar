@@ -197,7 +197,7 @@ export function InventarioView({ data, actions }) {
             <button aria-label="Editar cuarto frío" onClick={e=>{e.stopPropagation();setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad_tarimas:String(n(cf.capacidad_tarimas) || '')});setCfModal(cf);}} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-colors">
               <Icons.Edit />
             </button>
-            <button aria-label="Eliminar cuarto frío" onClick={e=>{e.stopPropagation();askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cf.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cf.id); toast?.success('Cuarto frío eliminado');}, true)}} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors">
+            <button aria-label="Eliminar cuarto frío" onClick={e=>{e.stopPropagation();askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cf.nombre) + '? El cuarto debe estar vacío.', async()=>{const r=await actions.deleteCuartoFrio(cf.id); if (r?.error) { toast?.error(r.error); return; } toast?.success('Cuarto frío eliminado');}, true)}} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-red-500 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors">
               <Icons.X />
             </button>
           </div>
@@ -290,7 +290,7 @@ export function InventarioView({ data, actions }) {
         <FormInput label="Capacidad (tarimas)" type="number" value={cfForm.capacidad_tarimas || ''} onChange={e=>setCfForm({...cfForm,capacidad_tarimas:e.target.value})} placeholder="ej: 8, 15, 13" />
       </div>
       <div className="flex justify-between mt-5">
-        {cfModal && cfModal !== "new" && cfModal.id && <button onClick={()=> askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cfModal.nombre) + '?', async()=>{await actions.deleteCuartoFrio(cfModal.id); toast?.success('Cuarto frío eliminado'); setCfModal(null);}, true)} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
+        {cfModal && cfModal !== "new" && cfModal.id && <button onClick={()=> askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cfModal.nombre) + '? El cuarto debe estar vacío.', async()=>{const r=await actions.deleteCuartoFrio(cfModal.id); if (r?.error) { toast?.error(r.error); return; } toast?.success('Cuarto frío eliminado'); setCfModal(null);}, true)} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
         <div className="flex gap-2 ml-auto">
           <FormBtn onClick={()=>setCfModal(null)}>Cancelar</FormBtn>
           <FormBtn primary loading={savingCf} onClick={async ()=>{

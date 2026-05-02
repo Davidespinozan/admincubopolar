@@ -468,6 +468,11 @@ export function useSupaStore(userId, userName) {
   }, [fetchAll, userId]);
 
   // ── Realtime subscriptions ──────────────────────────────────
+  // Debounce 500ms: con 18 tablas suscritas, una operación común (ej. cierre
+  // de ruta) puede disparar 5+ eventos en milésimas de segundo. Sin debounce
+  // cada evento dispara fetchAll() completo (18 tablas + 200 mov + 500 audit)
+  // y satura la conexión. Con debounce, los eventos en burst se colapsan en
+  // un único refetch.
   useEffect(() => {
     const tables = [
       'clientes', 'productos', 'ordenes', 'rutas',
@@ -476,12 +481,23 @@ export function useSupaStore(userId, userName) {
       'movimientos_contables', 'mermas', 'nomina_periodos', 'cuentas_por_cobrar',
       'cuentas_por_pagar', 'costos_fijos',
     ];
+    let debounceTimer = null;
+    const debouncedFetch = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        debounceTimer = null;
+        fetchAll();
+      }, 500);
+    };
     const channels = tables.map(table =>
       supabase.channel(`rt_${table}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table }, () => fetchAll())
+        .on('postgres_changes', { event: '*', schema: 'public', table }, debouncedFetch)
         .subscribe()
     );
-    return () => { channels.forEach(ch => supabase.removeChannel(ch)); };
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      channels.forEach(ch => supabase.removeChannel(ch));
+    };
   }, [fetchAll]);
 
   // ── Actions ─────────────────────────────────────────────────
@@ -1488,11 +1504,51 @@ export function useSupaStore(userId, userName) {
         rf();
       },
 
+      // Bloquea DELETE si el cuarto tiene stock asociado para evitar pérdida
+      // silenciosa de inventario. El admin debe vaciar/trasladar el stock primero.
       deleteCuartoFrio: async (id) => {
-        const { error } = await supabase.from('cuartos_frios').delete().eq('id', id);
-        if (error) { t()?.error('Error al eliminar cuarto frío'); return error; }
-        log('Eliminar', 'Cuartos Fríos', `ID ${id}`);
-        rf();
+        try {
+          if (!id) return { error: 'Cuarto frío requerido' };
+
+          const { data: cf, error: errSel } = await supabase
+            .from('cuartos_frios')
+            .select('id, nombre, stock')
+            .eq('id', id)
+            .single();
+          if (errSel || !cf) {
+            const msg = errSel?.message || 'Cuarto frío no encontrado';
+            t()?.error(msg);
+            return { error: msg };
+          }
+
+          const stock = (cf.stock && typeof cf.stock === 'object') ? cf.stock : {};
+          const totalStock = Object.values(stock).reduce((acc, v) => acc + (Number(v) || 0), 0);
+          if (totalStock > 0) {
+            const skusConStock = Object.entries(stock)
+              .filter(([, v]) => Number(v) > 0)
+              .map(([sku, v]) => `${v}× ${sku}`)
+              .join(', ');
+            const msg = `Tiene stock asociado (${skusConStock}). Vacíalo o trasládalo a otro cuarto primero.`;
+            t()?.error(msg);
+            return { error: msg };
+          }
+
+          const { error } = await supabase.from('cuartos_frios').delete().eq('id', id);
+          if (error) {
+            const msg = error.code === '23503'
+              ? 'No se puede eliminar — el cuarto tiene movimientos o relaciones asociadas.'
+              : (error.message || 'Error al eliminar cuarto frío');
+            t()?.error(msg);
+            return { error: msg };
+          }
+          log('Eliminar', 'Cuartos Fríos', `ID ${id} (${s(cf.nombre)})`);
+          rf();
+          return undefined;
+        } catch (e) {
+          const msg = e?.message || 'Error inesperado al eliminar cuarto frío';
+          t()?.error(msg);
+          return { error: msg };
+        }
       },
 
       // ── CUARTOS FRÍOS — STOCK (JSONB) ──
@@ -2274,13 +2330,31 @@ export function useSupaStore(userId, userName) {
 
       // ── PAGOS ──
       registrarPago: async (clienteId, monto, referencia) => {
-        const { error } = await supabase.rpc('registrar_pago', {
-          p_cliente_id: clienteId, p_monto: centavos(monto),
-          p_referencia: referencia, p_usuario_id: uid(),
-        });
-        if (error) { t()?.error('Error al registrar pago'); return error; }
-        log('Registrar', 'Pagos', `Cliente #${clienteId} — $${monto} — ${referencia || 'Sin ref'}`);
-        rf();
+        try {
+          if (!clienteId) return { error: 'Cliente requerido' };
+          const montoNum = Number(monto);
+          if (!Number.isFinite(montoNum) || montoNum <= 0) {
+            return { error: 'Monto debe ser mayor a 0' };
+          }
+          const { error } = await supabase.rpc('registrar_pago', {
+            p_cliente_id: clienteId,
+            p_monto: centavos(montoNum),
+            p_referencia: referencia,
+            p_usuario_id: uid(),
+          });
+          if (error) {
+            const msg = error.message || 'Error al registrar pago';
+            t()?.error(msg);
+            return { error: msg };
+          }
+          log('Registrar', 'Pagos', `Cliente #${clienteId} — $${montoNum} — ${referencia || 'Sin ref'}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          const msg = e?.message || 'Error inesperado al registrar pago';
+          t()?.error(msg);
+          return { error: msg };
+        }
       },
 
       // Cobrar contra una cuenta por cobrar específica
@@ -2960,31 +3034,82 @@ export function useSupaStore(userId, userName) {
       },
 
       // ── EMPLEADOS ──
+      // Alineado con schema real (001_schema_completo.sql:188):
+      // nombre, rfc, curp, nss, puesto, depto, salario_diario, fecha_ingreso,
+      // jornada, estatus. NO existe 'telefono', 'salario_base', 'banco', 'cuenta'
+      // en la tabla — los intentos previos de INSERT con esos campos rompían.
       addEmpleado: async (e) => {
-        const { error } = await supabase.from('empleados').insert({
-          nombre: e.nombre, puesto: e.puesto, telefono: e.telefono,
-          salario_base: Number(e.salarioBase || e.salario_base || 0),
-          banco: e.banco, cuenta: e.cuenta, estatus: 'Activo',
-        });
-        if (error) { t()?.error('Error al guardar empleado'); return error; }
-        log('Crear', 'Empleados', `${e.nombre} — ${e.puesto}`);
-        rf();
+        try {
+          if (!e?.nombre || !String(e.nombre).trim()) return { error: 'Nombre requerido' };
+          if (!e?.puesto || !String(e.puesto).trim()) return { error: 'Puesto requerido' };
+          if (!e?.depto || !String(e.depto).trim()) return { error: 'Departamento requerido' };
+          const salDiario = Number(e.salarioDiario ?? e.salario_diario);
+          if (!Number.isFinite(salDiario) || salDiario <= 0) {
+            return { error: 'Salario diario debe ser mayor a 0' };
+          }
+          const fechaIng = String(e.fechaIngreso || e.fecha_ingreso || '').trim();
+          if (!fechaIng) return { error: 'Fecha de ingreso requerida' };
+
+          const { error } = await supabase.from('empleados').insert({
+            nombre: String(e.nombre).trim(),
+            rfc: e.rfc ? String(e.rfc).trim().toUpperCase() : null,
+            curp: e.curp ? String(e.curp).trim().toUpperCase() : null,
+            nss: e.nss ? String(e.nss).trim() : null,
+            puesto: String(e.puesto).trim(),
+            depto: String(e.depto).trim(),
+            salario_diario: salDiario,
+            fecha_ingreso: fechaIng,
+            jornada: e.jornada || 'Diurna',
+            estatus: 'Activo',
+          });
+          if (error) {
+            t()?.error('Error al guardar empleado: ' + error.message);
+            return { error: error.message || 'Error al guardar empleado' };
+          }
+          log('Crear', 'Empleados', `${e.nombre} — ${e.puesto}`);
+          rf();
+          return undefined;
+        } catch (ex) {
+          const msg = ex?.message || 'Error inesperado al crear empleado';
+          t()?.error(msg);
+          return { error: msg };
+        }
       },
 
       updateEmpleado: async (id, e) => {
-        const update = {};
-        if (e.nombre       !== undefined) update.nombre       = e.nombre;
-        if (e.puesto       !== undefined) update.puesto       = e.puesto;
-        if (e.telefono     !== undefined) update.telefono     = e.telefono;
-        if (e.salarioBase  !== undefined) update.salario_base = Number(e.salarioBase);
-        if (e.salario_base !== undefined) update.salario_base = Number(e.salario_base);
-        if (e.banco        !== undefined) update.banco        = e.banco;
-        if (e.cuenta       !== undefined) update.cuenta       = e.cuenta;
-        if (e.estatus      !== undefined) update.estatus      = e.estatus;
-        const { error } = await supabase.from('empleados').update(update).eq('id', id);
-        if (error) { t()?.error('Error al actualizar empleado'); return error; }
-        log('Editar', 'Empleados', `ID ${id}`);
-        rf();
+        try {
+          if (!id) return { error: 'Empleado requerido' };
+          const update = {};
+          if (e.nombre       !== undefined) update.nombre       = String(e.nombre).trim();
+          if (e.rfc          !== undefined) update.rfc          = e.rfc ? String(e.rfc).trim().toUpperCase() : null;
+          if (e.curp         !== undefined) update.curp         = e.curp ? String(e.curp).trim().toUpperCase() : null;
+          if (e.nss          !== undefined) update.nss          = e.nss ? String(e.nss).trim() : null;
+          if (e.puesto       !== undefined) update.puesto       = String(e.puesto).trim();
+          if (e.depto        !== undefined) update.depto        = String(e.depto).trim();
+          if (e.salarioDiario !== undefined) {
+            const sd = Number(e.salarioDiario);
+            if (!Number.isFinite(sd) || sd <= 0) return { error: 'Salario diario debe ser mayor a 0' };
+            update.salario_diario = sd;
+          }
+          if (e.salario_diario !== undefined) update.salario_diario = Number(e.salario_diario);
+          if (e.fechaIngreso  !== undefined) update.fecha_ingreso = e.fechaIngreso;
+          if (e.fecha_ingreso !== undefined) update.fecha_ingreso = e.fecha_ingreso;
+          if (e.jornada      !== undefined) update.jornada      = e.jornada;
+          if (e.estatus      !== undefined) update.estatus      = e.estatus;
+
+          const { error } = await supabase.from('empleados').update(update).eq('id', id);
+          if (error) {
+            t()?.error('Error al actualizar empleado');
+            return { error: error.message || 'Error al actualizar empleado' };
+          }
+          log('Editar', 'Empleados', `ID ${id}`);
+          rf();
+          return undefined;
+        } catch (ex) {
+          const msg = ex?.message || 'Error inesperado al actualizar empleado';
+          t()?.error(msg);
+          return { error: msg };
+        }
       },
 
       deleteEmpleado: async (id) => {

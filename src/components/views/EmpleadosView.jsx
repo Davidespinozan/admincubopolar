@@ -93,8 +93,13 @@ export function EmpleadosView({ data, actions }) {
     if (Object.keys(e).length) { setErrors(e); return; }
     try {
       const payload = { ...form, salarioDiario: parseFloat(form.salarioDiario) };
-      if (modal === "new") await actions.addEmpleado(payload);
-      else await actions.updateEmpleado(modal.id, payload);
+      const result = modal === "new"
+        ? await actions.addEmpleado(payload)
+        : await actions.updateEmpleado(modal.id, payload);
+      if (result && (result.error || result.message || result.code)) {
+        toast?.error(result.error || result.message || 'No se pudo guardar');
+        return;
+      }
       toast?.success(modal === "new" ? "Empleado registrado" : "Empleado actualizado");
       setModal(null);
     } catch(ex) { toast?.error('Error: ' + (ex?.message || 'No se pudo guardar')); }
