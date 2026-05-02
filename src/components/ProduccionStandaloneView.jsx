@@ -323,8 +323,18 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const registrarProduccion = async () => {
     if (guardandoProd) return;
-    if (!form.cantidad || n(form.cantidad) <= 0) return;
-    if (bolsaSku && n(form.cantidad) > stockBolsa) return;
+    if (!form.cantidad || n(form.cantidad) <= 0) {
+      showToast('Captura una cantidad válida');
+      return;
+    }
+    if (bolsaSku && n(form.cantidad) > stockBolsa) {
+      showToast(`Stock insuficiente de ${bolsaSku} (disp: ${stockBolsa}, pediste ${n(form.cantidad)}). Compra empaque desde Insumos.`);
+      return;
+    }
+    if (!bolsaSku) {
+      showToast(`${form.sku} no tiene empaque configurado. Configurarlo en Catálogo antes de producir.`);
+      return;
+    }
 
     const cant = n(form.cantidad);
     const cfNombre = cuartos.find(cf => s(cf.id) === form.destino)?.nombre || form.destino;
@@ -777,14 +787,19 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 <input type="number" min="0" inputMode="numeric" value={form.cantidad} onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="Ej: 500" autoFocus />
               </div>
-              {bolsaSku && (
+              {bolsaSku ? (
                 <div className={`p-3 rounded-xl ${n(form.cantidad) > stockBolsa ? "bg-red-50" : "bg-blue-50"}`}>
                   <p className="text-xs font-semibold">Consume: {form.cantidad || 0} bolsas {bolsaSku}</p>
                   <p className={`text-xs mt-0.5 ${n(form.cantidad) > stockBolsa ? "text-red-600 font-bold" : "text-slate-500"}`}>
                     Disponibles: {stockBolsa.toLocaleString()}{n(form.cantidad) > stockBolsa ? " — INSUFICIENTE" : ""}
                   </p>
                 </div>
-              )}
+              ) : form.sku ? (
+                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
+                  <p className="text-xs font-bold text-amber-800">⚠ {form.sku} no tiene empaque configurado</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Pídele a Admin que enlace un empaque a este producto en Catálogo. No se puede producir sin empaque definido.</p>
+                </div>
+              ) : null}
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Máquina</label>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -879,8 +894,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             <button onClick={registrarProduccion}
               disabled={
                 guardandoProd ||
+                !form.sku ||
                 !form.cantidad || n(form.cantidad) <= 0 ||
-                (bolsaSku && n(form.cantidad) > stockBolsa) ||
+                !bolsaSku ||
+                n(form.cantidad) > stockBolsa ||
                 (form.conMerma && (
                   !form.mermaCantidad || n(form.mermaCantidad) <= 0 ||
                   n(form.mermaCantidad) > n(form.cantidad) ||
