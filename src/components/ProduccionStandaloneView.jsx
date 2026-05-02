@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { s, n, fmtDate, fmtPct } from '../utils/safe';
 import { puedeAgregarAlCuarto, tarimasOcupadasEnCuarto, colorTarimasUso } from '../utils/tarimas';
@@ -56,6 +56,28 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       }
     };
   }, [fotoMermaProdPreview]);
+
+  // Escape para los 2 modales ad-hoc principales: "Ya produje hielo" y
+  // "Mover entre congeladores". Si hay un guardado en curso (guardandoProd
+  // o haciendoTraspaso), Escape NO cierra para evitar perder contexto.
+  useEffect(() => {
+    const algunoAbierto = !!modal || !!traspasoModal;
+    if (!algunoAbierto) return;
+    if (guardandoProd || haciendoTraspaso) return;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (modal) {
+        setModal(false);
+        // mantener consistencia con el click-fuera existente
+        if (typeof clearFotoMermaProd === 'function') clearFotoMermaProd();
+      } else if (traspasoModal) {
+        setTraspasoModal(false);
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modal, traspasoModal, guardandoProd, haciendoTraspaso]);
 
   const clearFotoMerma = () => {
     if (fotoMermaPreview && fotoMermaPreview.startsWith('blob:')) {
