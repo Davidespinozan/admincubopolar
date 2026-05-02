@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
-import { s, n, eqId, fmtMoney } from '../utils/safe';
+import { s, n, eqId, fmtMoney, validarRFC } from '../utils/safe';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 
@@ -213,6 +213,10 @@ export default function NuevaVentaModal({
     }
     if (cliForm.requiereFactura && !cliForm.rfc.trim()) {
       toast?.error?.('RFC requerido para factura');
+      return;
+    }
+    if (cliForm.requiereFactura && !validarRFC(cliForm.rfc)) {
+      toast?.error?.('Formato de RFC inválido (ej: XAXX010101000)');
       return;
     }
     const payload = {
@@ -479,11 +483,16 @@ export default function NuevaVentaModal({
             )}
           </div>
 
-          {clienteSeleccionado.credito_autorizado && (
-            <div className="mt-2 pt-2 border-t border-emerald-200 text-xs text-purple-700 font-semibold">
-              💳 Crédito autorizado · Límite {fmtMoney(clienteSeleccionado.limite_credito)} · Saldo pendiente {fmtMoney(clienteSeleccionado.saldo)}
-            </div>
-          )}
+          {clienteSeleccionado.credito_autorizado && (() => {
+            const limite = n(clienteSeleccionado.limite_credito);
+            const saldoCli = n(clienteSeleccionado.saldo);
+            const disponible = Math.max(0, limite - saldoCli);
+            return (
+              <div className="mt-2 pt-2 border-t border-emerald-200 text-xs text-purple-700 font-semibold">
+                💳 Crédito autorizado · Límite {fmtMoney(limite)} · Saldo {fmtMoney(saldoCli)} · <span className={disponible > 0 ? 'text-emerald-700' : 'text-red-700'}>Disponible {fmtMoney(disponible)}</span>
+              </div>
+            );
+          })()}
 
           {ft.toggleFactura && clienteSeleccionado.rfc && clienteSeleccionado.rfc !== 'XAXX010101000' && (
             <div className="flex items-center justify-between mt-2 pt-2 border-t border-emerald-200">
@@ -767,18 +776,35 @@ export default function NuevaVentaModal({
         </>
       )}
 
-      <div className="flex justify-between gap-2 mt-6 pt-4 border-t border-slate-100">
-        <FormBtn onClick={handleClose}>Cancelar</FormBtn>
-        <div className="flex gap-2">
-          {ft.wizard && step > 1 && <FormBtn onClick={prevStep}>← Atrás</FormBtn>}
-          {ft.wizard && step < 3 && <FormBtn primary onClick={nextStep}>Siguiente →</FormBtn>}
-          {(!ft.wizard || step === 3) && (
-            <FormBtn primary onClick={save} loading={saving}>
-              {form.requiereFactura ? 'Crear venta con factura' : 'Crear venta'}
-            </FormBtn>
-          )}
-        </div>
-      </div>
+      {(() => {
+        const cliCred = clienteSeleccionado;
+        const esCredito = form.tipoCobro === 'Credito';
+        const limiteCli = n(cliCred?.limite_credito);
+        const saldoCli = n(cliCred?.saldo);
+        const disponibleCred = Math.max(0, limiteCli - saldoCli);
+        const excedeCredito = esCredito && cliCred?.credito_autorizado && totalCalc > disponibleCred;
+        return (
+          <div className="flex justify-between gap-2 mt-6 pt-4 border-t border-slate-100">
+            <FormBtn onClick={handleClose}>Cancelar</FormBtn>
+            <div className="flex gap-2 flex-col items-end">
+              {excedeCredito && (
+                <p className="text-xs text-red-600 font-semibold">
+                  ⚠ Excede crédito disponible ({fmtMoney(disponibleCred)})
+                </p>
+              )}
+              <div className="flex gap-2">
+                {ft.wizard && step > 1 && <FormBtn onClick={prevStep}>← Atrás</FormBtn>}
+                {ft.wizard && step < 3 && <FormBtn primary onClick={nextStep}>Siguiente →</FormBtn>}
+                {(!ft.wizard || step === 3) && (
+                  <FormBtn primary onClick={save} loading={saving} disabled={excedeCredito}>
+                    {form.requiereFactura ? 'Crear venta con factura' : 'Crear venta'}
+                  </FormBtn>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </Modal>
   );
 }

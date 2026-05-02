@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, useToast, supabase } from './viewsCommon';
+import { validarRFC } from '../../utils/safe';
 
 export function ConfiguracionView({ data, actions, user }) {
   const toast = useToast();
@@ -43,6 +44,7 @@ export function ConfiguracionView({ data, actions, user }) {
     const e = {};
     if (!empresaForm.razonSocial.trim()) e.razonSocial = 'Requerida';
     if (!empresaForm.rfc.trim()) e.rfc = 'Requerido';
+    else if (!validarRFC(empresaForm.rfc)) e.rfc = 'Formato inválido (ej: CPO000000XX0)';
     if (Object.keys(e).length) { setEmpresaErrors(e); return; }
     setEmpresaErrors({});
     setEmpresaSaving(true);

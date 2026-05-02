@@ -190,6 +190,23 @@ export function RutasView({ data, actions }) {
     .filter(c => s(c.estatus) === 'Activo')
     .map(c => ({ value: String(c.id), label: s(c.nombre) + (c.placas ? ` (${c.placas})` : '') })), [data.camiones]);
 
+  // Capacidad del camión seleccionado en el form. 0 = sin camión asignado o
+  // sin capacidad capturada (no se puede validar contra capacidad).
+  const camionSeleccionado = useMemo(() => {
+    if (!form.camionId) return null;
+    return (data.camiones || []).find(c => String(c.id) === String(form.camionId)) || null;
+  }, [data.camiones, form.camionId]);
+
+  const cargaTotalBolsas = useMemo(() => {
+    const base = Object.values(form.cargaPorProducto).reduce((sum, v) => sum + n(v), 0);
+    const extra = Object.values(form.extraPorProducto).reduce((sum, v) => sum + n(v), 0);
+    return base + extra;
+  }, [form.cargaPorProducto, form.extraPorProducto]);
+
+  const capacidadCamion = n(camionSeleccionado?.capacidad);
+  const excedeCapacidad = capacidadCamion > 0 && cargaTotalBolsas > capacidadCamion;
+  const pctCapacidad = capacidadCamion > 0 ? Math.min(100, (cargaTotalBolsas / capacidadCamion) * 100) : 0;
+
   const validateStep = (currentStep) => {
     const e = {};
     if (currentStep === 1) {
@@ -607,12 +624,22 @@ export function RutasView({ data, actions }) {
 
                             {/* Botón contextual + menú */}
                             <div className="flex items-center gap-1.5 flex-shrink-0">
-                              {isProgramada && (
-                                <>
-                                  <button onClick={() => asignarOrdenes(r)} className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">+ Órdenes</button>
-                                  <button onClick={() => actions.updateRutaEstatus(r.id, "En progreso")} className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">Iniciar</button>
-                                </>
-                              )}
+                              {isProgramada && (() => {
+                                const sinCarga = !(r.carga_confirmada_at || r.cargaConfirmadaAt);
+                                return (
+                                  <>
+                                    <button onClick={() => asignarOrdenes(r)} className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">+ Órdenes</button>
+                                    <button
+                                      onClick={() => actions.updateRutaEstatus(r.id, "En progreso")}
+                                      disabled={sinCarga}
+                                      title={sinCarga ? 'Esperando confirmación de carga del chofer' : ''}
+                                      className={`px-3 py-1.5 text-xs font-bold text-white rounded-lg transition-colors ${sinCarga ? 'bg-slate-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                                    >
+                                      Iniciar
+                                    </button>
+                                  </>
+                                );
+                              })()}
                               {isEnProgreso && (
                                 <span className="text-xs text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg font-semibold">En ruta</span>
                               )}
@@ -802,6 +829,27 @@ export function RutasView({ data, actions }) {
 
           {errors.carga && <div className="bg-red-50 border border-red-200 rounded-xl p-3"><p className="text-xs text-red-700 font-semibold">⚠️ {errors.carga}</p></div>}
 
+          {/* Capacidad del camión */}
+          {camionSeleccionado && capacidadCamion > 0 && (
+            <div className={`rounded-xl p-3 border ${excedeCapacidad ? 'bg-red-50 border-red-200' : pctCapacidad >= 80 ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+              <div className="flex justify-between items-baseline mb-1.5">
+                <span className="text-xs font-semibold text-slate-700">Capacidad camión</span>
+                <span className={`text-xs font-bold ${excedeCapacidad ? 'text-red-700' : 'text-slate-700'}`}>
+                  {cargaTotalBolsas.toLocaleString()} / {capacidadCamion.toLocaleString()} bolsas ({Math.round(pctCapacidad)}%)
+                </span>
+              </div>
+              <div className="h-2 bg-white rounded-full overflow-hidden border border-slate-200">
+                <div
+                  className={`h-full rounded-full transition-all ${excedeCapacidad ? 'bg-red-500' : pctCapacidad >= 80 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                  style={{ width: `${pctCapacidad}%` }}
+                />
+              </div>
+              {excedeCapacidad && (
+                <p className="text-xs text-red-700 font-semibold mt-1.5">⚠ Excede capacidad del camión por {(cargaTotalBolsas - capacidadCamion).toLocaleString()} bolsas</p>
+              )}
+            </div>
+          )}
+
           {/* Atajo: llenar con demanda */}
           {form.ordenesIds.length > 0 && Object.values(demandaSeleccionados).some(v => v > 0) && (
             <button
@@ -896,7 +944,7 @@ export function RutasView({ data, actions }) {
         <div className="flex gap-2">
           {step > 1 && <FormBtn onClick={prevStep}>← Atrás</FormBtn>}
           {step < 3 && <FormBtn primary onClick={nextStep}>Siguiente →</FormBtn>}
-          {step === 3 && <FormBtn primary onClick={save} loading={saving}>{editingRuta ? "Guardar cambios" : "Autorizar carga"}</FormBtn>}
+          {step === 3 && <FormBtn primary onClick={save} loading={saving} disabled={excedeCapacidad}>{editingRuta ? "Guardar cambios" : "Autorizar carga"}</FormBtn>}
         </div>
       </div>
     </Modal>

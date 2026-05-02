@@ -108,6 +108,16 @@ export const todayLocalISO = (date = new Date()) => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+// ── Valida formato de RFC mexicano (persona física o moral).
+// Persona moral: 3 letras + 6 dígitos + 3 alfanum (homoclave).
+// Persona física: 4 letras + 6 dígitos + 3 alfanum.
+// Permite & y Ñ en la parte alfabética. Genérico XAXX010101000 pasa.
+export const validarRFC = (rfc) => {
+  if (!rfc) return false;
+  const limpio = String(rfc).trim().toUpperCase();
+  return /^[A-ZÑ&]{3,4}\d{6}[A-Z\d]{3}$/.test(limpio);
+};
+
 // ── ID comparison: PostgreSQL serial → int, UUID → string
 // Supabase JS client returns numbers for serial PKs but strings for UUIDs.
 // form selects always store strings. Comparing 1 === "1" → false.

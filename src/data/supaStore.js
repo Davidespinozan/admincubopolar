@@ -820,6 +820,34 @@ export function useSupaStore(userId, userName, userRol) {
             }
           }
 
+          // Validación de límite de crédito. Solo aplica a ventas a crédito
+          // y requiere clienteId (las ventas público en general no aplican).
+          if (s(o.tipoCobro) === 'Credito' && o.clienteId) {
+            const { data: cliCred, error: errCred } = await supabase
+              .from('clientes')
+              .select('saldo, limite_credito, credito_autorizado, nombre')
+              .eq('id', o.clienteId)
+              .maybeSingle();
+            if (errCred) {
+              console.warn('[addOrden] select cliente para crédito:', errCred.message);
+              t()?.error('No se pudo verificar el crédito del cliente');
+              return { message: errCred.message };
+            }
+            if (!cliCred?.credito_autorizado) {
+              const msg = 'Cliente no tiene crédito autorizado';
+              t()?.error(msg);
+              return { message: msg };
+            }
+            const limite = Number(cliCred.limite_credito) || 0;
+            const saldo = Number(cliCred.saldo) || 0;
+            const disponible = limite - saldo;
+            if (Number(total) > disponible) {
+              const msg = `Excede límite de crédito. Disponible: $${disponible.toLocaleString('es-MX')}`;
+              t()?.error(msg);
+              return { message: msg };
+            }
+          }
+
           const { data: seq, error: errSeq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
           if (errSeq) {
             console.warn('[addOrden] rpc nextval:', errSeq.message);

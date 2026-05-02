@@ -1,5 +1,6 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, fmtMoney, useDebounce, useToast, reporteClientes, PAGE_SIZE, Paginator } from './viewsCommon';
 import AddressAutocomplete from '../ui/AddressAutocomplete';
+import { validarRFC } from '../../utils/safe';
 
 export function ClientesView({ data, actions }) {
   const toast = useToast();
@@ -26,7 +27,7 @@ export function ClientesView({ data, actions }) {
     if (currentStep === 1) {
       if (!form.nombre.trim()) e.nombre = "Requerido";
       if (!form.rfc.trim()) e.rfc = "Requerido";
-      if (form.rfc.trim() && (form.rfc.length < 12 || form.rfc.length > 13)) e.rfc = "RFC debe tener 12-13 caracteres";
+      else if (!validarRFC(form.rfc)) e.rfc = "Formato inválido (ej: XAXX010101000)";
     }
     if (currentStep === 2) {
       if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
@@ -52,7 +53,7 @@ export function ClientesView({ data, actions }) {
     const e = {};
     if (!form.nombre.trim()) e.nombre = "Requerido";
     if (!form.rfc.trim()) e.rfc = "Requerido";
-    if (form.rfc.trim() && (form.rfc.length < 12 || form.rfc.length > 13)) e.rfc = "RFC debe tener 12-13 caracteres";
+    else if (!validarRFC(form.rfc)) e.rfc = "Formato inválido (ej: XAXX010101000)";
     if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
     if (form.cp.trim() && !/^\d{5}$/.test(form.cp)) e.cp = "CP debe ser 5 dígitos";
     if (Object.keys(e).length) {
