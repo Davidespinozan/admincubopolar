@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { s, n, fmtMoney } from '../utils/safe';
+import { s, n, fmtMoney, extraerTelefono } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
 import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
@@ -226,7 +226,16 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
                 <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
-                  <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por ${fmtMoney(pagoModal.total)} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>
+                  {(() => {
+                    const cliente = (data?.clientes || []).find(c => String(c.id) === String(pagoModal.clienteId || pagoModal.cliente_id));
+                    const tel = extraerTelefono(cliente?.contacto || cliente?.telefono);
+                    const empresaNombre = s(data?.configEmpresa?.razonSocial) || 'Cubo Polar';
+                    const msg = `Hola, aquí está tu link de pago de ${empresaNombre} por ${fmtMoney(pagoModal.total)} MXN:\n${shortUrl || checkoutUrl}`;
+                    const href = tel
+                      ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`
+                      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+                    return <a href={href} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>;
+                  })()}
                 </div>
                 <button onClick={() => { setCheckoutUrl(null); setShortUrl(null); setPagoModal(null); }} className="w-full py-2 text-xs text-slate-500 font-semibold">Cerrar</button>
               </div>

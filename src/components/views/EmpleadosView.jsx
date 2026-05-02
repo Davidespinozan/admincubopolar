@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, useToast, todayISO, fmtMoney } from './viewsCommon';
+import { useState, useMemo, Icons, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, todayISO, fmtMoney } from './viewsCommon';
 
 export function EmpleadosView({ data, actions }) {
   const toast = useToast();
@@ -6,7 +6,7 @@ export function EmpleadosView({ data, actions }) {
   const [search, setSearch] = useState("");
   const [filterEstatus, setFilterEstatus] = useState("Activos"); // Activos | Inactivos | Todos
   const [modal, setModal] = useState(null);
-  const empty = { nombre: "", rfc: "", curp: "", nss: "", puesto: "", depto: "Ventas y Distribución", salarioDiario: "", fechaIngreso: todayISO(), jornada: "Diurna" };
+  const empty = { nombre: "", rfc: "", curp: "", nss: "", telefono: "", puesto: "", depto: "Ventas y Distribución", salarioDiario: "", fechaIngreso: todayISO(), jornada: "Diurna" };
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
   const emps = Array.isArray(data?.empleados) ? data.empleados.filter(e => e && typeof e === 'object') : [];
@@ -81,7 +81,7 @@ export function EmpleadosView({ data, actions }) {
 
   const openNew = () => { setForm(empty); setErrors({}); setModal("new"); };
   const openEdit = (e) => {
-    setForm({ nombre: s(e.nombre), rfc: s(e.rfc), curp: s(e.curp), nss: s(e.nss), puesto: s(e.puesto), depto: s(e.depto), salarioDiario: String(n(e.salarioDiario)), fechaIngreso: s(e.fechaIngreso), jornada: s(e.jornada) || "Diurna" });
+    setForm({ nombre: s(e.nombre), rfc: s(e.rfc), curp: s(e.curp), nss: s(e.nss), telefono: s(e.telefono), puesto: s(e.puesto), depto: s(e.depto), salarioDiario: String(n(e.salarioDiario)), fechaIngreso: s(e.fechaIngreso), jornada: s(e.jornada) || "Diurna" });
     setErrors({}); setModal(e);
   };
 
@@ -131,6 +131,15 @@ export function EmpleadosView({ data, actions }) {
         <option value="Todos">Todos</option>
       </select>
     </div>
+
+    {filtered.length === 0 && (
+      <EmptyState
+        message={search || filterEstatus !== "Activos" ? "Sin resultados" : "Aún no hay empleados activos"}
+        hint={search || filterEstatus !== "Activos" ? "Intenta con otra búsqueda o limpia los filtros" : "Click + Nuevo empleado para empezar"}
+        cta={search || filterEstatus !== "Activos" ? "Limpiar filtros" : "+ Nuevo empleado"}
+        onCta={search || filterEstatus !== "Activos" ? () => { setSearch(''); setFilterEstatus('Activos'); } : openNew}
+      />
+    )}
 
     {deptos.map(d => {
       const dEmps = filtered.filter(e => e && s(e.depto) === d);
@@ -209,6 +218,7 @@ export function EmpleadosView({ data, actions }) {
         <FormInput label="RFC" value={form.rfc} onChange={e => setForm({ ...form, rfc: e.target.value.toUpperCase() })} maxLength={13} />
         <FormInput label="CURP" value={form.curp} onChange={e => setForm({ ...form, curp: e.target.value.toUpperCase() })} maxLength={18} />
         <FormInput label="NSS" value={form.nss} onChange={e => setForm({ ...form, nss: e.target.value })} />
+        <FormInput label="Teléfono" type="tel" value={form.telefono} onChange={e => setForm({ ...form, telefono: e.target.value })} placeholder="667 123 4567" />
         <FormInput label="Puesto *" value={form.puesto} onChange={e => setForm({ ...form, puesto: e.target.value })} error={errors.puesto} />
         <FormSelect label="Departamento" options={["Ventas y Distribución", "Producción", "Administración", "Staff"]} value={form.depto} onChange={e => setForm({ ...form, depto: e.target.value })} />
         <FormInput label="Salario diario *" type="number" value={form.salarioDiario} onChange={e => setForm({ ...form, salarioDiario: e.target.value })} error={errors.salarioDiario} />

@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
-import { s, n, fmtMoney, fmtDate } from '../utils/safe';
+import { s, n, fmtMoney, fmtDate, extraerTelefono } from '../utils/safe';
 import { supabase } from '../lib/supabase';
 import { abrirNavegacion } from '../utils/navegacion';
 import { EmptyState } from './ui/Skeleton';
@@ -10,33 +10,6 @@ const MERMA_CAUSAS = ["Bolsa rota", "Hielo derretido", "Daño transporte", "Rech
 const REGIMENES = ["Régimen General", "Régimen Simplificado", "Sin obligaciones"];
 const USOS_CFDI = ["G01", "G03", "S01", "P01"];
 const CHOFER_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf4f6_0%,#e3eef1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
-
-// Extrae teléfono de un campo libre. Acepta formatos:
-//   "6671234567" | "667-123-4567" | "(667) 123-4567" | "+52 667 123 4567"
-//   "Juan Pérez 6671234567" | "Juan Pérez 667-123-4567"
-// Retorna solo dígitos (10 mínimo) o null si no hay número parseable.
-function extraerTelefono(contacto) {
-  if (!contacto) return null;
-  const str = String(contacto);
-
-  // Limpiar separadores comunes: guiones, espacios, paréntesis, puntos, +
-  const limpio = str.replace(/[\s\-().+]/g, '');
-
-  // Buscar 10 o más dígitos consecutivos
-  const match = limpio.match(/\d{10,}/);
-  if (!match) return null;
-
-  let tel = match[0];
-
-  // Si empieza con 52 (LADA México) y tiene 12+ dígitos, quitarle el 52
-  // Esto normaliza "+52 667 1234567" a "6671234567"
-  if (tel.length >= 12 && tel.startsWith('52')) {
-    tel = tel.slice(2);
-  }
-
-  // Devolver solo los primeros 10 dígitos (cubre LADAs MX)
-  return tel.slice(0, 10);
-}
 
 export default function ChoferView({ user, data, actions, onLogout }) {
   const [stepOverride, setStepOverride] = useState(null);
@@ -1120,7 +1093,14 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
                 <div className="grid grid-cols-2 gap-2">
                   <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
-                  <a href={`https://wa.me/?text=${encodeURIComponent(`Hola, aquí está tu link de pago de Cubo Polar por ${fmtMoney(entregaModal.totalCalc)} MXN:\n${shortUrl || checkoutUrl}`)}`} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 WhatsApp</a>
+                  {(() => {
+                    const tel = extraerTelefono(entregaModal?.contacto);
+                    const msg = `Hola, aquí está tu link de pago de Cubo Polar por ${fmtMoney(entregaModal.totalCalc)} MXN:\n${shortUrl || checkoutUrl}`;
+                    const href = tel
+                      ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`
+                      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+                    return <a href={href} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 WhatsApp</a>;
+                  })()}
                 </div>
                 <button onClick={() => { setCheckoutUrl(null); setShortUrl(null); setEntregaModal(null); }} className="w-full py-2 text-xs text-slate-500 font-semibold">Cerrar</button>
               </div>

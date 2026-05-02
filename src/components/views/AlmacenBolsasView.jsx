@@ -1,4 +1,4 @@
-import { useMemo, PageHeader, s, n } from './viewsCommon';
+import { useMemo, PageHeader, EmptyState, s, n } from './viewsCommon';
 
 export function AlmacenBolsasView({ data }) {
   const bolsas = (data.productos || []).filter(p => s(p.tipo) === "Empaque");
@@ -86,6 +86,16 @@ export function AlmacenBolsasView({ data }) {
         </div>
       ))}
     </div>)}
+
+    {movs.length === 0 && (
+      <div className="bg-white border border-slate-100 rounded-2xl p-4">
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Movimientos de almacén</h3>
+        <EmptyState
+          message="Aún no hay movimientos de bolsas"
+          hint="Cuando producción consuma o el almacén reciba, los movimientos aparecerán aquí."
+        />
+      </div>
+    )}
 
     {movs.length > 0 && (<div className="bg-white border border-slate-100 rounded-2xl p-4">
       <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Movimientos de almacén</h3>

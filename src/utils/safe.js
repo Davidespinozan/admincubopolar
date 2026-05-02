@@ -5,6 +5,21 @@ import { useState, useEffect } from 'react';
 // All must become "" for safe .toLowerCase()/.includes()
 export const s = (v) => (typeof v === 'string' ? v : (v == null ? '' : String(v)));
 
+// ── Extrae teléfono de un campo libre (cliente.contacto, cliente.telefono).
+// Acepta: "6671234567", "667-123-4567", "(667) 123-4567", "+52 667 123 4567",
+// "Juan Pérez 6671234567", "Juan Pérez 667-123-4567".
+// Retorna solo dígitos (10 mínimo, normalizado a LADA MX) o null si no parsea.
+export const extraerTelefono = (contacto) => {
+  if (!contacto) return null;
+  const limpio = String(contacto).replace(/[\s\-().+]/g, '');
+  const match = limpio.match(/\d{10,}/);
+  if (!match) return null;
+  let tel = match[0];
+  // Normaliza "+52 667 1234567" a "6671234567"
+  if (tel.length >= 12 && tel.startsWith('52')) tel = tel.slice(2);
+  return tel.slice(0, 10);
+};
+
 // ── Null-safe number: null/undefined/NaN/Infinity → 0, clamped
 // For stock, precio, cantidad — always ≥ 0
 // Warns in development if value looks like corrupted data

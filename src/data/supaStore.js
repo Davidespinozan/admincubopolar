@@ -76,6 +76,7 @@ const EMPTY = {
   notificaciones: [],
   choferUbicaciones: [],
   contabilidad: { ingresos: [], egresos: [] },
+  configEmpresa: null,
 };
 
 export function useSupaStore(userId, userName) {
@@ -110,6 +111,13 @@ export function useSupaStore(userId, userName) {
         safeRows(supabase.from('umbrales').select('*')),
         safeRows(supabase.from('pagos').select('*').order('id', { ascending: false }).limit(200)),
       ]);
+
+      // Configuracion de empresa (singleton id=1)
+      const { data: configEmpresaRow } = await supabase
+        .from('configuracion_empresa')
+        .select('*')
+        .eq('id', 1)
+        .maybeSingle();
 
       // Tablas opcionales
       const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam, notif, chUbi] = await Promise.all([
@@ -420,6 +428,7 @@ export function useSupaStore(userId, userName) {
         notificaciones: (notif || []).map(toCamel),
         choferUbicaciones: (chUbi || []).map(toCamel),
         contabilidad: contabilidadObj,
+        configEmpresa: configEmpresaRow ? toCamel(configEmpresaRow) : null,
       });
 
       setLoading(false);
@@ -3055,6 +3064,7 @@ export function useSupaStore(userId, userName) {
             rfc: e.rfc ? String(e.rfc).trim().toUpperCase() : null,
             curp: e.curp ? String(e.curp).trim().toUpperCase() : null,
             nss: e.nss ? String(e.nss).trim() : null,
+            telefono: e.telefono ? String(e.telefono).trim() : null,
             puesto: String(e.puesto).trim(),
             depto: String(e.depto).trim(),
             salario_diario: salDiario,
@@ -3084,6 +3094,7 @@ export function useSupaStore(userId, userName) {
           if (e.rfc          !== undefined) update.rfc          = e.rfc ? String(e.rfc).trim().toUpperCase() : null;
           if (e.curp         !== undefined) update.curp         = e.curp ? String(e.curp).trim().toUpperCase() : null;
           if (e.nss          !== undefined) update.nss          = e.nss ? String(e.nss).trim() : null;
+          if (e.telefono     !== undefined) update.telefono     = e.telefono ? String(e.telefono).trim() : null;
           if (e.puesto       !== undefined) update.puesto       = String(e.puesto).trim();
           if (e.depto        !== undefined) update.depto        = String(e.depto).trim();
           if (e.salarioDiario !== undefined) {
@@ -3661,6 +3672,63 @@ export function useSupaStore(userId, userName) {
       // ── AUDITORÍA ──
       logAudit: async (accion, modulo, detalle) => {
         await log(accion, modulo, detalle);
+      },
+
+      // ── CONFIGURACIÓN EMPRESA (singleton id=1) ──
+      // Refetch puntual del singleton (NO refetcheAll). Usado por la vista
+      // de Configuración tras un update para no esperar al debounce de Realtime.
+      getConfigEmpresa: async () => {
+        try {
+          const { data, error } = await supabase
+            .from('configuracion_empresa')
+            .select('*')
+            .eq('id', 1)
+            .maybeSingle();
+          if (error) {
+            return { error: error.message || 'Error al leer configuración de empresa' };
+          }
+          return { data: data ? toCamel(data) : null };
+        } catch (e) {
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      updateConfigEmpresa: async (payload = {}) => {
+        try {
+          const update = {};
+          if (payload.razonSocial      !== undefined) update.razon_social      = String(payload.razonSocial || '').trim();
+          if (payload.rfc              !== undefined) update.rfc               = String(payload.rfc || '').trim().toUpperCase();
+          if (payload.direccionFiscal  !== undefined) update.direccion_fiscal  = payload.direccionFiscal || null;
+          if (payload.codigoPostal     !== undefined) update.codigo_postal     = payload.codigoPostal || null;
+          if (payload.telefono         !== undefined) update.telefono          = payload.telefono || null;
+          if (payload.correo           !== undefined) update.correo            = payload.correo || null;
+          if (payload.regimenFiscal    !== undefined) update.regimen_fiscal    = payload.regimenFiscal || null;
+          if (payload.logoUrl          !== undefined) update.logo_url          = payload.logoUrl || null;
+          if (Object.keys(update).length === 0) return { error: 'Nada que actualizar' };
+          if (update.razon_social !== undefined && !update.razon_social) {
+            return { error: 'Razón social requerida' };
+          }
+          if (update.rfc !== undefined && !update.rfc) {
+            return { error: 'RFC requerido' };
+          }
+          update.updated_at = new Date().toISOString();
+
+          const { error } = await supabase
+            .from('configuracion_empresa')
+            .update(update)
+            .eq('id', 1);
+          if (error) {
+            t()?.error('Error al actualizar configuración de empresa');
+            return { error: error.message || 'Error al actualizar configuración de empresa' };
+          }
+          await log('Editar', 'Configuración Empresa', `Razon social: ${update.razon_social || '(sin cambio)'}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          const msg = e?.message || 'Error inesperado al actualizar configuración de empresa';
+          t()?.error(msg);
+          return { error: msg };
+        }
       },
 
       // ── RESET MASIVO DEL SISTEMA ──
