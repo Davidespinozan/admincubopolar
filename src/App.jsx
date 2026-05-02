@@ -1,4 +1,4 @@
-import { useMemo, useState, lazy, Suspense } from 'react'
+import { useMemo, useState, useEffect, lazy, Suspense } from 'react'
 import LoginScreen from './components/Login'
 import CuboPolarERP from './components/CuboPolarERP'
 import { useSupaStore } from './data/supaStore'
@@ -26,7 +26,27 @@ function RoleFallback() {
 function App() {
   const [user, setUser] = useState(null)
   const [adminViewAs, setAdminViewAs] = useState(null)
-  const { data, actions, loading } = useSupaStore(user?.id, user?.nombre)
+  const { data, actions, loading, error } = useSupaStore(user?.id, user?.nombre)
+
+  // ── Detector de offline/online ──
+  // Listener global para mostrar banner cuando se cae la red. NO implementa
+  // queue de mutaciones pendientes (post-entrega): solo avisa al usuario.
+  const [isOffline, setIsOffline] = useState(typeof navigator !== 'undefined' && !navigator.onLine)
+  const [showReconectado, setShowReconectado] = useState(false)
+  useEffect(() => {
+    const onOffline = () => setIsOffline(true)
+    const onOnline = () => {
+      setIsOffline(false)
+      setShowReconectado(true)
+      setTimeout(() => setShowReconectado(false), 3000)
+    }
+    window.addEventListener('offline', onOffline)
+    window.addEventListener('online', onOnline)
+    return () => {
+      window.removeEventListener('offline', onOffline)
+      window.removeEventListener('online', onOnline)
+    }
+  }, [])
 
   const authUserId = user?.authUserId || user?.auth_id || null
 
@@ -122,6 +142,40 @@ function App() {
     </div>
   )
 
+  // ── Pantalla de error de carga inicial ──
+  // Si fetchAll falló y data quedó vacía, mostrar pantalla con Reintentar
+  // en lugar de un dashboard fantasma sin datos.
+  if (error) return (
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'linear-gradient(180deg, #fef2f2 0%, #fee2e2 100%)' }}>
+      <div className="erp-panel erp-shell-blur w-full max-w-md rounded-[32px] px-8 py-10 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-[20px] bg-red-100 text-red-600 shadow-[0_18px_34px_rgba(239,68,68,0.24)]">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+        <p className="erp-kicker text-red-500">Error de carga</p>
+        <h1 className="font-display mt-2 text-xl font-bold tracking-[-0.03em] text-slate-900">No pudimos cargar los datos</h1>
+        <p className="mt-2 text-sm text-slate-600">
+          {isOffline
+            ? 'Parece que no hay conexión a internet. Verifica tu red e intenta de nuevo.'
+            : 'Hubo un problema al sincronizar con el servidor. Intenta de nuevo en unos segundos.'}
+        </p>
+        <details className="mt-3 text-left">
+          <summary className="cursor-pointer text-xs text-slate-500 hover:text-slate-700">Detalles técnicos</summary>
+          <p className="mt-2 break-words rounded-lg bg-slate-50 p-2 text-[10px] font-mono text-slate-600">{String(error)}</p>
+        </details>
+        <button
+          onClick={() => window.location.reload()}
+          className="mt-5 w-full rounded-2xl bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-[0_18px_28px_rgba(8,20,27,0.16)] transition-all hover:bg-slate-800"
+        >
+          Reintentar
+        </button>
+      </div>
+    </div>
+  )
+
   const isAdmin = user.rol === 'Admin'
   const effectiveRole = adminViewAs || user.rol
   const handleLogout = () => isAdmin && adminViewAs ? setAdminViewAs(null) : setUser(null)
@@ -138,25 +192,47 @@ function App() {
     </div>
   ) : null
 
-  const withAdminBar = (view) => adminBar
-    ? <>{adminBar}<div style={{ paddingTop: '56px' }}>{view}</div></>
+  // Banner sticky de offline + toast efímero "Conexión restaurada"
+  const offlineBar = isOffline ? (
+    <div className="fixed top-0 left-0 right-0 z-[10000] border-b border-amber-300 bg-amber-100 px-4 py-2 text-amber-900 shadow-[0_8px_20px_rgba(180,83,9,0.18)]">
+      <div className="flex items-center justify-center gap-2 text-center">
+        <span className="text-base">⚠️</span>
+        <p className="text-xs font-semibold sm:text-sm">Sin conexión. Los cambios se guardarán cuando vuelva la conexión.</p>
+      </div>
+    </div>
+  ) : null
+
+  const reconectadoBar = showReconectado && !isOffline ? (
+    <div className="fixed top-0 left-0 right-0 z-[10000] border-b border-emerald-300 bg-emerald-100 px-4 py-2 text-emerald-900 shadow-[0_8px_20px_rgba(5,150,105,0.18)]">
+      <div className="flex items-center justify-center gap-2 text-center">
+        <span className="text-base">✓</span>
+        <p className="text-xs font-semibold sm:text-sm">Conexión restaurada</p>
+      </div>
+    </div>
+  ) : null
+
+  const globalTop = offlineBar || reconectadoBar
+  const topPadding = (globalTop && adminBar) ? '108px' : (globalTop ? '40px' : (adminBar ? '56px' : '0'))
+
+  const withGlobalBars = (view) => (globalTop || adminBar)
+    ? <>{globalTop}{adminBar}<div style={{ paddingTop: topPadding }}>{view}</div></>
     : view
 
   const roleUser = { ...user, id: usuarioActualId || user?.id, auth_id: authUserId || user?.auth_id }
 
   if (effectiveRole === 'Chofer')
-    return withAdminBar(<Suspense fallback={<RoleFallback />}><ChoferView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
+    return withGlobalBars(<Suspense fallback={<RoleFallback />}><ChoferView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
 
   if (effectiveRole === 'Almacén Bolsas')
-    return withAdminBar(<Suspense fallback={<RoleFallback />}><BolsasView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
+    return withGlobalBars(<Suspense fallback={<RoleFallback />}><BolsasView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
 
   if (effectiveRole === 'Producción')
-    return withAdminBar(<Suspense fallback={<RoleFallback />}><ProduccionStandaloneView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
+    return withGlobalBars(<Suspense fallback={<RoleFallback />}><ProduccionStandaloneView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
 
   if (effectiveRole === 'Ventas')
-    return withAdminBar(<Suspense fallback={<RoleFallback />}><VentasStandaloneView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
+    return withGlobalBars(<Suspense fallback={<RoleFallback />}><VentasStandaloneView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
 
-  return (
+  return withGlobalBars(
     <CuboPolarERP
       user={user}
       data={data}

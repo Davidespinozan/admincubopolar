@@ -1,4 +1,5 @@
 import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, s, n, eqId, fmtMoney, fmtPct, useToast, useConfirm, Icons } from './viewsCommon';
+import { traducirError } from '../../utils/errorMessages';
 
 export function PreciosView({ data, actions }) {
   const toast = useToast();
@@ -58,7 +59,7 @@ export function PreciosView({ data, actions }) {
         err = await actions.updatePrecioEsp(modal.id, { precio: form.precio });
       }
       if (err && (err.error || err.message || err.code)) {
-        toast?.error(err.error || err.message || (modal === "new" ? "No se pudo crear el precio especial" : "No se pudo actualizar el precio"));
+        toast?.error(traducirError(err, modal === "new" ? "No se pudo crear el precio especial" : "No se pudo actualizar el precio"));
         return;
       }
       toast?.success(modal === "new" ? "Precio especial creado" : "Precio actualizado");
@@ -82,7 +83,7 @@ export function PreciosView({ data, actions }) {
         <h3 className="text-sm font-bold text-slate-700 mb-4">Precios especiales</h3>
         {(data.preciosEsp || []).length === 0 && <EmptyState message="Sin precios especiales" />}
         {data.preciosEsp.map(p=>{const base=precioBaseMap[p.sku]||0;const desc=base>0?Math.round(((base-n(p.precio))/base)*100):0;
-          return<div key={p.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2"><div className="flex items-center justify-between gap-2"><div className="min-w-0"><span className="text-sm font-semibold text-slate-700 truncate block">{s(p.clienteNom)}</span><span className="text-xs text-slate-400">{s(p.sku)}</span></div><div className="flex items-center gap-2 flex-shrink-0"><span className="text-sm font-bold text-blue-600">{fmtMoney(p.precio, { decimals: 2 })}</span>{desc>0&&<span className="text-xs text-emerald-600">{"-" + fmtPct(desc, 100)}</span>}<button onClick={()=>openEdit(p)} title="Editar precio" aria-label="Editar precio especial" className="text-sm text-slate-500 hover:text-blue-600 p-1 min-w-[28px] min-h-[28px] flex items-center justify-center">✏️</button><button onClick={()=>askConfirm('Eliminar precio especial', `¿Seguro que quieres eliminar el precio especial de ${s(p.clienteNom || 'este cliente')} para ${s(p.sku)}?`, async () => { await actions.deletePrecioEsp(p.id); }, true)} className="text-xs text-red-400 hover:text-red-600 p-1 min-w-[28px] min-h-[28px] flex items-center justify-center" title="Eliminar" aria-label="Eliminar precio especial">✕</button></div></div></div>})}
+          return<div key={p.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2"><div className="flex items-center justify-between gap-2"><div className="min-w-0"><span className="text-sm font-semibold text-slate-700 truncate block">{s(p.clienteNom)}</span><span className="text-xs text-slate-400">{s(p.sku)}</span></div><div className="flex items-center gap-2 flex-shrink-0"><span className="text-sm font-bold text-blue-600">{fmtMoney(p.precio, { decimals: 2 })}</span>{desc>0&&<span className="text-xs text-emerald-600">{"-" + fmtPct(desc, 100)}</span>}<button onClick={()=>openEdit(p)} title="Editar precio" aria-label="Editar precio especial" className="text-sm text-slate-500 hover:text-blue-600 p-2 min-w-[36px] min-h-[36px] flex items-center justify-center">✏️</button><button onClick={()=>askConfirm('Eliminar precio especial', `¿Seguro que quieres eliminar el precio especial de ${s(p.clienteNom || 'este cliente')} para ${s(p.sku)}?`, async () => { await actions.deletePrecioEsp(p.id); }, true)} className="text-xs text-red-400 hover:text-red-600 p-2 min-w-[36px] min-h-[36px] flex items-center justify-center" title="Eliminar" aria-label="Eliminar precio especial">✕</button></div></div></div>})}
         <button onClick={openNew} className="mt-3 w-full py-2.5 border border-dashed border-slate-300 rounded-xl text-xs font-semibold text-slate-400 hover:border-blue-400 hover:text-blue-500 flex items-center justify-center gap-1 min-h-[44px]"><Icons.Plus /> Agregar</button>
       </div>
     </div>
@@ -95,7 +96,7 @@ export function PreciosView({ data, actions }) {
             Para cambiar cliente o producto, borra este precio y agrega uno nuevo.
           </p>
         )}
-        <FormInput label="Precio especial ($) *" type="number" value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})} placeholder="Ej: 78" error={errors.precio} />
+        <FormInput label="Precio especial ($) *" type="number" min="0" step="0.01" value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})} placeholder="Ej: 78" error={errors.precio} />
       </div>
       <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={save} loading={saving}>{modal === "new" ? "Guardar" : "Guardar cambios"}</FormBtn></div>
     </Modal>

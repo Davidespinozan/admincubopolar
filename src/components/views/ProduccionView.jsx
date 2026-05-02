@@ -1,4 +1,5 @@
 import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion } from './viewsCommon';
+import { traducirError } from '../../utils/errorMessages';
 
 export function ProduccionView({ data, actions }) {
   const toast = useToast();
@@ -115,7 +116,7 @@ export function ProduccionView({ data, actions }) {
       output_kg:  outputKg,
       notas:      tForm.notas,
     });
-    if (err) { toast?.error(err.message || "Error al registrar transformación"); return; }
+    if (err) { toast?.error(traducirError(err, "Error al registrar transformación")); return; }
     toast?.success(`Transformación registrada — ${outputKg}kg de ${tForm.output_sku} (merma ${mermaKg}kg)`);
     setTModal(false);
     setTForm(TFORM_DEFAULT);
@@ -474,7 +475,7 @@ export function ProduccionView({ data, actions }) {
         <FormSelect label="Turno" options={["Turno 1","Turno 2","Turno 3"]} value={form.turno} onChange={e=>setForm({...form,turno:e.target.value})} />
         <FormSelect label="Máquina" options={["Máquina 30","Máquina 20","Máquina 15"]} value={form.maquina} onChange={e=>setForm({...form,maquina:e.target.value})} />
         <FormSelect label="SKU" options={skuOptions} value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})} />
-        <FormInput label="Cantidad *" type="number" value={form.cantidad} onChange={e=>setForm({...form,cantidad:e.target.value})} placeholder="Ej: 500" error={errors.cantidad} />
+        <FormInput label="Cantidad *" type="number" min="0" value={form.cantidad} onChange={e=>setForm({...form,cantidad:e.target.value})} placeholder="Ej: 500" error={errors.cantidad} />
         {bolsaNecesaria && (
           <div className={`p-3 rounded-xl ${n(form.cantidad) > stockBolsa ? "bg-red-50" : "bg-blue-50"}`}>
             <p className="text-xs font-semibold text-slate-700">Consumo de empaque: <span className="font-bold">{form.cantidad || 0} {bolsaNecesaria}</span></p>
@@ -514,6 +515,8 @@ export function ProduccionView({ data, actions }) {
             <FormInput
               label="Kg de entrada *"
               type="number"
+              min="0"
+              step="0.01"
               value={tForm.input_kg}
               onChange={e => setTForm(f => ({...f, input_kg: e.target.value}))}
               placeholder="Ej: 150"
@@ -542,6 +545,8 @@ export function ProduccionView({ data, actions }) {
             <FormInput
               label="Kg obtenidos *"
               type="number"
+              min="0"
+              step="0.01"
               value={tForm.output_kg}
               onChange={e => setTForm(f => ({...f, output_kg: e.target.value}))}
               placeholder="Ej: 120"
@@ -583,7 +588,7 @@ export function ProduccionView({ data, actions }) {
         <FormSelect label="Turno" options={["Turno 1","Turno 2","Turno 3"]} value={editForm.turno} onChange={e=>setEditForm({...editForm,turno:e.target.value})} />
         <FormSelect label="Máquina" options={["Máquina 30","Máquina 20","Máquina 15"]} value={editForm.maquina} onChange={e=>setEditForm({...editForm,maquina:e.target.value})} />
         <FormSelect label="SKU" options={skuOptions} value={editForm.sku} onChange={e=>setEditForm({...editForm,sku:e.target.value})} />
-        <FormInput label="Cantidad *" type="number" value={editForm.cantidad} onChange={e=>setEditForm({...editForm,cantidad:e.target.value})} placeholder="Ej: 500" error={editErrors.cantidad} />
+        <FormInput label="Cantidad *" type="number" min="0" value={editForm.cantidad} onChange={e=>setEditForm({...editForm,cantidad:e.target.value})} placeholder="Ej: 500" error={editErrors.cantidad} />
       </div>
       <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setEditModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={saveEdit}>Guardar cambios</FormBtn></div>
     </Modal>

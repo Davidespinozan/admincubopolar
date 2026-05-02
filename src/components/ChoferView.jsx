@@ -613,6 +613,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               <div className="flex items-center gap-2">
                 <input
                   type="number"
+                  min="0"
                   inputMode="numeric"
                   value={real}
                   onChange={e => setCargaRealForm(f => ({ ...f, [sku]: e.target.value }))}
@@ -1138,7 +1139,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 })}</div>
               </div>
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad</label>
-                <input type="number" inputMode="numeric" value={vForm.cant} onChange={e => setVForm(f=>({...f,cant:e.target.value}))} className="w-full px-4 py-3 border border-slate-200 rounded-xl text-2xl font-extrabold text-center" placeholder="0" autoFocus />
+                <input type="number" min="0" inputMode="numeric" value={vForm.cant} onChange={e => setVForm(f=>({...f,cant:e.target.value}))} className="w-full px-4 py-3 border border-slate-200 rounded-xl text-2xl font-extrabold text-center" placeholder="0" autoFocus />
                 {vForm.cant && n(vForm.cant) > (restante[vForm.sku] || 0) && <p className="text-xs text-red-600 font-semibold mt-1">⚠ Solo te quedan {restante[vForm.sku] || 0}</p>}
               </div>
               {vForm.cant && n(vForm.cant) > 0 && n(vForm.cant) <= (restante[vForm.sku] || 0) && (
@@ -1167,7 +1168,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Registrar merma</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-2">{productos.map(p => <button key={p.sku} onClick={() => setMForm(f=>({...f,sku:s(p.sku)}))} className={`py-2.5 rounded-xl text-xs font-bold border-2 ${mForm.sku===s(p.sku)?"border-amber-500 bg-amber-50 text-amber-700":"border-slate-200 text-slate-600"}`}>{s(p.nombre)}</button>)}</div>
-              <input type="number" value={mForm.cant} onChange={e => setMForm(f=>({...f,cant:e.target.value}))} className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" />
+              <input type="number" min="0" value={mForm.cant} onChange={e => setMForm(f=>({...f,cant:e.target.value}))} className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" />
               <div className="grid grid-cols-2 gap-2">{MERMA_CAUSAS.map(c => <button key={c} onClick={() => setMForm(f=>({...f,causa:c}))} className={`py-2 rounded-xl text-xs font-semibold border-2 ${mForm.causa===c?"border-amber-500 bg-amber-50 text-amber-700":"border-slate-200 text-slate-500"}`}>{c}</button>)}</div>
             </div>
             <div className="mt-4">

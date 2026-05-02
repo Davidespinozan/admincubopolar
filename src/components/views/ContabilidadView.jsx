@@ -1,4 +1,5 @@
 import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, todayISO, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
+import { traducirError } from '../../utils/errorMessages';
 
 export function ContabilidadView({ data, actions }) {
   const toast = useToast();
@@ -49,7 +50,7 @@ export function ContabilidadView({ data, actions }) {
         err = await actions.updateMovContable(modal.id, payload);
       }
       if (err && (err.error || err.message || err.code)) {
-        toast?.error(err.error || err.message || 'No se pudo guardar');
+        toast?.error(traducirError(err, 'No se pudo guardar el movimiento contable'));
         return;
       }
       toast?.success(modal === "new"
@@ -148,7 +149,7 @@ export function ContabilidadView({ data, actions }) {
         <FormInput label="Fecha" type="date" value={form.fecha} onChange={e => setForm({ ...form, fecha: e.target.value })} />
         <FormSelect label="Categoría" options={form.tipo === "Ingreso" ? CATS_INGRESO : CATS_EGRESO} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })} />
         <FormInput label="Concepto *" value={form.concepto} onChange={e => setForm({ ...form, concepto: e.target.value })} placeholder="Ej: Pago de diesel ruta norte" error={errors.concepto} />
-        <FormInput label="Monto *" type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} placeholder="0.00" error={errors.monto} />
+        <FormInput label="Monto *" type="number" min="0" step="0.01" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} placeholder="0.00" error={errors.monto} />
       </div>
       <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={() => setModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={save} loading={saving}>{modal === "new" ? (form.tipo === "Ingreso" ? "Registrar ingreso" : "Registrar gasto") : "Guardar cambios"}</FormBtn></div>
     </Modal>

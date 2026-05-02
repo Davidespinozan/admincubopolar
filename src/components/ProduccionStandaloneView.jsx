@@ -748,7 +748,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad</label>
-                <input type="number" inputMode="numeric" value={form.cantidad} onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
+                <input type="number" min="0" inputMode="numeric" value={form.cantidad} onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="Ej: 500" autoFocus />
               </div>
               {bolsaSku && (
@@ -815,7 +815,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 <div className="bg-red-50/60 border border-red-200 rounded-xl p-3 space-y-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad de merma</label>
-                    <input type="number" inputMode="numeric" value={form.mermaCantidad}
+                    <input type="number" min="0" inputMode="numeric" value={form.mermaCantidad}
                       onChange={e => setForm(f => ({ ...f, mermaCantidad: e.target.value }))}
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="0" />
                     {form.mermaCantidad && n(form.mermaCantidad) > n(form.cantidad) && (
@@ -909,7 +909,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   ))}
                 </div>
               </div>
-              <input type="number" inputMode="numeric" value={tForm.cantidad} onChange={e => setTForm(f => ({ ...f, cantidad: e.target.value }))}
+              <input type="number" min="0" inputMode="numeric" value={tForm.cantidad} onChange={e => setTForm(f => ({ ...f, cantidad: e.target.value }))}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" />
             </div>
             <button onClick={hacerTraspaso} disabled={haciendoTraspaso || !tForm.cantidad || n(tForm.cantidad) <= 0 || tForm.origen === tForm.destino}
@@ -940,7 +940,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   ))}
                 </div>
               </div>
-              <input type="number" inputMode="numeric" value={sacarForm.cantidad} onChange={e => setSacarForm(f => ({ ...f, cantidad: e.target.value }))}
+              <input type="number" min="0" inputMode="numeric" value={sacarForm.cantidad} onChange={e => setSacarForm(f => ({ ...f, cantidad: e.target.value }))}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" autoFocus />
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Motivo</label>
@@ -1014,7 +1014,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad</label>
-                <input type="number" value={mForm.cantidad} onChange={e => setMForm(f => ({ ...f, cantidad: e.target.value }))}
+                <input type="number" min="0" value={mForm.cantidad} onChange={e => setMForm(f => ({ ...f, cantidad: e.target.value }))}
                   className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="0" />
               </div>
               <div>
@@ -1085,7 +1085,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     ))}
                   </div>
                 )}
-                <input type="number" inputMode="decimal" value={transForm.input_kg} onChange={e => setTransForm(f => ({ ...f, input_kg: e.target.value }))}
+                <input type="number" min="0" step="0.01" inputMode="decimal" value={transForm.input_kg} onChange={e => setTransForm(f => ({ ...f, input_kg: e.target.value }))}
                   className="w-full mt-2 px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="kg a transformar" />
                 {transStockInput !== null && transInputKg > transStockInput && (
                   <p className="text-xs text-red-600 font-semibold mt-1 text-center">Stock insuficiente ({transStockInput} kg disponibles)</p>
@@ -1101,7 +1101,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     </button>
                   ))}
                 </div>
-                <input type="number" inputMode="decimal" value={transForm.output_kg} onChange={e => setTransForm(f => ({ ...f, output_kg: e.target.value }))}
+                <input type="number" min="0" step="0.01" inputMode="decimal" value={transForm.output_kg} onChange={e => setTransForm(f => ({ ...f, output_kg: e.target.value }))}
                   className="w-full mt-2 px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="kg obtenidos" />
               </div>
               {transInputKg > 0 && transOutputKg > 0 && (

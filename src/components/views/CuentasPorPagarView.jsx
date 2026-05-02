@@ -258,7 +258,7 @@ export function CuentasPorPagarView({ data, actions }) {
         <FormInput label="Proveedor *" value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} error={errors.proveedor} placeholder="Nombre del proveedor" />
         <FormInput label="Concepto *" value={form.concepto} onChange={e => setForm({ ...form, concepto: e.target.value })} error={errors.concepto} placeholder="Descripción de la deuda" />
         {modal === 'new' && (
-          <FormInput label="Monto *" type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} error={errors.monto} placeholder="0.00" />
+          <FormInput label="Monto *" type="number" min="0" step="0.01" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} error={errors.monto} placeholder="0.00" />
         )}
         <div className="grid grid-cols-2 gap-3">
           <FormSelect label="Categoría" options={CATEGORIAS_CXP} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })} />
@@ -289,7 +289,7 @@ export function CuentasPorPagarView({ data, actions }) {
             <p className="text-xs text-slate-500">{s(pagoModal.concepto)}</p>
             <p className="text-lg font-bold text-red-700 mt-1">Saldo: {fmtMoney(pagoModal.saldoPendiente)}</p>
           </div>
-          <FormInput label="Monto a pagar *" type="number" value={pagoForm.monto} onChange={e => setPagoForm({ ...pagoForm, monto: e.target.value })} error={errors.monto} />
+          <FormInput label="Monto a pagar *" type="number" min="0" step="0.01" value={pagoForm.monto} onChange={e => setPagoForm({ ...pagoForm, monto: e.target.value })} error={errors.monto} />
           <FormSelect label="Método de pago" options={METODOS_PAGO} value={pagoForm.metodo} onChange={e => setPagoForm({ ...pagoForm, metodo: e.target.value })} />
           <FormInput label="Referencia" value={pagoForm.referencia} onChange={e => setPagoForm({ ...pagoForm, referencia: e.target.value })} placeholder="No. transferencia, cheque, etc." />
           <p className="text-xs text-slate-400">Este pago se registrará automáticamente como egreso en contabilidad.</p>

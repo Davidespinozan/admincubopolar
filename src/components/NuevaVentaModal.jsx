@@ -693,6 +693,8 @@ export default function NuevaVentaModal({
           <FormInput
             label="¿Cuánto recibió?"
             type="number"
+            min="0"
+            step="0.01"
             value={form.recibido}
             onChange={e => setForm(f => ({ ...f, recibido: e.target.value }))}
             placeholder="0"

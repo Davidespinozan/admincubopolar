@@ -344,7 +344,7 @@ export function ClientesView({ data, actions }) {
             </button>
           </div>
           {form.creditoAutorizado && (
-            <FormInput label="Límite de crédito ($)" type="number" value={form.limiteCredito} onChange={e=>setForm({...form,limiteCredito:e.target.value})} placeholder="0.00" />
+            <FormInput label="Límite de crédito ($)" type="number" min="0" value={form.limiteCredito} onChange={e=>setForm({...form,limiteCredito:e.target.value})} placeholder="0.00" />
           )}
 
           {modal && modal !== "new" && (() => {

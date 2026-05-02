@@ -5,6 +5,7 @@ import { useToast } from './ui/Toast';
 import DashboardView from './views/DashboardView';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
 import { logErrorToDb } from '../utils/errorLog';
+import { traducirError } from '../utils/errorMessages';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
 const ClientesView      = lazy(() => import('./views/ClientesView.jsx').then(m => ({ default: m.ClientesView })));
@@ -687,8 +688,8 @@ function ComodatosView({ data, actions }) {
             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Teléfono contacto</label><input value={form.contacto} onChange={e => setForm({...form, contacto: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Modelo congelador</label><input value={form.congeladorModelo} onChange={e => setForm({...form, congeladorModelo: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" placeholder="Imbera VR-17" /></div>
             <div className="grid grid-cols-3 gap-3">
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Capacidad</label><input type="number" value={form.capacidad} onChange={e => setForm({...form, capacidad: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Stock máximo</label><input type="number" value={form.stockMaximo} onChange={e => setForm({...form, stockMaximo: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
+              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Capacidad</label><input type="number" min="0" value={form.capacidad} onChange={e => setForm({...form, capacidad: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
+              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Stock máximo</label><input type="number" min="0" value={form.stockMaximo} onChange={e => setForm({...form, stockMaximo: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Frecuencia</label><select value={form.frecuencia} onChange={e => setForm({...form, frecuencia: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm"><option>Diario</option><option>Cada 2 días</option><option>Cada 3 días</option><option>Semanal</option></select></div>
             </div>
           </div>
@@ -745,7 +746,7 @@ function LeadsView({ data, actions }) {
       err = await actions.updateLead(modal.id, form);
     }
     if (err && (err.error || err.message || err.code)) {
-      toast?.error(err.error || err.message || (modal === "new" ? "No se pudo crear el lead" : "No se pudo actualizar el lead"));
+      toast?.error(traducirError(err, modal === "new" ? "No se pudo crear el lead" : "No se pudo actualizar el lead"));
       return;
     }
     toast?.success(modal === "new" ? "Lead registrado" : "Lead actualizado");
@@ -795,8 +796,8 @@ function LeadsView({ data, actions }) {
               }`}>
               <option>Nuevo</option><option>Contactado</option><option>Convertido</option><option>Descartado</option>
             </select>
-            <button onClick={() => openEdit(l)} title="Editar" aria-label="Editar lead" className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors">✏️</button>
-            <button onClick={() => eliminarLead(l)} title="Eliminar" aria-label="Eliminar lead" className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors">🗑</button>
+            <button onClick={() => openEdit(l)} title="Editar" aria-label="Editar lead" className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors">✏️</button>
+            <button onClick={() => eliminarLead(l)} title="Eliminar" aria-label="Eliminar lead" className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors">🗑</button>
           </div>
         </div>
         {l.mensaje && <p className="text-xs text-slate-500 mt-1 bg-slate-50 rounded-lg p-2">{l.mensaje}</p>}
