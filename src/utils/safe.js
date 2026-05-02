@@ -94,6 +94,20 @@ export const todayISO = () => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 };
 
+// ── Fecha local del cliente como YYYY-MM-DD (NO UTC).
+// new Date().toISOString().slice(0,10) usa UTC y puede dar el día siguiente
+// en CDMX (UTC-6) cuando son las 6pm-12am locales — corre los pagos a la
+// fecha incorrecta y rompe cortes diarios. Usar esta para grabar "fecha"
+// en cobros, ingresos, mermas, ventas, CxC, vencimientos, etc.
+// Acepta Date opcional para fechas calculadas (ej. vencimientos a 30 días).
+export const todayLocalISO = (date = new Date()) => {
+  const d = date instanceof Date ? date : new Date(date);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 // ── ID comparison: PostgreSQL serial → int, UUID → string
 // Supabase JS client returns numbers for serial PKs but strings for UUIDs.
 // form selects always store strings. Comparing 1 === "1" → false.

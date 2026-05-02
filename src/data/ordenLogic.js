@@ -130,6 +130,39 @@ export function buildAnotacionCancelacion(motivo, usuario, now = new Date()) {
   };
 }
 
+// ─── MÁQUINA DE ESTADOS ──────────────────────────────────────
+// Transiciones legales del estatus de una orden. Cualquier salto fuera
+// de este mapa se rechaza desde el backend (updateOrdenEstatus).
+// Facturada y Cancelada son terminales: no se puede volver atrás.
+export const TRANSICIONES_ORDEN = {
+  Creada:    ['Asignada', 'Cancelada'],
+  Asignada:  ['En ruta', 'Entregada', 'Cancelada'],
+  'En ruta': ['Entregada', 'Cancelada'],
+  Entregada: ['Facturada'],
+  Facturada: [],
+  Cancelada: [],
+};
+
+/**
+ * Valida si la transición de estatus es legal.
+ * @param {string} estatusActual
+ * @param {string} nuevoEstatus
+ * @returns {{ error: string }|null}
+ */
+export function validateTransicionOrden(estatusActual, nuevoEstatus) {
+  const actual = String(estatusActual || '').trim();
+  const nuevo  = String(nuevoEstatus  || '').trim();
+  if (actual === nuevo) return null; // no-op idempotente
+  const permitidas = TRANSICIONES_ORDEN[actual];
+  if (!permitidas) {
+    return { error: `Estatus actual desconocido: ${actual}` };
+  }
+  if (!permitidas.includes(nuevo)) {
+    return { error: `No se puede pasar de ${actual} a ${nuevo}` };
+  }
+  return null;
+}
+
 // ─── EDICIÓN ──────────────────────────────────────────────────
 
 /**

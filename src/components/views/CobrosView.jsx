@@ -6,6 +6,7 @@ export function CobrosView({ data, actions }) {
   const [cobroModal, setCobroModal] = useState(null);
   const [form, setForm] = useState({ monto: '', metodo: 'Efectivo', referencia: '' });
   const [errors, setErrors] = useState({});
+  const [savingCobro, setSavingCobro] = useState(false);
 
   const cxcPendientes = useMemo(() =>
     (data.cuentasPorCobrar || []).filter(c => c.estatus !== 'Pagada'),
@@ -38,15 +39,18 @@ export function CobrosView({ data, actions }) {
   };
 
   const cobrar = async () => {
+    if (savingCobro) return;
     const e = {};
     if (!form.monto || parseFloat(form.monto) <= 0) e.monto = 'Monto inválido';
     if (parseFloat(form.monto) > cobroModal.saldoPendiente) e.monto = 'Excede el saldo pendiente';
     if (Object.keys(e).length) { setErrors(e); return; }
+    setSavingCobro(true);
     try {
       await actions.cobrarCxC(cobroModal.id, parseFloat(form.monto), form.metodo, form.referencia);
       toast?.success('Cobro registrado');
       setCobroModal(null);
     } catch (ex) { toast?.error('Error: ' + (ex?.message || '')); }
+    finally { setSavingCobro(false); }
   };
 
   const METODOS = ['Efectivo', 'Transferencia', 'Tarjeta'];
@@ -159,8 +163,10 @@ export function CobrosView({ data, actions }) {
           <FormSelect label="Método de pago" options={METODOS} value={form.metodo} onChange={e => setForm({ ...form, metodo: e.target.value })} />
           <FormInput label="Referencia" value={form.referencia} onChange={e => setForm({ ...form, referencia: e.target.value })} placeholder="No. transferencia, voucher, etc." />
           <div className="flex justify-end gap-2">
-            <FormBtn onClick={() => setCobroModal(null)}>Cancelar</FormBtn>
-            <FormBtn primary onClick={cobrar}>Registrar cobro</FormBtn>
+            <FormBtn onClick={() => setCobroModal(null)} disabled={savingCobro}>Cancelar</FormBtn>
+            <FormBtn primary onClick={cobrar} disabled={savingCobro} loading={savingCobro}>
+              {savingCobro ? 'Registrando…' : 'Registrar cobro'}
+            </FormBtn>
           </div>
         </div>
       )}
