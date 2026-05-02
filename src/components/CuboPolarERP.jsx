@@ -226,13 +226,14 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
     } catch { /* noop */ }
   }, [areasExpandidas]);
 
-  // Si el usuario navega a un módulo dentro de un área cerrada, abrirla automáticamente
+  // Si el usuario navega a un módulo dentro de un área cerrada, abrirla.
+  // Solo depende de `view`: si incluyera `areasExpandidas`, contraer
+  // manualmente el área del view actual la reabriría inmediatamente.
   useEffect(() => {
     const currentArea = AREAS.find(area => area.items.some(item => item.id === view));
-    if (currentArea && !areasExpandidas[currentArea.id]) {
-      setAreasExpandidas(prev => ({ ...prev, [currentArea.id]: true }));
-    }
-  }, [view, areasExpandidas]);
+    if (!currentArea) return;
+    setAreasExpandidas(prev => prev[currentArea.id] ? prev : { ...prev, [currentArea.id]: true });
+  }, [view]);
 
   const toggleArea = (areaId) => {
     setAreasExpandidas(prev => ({ ...prev, [areaId]: !prev[areaId] }));
