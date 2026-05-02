@@ -807,9 +807,14 @@ export function useSupaStore(userId, userName, userRol) {
           const itemsErr = validateItems(items);
           if (itemsErr) return { message: itemsErr };
 
-          const [{ data: prods, error: errProds }, { data: pes, error: errPes }] = await Promise.all([
-            supabase.from('productos').select('sku, precio, stock'),
+          const [
+            { data: prods, error: errProds },
+            { data: pes, error: errPes },
+            { data: cuartos, error: errCfs },
+          ] = await Promise.all([
+            supabase.from('productos').select('sku, precio'),
             supabase.from('precios_esp').select('sku, precio').eq('cliente_id', o.clienteId),
+            supabase.from('cuartos_frios').select('stock'),
           ]);
           if (errProds) {
             console.warn('[addOrden] select productos:', errProds.message);
@@ -821,16 +826,27 @@ export function useSupaStore(userId, userName, userRol) {
             t()?.error('No se pudieron leer los precios especiales');
             return { message: errPes.message };
           }
+          if (errCfs) {
+            console.warn('[addOrden] select cuartos_frios:', errCfs.message);
+            t()?.error('No se pudieron leer cuartos fríos');
+            return { message: errCfs.message };
+          }
 
           const built = buildLineas(items, prods || [], pes || []);
           if (built.error) return { message: built.error };
           const { lineas, total } = built;
 
-          // Validación de stock disponible. Defensa en profundidad: el RPC
-          // update_stocks_atomic también rechaza descuentos negativos, pero
-          // aquí evitamos crear órdenes "fantasma" que no se podrán cumplir.
+          // Validación de stock disponible. El stock real vive en
+          // cuartos_frios.stock (JSONB) — productos.stock es legacy y queda
+          // en 0 cuando se produce vía producirYCongelar (que solo actualiza
+          // cuartos_frios). Sumar desde JSONB de cada cuarto activo.
           const stockBySku = {};
-          for (const p of (prods || [])) stockBySku[p.sku] = Number(p.stock) || 0;
+          for (const cf of (cuartos || [])) {
+            const cfStock = (cf?.stock && typeof cf.stock === 'object') ? cf.stock : {};
+            for (const [sku, qty] of Object.entries(cfStock)) {
+              stockBySku[sku] = (stockBySku[sku] || 0) + Number(qty || 0);
+            }
+          }
           const pedidoBySku = {};
           for (const l of lineas) pedidoBySku[l.sku] = (pedidoBySku[l.sku] || 0) + Number(l.cantidad || 0);
           for (const [sku, pedido] of Object.entries(pedidoBySku)) {
