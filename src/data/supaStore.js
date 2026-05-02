@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
-import { n, s, centavos } from '../utils/safe';
+import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
-import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden } from './ordenLogic';
+import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden } from './ordenLogic';
 import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
 import {
   validateConfirmarCarga,
@@ -325,7 +325,7 @@ export function useSupaStore(userId, userName, userRol) {
       }
 
       // ── Alertas de CxC próximas a vencer ──
-      const hoyStr = new Date().toISOString().slice(0, 10);
+      const hoyStr = todayLocalISO();
       for (const c of (cxc || [])) {
         if (c.estatus === 'Pagada') continue;
         const venc = s(c.fecha_vencimiento);
@@ -804,13 +804,33 @@ export function useSupaStore(userId, userName, userRol) {
           if (built.error) return { message: built.error };
           const { lineas, total } = built;
 
+          // Validación de stock disponible. Defensa en profundidad: el RPC
+          // update_stocks_atomic también rechaza descuentos negativos, pero
+          // aquí evitamos crear órdenes "fantasma" que no se podrán cumplir.
+          const stockBySku = {};
+          for (const p of (prods || [])) stockBySku[p.sku] = Number(p.stock) || 0;
+          const pedidoBySku = {};
+          for (const l of lineas) pedidoBySku[l.sku] = (pedidoBySku[l.sku] || 0) + Number(l.cantidad || 0);
+          for (const [sku, pedido] of Object.entries(pedidoBySku)) {
+            const disponible = stockBySku[sku] ?? 0;
+            if (pedido > disponible) {
+              const msg = `Stock insuficiente para ${sku} (disponible: ${disponible}, pedido: ${pedido})`;
+              t()?.error(msg);
+              return { message: msg };
+            }
+          }
+
           const { data: seq, error: errSeq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
           if (errSeq) {
             console.warn('[addOrden] rpc nextval:', errSeq.message);
             t()?.error('No se pudo generar folio');
             return { message: errSeq.message };
           }
-          const folio = formatFolio(seq || 42);
+          if (!seq) {
+            t()?.error('No se pudo generar folio. Reintenta.');
+            return { message: 'No se pudo generar folio. Reintenta.' };
+          }
+          const folio = formatFolio(seq);
 
           // Build productos string from parsed items
           const productosStr = o.productos || items.map(i => `${i.qty}×${i.sku}`).join(', ');
@@ -871,6 +891,15 @@ export function useSupaStore(userId, userName, userRol) {
             console.warn('[updateOrdenEstatus] select estatus prev:', errPrev.message);
             t()?.error('No se pudo leer la orden');
             return errPrev;
+          }
+
+          // FSM: rechaza transiciones ilegales (ej. Cancelada → Entregada,
+          // Facturada → Creada). Defensa en profundidad: la UI ya filtra
+          // botones por estatus, esto bloquea llamadas vía API directa.
+          const transErr = validateTransicionOrden(ordenPrev?.estatus, nuevoEst);
+          if (transErr) {
+            t()?.error(transErr.error);
+            return transErr;
           }
 
           let error;
@@ -943,8 +972,8 @@ export function useSupaStore(userId, userName, userRol) {
                   const { error: cxcError } = await supabase.from('cuentas_por_cobrar').insert({
                     cliente_id: ord.cliente_id,
                     orden_id: id,
-                    fecha_venta: new Date().toISOString().slice(0, 10),
-                    fecha_vencimiento: fechaVenc.toISOString().slice(0, 10),
+                    fecha_venta: todayLocalISO(),
+                    fecha_vencimiento: todayLocalISO(fechaVenc),
                     monto_original: centavos(n(ord.total)),
                     monto_pagado: 0,
                     saldo_pendiente: centavos(n(ord.total)),
@@ -975,7 +1004,7 @@ export function useSupaStore(userId, userName, userRol) {
                   downstreamError = errExIng;
                 } else if (!existingIngreso) {
                   const { error: ingresoError } = await supabase.from('movimientos_contables').insert({
-                    fecha: new Date().toISOString().slice(0, 10),
+                    fecha: todayLocalISO(),
                     tipo: 'Ingreso', categoria: 'Ventas',
                     concepto: `Cobro ${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
                     monto: centavos(n(ord.total)),
@@ -1305,7 +1334,7 @@ export function useSupaStore(userId, userName, userRol) {
             const costoTotal = centavos(cantidad * costoUnitario);
             
             if (costoTotal > 0) {
-              const hoy = new Date().toISOString().slice(0, 10);
+              const hoy = todayLocalISO();
               const periodo = hoy.slice(0, 7);
               const concepto = `Producción ${prod.folio || id}: ${cantidad}× ${prod.sku} (empaque: ${producto.empaque_sku})`;
 
@@ -1410,7 +1439,7 @@ export function useSupaStore(userId, userName, userRol) {
 
         const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_op_seq' });
         const folio = `TR-${String(seq || 1).padStart(3, '0')}`;
-        const hoy   = new Date().toISOString().slice(0, 10);
+        const hoy   = todayLocalISO();
 
         // Registrar la transformación en produccion
         const { error: insErr } = await supabase.from('produccion').insert({
@@ -1925,32 +1954,42 @@ export function useSupaStore(userId, userName, userRol) {
           return new Error(`Stock insuficiente: ${f.sku}`);
         }
 
-        // Aplicar descuentos atómicamente
+        // Claim atómico ANTES de descontar inventario: solo un dispositivo
+        // pasa este UPDATE (carga_confirmada_at IS NULL). Cierra el TOCTOU
+        // del check anterior, que era reproducible con dos dispositivos
+        // del mismo chofer enviando confirmación al mismo tiempo.
+        const estatusOriginal = ruta.estatus;
+        const { data: claim, error: claimErr } = await supabase.from('rutas').update({
+          carga_real: cargaReal,
+          carga_confirmada_at: new Date().toISOString(),
+          carga_confirmada_por: uid(),
+          estatus: 'Cargada',
+        }).eq('id', rutaId).is('carga_confirmada_at', null).select('id');
+        if (claimErr) {
+          t()?.error('No se pudo confirmar la carga');
+          return claimErr;
+        }
+        if (!claim || claim.length === 0) {
+          t()?.error('Esta ruta ya fue confirmada por otro dispositivo');
+          return new Error('Carga ya confirmada (claim race)');
+        }
+
+        // Aplicar descuentos atómicamente. Si falla, revertir el claim
+        // para que la ruta vuelva a estar disponible para confirmar.
         if (changes.length > 0) {
           const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
             p_changes: changes,
           });
           if (rpcErr) {
+            await supabase.from('rutas').update({
+              carga_real: null,
+              carga_confirmada_at: null,
+              carga_confirmada_por: null,
+              estatus: estatusOriginal,
+            }).eq('id', rutaId);
             t()?.error('Error al descontar inventario');
             return rpcErr;
           }
-        }
-
-        // Marcar la ruta como cargada
-        const { error: updErr } = await supabase.from('rutas').update({
-          carga_real: cargaReal,
-          carga_confirmada_at: new Date().toISOString(),
-          carga_confirmada_por: uid(),
-          estatus: 'Cargada',
-        }).eq('id', rutaId);
-        if (updErr) {
-          // Rollback inventario si falló el update
-          if (changes.length > 0) {
-            const reverse = changes.map(c => ({ ...c, delta: -c.delta, tipo: 'Entrada', origen: `Rollback carga ${ruta.folio}` }));
-            await supabase.rpc('update_stocks_atomic', { p_changes: reverse });
-          }
-          t()?.error('No se pudo confirmar la carga');
-          return updErr;
         }
 
         await checkStockBajo(Object.keys(cargaReal));
@@ -2060,17 +2099,11 @@ export function useSupaStore(userId, userName, userRol) {
           return new Error(`Stock insuficiente: ${f.sku}`);
         }
 
-        if (changes.length > 0) {
-          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
-            p_changes: changes,
-          });
-          if (rpcErr) {
-            t()?.error('Error al descontar inventario');
-            return rpcErr;
-          }
-        }
-
-        // Actualizar ruta con firma y estatus
+        // Claim atómico de la firma ANTES de descontar inventario:
+        // solo un firmante (Producción/Admin) pasa el UPDATE con
+        // carga_confirmada_at IS NULL. Cierra el TOCTOU del check
+        // puedeFirmarRuta arriba.
+        const estatusOriginal = ruta.estatus;
         const updateData = {
           carga_confirmada_at: new Date().toISOString(),
           carga_confirmada_por: uid(),
@@ -2085,15 +2118,38 @@ export function useSupaStore(userId, userName, userRol) {
           updateData.firma_excepcion = false;
         }
 
-        const { error: updErr } = await supabase.from('rutas').update(updateData).eq('id', rutaId);
-        if (updErr) {
-          // Rollback inventario
-          if (changes.length > 0) {
-            const reverse = changes.map(c => ({ ...c, delta: -c.delta, tipo: 'Entrada', origen: `Rollback firma ${ruta.folio}` }));
-            await supabase.rpc('update_stocks_atomic', { p_changes: reverse });
-          }
+        const { data: claim, error: claimErr } = await supabase
+          .from('rutas')
+          .update(updateData)
+          .eq('id', rutaId)
+          .is('carga_confirmada_at', null)
+          .select('id');
+        if (claimErr) {
           t()?.error('No se pudo registrar firma');
-          return updErr;
+          return claimErr;
+        }
+        if (!claim || claim.length === 0) {
+          t()?.error('Esta carga ya fue firmada por otro dispositivo');
+          return new Error('Carga ya firmada (claim race)');
+        }
+
+        // Descontar inventario. Si falla, revertir el claim de firma.
+        if (changes.length > 0) {
+          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
+            p_changes: changes,
+          });
+          if (rpcErr) {
+            await supabase.from('rutas').update({
+              carga_confirmada_at: null,
+              carga_confirmada_por: null,
+              firma_carga: null,
+              firma_excepcion: false,
+              firma_excepcion_motivo: null,
+              estatus: estatusOriginal,
+            }).eq('id', rutaId);
+            t()?.error('Error al descontar inventario');
+            return rpcErr;
+          }
         }
 
         await checkStockBajo(Object.keys(cargaReal));
@@ -2348,7 +2404,7 @@ export function useSupaStore(userId, userName, userRol) {
 
       // Cobrar contra una cuenta por cobrar específica
       cobrarCxC: async (cxcId, monto, metodoPago, referencia) => {
-        const hoy = new Date().toISOString().slice(0, 10);
+        const hoy = todayLocalISO();
         const montoNum = centavos(n(monto));
 
         // Obtener la CxC actual
@@ -2536,7 +2592,7 @@ export function useSupaStore(userId, userName, userRol) {
 
       // Aplicar costo fijo (genera egreso en movimientos_contables)
       aplicarCostoFijo: async (costoFijoId, fecha, referencia) => {
-        const hoy = fecha || new Date().toISOString().slice(0, 10);
+        const hoy = fecha || todayLocalISO();
         const periodo = hoy.slice(0, 7); // "2026-03"
 
         // Buscar el costo
@@ -2574,7 +2630,7 @@ export function useSupaStore(userId, userName, userRol) {
 
       // Registrar costo variable (ej: compra de empaques, gastos puntuales)
       registrarCostoVariable: async (categoria, concepto, monto, referencia, fecha) => {
-        const fechaUsar = fecha || new Date().toISOString().slice(0, 10);
+        const fechaUsar = fecha || todayLocalISO();
         const periodo = fechaUsar.slice(0, 7);
 
         // Crear egreso
@@ -2613,7 +2669,7 @@ export function useSupaStore(userId, userName, userRol) {
           monto_original: montoOriginal,
           monto_pagado: 0,
           saldo_pendiente: montoOriginal,
-          fecha_emision: cxp.fechaEmision || new Date().toISOString().slice(0, 10),
+          fecha_emision: cxp.fechaEmision || todayLocalISO(),
           fecha_vencimiento: cxp.fechaVencimiento || null,
           categoria: cxp.categoria || 'Proveedores',
           referencia: cxp.referencia || '',
@@ -2652,7 +2708,7 @@ export function useSupaStore(userId, userName, userRol) {
 
       // Abonar a cuenta por pagar (pago a proveedor)
       pagarCuentaPorPagar: async (cxpId, monto, metodoPago, referencia) => {
-        const hoy = new Date().toISOString().slice(0, 10);
+        const hoy = todayLocalISO();
         const montoNum = centavos(n(monto));
 
         // Obtener la CxP actual
@@ -2787,7 +2843,7 @@ export function useSupaStore(userId, userName, userRol) {
               if (costoUnit > 0) {
                 const costoMerma = centavos(qty * costoUnit);
                 const { error: errEgr } = await supabase.from('movimientos_contables').insert({
-                  fecha: new Date().toISOString().slice(0, 10),
+                  fecha: todayLocalISO(),
                   tipo: 'Egreso',
                   categoria: 'Mermas',
                   concepto: `Merma ${qty}× ${sku}${prod?.nombre ? ` (${prod.nombre})` : ''} — ${causa || origen || 'Sin causa'}`,
@@ -3005,7 +3061,7 @@ export function useSupaStore(userId, userName, userRol) {
         const { error } = await supabase.from('leads').insert({
           nombre: l.nombre, telefono: l.telefono, correo: l.correo,
           mensaje: l.mensaje, origen: l.origen, estatus: 'Nuevo',
-          fecha: new Date().toISOString().slice(0, 10),
+          fecha: todayLocalISO(),
         });
         if (error) { t()?.error('Error al guardar lead'); return error; }
         log('Crear', 'Leads', `${l.nombre}`);
@@ -3151,7 +3207,7 @@ export function useSupaStore(userId, userName, userRol) {
 
       // Pagar nómina — registra egreso automático en movimientos_contables
       pagarNomina: async (periodoId) => {
-        const hoy = new Date().toISOString().slice(0, 10);
+        const hoy = todayLocalISO();
         const periodo = hoy.slice(0, 7);
 
         // Obtener el periodo de nómina
@@ -3264,11 +3320,11 @@ export function useSupaStore(userId, userName, userRol) {
           // ya quedó. El consumer recibe { error, partial: true } y puede mostrar
           // "movimiento ok, contabilidad pendiente".
           if (tipo === 'Entrada' && Number(costo) > 0) {
-            const hoy = new Date().toISOString().slice(0, 10);
+            const hoy = todayLocalISO();
             const montoTotal = centavos(Number(costo));
 
             if (esCredito && proveedor) {
-              const fechaVenc = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+              const fechaVenc = todayLocalISO(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
               const { error: errCxp } = await supabase.from('cuentas_por_pagar').insert({
                 proveedor: proveedor,
                 concepto: `Compra empaques: ${cantidad}×${sku}`,
@@ -3316,8 +3372,8 @@ export function useSupaStore(userId, userName, userRol) {
       // ── CERRAR RUTA COMPLETA (chofer) ──
       cerrarRutaCompleta: async (reporte) => {
         const { rutaId, choferNombre, entregas, mermas: mermasArr, cobros, carga } = reporte;
-        const hoy = new Date().toISOString().slice(0, 10);
-        const fechaVenc = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const hoy = todayLocalISO();
+        const fechaVenc = todayLocalISO(new Date(Date.now() + 15 * 24 * 60 * 60 * 1000));
         const createdOrderIds = [];
         const updatedOrders = [];
         const createdPagoIds = [];
