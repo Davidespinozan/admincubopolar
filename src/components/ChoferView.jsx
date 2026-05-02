@@ -3,6 +3,7 @@ import { s, n, fmtMoney, fmtDate, extraerTelefono } from '../utils/safe';
 import { supabase } from '../lib/supabase';
 import { abrirNavegacion } from '../utils/navegacion';
 import { compressImage } from '../utils/compressImage';
+import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
 import { EmptyState } from './ui/Skeleton';
 const MapaRuta = lazy(() => import('./ui/MapaRuta'));
 
@@ -50,6 +51,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [rutaCerrada, setRutaCerrada] = useState(false);
   const [cerrandoRuta, setCerrandoRuta] = useState(false);
   const [enviandoFirma, setEnviandoFirma] = useState(false);
+  const [noEntregaModal, setNoEntregaModal] = useState(null); // orden o null
+  const [noEntregaForm, setNoEntregaForm] = useState({ motivo: MOTIVOS_NO_ENTREGA[0], otroMotivo: '', reagendar: true });
+  const [marcandoNoEntrega, setMarcandoNoEntrega] = useState(false);
   const [toast, setToast] = useState("");
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
@@ -451,6 +455,41 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       setFotoTransf(null);
     } finally {
       setConfirmandoEntrega(false);
+    }
+  };
+
+  const abrirNoEntrega = (orden) => {
+    setNoEntregaModal(orden);
+    setNoEntregaForm({ motivo: MOTIVOS_NO_ENTREGA[0], otroMotivo: '', reagendar: true });
+  };
+
+  const confirmarNoEntrega = async () => {
+    if (marcandoNoEntrega) return;
+    if (!noEntregaModal) return;
+    const motivoFinal = noEntregaForm.motivo === 'Otro'
+      ? s(noEntregaForm.otroMotivo).trim()
+      : noEntregaForm.motivo;
+    if (!motivoFinal) {
+      showToast('Captura el motivo');
+      return;
+    }
+    setMarcandoNoEntrega(true);
+    try {
+      const result = await actions.marcarNoEntregada?.(
+        noEntregaModal.id,
+        motivoFinal,
+        noEntregaForm.reagendar
+      );
+      if (result && result.error) {
+        showToast('Error: ' + result.error);
+        return;
+      }
+      showToast(noEntregaForm.reagendar
+        ? 'Marcada como no entregada (reagendar)'
+        : 'Marcada como no entregada');
+      setNoEntregaModal(null);
+    } finally {
+      setMarcandoNoEntrega(false);
     }
   };
 
@@ -983,6 +1022,10 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 className="w-full py-3.5 bg-slate-900 text-white font-bold rounded-[18px] text-sm active:scale-[0.98] transition-transform shadow-[0_18px_30px_rgba(8,20,27,0.14)]">
                 Entregar y cobrar
               </button>
+              <button onClick={() => abrirNoEntrega(o)}
+                className="w-full mt-2 py-2.5 bg-white border border-amber-300 text-amber-700 font-semibold rounded-[14px] text-xs active:scale-[0.98] transition-transform">
+                No entregada
+              </button>
             </div>
           ))}
         </div>}
@@ -1204,6 +1247,70 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           </div>
         </div>
       )}
+
+      {/* Modal No entregada */}
+      {noEntregaModal && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => !marcandoNoEntrega && setNoEntregaModal(null)}>
+          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
+            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
+            <p className="erp-kicker text-slate-400">Incidencia</p>
+            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-1">Marcar como no entregada</h3>
+            <p className="text-sm text-slate-500 mb-4">{s(noEntregaModal.clienteNombre || noEntregaModal.cliente)}</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Motivo *</label>
+                <div className="grid grid-cols-1 gap-2">
+                  {MOTIVOS_NO_ENTREGA.map(m => (
+                    <button key={m} onClick={() => setNoEntregaForm(f => ({ ...f, motivo: m }))}
+                      className={`py-2.5 px-3 rounded-xl text-xs font-bold border-2 text-left ${noEntregaForm.motivo === m ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600'}`}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+                {noEntregaForm.motivo === 'Otro' && (
+                  <input
+                    type="text"
+                    value={noEntregaForm.otroMotivo}
+                    onChange={e => setNoEntregaForm(f => ({ ...f, otroMotivo: e.target.value }))}
+                    placeholder="Describe el motivo"
+                    autoFocus
+                    className="w-full mt-2 px-4 py-3 border border-slate-200 rounded-xl text-sm"
+                  />
+                )}
+              </div>
+              <label className="flex items-center justify-between gap-3 bg-slate-50 rounded-xl px-4 py-3 cursor-pointer">
+                <div>
+                  <p className="text-sm font-semibold text-slate-700">Reagendar para próxima ruta</p>
+                  <p className="text-[11px] text-slate-500">El admin verá la marca al armar la próxima ruta.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={noEntregaForm.reagendar}
+                  onChange={e => setNoEntregaForm(f => ({ ...f, reagendar: e.target.checked }))}
+                  className="w-5 h-5 rounded border-slate-300 accent-amber-500"
+                />
+              </label>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => setNoEntregaModal(null)}
+                disabled={marcandoNoEntrega}
+                className="flex-1 py-3 border border-slate-200 text-slate-700 font-semibold rounded-xl text-sm disabled:opacity-40"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarNoEntrega}
+                disabled={marcandoNoEntrega || (noEntregaForm.motivo === 'Otro' && !s(noEntregaForm.otroMotivo).trim())}
+                className="flex-1 py-3 bg-amber-600 text-white font-bold rounded-xl text-sm disabled:opacity-40"
+              >
+                {marcandoNoEntrega ? 'Guardando…' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {toast && <Toast msg={toast} />}
     </div>
   );

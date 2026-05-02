@@ -97,8 +97,9 @@ export function OrdenesView({ data, actions, user }) {
       if (!o) return false;
       const ms = !q || s(o.folio).toLowerCase().includes(q) || s(o.cliente).toLowerCase().includes(q);
       let me = true;
-      if (filterEst === 'activas') me = s(o.estatus) !== 'Cancelada';
+      if (filterEst === 'activas') me = s(o.estatus) !== 'Cancelada' && s(o.estatus) !== 'No entregada';
       else if (filterEst === 'todas') me = true;
+      else if (filterEst === 'reagendar') me = s(o.estatus) === 'No entregada' && (o.reagendada || o.reagendar);
       else if (filterEst) me = o.estatus === filterEst;
       return ms && me;
     });
@@ -120,7 +121,8 @@ export function OrdenesView({ data, actions, user }) {
       <select value={filterEst} onChange={e=>{setFilterEst(e.target.value);setPage(0)}} className="border border-slate-200 rounded-xl px-3 py-3 md:py-2.5 text-sm text-slate-600 bg-white focus:outline-none focus:border-blue-400 min-h-[44px]">
         <option value="activas">Activas</option>
         <option value="todas">Todas (incl. canceladas)</option>
-        {["Creada","Asignada","Entregada","Facturada","Cancelada"].map(st=><option key={st} value={st}>{st}</option>)}
+        <option value="reagendar">Pendientes de reagendar</option>
+        {["Creada","Asignada","En ruta","Entregada","Facturada","Cancelada","No entregada"].map(st=><option key={st} value={st}>{st}</option>)}
       </select>
     </div>
     <div className="bg-white border border-slate-100 rounded-2xl p-4 sm:p-5">
@@ -141,7 +143,22 @@ export function OrdenesView({ data, actions, user }) {
           return <span className="text-xs text-slate-600">{partes.join(', ')}</span>;
         }},
         {key:"total",label:"Total",bold:true,render:v=>fmtMoney(v)},
-        {key:"estatus",label:"Estatus",badge:true,render:(v,r)=><div className="flex items-center gap-2 flex-wrap"><StatusBadge status={v}/><span className="hidden md:inline">{v==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">Asignar ruta</button></>}{v==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"entrega")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar entrega</button>}{v==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">→ Facturar</button>}</span></div>},
+        {key:"estatus",label:"Estatus",badge:true,render:(v,r)=>{
+          const motivoNoEntrega = s(r.motivoNoEntrega || r.motivo_no_entrega);
+          const reagendada = !!(r.reagendada || r.reagendar);
+          return (
+            <div className="flex items-center gap-2 flex-wrap">
+              <StatusBadge status={v}/>
+              {v === "No entregada" && reagendada && (
+                <span className="text-[10px] font-bold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-full">Reagendar</span>
+              )}
+              {v === "No entregada" && motivoNoEntrega && (
+                <span className="text-[10px] text-slate-500 italic truncate max-w-[160px]" title={motivoNoEntrega}>{motivoNoEntrega}</span>
+              )}
+              <span className="hidden md:inline">{v==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">Asignar ruta</button></>}{v==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"entrega")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar entrega</button>}{v==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">→ Facturar</button>}</span>
+            </div>
+          );
+        }},
         {key:"ruta",label:"Ruta",hideOnMobile:true},
         {key:"acciones",label:"",render:(_,row)=>{
           const est = ordenesEstado[String(row.id)] || {};
