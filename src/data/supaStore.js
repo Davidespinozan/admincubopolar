@@ -712,6 +712,37 @@ export function useSupaStore(userId, userName) {
         rf();
       },
 
+      // Edita solo el precio (cliente y sku son inmutables — para cambiarlos
+      // el usuario debe borrar y crear nuevo, evitando bugs de identidad).
+      updatePrecioEsp: async (id, payload = {}) => {
+        try {
+          if (!id) return { error: 'Precio requerido' };
+          const { precio } = payload;
+          if (precio === undefined || precio === null || precio === '') {
+            return { error: 'Precio requerido' };
+          }
+          const num = n(precio);
+          if (!Number.isFinite(num) || num <= 0) {
+            return { error: 'Precio debe ser mayor a 0' };
+          }
+          const { error } = await supabase
+            .from('precios_esp')
+            .update({ precio: num })
+            .eq('id', id);
+          if (error) {
+            t()?.error('Error al actualizar precio especial');
+            return { error: error.message || 'Error al actualizar precio' };
+          }
+          log('Editar', 'Precios Especiales', `ID ${id} — $${num}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          const msg = e?.message || 'Error inesperado al actualizar precio';
+          t()?.error(msg);
+          return { error: msg };
+        }
+      },
+
       // ── ÓRDENES ──
       addOrden: async (o) => {
         try {

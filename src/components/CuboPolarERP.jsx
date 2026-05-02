@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense, Component } from 'react';
 import { Icons } from './ui/Icons';
 import { useConfirm } from './ui/Modal';
+import { useToast } from './ui/Toast';
 import DashboardView from './views/DashboardView';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
 import { logErrorToDb } from '../utils/errorLog';
@@ -714,14 +715,39 @@ function ComodatosView({ data, actions }) {
 }
 
 function LeadsView({ data, actions }) {
-  const [modal, setModal] = useState(false);
+  const [askConfirm, ConfirmEl] = useConfirm();
+  const toast = useToast();
+  const [modal, setModal] = useState(false); // false | "new" | <lead obj>
   const empty = { nombre: "", telefono: "", correo: "", mensaje: "", origen: "Landing page" };
   const [form, setForm] = useState(empty);
   const leads = data.leads || [];
 
+  const openNew = () => { setForm(empty); setModal("new"); };
+
+  const openEdit = (l) => {
+    setForm({
+      nombre: l.nombre || "",
+      telefono: l.telefono || "",
+      correo: l.correo || "",
+      mensaje: l.mensaje || "",
+      origen: l.origen || "Landing page",
+    });
+    setModal(l);
+  };
+
   const save = async () => {
     if (!form.nombre.trim()) return;
-    await actions.addLead(form);
+    let err;
+    if (modal === "new") {
+      err = await actions.addLead(form);
+    } else {
+      err = await actions.updateLead(modal.id, form);
+    }
+    if (err && (err.error || err.message || err.code)) {
+      toast?.error(err.error || err.message || (modal === "new" ? "No se pudo crear el lead" : "No se pudo actualizar el lead"));
+      return;
+    }
+    toast?.success(modal === "new" ? "Lead registrado" : "Lead actualizado");
     setModal(false); setForm(empty);
   };
 
@@ -729,27 +755,48 @@ function LeadsView({ data, actions }) {
     await actions.updateLead(id, { estatus: est });
   };
 
+  const eliminarLead = (l) => {
+    askConfirm(
+      'Eliminar lead',
+      `¿Eliminar a "${l.nombre}" permanentemente?`,
+      async () => {
+        const result = await actions.deleteLead(l.id);
+        if (result && (result.error || result.message || result.code)) {
+          toast?.error('Error: ' + (result.error || result.message || 'No se pudo eliminar'));
+          return;
+        }
+        toast?.success('Lead eliminado');
+      },
+      true
+    );
+  };
+
   return (<div className="space-y-4">
+    {ConfirmEl}
     <div className="flex items-center justify-between">
       <div><h2 className="text-lg font-bold text-slate-800">Leads ({leads.length})</h2><p className="text-xs text-slate-400">Contactos de landing page y otros canales</p></div>
-      <button onClick={() => { setForm(empty); setModal(true); }} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo</button>
+      <button onClick={openNew} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo</button>
     </div>
     {leads.length > 0 ? leads.map(l => (
       <div key={l.id} className="bg-white rounded-xl p-4 border border-slate-100">
-        <div className="flex justify-between items-start">
-          <div>
-            <p className="text-sm font-bold text-slate-800">{l.nombre}</p>
-            <p className="text-xs text-slate-400">{l.telefono}{l.correo ? ` · ${l.correo}` : ""}</p>
+        <div className="flex justify-between items-start gap-2">
+          <div className="min-w-0">
+            <p className="text-sm font-bold text-slate-800 truncate">{l.nombre}</p>
+            <p className="text-xs text-slate-400 truncate">{l.telefono}{l.correo ? ` · ${l.correo}` : ""}</p>
           </div>
-          <select value={l.estatus} onChange={e => cambiarEstatus(l.id, e.target.value)}
-            className={`text-xs font-bold px-2 py-1 rounded-full border-0 cursor-pointer ${
-              l.estatus === "Nuevo" ? "bg-blue-100 text-blue-700" :
-              l.estatus === "Contactado" ? "bg-amber-100 text-amber-700" :
-              l.estatus === "Convertido" ? "bg-emerald-100 text-emerald-700" :
-              "bg-slate-100 text-slate-500"
-            }`}>
-            <option>Nuevo</option><option>Contactado</option><option>Convertido</option><option>Descartado</option>
-          </select>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <select value={l.estatus} onChange={e => cambiarEstatus(l.id, e.target.value)}
+              className={`text-xs font-bold px-2 py-1 rounded-full border-0 cursor-pointer ${
+                l.estatus === "Nuevo" ? "bg-blue-100 text-blue-700" :
+                l.estatus === "Contactado" ? "bg-amber-100 text-amber-700" :
+                l.estatus === "Convertido" ? "bg-emerald-100 text-emerald-700" :
+                "bg-slate-100 text-slate-500"
+              }`}>
+              <option>Nuevo</option><option>Contactado</option><option>Convertido</option><option>Descartado</option>
+            </select>
+            <button onClick={() => openEdit(l)} title="Editar" aria-label="Editar lead" className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors">✏️</button>
+            <button onClick={() => eliminarLead(l)} title="Eliminar" aria-label="Eliminar lead" className="p-1.5 min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors">🗑</button>
+          </div>
         </div>
         {l.mensaje && <p className="text-xs text-slate-500 mt-1 bg-slate-50 rounded-lg p-2">{l.mensaje}</p>}
         <p className="text-[10px] text-slate-400 mt-1">{l.origen} · {l.fecha}</p>
@@ -758,7 +805,7 @@ function LeadsView({ data, actions }) {
     {modal && (
       <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/50" onClick={() => setModal(false)}>
         <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5" onClick={e => e.stopPropagation()}>
-          <h3 className="font-bold text-lg text-slate-800 mb-4">Nuevo lead</h3>
+          <h3 className="font-bold text-lg text-slate-800 mb-4">{modal === "new" ? "Nuevo lead" : `Editar lead — ${modal.nombre || ""}`}</h3>
           <div className="space-y-3">
             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre *</label><input value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
             <div className="grid grid-cols-2 gap-3">
@@ -768,7 +815,10 @@ function LeadsView({ data, actions }) {
             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Mensaje</label><textarea value={form.mensaje} onChange={e => setForm({...form, mensaje: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" rows={2} /></div>
             <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Origen</label><select value={form.origen} onChange={e => setForm({...form, origen: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm"><option>Landing page</option><option>WhatsApp</option><option>Teléfono</option><option>Referido</option><option>Redes sociales</option></select></div>
           </div>
-          <button onClick={save} disabled={!form.nombre.trim()} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">Guardar lead</button>
+          <div className="flex gap-2 mt-4">
+            <button onClick={() => setModal(false)} className="flex-1 py-3 border border-slate-200 text-slate-600 font-bold rounded-xl text-sm">Cancelar</button>
+            <button onClick={save} disabled={!form.nombre.trim()} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl text-sm disabled:opacity-40">{modal === "new" ? "Guardar lead" : "Guardar cambios"}</button>
+          </div>
         </div>
       </div>
     )}
