@@ -12,6 +12,7 @@ const ProductosView     = lazy(() => import('./views/ProductosView.jsx').then(m 
 const PreciosView       = lazy(() => import('./views/PreciosView.jsx').then(m => ({ default: m.PreciosView })));
 const ProduccionView    = lazy(() => import('./views/ProduccionView.jsx').then(m => ({ default: m.ProduccionView })));
 const InventarioView    = lazy(() => import('./views/InventarioView.jsx').then(m => ({ default: m.InventarioView })));
+const MermasView        = lazy(() => import('./views/MermasView.jsx').then(m => ({ default: m.MermasView })));
 const OrdenesView       = lazy(() => import('./views/OrdenesView.jsx').then(m => ({ default: m.OrdenesView })));
 const RutasView         = lazy(() => import('./views/RutasView.jsx').then(m => ({ default: m.RutasView })));
 const FacturacionView   = lazy(() => import('./views/FacturacionView.jsx').then(m => ({ default: m.FacturacionView })));
@@ -140,6 +141,7 @@ const AREAS = [
       { id: "dashboard", label: "Resumen", icon: "Dashboard" },
       { id: "produccion", label: "Producción", icon: "Factory" },
       { id: "inventario", label: "Congeladores", icon: "Warehouse" },
+      { id: "mermas", label: "Mermas", icon: "AlertTriangle" },
       { id: "comodatos", label: "Comodatos", icon: "Truck" },
       { id: "rutas", label: "Rutas", icon: "Truck" },
       { id: "bolsas", label: "Insumos", icon: "Box" },
@@ -275,6 +277,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       case 'precios': return <PreciosView {...vp} />;
       case 'produccion': return <ProduccionView {...vp} />;
       case 'inventario': return <InventarioView {...vp} />;
+      case 'mermas': return <MermasView {...vp} />;
       case 'ordenes': return <OrdenesView {...vp} />;
       case 'rutas': return <RutasView {...vp} />;
       case 'facturacion': return <FacturacionView {...vp} />;
