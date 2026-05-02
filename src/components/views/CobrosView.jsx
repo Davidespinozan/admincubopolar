@@ -155,7 +155,7 @@ export function CobrosView({ data, actions }) {
             <p className="text-xs text-slate-500">{s(cobroModal.concepto)}</p>
             <p className="text-lg font-bold text-amber-700 mt-1">Saldo: {fmtMoney(cobroModal.saldoPendiente)}</p>
           </div>
-          <FormInput label="Monto a cobrar *" type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} error={errors.monto} />
+          <FormInput label="Monto a cobrar *" type="number" min="0" step="0.01" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} error={errors.monto} />
           <FormSelect label="Método de pago" options={METODOS} value={form.metodo} onChange={e => setForm({ ...form, metodo: e.target.value })} />
           <FormInput label="Referencia" value={form.referencia} onChange={e => setForm({ ...form, referencia: e.target.value })} placeholder="No. transferencia, voucher, etc." />
           <div className="flex justify-end gap-2">

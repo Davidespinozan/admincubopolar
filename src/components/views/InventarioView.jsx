@@ -1,5 +1,6 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtPct, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
+import { traducirError } from '../../utils/errorMessages';
 
 export function InventarioView({ data, actions }) {
   const toast = useToast();
@@ -129,7 +130,7 @@ export function InventarioView({ data, actions }) {
         motivo: s(stockForm.motivo).trim(),
       });
       if (err) {
-        toast?.error(err.message || 'No se pudo ajustar el stock');
+        toast?.error(traducirError(err, 'No se pudo ajustar el stock'));
         return;
       }
       toast?.success(`Stock actualizado (${ajustes.length} ${ajustes.length === 1 ? 'cambio' : 'cambios'})`);
@@ -277,7 +278,7 @@ export function InventarioView({ data, actions }) {
         <FormSelect label="Origen *" options={cfOptions} value={traspasoForm.origen} onChange={e=>setTraspasoForm({...traspasoForm,origen:e.target.value})} />
         <FormSelect label="Destino *" options={cfOptions} value={traspasoForm.destino} onChange={e=>setTraspasoForm({...traspasoForm,destino:e.target.value})} error={traspasoErrors.destino} />
         <FormSelect label="Producto" options={skuProd} value={traspasoForm.sku} onChange={e=>setTraspasoForm({...traspasoForm,sku:e.target.value})} />
-        <FormInput label="Cantidad *" type="number" value={traspasoForm.cantidad} onChange={e=>setTraspasoForm({...traspasoForm,cantidad:e.target.value})} placeholder="Ej: 100" error={traspasoErrors.cantidad} />
+        <FormInput label="Cantidad *" type="number" min="0" value={traspasoForm.cantidad} onChange={e=>setTraspasoForm({...traspasoForm,cantidad:e.target.value})} placeholder="Ej: 100" error={traspasoErrors.cantidad} />
       </div>
       <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setTraspasoModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={hacerTraspaso} loading={traspasando}>Traspasar</FormBtn></div>
     </Modal>
@@ -287,7 +288,7 @@ export function InventarioView({ data, actions }) {
       <div className="space-y-3">
         <FormInput label="Nombre *" value={cfForm.nombre} onChange={e=>setCfForm({...cfForm,nombre:e.target.value})} />
         <FormInput label="Temperatura (°C)" type="number" value={cfForm.temp} onChange={e=>setCfForm({...cfForm,temp:e.target.value})} />
-        <FormInput label="Capacidad (tarimas)" type="number" value={cfForm.capacidad_tarimas || ''} onChange={e=>setCfForm({...cfForm,capacidad_tarimas:e.target.value})} placeholder="ej: 8, 15, 13" />
+        <FormInput label="Capacidad (tarimas)" type="number" min="0" value={cfForm.capacidad_tarimas || ''} onChange={e=>setCfForm({...cfForm,capacidad_tarimas:e.target.value})} placeholder="ej: 8, 15, 13" />
       </div>
       <div className="flex justify-between mt-5">
         {cfModal && cfModal !== "new" && cfModal.id && <button onClick={()=> askConfirm('Eliminar cuarto frío', '¿Eliminar ' + s(cfModal.nombre) + '? El cuarto debe estar vacío.', async()=>{const r=await actions.deleteCuartoFrio(cfModal.id); if (r?.error) { toast?.error(r.error); return; } toast?.success('Cuarto frío eliminado'); setCfModal(null);}, true)} className="text-xs text-red-500 font-semibold py-2 px-3 hover:bg-red-50 rounded-lg">Eliminar</button>}
@@ -322,6 +323,7 @@ export function InventarioView({ data, actions }) {
         <FormInput
           label="Nueva existencia total *"
           type="number"
+          min="0"
           value={ajusteForm.existencia}
           onChange={e=>setAjusteForm({...ajusteForm, existencia:e.target.value})}
           error={ajusteErrors.existencia}

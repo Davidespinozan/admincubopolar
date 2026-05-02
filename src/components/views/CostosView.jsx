@@ -266,7 +266,7 @@ export function CostosView({ data, actions }) {
       <div className="space-y-3">
         <FormInput label="Nombre *" value={form.nombre} onChange={e => setForm({ ...form, nombre: e.target.value })} error={errors.nombre} placeholder="Ej: Renta local" />
         <FormSelect label="Categoría" options={CATEGORIAS_COSTO} value={form.categoria} onChange={e => setForm({ ...form, categoria: e.target.value })} />
-        <FormInput label="Monto *" type="number" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} error={errors.monto} placeholder="0.00" />
+        <FormInput label="Monto *" type="number" min="0" step="0.01" value={form.monto} onChange={e => setForm({ ...form, monto: e.target.value })} error={errors.monto} placeholder="0.00" />
         <FormSelect label="Frecuencia" options={FRECUENCIAS} value={form.frecuencia} onChange={e => setForm({ ...form, frecuencia: e.target.value })} />
         <FormInput label="Día de cargo" type="number" value={form.diaCargo} onChange={e => setForm({ ...form, diaCargo: e.target.value })} min="1" max="31" />
         <FormInput label="Proveedor (opcional)" value={form.proveedor} onChange={e => setForm({ ...form, proveedor: e.target.value })} placeholder="Nombre del proveedor" />
@@ -313,7 +313,7 @@ export function CostosView({ data, actions }) {
       <div className="space-y-3">
         <FormInput label="Concepto *" value={gastoForm.concepto} onChange={e => setGastoForm({ ...gastoForm, concepto: e.target.value })} error={errors.concepto} placeholder="Ej: Gasolina ruta norte, Reparación compresor" />
         <FormSelect label="Categoría" options={CATEGORIAS_COSTO} value={gastoForm.categoria} onChange={e => setGastoForm({ ...gastoForm, categoria: e.target.value })} />
-        <FormInput label="Monto *" type="number" value={gastoForm.monto} onChange={e => setGastoForm({ ...gastoForm, monto: e.target.value })} error={errors.monto} placeholder="0.00" />
+        <FormInput label="Monto *" type="number" min="0" step="0.01" value={gastoForm.monto} onChange={e => setGastoForm({ ...gastoForm, monto: e.target.value })} error={errors.monto} placeholder="0.00" />
         <FormInput label="Fecha" type="date" value={gastoForm.fecha} onChange={e => setGastoForm({ ...gastoForm, fecha: e.target.value })} />
         <FormInput label="Referencia (opcional)" value={gastoForm.referencia} onChange={e => setGastoForm({ ...gastoForm, referencia: e.target.value })} placeholder="# Factura, ticket, voucher" />
         <p className="text-xs text-slate-400">Este gasto se registrará como egreso en contabilidad automáticamente.</p>

@@ -191,7 +191,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿Cuántas? *</label>
-                <input type="number" inputMode="numeric" value={form.cantidad} onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
+                <input type="number" min="0" inputMode="numeric" value={form.cantidad} onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
                   className="w-full px-4 py-4 border border-slate-200 rounded-xl text-2xl font-bold text-center" placeholder="0" autoFocus />
               </div>
 
@@ -204,7 +204,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-slate-600 uppercase mb-1">Costo total (opcional)</label>
-                    <input type="number" inputMode="decimal" value={form.costo} onChange={e => setForm(f => ({ ...f, costo: e.target.value }))}
+                    <input type="number" min="0" step="0.01" inputMode="decimal" value={form.costo} onChange={e => setForm(f => ({ ...f, costo: e.target.value }))}
                       className="w-full px-4 py-3 border border-slate-200 rounded-xl text-base text-center" placeholder="$0.00" />
                   </div>
                   {n(form.costo) > 0 && (

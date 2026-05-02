@@ -109,18 +109,18 @@ export function ProductosView({ data, actions }) {
         <FormInput label="SKU *" value={form.sku} onChange={e=>setForm({...form,sku:e.target.value.toUpperCase()})} placeholder="Ej: HPC-25K" error={errors.sku} />
         <FormInput label="Nombre *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} error={errors.nombre} />
         <FormSelect label="Tipo" options={["Producto Terminado","Empaque"]} value={form.tipo} onChange={e=>{const t=e.target.value;setForm({...form,tipo:t,precio:t==="Empaque"?0:form.precio,costoUnitario:t==="Producto Terminado"?0:form.costoUnitario,empaqueSku:t==="Empaque"?"":form.empaqueSku})}} />
-        <FormInput label="Stock inicial" type="number" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} />
+        <FormInput label="Stock inicial" type="number" min="0" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} />
         <FormSelect label="Ubicación" options={["CF-1","CF-2","CF-3","Almacén"]} value={form.ubicacion} onChange={e=>setForm({...form,ubicacion:e.target.value})} />
         {form.tipo==="Producto Terminado" && (
           <>
-            <FormInput label="Precio público ($)" type="number" value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})} />
+            <FormInput label="Precio público ($)" type="number" min="0" step="0.01" value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})} />
             <FormSelect label="Empaque que usa" options={["", ...empaques.map(e => e.sku)]} value={form.empaqueSku} onChange={e=>setForm({...form,empaqueSku:e.target.value})} />
             <p className="text-xs text-slate-400 -mt-2">Selecciona el empaque para calcular costos automáticamente</p>
           </>
         )}
         {form.tipo==="Empaque" && (
           <>
-            <FormInput label="Costo unitario ($)" type="number" step="0.01" value={form.costoUnitario} onChange={e=>setForm({...form,costoUnitario:e.target.value})} placeholder="Costo por unidad" />
+            <FormInput label="Costo unitario ($)" type="number" min="0" step="0.01" value={form.costoUnitario} onChange={e=>setForm({...form,costoUnitario:e.target.value})} placeholder="Costo por unidad" />
             <FormInput label="Proveedor" value={form.proveedor} onChange={e=>setForm({...form,proveedor:e.target.value})} placeholder="Ej: Bolsas del Norte" />
             <p className="text-xs text-slate-400 -mt-2">Este costo se usa para calcular el costo de producción</p>
           </>
