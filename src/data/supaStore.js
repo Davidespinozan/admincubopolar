@@ -2476,9 +2476,16 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       asignarOrdenesARuta: async (rutaId, ordenIds, totalBolsas) => {
-        await Promise.all(ordenIds.map(oid =>
-          supabase.from('ordenes').update({ ruta_id: rutaId }).eq('id', oid)
-        ));
+        // 1. Asignar ruta_id a todas las órdenes seleccionadas
+        await supabase.from('ordenes').update({ ruta_id: rutaId }).in('id', ordenIds);
+
+        // 2. Mover Creada → Asignada (FSM correcto: chofer luego puede pasar a Entregada).
+        //    Solo afecta las que estén en 'Creada'; respeta órdenes ya en otro estado.
+        await supabase.from('ordenes')
+          .update({ estatus: 'Asignada' })
+          .in('id', ordenIds)
+          .eq('estatus', 'Creada');
+
         // Build desglose by SKU from orden_lineas
         const { data: lineas } = await supabase.from('orden_lineas').select('sku, cantidad').in('orden_id', ordenIds);
         const desglose = {};
