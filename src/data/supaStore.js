@@ -1736,13 +1736,44 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── CUARTOS FRÍOS — CRUD ──
+      // cuartos_frios.id es TEXT (ver migración 023). No tiene auto-increment
+      // ni default, así que el id se genera client-side con patrón "CF-N"
+      // tomando el siguiente número libre desde los existentes.
       addCuartoFrio: async (cf) => {
-        const { error } = await supabase.from('cuartos_frios').insert({
-          nombre: cf.nombre, temp: cf.temp, capacidad_tarimas: cf.capacidad_tarimas || 0, stock: {},
-        });
-        if (error) { t()?.error('Error al crear cuarto frío'); return error; }
-        log('Crear', 'Cuartos Fríos', `${cf.nombre}`);
-        rf();
+        try {
+          const { data: existentes, error: errSel } = await supabase
+            .from('cuartos_frios')
+            .select('id');
+          if (errSel) {
+            t()?.error('Error al leer cuartos fríos existentes');
+            return errSel;
+          }
+          let max = 0;
+          for (const e of (existentes || [])) {
+            const m = String(e?.id || '').match(/^CF-(\d+)$/i);
+            if (m) max = Math.max(max, parseInt(m[1], 10));
+          }
+          const newId = `CF-${max + 1}`;
+
+          const { error } = await supabase.from('cuartos_frios').insert({
+            id: newId,
+            nombre: cf.nombre,
+            temp: cf.temp,
+            capacidad_tarimas: Number(cf.capacidad_tarimas) || 0,
+            stock: {},
+          });
+          if (error) {
+            console.warn('[addCuartoFrio] insert:', error.message);
+            t()?.error(error.message || 'Error al crear cuarto frío');
+            return error;
+          }
+          log('Crear', 'Cuartos Fríos', `${newId} — ${cf.nombre}`);
+          rf();
+        } catch (e) {
+          console.error('[addCuartoFrio] excepción:', e);
+          t()?.error('Error inesperado al crear cuarto frío');
+          return { error: e?.message || 'Error inesperado' };
+        }
       },
 
       updateCuartoFrio: async (id, cf) => {
