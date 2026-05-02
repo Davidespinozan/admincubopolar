@@ -28,6 +28,7 @@ const ContabilidadView  = lazy(() => import('./views/ContabilidadView.jsx').then
 const CobrosView        = lazy(() => import('./views/CobrosView.jsx').then(m => ({ default: m.CobrosView })));
 const CostosView        = lazy(() => import('./views/CostosView.jsx').then(m => ({ default: m.CostosView })));
 const CuentasPorPagarView = lazy(() => import('./views/CuentasPorPagarView.jsx').then(m => ({ default: m.CuentasPorPagarView })));
+const DevolucionesView    = lazy(() => import('./views/DevolucionesView.jsx').then(m => ({ default: m.DevolucionesView })));
 
 // Auto-reload when a lazy chunk can't load (stale deployment)
 if (typeof window !== 'undefined') {
@@ -162,6 +163,7 @@ const AREAS = [
       { id: "contabilidad", label: "Movimientos", icon: "Calculator" },
       { id: "cobros", label: "Por cobrar", icon: "DollarSign" },
       { id: "proveedores", label: "Por pagar", icon: "CreditCard" },
+      { id: "devoluciones", label: "Devoluciones", icon: "Truck" },
       { id: "costos", label: "Costos", icon: "Receipt" },
       { id: "facturacion", label: "Facturación", icon: "FileText" },
       { id: "conciliacion", label: "Cortes", icon: "ClipboardCheck" },
@@ -288,6 +290,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       case 'contabilidad': return <ContabilidadView {...vp} />;
       case 'cobros': return <CobrosView {...vp} />;
       case 'proveedores': return <CuentasPorPagarView {...vp} />;
+      case 'devoluciones': return <DevolucionesView {...vp} />;
       case 'costos': return <CostosView {...vp} />;
       case 'empleados': return <EmpleadosView {...vp} />;
       case 'configuracion': return <ConfiguracionView {...vp} />;

@@ -21,4 +21,5 @@ export {
   CobrosView,
   CostosView,
   CuentasPorPagarView,
+  DevolucionesView,
 } from './ModuleViews';
