@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { s, n, fmtDate, fmtPct } from '../utils/safe';
+import { compressImage } from '../utils/compressImage';
 import { puedeAgregarAlCuarto, tarimasOcupadasEnCuarto, colorTarimasUso } from '../utils/tarimas';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
 import { EmptyState } from './ui/Skeleton';
@@ -38,6 +39,23 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const [toast, setToast] = useState("");
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
+
+  // Handler compartido: comprime cliente-side, valida 5MB como red de
+  // seguridad, y guarda el File comprimido + un objectURL para preview.
+  const handleImagePickFile = (clearFn, setFile, setPreview) => async (e) => {
+    const original = e.target.files?.[0];
+    if (!original) return;
+    if (original.size > 2 * 1024 * 1024) showToast('Procesando foto…');
+    const file = await compressImage(original);
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Foto muy grande, máx 5MB');
+      e.target.value = '';
+      return;
+    }
+    clearFn();
+    setFile(file);
+    setPreview(URL.createObjectURL(file));
+  };
 
   const MERMA_CAUSAS = ["Bolsa rota", "Mal sellado", "Hielo derretido", "Falla de equipo", "Desmolde fallido", "Contaminación", "Otro"];
 
@@ -851,7 +869,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     ) : (
                       <label className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
                         <span className="text-lg">📷</span> Tomar foto de evidencia
-                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { clearFotoMermaProd(); setFotoMermaProdFile(f); setFotoMermaProdPreview(URL.createObjectURL(f)); } }} />
+                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePickFile(clearFotoMermaProd, setFotoMermaProdFile, setFotoMermaProdPreview)} />
                       </label>
                     )}
                   </div>
@@ -1054,7 +1072,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 ) : (
                   <label className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
                     <span className="text-lg">📷</span> Tomar foto de evidencia
-                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) { clearFotoMerma(); setFotoMermaFile(f); setFotoMermaPreview(URL.createObjectURL(f)); } }} />
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePickFile(clearFotoMerma, setFotoMermaFile, setFotoMermaPreview)} />
                   </label>
                 )}
               </div>
