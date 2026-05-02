@@ -6,12 +6,9 @@ export function ProduccionView({ data, actions }) {
   const [askConfirm, ConfirmEl] = useConfirm();
   const [tab, setTab] = useState('produccion'); // 'produccion' | 'transformaciones'
 
-  // ── Producción normal ──
-  const [modal, setModal] = useState(false);
-  const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({turno:"Turno 1",maquina:"Máquina 30",sku:"",cantidad:""});
-
-  // ── Editar ──
+  // ── Editar (admin solo gestiona, NO registra producción nueva) ──
+  // Registro de producción ocurre exclusivamente en ProduccionStandaloneView
+  // (operario en planta) vía producirYCongelar.
   const [editModal, setEditModal] = useState(false);
   const [editForm, setEditForm] = useState({id:null,turno:"",maquina:"",sku:"",cantidad:"",estatus:""});
   const [editErrors, setEditErrors] = useState({});
@@ -26,38 +23,17 @@ export function ProduccionView({ data, actions }) {
     const e = {};
     if (!editForm.cantidad || n(editForm.cantidad) <= 0) e.cantidad = "Cantidad debe ser mayor a 0";
     if (Object.keys(e).length) { setEditErrors(e); return; }
+    // SKU NO se envía: updateProduccion lo bloquea (ver supaStore.js).
+    // Si la cantidad cambia, NO se ajusta stock automáticamente — admin
+    // debe corregir el stock manualmente desde InventarioView si aplica.
     const err = await actions.updateProduccion(editForm.id, {
       turno: editForm.turno, maquina: editForm.maquina,
-      sku: editForm.sku, cantidad: editForm.cantidad, estatus: editForm.estatus,
+      cantidad: editForm.cantidad, estatus: editForm.estatus,
     });
     if (err) { toast?.error("No se pudo actualizar la orden"); return; }
     toast?.success("Orden actualizada");
     setEditModal(false);
   };
-
-  // Deriva el empaque desde el catálogo (no hardcodear SKUs)
-  const bolsaNecesaria = useMemo(() => {
-    const prod = (data.productos || []).find(p => s(p.sku) === s(form.sku));
-    return s(prod?.empaqueSku || prod?.empaque_sku) || null;
-  }, [data.productos, form.sku]);
-  const stockBolsa = useMemo(() => {
-    if (!bolsaNecesaria) return 999999;
-    const p = data.productos.find(x => x.sku === bolsaNecesaria);
-    return p ? n(p.stock) : 0;
-  }, [data.productos, bolsaNecesaria]);
-
-  const save = async () => {
-    const e = {};
-    if (!form.cantidad || n(form.cantidad) <= 0) e.cantidad = "Cantidad debe ser mayor a 0";
-    if (bolsaNecesaria && n(form.cantidad) > stockBolsa) e.cantidad = "Stock insuficiente de " + bolsaNecesaria + " (" + stockBolsa + " disp.)";
-    if (Object.keys(e).length) { setErrors(e); return; }
-    const err = await actions.addProduccion(form);
-    if (err) { toast?.error("No se pudo registrar la producción"); return; }
-    toast?.success("Producción registrada: " + form.cantidad + " " + form.sku);
-    setModal(false); setForm({turno:"Turno 1",maquina:"Máquina 30",sku:"",cantidad:""}); setErrors({});
-  };
-
-  const skuOptions = useMemo(() => data.productos.filter(p=>p.tipo==="Producto Terminado").map(p=>s(p.sku)), [data.productos]);
 
   // ── Transformación ──
   const [tModal, setTModal] = useState(false);
@@ -236,11 +212,8 @@ export function ProduccionView({ data, actions }) {
     <PageHeader
       title="Producción"
       subtitle="Hielo y transformaciones"
-      action={() => {
-        if (tab === 'transformaciones') { setTModal(true); setTErrors({}); }
-        else { setForm(f => ({...f, sku: f.sku || skuOptions[0] || ""})); setModal(true); setErrors({}); }
-      }}
-      actionLabel={tab === 'transformaciones' ? "Registrar transformación" : "Registrar producción"}
+      action={tab === 'transformaciones' ? () => { setTModal(true); setTErrors({}); } : null}
+      actionLabel={tab === 'transformaciones' ? "Registrar transformación" : null}
       extraButtons={exportBtns}
     />
 
@@ -333,14 +306,6 @@ export function ProduccionView({ data, actions }) {
                                   </div>
                                   <div className="flex items-center gap-2 flex-shrink-0">
                                     <StatusBadge status={r.estatus} />
-                                    {r.estatus === "En proceso" && (
-                                      <button
-                                        onClick={() => actions.confirmarProduccion(r.id)}
-                                        className="text-xs text-blue-600 font-semibold hover:text-blue-800 px-2"
-                                      >
-                                        Confirmar ✓
-                                      </button>
-                                    )}
                                     <button onClick={() => openEdit(r)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                                       <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                     </button>
@@ -469,25 +434,6 @@ export function ProduccionView({ data, actions }) {
       )}
     </>}
 
-    {/* ═══ MODAL: Registrar producción ═══ */}
-    <Modal open={modal} onClose={()=>setModal(false)} title="Registrar producción">
-      <div className="space-y-3">
-        <FormSelect label="Turno" options={["Turno 1","Turno 2","Turno 3"]} value={form.turno} onChange={e=>setForm({...form,turno:e.target.value})} />
-        <FormSelect label="Máquina" options={["Máquina 30","Máquina 20","Máquina 15"]} value={form.maquina} onChange={e=>setForm({...form,maquina:e.target.value})} />
-        <FormSelect label="SKU" options={skuOptions} value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})} />
-        <FormInput label="Cantidad *" type="number" min="0" value={form.cantidad} onChange={e=>setForm({...form,cantidad:e.target.value})} placeholder="Ej: 500" error={errors.cantidad} />
-        {bolsaNecesaria && (
-          <div className={`p-3 rounded-xl ${n(form.cantidad) > stockBolsa ? "bg-red-50" : "bg-blue-50"}`}>
-            <p className="text-xs font-semibold text-slate-700">Consumo de empaque: <span className="font-bold">{form.cantidad || 0} {bolsaNecesaria}</span></p>
-            <p className={`text-xs mt-1 ${n(form.cantidad) > stockBolsa ? "text-red-600 font-bold" : "text-slate-500"}`}>
-              Stock disponible: {stockBolsa.toLocaleString()}{n(form.cantidad) > stockBolsa ? " — INSUFICIENTE" : ""}
-            </p>
-          </div>
-        )}
-      </div>
-      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={save}>Registrar</FormBtn></div>
-    </Modal>
-
     {/* ═══ MODAL: Registrar transformación ═══ */}
     <Modal open={tModal} onClose={()=>setTModal(false)} title="Registrar transformación de hielo">
       <div className="space-y-4">
@@ -582,13 +528,21 @@ export function ProduccionView({ data, actions }) {
     </Modal>
 
     {/* ═══ MODAL: Editar producción ═══ */}
+    {/* SKU se muestra como referencia pero NO es editable: cambiar SKU
+        requeriría reverso de stock. Para corregir SKU mal capturado:
+        Eliminar (con reverso) y registrar de nuevo desde Standalone. */}
     <Modal open={editModal} onClose={()=>setEditModal(false)} title="Editar producción">
       <div className="space-y-3">
         <FormSelect label="Estatus" options={["En proceso","Confirmada","Cancelada"]} value={editForm.estatus} onChange={e=>setEditForm({...editForm,estatus:e.target.value})} />
         <FormSelect label="Turno" options={["Turno 1","Turno 2","Turno 3"]} value={editForm.turno} onChange={e=>setEditForm({...editForm,turno:e.target.value})} />
         <FormSelect label="Máquina" options={["Máquina 30","Máquina 20","Máquina 15"]} value={editForm.maquina} onChange={e=>setEditForm({...editForm,maquina:e.target.value})} />
-        <FormSelect label="SKU" options={skuOptions} value={editForm.sku} onChange={e=>setEditForm({...editForm,sku:e.target.value})} />
+        <div>
+          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">SKU (no editable)</label>
+          <div className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 text-slate-600 font-mono">{editForm.sku}</div>
+          <p className="text-[11px] text-slate-400 mt-1">Para cambiar SKU: elimina este registro (con reverso de stock) y registra de nuevo.</p>
+        </div>
         <FormInput label="Cantidad *" type="number" min="0" value={editForm.cantidad} onChange={e=>setEditForm({...editForm,cantidad:e.target.value})} placeholder="Ej: 500" error={editErrors.cantidad} />
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">⚠ Cambiar la cantidad NO ajusta el stock automáticamente. Si necesitas corregir el inventario, hazlo desde Inventario → Ajustar.</p>
       </div>
       <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setEditModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={saveEdit}>Guardar cambios</FormBtn></div>
     </Modal>

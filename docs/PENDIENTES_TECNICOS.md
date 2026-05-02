@@ -123,3 +123,41 @@ CREATE INDEX idx_mermas_ruta_id ON mermas(ruta_id) WHERE ruta_id IS NOT NULL;
 2. **Cada SQL marcado "no ejecutar aún"**: revisar el contexto antes, hacer backup, y solo entonces correr en Supabase.
 3. **Mantener el doc actualizado**: cuando se ejecute una acción, mover su sección a un changelog (o eliminar si quedó completa).
 exportReports.js bundle 298KB → lazy load solo cuando se exporta
+
+---
+
+## 🟡 RPC `confirmar_produccion` sin uso desde la app
+
+Tras el refactor de Producción (PR `refactor/produccion-admin-solo-gestion`), el flujo "registrar → confirmar" ya no existe: el operario registra desde `ProduccionStandaloneView` y el ingreso al cuarto frío es atómico vía `producirYCongelar`. La acción JS `actions.confirmarProduccion` y el RPC SQL `confirmar_produccion` dejaron de invocarse desde el cliente.
+
+- Acción JS `confirmarProduccion` en [`src/data/supaStore.js`](../src/data/supaStore.js) (~línea 1332). Sin callers desde UI; código muerto.
+- RPC SQL `confirmar_produccion(p_produccion_id, p_usuario_id)` en [`007_rpc_atomic_operations.sql`](../supabase/007_rpc_atomic_operations.sql) y reescrito en [`034_fix_rls_rpc_permissions.sql`](../supabase/034_fix_rls_rpc_permissions.sql).
+
+**Acción pendiente** (no urgente):
+1. Eliminar la acción JS `confirmarProduccion` del store.
+2. `DROP FUNCTION confirmar_produccion(BIGINT, BIGINT);` en migración nueva.
+
+No ejecutar todavía: dejar como código muerto un sprint para confirmar que ningún flujo (cierre de caja, reportes históricos) lo necesita.
+
+---
+
+## 🔴 Costo de empaque NO se registra en contabilidad cuando producción se hace desde Standalone
+
+Bug latente descubierto durante el refactor de Producción.
+
+`addProduccion` ([`src/data/supaStore.js:1280`](../src/data/supaStore.js)) descuenta el empaque del stock pero **no registra el egreso contable** ni inserta en `costos_historial`. Esa lógica vivía exclusivamente dentro de `confirmarProduccion` (~líneas 1353-1395), que ya no se llama desde ningún flujo activo tras el refactor.
+
+**Consecuencia operativa.** Cuando el operario produce 1000 bolsas con empaque a $0.50 c/u:
+- ✅ Stock de empaque baja en 1000 unidades.
+- ✅ Stock de producto terminado sube 1000.
+- ❌ Los $500 de costo de empaque **NO aparecen como Egreso en `movimientos_contables` ni en `costos_historial`**.
+- → El estado de resultados subestima costo de ventas mientras dure el bug.
+
+**Fix propuesto:**
+
+1. Extraer la sección "calcular costo + insertar contabilidad" de `confirmarProduccion` a un helper privado del store, p. ej. `_registrarCostoProduccion(prodRow)`.
+2. Llamarlo desde `producirYCongelar` después de `meterACuartoFrio`. Best-effort: si falla, notificar y permitir registro manual desde Costos (mismo patrón que el egreso contable de mermas en `registrarMerma`).
+3. Tests puros de la función de cálculo (cantidad × costo_unitario_empaque).
+
+Tiempo estimado: ~45 min. Postergado a PR dedicado para no inflar el refactor de Producción.
+
