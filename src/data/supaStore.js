@@ -2762,6 +2762,134 @@ export function useSupaStore(userId, userName) {
         rf();
       },
 
+      // Borra una merma desde admin, regresando el stock al primer cuarto
+      // frío activo (FIFO inverso) y borrando el egreso contable asociado y
+      // la foto en Storage best-effort. NO modifica deleteMerma porque el
+      // reset masivo del sistema usa esa otra ruta sin reverso.
+      borrarMermaConReverso: async (id) => {
+        try {
+          if (!id) return { error: 'Merma requerida' };
+
+          // 1. SELECT merma completa
+          const { data: merma, error: errSel } = await supabase
+            .from('mermas')
+            .select('*')
+            .eq('id', id)
+            .single();
+          if (errSel || !merma) {
+            return { error: errSel?.message || 'Merma no encontrada' };
+          }
+
+          const sku = s(merma.sku);
+          const cant = n(merma.cantidad);
+          const fotoPath = s(merma.foto_url);
+          const causa = s(merma.causa);
+          const origen = s(merma.origen);
+          const fecha = s(merma.fecha);
+
+          // Defensivo: si por alguna razón cantidad ≤ 0 (no debería por
+          // CHECK constraint), borrar sin reverso
+          if (cant <= 0) {
+            const { error: errDel } = await supabase.from('mermas').delete().eq('id', id);
+            if (errDel) {
+              t()?.error('Error al borrar merma');
+              return { error: errDel.message };
+            }
+            await log('Borrar (sin reverso)', 'Mermas', `ID ${id} — cantidad ${cant}`);
+            rf();
+            return undefined;
+          }
+
+          // 2. RPC update_stocks_atomic con FIFO inverso (regresar al primer
+          //    cuarto frío activo)
+          const { data: cuartos, error: errCfs } = await supabase
+            .from('cuartos_frios')
+            .select('id, nombre')
+            .order('id');
+          if (errCfs) {
+            t()?.error('No se pudieron leer cuartos fríos');
+            return { error: errCfs.message };
+          }
+          if (!cuartos || cuartos.length === 0) {
+            return { error: 'No hay cuartos fríos activos para regresar el stock' };
+          }
+          const cuartoDestino = cuartos[0];
+
+          const { error: errRpc } = await supabase.rpc('update_stocks_atomic', {
+            p_changes: [{
+              cuarto_id: cuartoDestino.id,
+              sku,
+              delta: cant,
+              tipo: 'Reverso merma',
+              origen: `Borrado merma id=${id} (${causa || 'sin causa'})`,
+              usuario: uname() || 'Admin',
+            }],
+          });
+          if (errRpc) {
+            console.warn('[borrarMermaConReverso] rpc update_stocks_atomic:', errRpc.message);
+            t()?.error('No se pudo regresar el stock — merma NO borrada');
+            return { error: 'No se pudo regresar el stock — merma NO borrada. ' + (errRpc.message || '') };
+          }
+
+          // 3. DELETE de movimiento contable asociado (best-effort, match único)
+          let avisoMovsMultiples = false;
+          try {
+            const conceptoMatch = `Merma ${cant}× ${sku}`;
+            const { data: movs } = await supabase
+              .from('movimientos_contables')
+              .select('id')
+              .eq('categoria', 'Mermas')
+              .ilike('concepto', `%${conceptoMatch}%`)
+              .gte('fecha', fecha)
+              .lte('fecha', fecha);
+
+            if (movs && movs.length === 1) {
+              await supabase.from('movimientos_contables').delete().eq('id', movs[0].id);
+            } else if (movs && movs.length > 1) {
+              avisoMovsMultiples = true;
+              console.warn(`[borrarMermaConReverso] múltiples egresos contables matchean merma ${id}, ninguno borrado`);
+            }
+          } catch (eMov) {
+            console.warn('[borrarMermaConReverso] best-effort delete movimiento contable:', eMov);
+          }
+
+          // 4. DELETE de foto en Storage (best-effort)
+          if (fotoPath) {
+            try {
+              // Si es path relativo (no http/data/blob), borrar del bucket
+              if (!/^https?:\/\//.test(fotoPath) && !/^data:/.test(fotoPath) && !/^blob:/.test(fotoPath)) {
+                await supabase.storage.from('mermas').remove([fotoPath]);
+              }
+            } catch (eFoto) {
+              console.warn('[borrarMermaConReverso] best-effort delete foto:', eFoto);
+            }
+          }
+
+          // 5. DELETE de la merma
+          const { error: errDel } = await supabase.from('mermas').delete().eq('id', id);
+          if (errDel) {
+            console.warn('[borrarMermaConReverso] CRÍTICO: stock revertido pero merma no se pudo borrar:', errDel);
+            t()?.error('Stock regresado pero la merma no se pudo borrar. Revísalo en Supabase.');
+            return { error: 'Stock regresado pero la merma no se pudo borrar. Revísalo en Supabase.' };
+          }
+
+          // 6. Audit
+          await log('Borrar con reverso', 'Mermas',
+            `ID ${id} — ${cant}×${sku} → ${s(cuartoDestino.nombre)} | causa: ${causa || '—'} | origen: ${origen || '—'}`
+          );
+
+          rf();
+          if (avisoMovsMultiples) {
+            return { partial: true, error: 'Merma borrada y stock regresado, pero el egreso contable no se eliminó automáticamente (múltiples coincidencias). Revísalo en Contabilidad.' };
+          }
+          return undefined;
+        } catch (e) {
+          console.error('[borrarMermaConReverso] excepción:', e);
+          t()?.error('Error inesperado al borrar merma');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
       // ── COMODATOS ──
       addComodato: async (c) => {
         const { error } = await supabase.from('comodatos').insert({
