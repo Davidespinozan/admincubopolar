@@ -111,11 +111,30 @@ export const todayLocalISO = (date = new Date()) => {
 // ── Valida formato de RFC mexicano (persona física o moral).
 // Persona moral: 3 letras + 6 dígitos + 3 alfanum (homoclave).
 // Persona física: 4 letras + 6 dígitos + 3 alfanum.
-// Permite & y Ñ en la parte alfabética. Genérico XAXX010101000 pasa.
-export const validarRFC = (rfc) => {
+// Permite & y Ñ en la parte alfabética.
+// `permitirGenericos` (default true): si false, rechaza XAXX010101000 y
+// XEXX010101000 (RFCs reservados SAT). Usar false cuando el RFC va a
+// timbrar nominativamente (cliente que requiere factura, RFC empresa).
+const RFCS_GENERICOS_SAT = new Set(['XAXX010101000', 'XEXX010101000']);
+export const validarRFC = (rfc, opts = {}) => {
   if (!rfc) return false;
-  const limpio = String(rfc).trim().toUpperCase();
-  return /^[A-ZÑ&]{3,4}\d{6}[A-Z\d]{3}$/.test(limpio);
+  const upper = String(rfc).trim().toUpperCase();
+  if (RFCS_GENERICOS_SAT.has(upper)) {
+    return opts.permitirGenericos !== false; // default true
+  }
+  return /^[A-ZÑ&]{3,4}\d{6}[A-Z\d]{3}$/.test(upper);
+};
+
+// ── Normaliza string para búsqueda case-insensitive sin diacríticos.
+// "Espinoza" → "espinoza" === normalizeStr("ESPINÓZA") === normalizeStr("espinóza")
+// Útil para buscadores: el usuario teclea "neveria" y encuentra "Nevería".
+export const normalizeStr = (str) => {
+  if (str == null) return '';
+  return String(str)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '') // remueve diacríticos combinantes
+    .toLowerCase()
+    .trim();
 };
 
 // ── ID comparison: PostgreSQL serial → int, UUID → string

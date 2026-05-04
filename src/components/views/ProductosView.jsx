@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtMoney, useDebounce, useToast, useConfirm, reporteInventario, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtMoney, useDebounce, useToast, useConfirm, reporteInventario, PAGE_SIZE, Paginator, normalizeStr } from './viewsCommon';
 
 export function ProductosView({ data, actions }) {
   const toast = useToast();
@@ -54,10 +54,10 @@ export function ProductosView({ data, actions }) {
   const empaques = useMemo(() => data.productos.filter(p => s(p.tipo) === "Empaque"), [data.productos]);
 
   const filtered = useMemo(() => {
-    const q = dSearch?.toLowerCase() || "";
+    const q = normalizeStr(dSearch);
     return data.productos.filter(p => {
       const matchTipo = !filterTipo || s(p.tipo) === filterTipo;
-      const ms = !q || s(p.nombre).toLowerCase().includes(q) || s(p.sku).toLowerCase().includes(q);
+      const ms = !q || normalizeStr(p.nombre).includes(q) || normalizeStr(p.sku).includes(q);
       return matchTipo && ms;
     });
   }, [data.productos, dSearch, filterTipo]);

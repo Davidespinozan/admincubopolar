@@ -5,7 +5,7 @@ import { Icons } from '../ui/Icons';
 import { StatusBadge, DataTable, PageHeader, CapacityBar } from '../ui/Components';
 import Modal, { FormInput, FormSelect, FormBtn, useConfirm } from '../ui/Modal';
 import { EmptyState } from '../ui/Skeleton';
-import { s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today, todayISO, todayLocalISO, centavos, fmtMoney, fmtPct, extraerTelefono } from '../../utils/safe';
+import { s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today, todayISO, todayLocalISO, centavos, fmtMoney, fmtPct, extraerTelefono, normalizeStr } from '../../utils/safe';
 import { useToast } from '../ui/Toast';
 import { reporteVentas, reporteProduccion, reporteInventario, reporteClientes, reporteRutas, reporteRutaDiaria, reporteFinanciero } from '../../utils/exportReports';
 import { backendPost } from '../../lib/backend';
@@ -18,7 +18,7 @@ export {
   StatusBadge, DataTable, PageHeader, CapacityBar,
   Modal, FormInput, FormSelect, FormBtn, useConfirm,
   EmptyState,
-  s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today, todayISO, todayLocalISO, centavos, fmtMoney, fmtPct, extraerTelefono,
+  s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today, todayISO, todayLocalISO, centavos, fmtMoney, fmtPct, extraerTelefono, normalizeStr,
   useToast,
   reporteVentas, reporteProduccion, reporteInventario, reporteClientes, reporteRutas, reporteRutaDiaria, reporteFinanciero,
   backendPost

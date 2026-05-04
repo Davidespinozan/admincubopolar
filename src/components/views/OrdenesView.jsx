@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormBtn, useConfirm, s, fmtDate, fmtMoney, useDebounce, useToast, reporteVentas, extraerTelefono, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormBtn, useConfirm, s, fmtDate, fmtMoney, useDebounce, useToast, reporteVentas, extraerTelefono, PAGE_SIZE, Paginator, normalizeStr } from './viewsCommon';
 import NuevaVentaModal from '../NuevaVentaModal';
 import EditarVentaModal from '../EditarVentaModal';
 import DevolucionModal from '../DevolucionModal';
@@ -94,10 +94,10 @@ export function OrdenesView({ data, actions, user }) {
   };
 
   const filtered = useMemo(() => {
-    const q = dSearch?.toLowerCase() || "";
+    const q = normalizeStr(dSearch);
     return (data.ordenes || []).filter(o => {
       if (!o) return false;
-      const ms = !q || s(o.folio).toLowerCase().includes(q) || s(o.cliente).toLowerCase().includes(q);
+      const ms = !q || normalizeStr(o.folio).includes(q) || normalizeStr(o.cliente).includes(q);
       let me = true;
       if (filterEst === 'activas') me = s(o.estatus) !== 'Cancelada' && s(o.estatus) !== 'No entregada';
       else if (filterEst === 'todas') me = true;

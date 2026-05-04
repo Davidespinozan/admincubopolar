@@ -39,6 +39,32 @@ describe('validateEdicionOrden', () => {
   it('trim del estatus no afecta validación', () => {
     expect(validateEdicionOrden('  Creada  ')).toBeNull();
   });
+
+  // ─── 2do arg `ruta`: bloquea si carga ya confirmada ───────
+  it('null cuando Creada y ruta sin carga confirmada', () => {
+    expect(validateEdicionOrden('Creada', { carga_confirmada_at: null })).toBeNull();
+  });
+
+  it('null cuando Creada y ruta=null (sin asignar)', () => {
+    expect(validateEdicionOrden('Creada', null)).toBeNull();
+  });
+
+  it('error cuando Creada pero ruta YA confirmó carga', () => {
+    const r = validateEdicionOrden('Creada', { carga_confirmada_at: '2026-05-04T10:00:00Z' });
+    expect(r?.error).toMatch(/ruta ya cargó|Quítala/i);
+  });
+
+  it('estatus inválido tiene precedencia sobre check de ruta', () => {
+    // Asignada con ruta confirmada → error de estatus, no de ruta
+    const r = validateEdicionOrden('Asignada', { carga_confirmada_at: '2026-05-04T10:00:00Z' });
+    expect(r?.error).toMatch(/Creada/);
+  });
+
+  it('ruta sin carga_confirmada_at (false/0) no bloquea', () => {
+    expect(validateEdicionOrden('Creada', { carga_confirmada_at: false })).toBeNull();
+    expect(validateEdicionOrden('Creada', { carga_confirmada_at: 0 })).toBeNull();
+    expect(validateEdicionOrden('Creada', { carga_confirmada_at: '' })).toBeNull();
+  });
 });
 
 // ─── parseLineasEdicion ──────────────────────────────────────

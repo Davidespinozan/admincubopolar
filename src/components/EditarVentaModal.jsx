@@ -264,7 +264,7 @@ export default function EditarVentaModal({
                       type="number"
                       min="1"
                       value={l.qty}
-                      onChange={e => updateLine(i, 'qty', parseInt(e.target.value) || 1)}
+                      onChange={e => updateLine(i, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
                       className="w-16 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center min-h-[44px] bg-white"
                     />
                     <span className="text-sm font-semibold text-slate-700 w-20 text-right">{fmtMoney(n(l.qty) * n(l.precio))}</span>
