@@ -1640,6 +1640,25 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       producirYCongelar: async (p) => {
+        // Validar destino ANTES de registrar producción para evitar caso
+        // donde la fila queda en `produccion` y el empaque ya descontado,
+        // pero no entra al CF porque el cuarto fue eliminado mientras el
+        // form estaba abierto.
+        if (p?.destino) {
+          const { data: cfExiste, error: cfErr } = await supabase
+            .from('cuartos_frios').select('id').eq('id', String(p.destino)).maybeSingle();
+          if (cfErr) {
+            console.warn('[producirYCongelar] select cuarto destino:', cfErr.message);
+            t()?.error('No se pudo verificar el cuarto destino');
+            return { error: cfErr.message };
+          }
+          if (!cfExiste) {
+            const msg = `Cuarto destino ${p.destino} no existe`;
+            t()?.error(msg);
+            return { error: msg };
+          }
+        }
+
         const errProd = await a.addProduccion(p);
         if (errProd) return errProd;
 
@@ -1651,7 +1670,7 @@ export function useSupaStore(userId, userName, userRol) {
             // confundir; admin puede meterla al CF manualmente desde Inventario.
             console.warn('[producirYCongelar] producción ok pero meterACuartoFrio falló:', errMeter?.message || errMeter);
             return {
-              error: errMeter?.message || 'Producción registrada pero no entró al cuarto frío',
+              error: errMeter?.message || errMeter?.error || 'Producción registrada pero no entró al cuarto frío',
               partial: true,
             };
           }
@@ -1851,56 +1870,81 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── CUARTOS FRÍOS — STOCK (JSONB) ──
-      meterACuartoFrio: async (cfId, sku, cantidad) => {
-        const { data: row, error: rowErr } = await supabase
-          .from('cuartos_frios').select('stock').eq('id', cfId).single();
-        if (rowErr) { t()?.error('Error al leer cuarto frío'); return rowErr; }
-        const current = (row?.stock && typeof row.stock === 'object') ? row.stock : {};
-        const updated = { ...current, [sku]: (Number(current[sku] || 0) + Number(cantidad)) };
-        const { error: updateErr } = await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
-        if (updateErr) { t()?.error('Error al actualizar cuarto frío'); return updateErr; }
-        const { error: movErr } = await supabase.from('inventario_mov').insert({
-          tipo: 'Entrada', producto: sku, cantidad: Number(cantidad),
-          origen: `Entrada a ${cfId}`, usuario: uname(),
-        });
-        if (movErr) {
-          await supabase.from('cuartos_frios').update({ stock: current }).eq('id', cfId);
-          t()?.error('Error al registrar movimiento de inventario');
-          return movErr;
+      // Estos 3 helpers usan la RPC `update_stocks_atomic` (migración 047)
+      // para garantizar atomicidad: FOR UPDATE bloquea la fila del CF, y
+      // RAISE EXCEPTION aborta todo si el descuento dejaría stock negativo.
+      // El RPC también inserta inventario_mov en la misma transacción, por
+      // lo que ya no necesitamos rollback manual del stock JSONB.
+      meterACuartoFrio: async (cfId, sku, cantidad, opciones = {}) => {
+        try {
+          const qty = Number(cantidad);
+          if (!cfId) return { error: 'Cuarto frío requerido' };
+          if (!sku) return { error: 'SKU requerido' };
+          if (!Number.isFinite(qty) || qty <= 0) return { message: 'Cantidad inválida' };
+
+          // Guard explícito: si el cuarto no existe, mensaje claro antes de
+          // que la RPC haga UPDATE de 0 filas en silencio.
+          const { data: cuarto, error: cfErr } = await supabase
+            .from('cuartos_frios').select('id, nombre').eq('id', String(cfId)).maybeSingle();
+          if (cfErr) { t()?.error('Error al leer cuarto frío'); return { error: cfErr.message }; }
+          if (!cuarto) {
+            const msg = `Cuarto frío ${cfId} no existe`;
+            t()?.error(msg);
+            return { error: msg };
+          }
+
+          const change = {
+            cuarto_id: String(cfId),
+            sku: String(sku),
+            delta: qty,
+            tipo: opciones.tipo || 'Entrada',
+            origen: opciones.origen || `Entrada a ${cuarto.nombre || cfId}`,
+            usuario: opciones.usuario || uname() || 'Sistema',
+          };
+
+          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', { p_changes: [change] });
+          if (rpcErr) {
+            console.warn('[meterACuartoFrio] rpc update_stocks_atomic:', rpcErr.message);
+            t()?.error(rpcErr.message || 'Error al meter al cuarto frío');
+            return { error: rpcErr.message };
+          }
+
+          log('Entrada CF', 'Cuartos Fríos', `${qty}×${sku} → ${cfId}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[meterACuartoFrio] excepción:', e);
+          t()?.error('Error inesperado al meter al cuarto frío');
+          return { error: e?.message || 'Error inesperado' };
         }
-        log('Entrada CF', 'Cuartos Fríos', `${cantidad}×${sku} → ${cfId}`);
-        rf();
       },
 
-      sacarDeCuartoFrio: async (cfId, sku, cantidad, motivo) => {
+      sacarDeCuartoFrio: async (cfId, sku, cantidad, motivo, opciones = {}) => {
         try {
-          const { data: row, error: rowErr } = await supabase
-            .from('cuartos_frios').select('stock').eq('id', cfId).single();
-          if (rowErr) { t()?.error('Error al leer cuarto frío'); return rowErr; }
-          const current = (row?.stock && typeof row.stock === 'object') ? row.stock : {};
-          const actual = Number(current[sku] || 0);
           const qty = Number(cantidad);
-          if (qty <= 0) return { message: 'Cantidad inválida' };
-          if (actual < qty) {
-            t()?.error('Inventario insuficiente en cuarto frío');
-            return { message: 'Inventario insuficiente en cuarto frío' };
-          }
-          const updated = {
-            ...current,
-            [sku]: actual - qty,
+          if (!cfId) return { error: 'Cuarto frío requerido' };
+          if (!sku) return { error: 'SKU requerido' };
+          if (!Number.isFinite(qty) || qty <= 0) return { message: 'Cantidad inválida' };
+
+          // RAISE EXCEPTION del RPC ya cubre stock insuficiente (migración 047).
+
+          const change = {
+            cuarto_id: String(cfId),
+            sku: String(sku),
+            delta: -qty,
+            tipo: opciones.tipo || 'Salida',
+            origen: motivo || opciones.origen || String(cfId),
+            usuario: opciones.usuario || uname() || 'Sistema',
           };
-          const { error: updateErr } = await supabase.from('cuartos_frios').update({ stock: updated }).eq('id', cfId);
-          if (updateErr) { t()?.error('Error al actualizar cuarto frío'); return updateErr; }
-          const { error: movErr } = await supabase.from('inventario_mov').insert({
-            tipo: 'Salida', producto: sku, cantidad: qty,
-            origen: motivo || String(cfId), usuario: uname(),
-          });
-          if (movErr) {
-            await supabase.from('cuartos_frios').update({ stock: current }).eq('id', cfId);
-            t()?.error('Error al registrar movimiento de inventario');
-            return movErr;
+
+          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', { p_changes: [change] });
+          if (rpcErr) {
+            console.warn('[sacarDeCuartoFrio] rpc update_stocks_atomic:', rpcErr.message);
+            t()?.error(rpcErr.message || 'Error al sacar del cuarto frío');
+            return { error: rpcErr.message, message: rpcErr.message };
           }
-          log('Salida CF', 'Cuartos Fríos', `${cantidad}×${sku} de ${cfId} — ${motivo || 'Sin motivo'}`);
+
+          log('Salida CF', 'Cuartos Fríos', `${qty}×${sku} de ${cfId} — ${motivo || 'Sin motivo'}`);
           rf();
           return undefined;
         } catch (e) {
@@ -1910,51 +1954,51 @@ export function useSupaStore(userId, userName, userRol) {
         }
       },
 
-      traspasoEntreUbicaciones: async ({ origen, destino, sku, cantidad }) => {
+      traspasoEntreUbicaciones: async ({ origen, destino, sku, cantidad }, opciones = {}) => {
         try {
           const qty = Number(cantidad);
-          if (qty <= 0) return { message: 'Cantidad inválida' };
-          if (origen === destino) return { message: 'Origen y destino deben ser diferentes' };
+          if (!Number.isFinite(qty) || qty <= 0) return { message: 'Cantidad inválida' };
+          if (!origen || !destino) return { message: 'Origen y destino requeridos' };
+          if (String(origen) === String(destino)) return { message: 'Origen y destino deben ser diferentes' };
+          if (!sku) return { message: 'SKU requerido' };
 
-          const [{ data: rowOrig, error: errO }, { data: rowDest, error: errD }] = await Promise.all([
-            supabase.from('cuartos_frios').select('stock').eq('id', origen).single(),
-            supabase.from('cuartos_frios').select('stock').eq('id', destino).single(),
-          ]);
-          if (errO || errD || !rowOrig || !rowDest) { t()?.error('Error al leer cuartos fríos'); return errO || errD; }
+          // Validar existencia de ambos cuartos antes del RPC para mensajes claros.
+          const { data: cuartos, error: cfErr } = await supabase
+            .from('cuartos_frios').select('id, nombre').in('id', [String(origen), String(destino)]);
+          if (cfErr) { t()?.error('Error al leer cuartos fríos'); return { error: cfErr.message }; }
+          const cuartoOrigen = (cuartos || []).find(c => String(c.id) === String(origen));
+          const cuartoDestino = (cuartos || []).find(c => String(c.id) === String(destino));
+          if (!cuartoOrigen) { const msg = `Cuarto origen ${origen} no existe`; t()?.error(msg); return { error: msg }; }
+          if (!cuartoDestino) { const msg = `Cuarto destino ${destino} no existe`; t()?.error(msg); return { error: msg }; }
 
-          const stockOrig = (rowOrig?.stock && typeof rowOrig.stock === 'object') ? rowOrig.stock : {};
-          const stockDest = (rowDest?.stock && typeof rowDest.stock === 'object') ? rowDest.stock : {};
-          const disponible = Number(stockOrig[sku] || 0);
-          if (disponible < qty) { t()?.error(`Stock insuficiente: ${disponible} disponible, se requieren ${qty}`); return { message: 'Stock insuficiente' }; }
+          // Salida y entrada en el mismo array → atomicidad por la transacción
+          // del plpgsql del RPC. Si la salida hace RAISE (stock insuficiente),
+          // ninguna fila de inventario_mov se inserta y stock no se modifica.
+          const usuario = opciones.usuario || uname() || 'Sistema';
+          const changes = [
+            {
+              cuarto_id: String(origen),
+              sku: String(sku),
+              delta: -qty,
+              tipo: 'Traspaso salida',
+              origen: `${origen} → ${destino}`,
+              usuario,
+            },
+            {
+              cuarto_id: String(destino),
+              sku: String(sku),
+              delta: qty,
+              tipo: 'Traspaso entrada',
+              origen: `${origen} → ${destino}`,
+              usuario,
+            },
+          ];
 
-          // Actualizar origen primero
-          const { error: e1 } = await supabase.from('cuartos_frios').update({
-            stock: { ...stockOrig, [sku]: disponible - qty },
-          }).eq('id', origen);
-          if (e1) { t()?.error('Error al descontar de origen'); return e1; }
-
-          const { error: e2 } = await supabase.from('cuartos_frios').update({
-            stock: { ...stockDest, [sku]: Number(stockDest[sku] || 0) + qty },
-          }).eq('id', destino);
-          if (e2) {
-            // Rollback origen
-            await supabase.from('cuartos_frios').update({ stock: stockOrig }).eq('id', origen);
-            t()?.error('Error al incrementar destino — traspaso revertido');
-            return e2;
-          }
-
-          // Registrar movimiento (secundario): si falla NO se hace rollback
-          // de los stocks porque el traspaso real sí ocurrió.
-          const { error: errMov } = await supabase.from('inventario_mov').insert({
-            tipo: 'Traspaso', producto: sku, cantidad: qty,
-            origen: `${origen} → ${destino}`, usuario: uname(),
-          });
-          if (errMov) {
-            console.warn('[traspasoEntreUbicaciones] insert inventario_mov (no crítico):', errMov.message);
-            t()?.error('Traspaso aplicado, pero el movimiento de inventario no se registró.');
-            log('Traspaso', 'Cuartos Fríos', `${qty}×${sku} de ${origen} → ${destino}`);
-            rf();
-            return { error: errMov.message, partial: true };
+          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', { p_changes: changes });
+          if (rpcErr) {
+            console.warn('[traspasoEntreUbicaciones] rpc update_stocks_atomic:', rpcErr.message);
+            t()?.error(rpcErr.message || 'Error en traspaso');
+            return { error: rpcErr.message };
           }
 
           log('Traspaso', 'Cuartos Fríos', `${qty}×${sku} de ${origen} → ${destino}`);
@@ -3910,37 +3954,28 @@ export function useSupaStore(userId, userName, userRol) {
       // ── ALMACÉN BOLSAS ──
       movimientoBolsa: async (sku, cantidad, tipo, motivo, costo, proveedor, esCredito) => {
         try {
-          const { data: prod, error: errProd } = await supabase
-            .from('productos').select('id, stock').eq('sku', sku).single();
-          if (errProd || !prod) {
-            const msg = errProd?.message || `Producto no encontrado: ${sku}`;
-            console.warn('[movimientoBolsa] select productos:', msg);
-            t()?.error('No se encontró el producto');
-            return { error: msg };
-          }
-          const prevStock = Number(prod.stock || 0);
-          const newStock = tipo === 'Entrada'
-            ? prevStock + Number(cantidad)
-            : Math.max(0, prevStock - Number(cantidad));
+          const qty = Number(cantidad);
+          if (!sku) return { error: 'SKU requerido' };
+          if (!Number.isFinite(qty) || qty <= 0) return { error: 'Cantidad inválida' };
+          if (tipo !== 'Entrada' && tipo !== 'Salida') return { error: 'Tipo inválido' };
 
-          const { error: errUpd } = await supabase
-            .from('productos').update({ stock: newStock }).eq('id', prod.id);
-          if (errUpd) {
-            console.warn('[movimientoBolsa] update stock:', errUpd.message);
-            t()?.error('No se pudo actualizar el stock');
-            return { error: errUpd.message || 'Error actualizando stock' };
-          }
+          // RPC atómica (migración 054): FOR UPDATE + RAISE EXCEPTION en negativo.
+          // Reemplaza el patrón SELECT → JS → UPDATE que sufría race condition
+          // y clamp silencioso a 0 con Math.max. La RPC también inserta
+          // inventario_mov en la misma transacción.
+          const change = {
+            sku: String(sku),
+            delta: tipo === 'Entrada' ? qty : -qty,
+            tipo,
+            origen: motivo || 'Movimiento bolsa',
+            usuario: uname() || 'Sistema',
+          };
 
-          const { error: errMov } = await supabase.from('inventario_mov').insert({
-            tipo, producto: sku, cantidad: Number(cantidad),
-            origen: motivo, usuario: uname(),
-          });
-          if (errMov) {
-            // Rollback del stock al valor previo
-            await supabase.from('productos').update({ stock: prevStock }).eq('id', prod.id);
-            console.warn('[movimientoBolsa] insert inventario_mov, rollback stock:', errMov.message);
-            t()?.error('No se pudo registrar el movimiento — stock revertido');
-            return { error: errMov.message || 'Error registrando movimiento' };
+          const { error: rpcErr } = await supabase.rpc('update_productos_stock_atomic', { p_changes: [change] });
+          if (rpcErr) {
+            console.warn('[movimientoBolsa] rpc update_productos_stock_atomic:', rpcErr.message);
+            t()?.error(rpcErr.message || 'No se pudo actualizar el stock');
+            return { error: rpcErr.message };
           }
 
           // Auto-registrar movimiento contable cuando es compra de empaques (Entrada)
