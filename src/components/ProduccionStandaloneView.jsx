@@ -360,10 +360,18 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     if (!form.conMerma) {
       setGuardandoProd(true);
       try {
-        await actions.producirYCongelar({
+        const result = await actions.producirYCongelar({
           turno: form.turno, maquina: form.maquina, sku: form.sku,
           cantidad: form.cantidad, destino: form.destino,
         });
+        if (result?.error) {
+          if (result.partial) {
+            showToast('⚠️ Producción registrada pero NO entró al cuarto frío. Avisa al admin.');
+          } else {
+            showToast(result.error);
+          }
+          return;
+        }
         showToast(cant + " " + form.sku + " → " + cfNombre);
         setModal(false);
         resetFormProd();
@@ -405,11 +413,24 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         return;
       }
 
-      // 2. Producción + meter al cuarto frío (no retorna error; asume OK)
-      await actions.producirYCongelar({
+      // 2. Producción + meter al cuarto frío.
+      // Si falla, NO procedemos a registrar merma (la merma descuenta del CF
+      // y si la producción no entró, el descuento de merma fallaría o
+      // descontaría de stock viejo causando inconsistencia).
+      const prodResult = await actions.producirYCongelar({
         turno: form.turno, maquina: form.maquina, sku: form.sku,
         cantidad: form.cantidad, destino: form.destino,
       });
+      if (prodResult?.error) {
+        // Limpiar foto subida ya que no se va a usar
+        await supabase.storage.from('mermas').remove([filePath]);
+        if (prodResult.partial) {
+          showToast('⚠️ Producción registrada pero NO entró al cuarto frío. Avisa al admin.');
+        } else {
+          showToast(prodResult.error);
+        }
+        return;
+      }
 
       // 3. Registrar merma (descuenta del CF internamente)
       const mermaErr = await actions.registrarMerma(form.sku, merma, form.mermaCausa, s(user?.nombre), filePath);
