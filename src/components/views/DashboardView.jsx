@@ -3,7 +3,7 @@ import { Icons } from '../ui/Icons';
 import { StatusBadge, DataTable, CapacityBar } from '../ui/Components';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { EmptyState } from '../ui/Skeleton';
-import { s, n, fmtDateTime, fmtMoney, fmtPct } from '../../utils/safe';
+import { s, n, fmtDateTime, fmtMoney, fmtPct, todayLocalISO } from '../../utils/safe';
 
 // ── FIX P3: ALL DERIVED STATE NOW MEMOIZED ──
 // BEFORE: 4 reduce/filter calls ran on every render — even when user
@@ -180,10 +180,10 @@ export default function DashboardView({ data, user, onNavigate }) {
   }, [data.productos]);
 
   const ventasResumen = useMemo(() => {
-    const hoyStr = new Date().toISOString().slice(0, 10);
+    const hoyStr = todayLocalISO();
     const sem = new Date(); sem.setDate(sem.getDate() - 7);
-    const semStr = sem.toISOString().slice(0, 10);
-    const mesStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().slice(0, 10);
+    const semStr = todayLocalISO(sem);
+    const mesStr = todayLocalISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
     let dia = 0, semana = 0, mes = 0;
     const estatusVenta = new Set(["entregada", "facturada"]);
     for (const ord of (data.ordenes || [])) {
@@ -226,11 +226,11 @@ export default function DashboardView({ data, user, onNavigate }) {
       return { ventasTot, costoDeVentas, gastosOp, utilidadBruta, utilidad };
     };
     
-    const hoyStr = new Date().toISOString().slice(0, 10);
+    const hoyStr = todayLocalISO();
     const sem = new Date(); sem.setDate(sem.getDate() - 7);
-    const semStr = sem.toISOString().slice(0, 10);
+    const semStr = todayLocalISO(sem);
     const mes = new Date(); mes.setDate(1);
-    const mesStr = mes.toISOString().slice(0, 10);
+    const mesStr = todayLocalISO(mes);
     
     const filtroFecha = (fecha) => (m) => s(m.fecha) >= fecha;
     const filtroHistFecha = (fecha) => (c) => (s(c.fecha) || s(c.createdAt)) >= fecha;
@@ -245,7 +245,7 @@ export default function DashboardView({ data, user, onNavigate }) {
   // ── BALANCE SIMPLIFICADO ──
   const balance = useMemo(() => {
     // Efectivo cobrado hoy
-    const hoyStr = new Date().toISOString().slice(0, 10);
+    const hoyStr = todayLocalISO();
     const efectivoHoy = (data.pagos || [])
       .filter(p => s(p.fecha) === hoyStr && (s(p.metodoPago) === 'Efectivo' || s(p.metodo_pago) === 'Efectivo'))
       .reduce((s, p) => s + n(p.monto), 0);

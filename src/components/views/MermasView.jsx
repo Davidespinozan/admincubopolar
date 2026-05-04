@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, useToast, todayLocalISO, PAGE_SIZE, Paginator } from './viewsCommon';
 
 export function MermasView({ data, actions }) {
   const toast = useToast();
@@ -11,9 +11,9 @@ export function MermasView({ data, actions }) {
   const hace30 = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
+    return todayLocalISO(d);
   }, []);
-  const hoy = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const hoy = useMemo(() => todayLocalISO(), []);
   const [fechaInicio, setFechaInicio] = useState(hace30);
   const [fechaFin, setFechaFin] = useState(hoy);
   const [filtroRuta, setFiltroRuta] = useState('');

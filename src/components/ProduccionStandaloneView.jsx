@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { s, n, fmtDate, fmtPct } from '../utils/safe';
+import { s, n, fmtDate, fmtPct, todayLocalISO } from '../utils/safe';
 import { compressImage } from '../utils/compressImage';
 import { puedeAgregarAlCuarto, tarimasOcupadasEnCuarto, colorTarimasUso } from '../utils/tarimas';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
@@ -127,7 +127,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     const authOwner = s(user?.auth_id || user?.id || 'usuario');
     const ext = (fotoMermaFile.name?.split('.').pop() || 'jpg').toLowerCase();
     const safeExt = /^[a-z0-9]+$/.test(ext) ? ext : 'jpg';
-    const filePath = `${authOwner}/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${mForm.sku}.${safeExt}`;
+    const filePath = `${authOwner}/${todayLocalISO()}/${Date.now()}-${mForm.sku}.${safeExt}`;
 
     setGuardandoMerma(true);
     try {
@@ -162,14 +162,14 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   };
 
   const prodHoy = useMemo(() => {
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = todayLocalISO();
     return data.produccion.filter(p => p.fecha && p.fecha.slice(0, 10) === hoy);
   }, [data.produccion]);
 
   const totalHoy = useMemo(() => prodHoy.reduce((s, p) => s + n(p.cantidad), 0), [prodHoy]);
 
   const mermasHoyList = useMemo(() => {
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = todayLocalISO();
     return (data.mermas || []).filter(m => s(m.fecha).slice(0, 10) === hoy);
   }, [data.mermas]);
 
@@ -244,7 +244,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const producidoHoyPorSku = useMemo(() => {
     const acc = {};
     for (const p of productosHielo) acc[s(p.sku)] = 0;
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = todayLocalISO();
     for (const pr of (data.produccion || [])) {
       if (!s(pr.fecha).startsWith(hoy)) continue;
       const sku = s(pr.sku);
@@ -391,7 +391,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       const authOwner = s(user?.auth_id || user?.id || 'usuario');
       const ext = (fotoMermaProdFile.name?.split('.').pop() || 'jpg').toLowerCase();
       const safeExt = /^[a-z0-9]+$/.test(ext) ? ext : 'jpg';
-      const filePath = `${authOwner}/${new Date().toISOString().slice(0, 10)}/${Date.now()}-${form.sku}-prod.${safeExt}`;
+      const filePath = `${authOwner}/${todayLocalISO()}/${Date.now()}-${form.sku}-prod.${safeExt}`;
 
       const { error: uploadErr } = await supabase.storage
         .from('mermas')

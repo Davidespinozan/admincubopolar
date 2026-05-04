@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { s, n, fmtMoney, extraerTelefono } from '../utils/safe';
+import { s, n, fmtMoney, extraerTelefono, todayLocalISO } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
 import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
@@ -75,7 +75,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
     }
   };
 
-  const hoy = new Date().toISOString().slice(0, 10);
+  const hoy = todayLocalISO();
   const ordenesHoy = useMemo(() => ordenesUsuario.filter(o => o.fecha && o.fecha.slice(0, 10) === hoy), [ordenesUsuario, hoy]);
   const pendientes = useMemo(() => ordenesUsuario.filter(o => o.estatus === "Creada"), [ordenesUsuario]);
   const ventasHoy = useMemo(() => ordenesHoy.filter(o => o.estatus === "Entregada").reduce((s, o) => s + n(o.total), 0), [ordenesHoy]);
