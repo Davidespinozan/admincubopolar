@@ -1,9 +1,11 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { s, n, eqId, fmtMoney, validarRFC, todayLocalISO } from '../utils/safe';
+import { validateDireccion } from '../data/direccionLogic';
 import { stockDisponiblePorSku } from '../utils/stock';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
+const DireccionForm = lazy(() => import('./ui/DireccionForm'));
 
 const TIPOS_CLIENTE = ["Tienda", "Restaurante", "Nevería", "Hotel", "Cadena", "Particular", "Otro"];
 const USOS_CFDI = [
@@ -46,6 +48,16 @@ const cliFormEmpty = {
   regimen: "Régimen General",
   usoCfdi: "G03",
   cp: "",
+  // Dirección estructurada (mig 056). numero_exterior obligatorio.
+  calle: "",
+  numero_exterior: "",
+  numero_interior: "",
+  colonia: "",
+  ciudad: "Durango",
+  estado: "Durango",
+  codigo_postal: "",
+  latitud: null,
+  longitud: null,
 };
 
 export default function NuevaVentaModal({
@@ -216,6 +228,12 @@ export default function NuevaVentaModal({
       toast?.error?.('RFC inválido para facturación nominativa');
       return;
     }
+    // Mig 056: número exterior obligatorio para entregas y CFDI 4.0.
+    const dirErr = validateDireccion(cliForm);
+    if (dirErr) {
+      toast?.error?.(dirErr.error);
+      return;
+    }
     const payload = {
       nombre: cliForm.nombre.trim(),
       contacto: cliForm.contacto,
@@ -224,7 +242,16 @@ export default function NuevaVentaModal({
       correo: cliForm.requiereFactura ? cliForm.correo : '',
       regimen: cliForm.requiereFactura ? cliForm.regimen : 'Sin obligaciones',
       usoCfdi: cliForm.requiereFactura ? cliForm.usoCfdi : 'S01',
-      cp: cliForm.cp || '34000',
+      cp: cliForm.codigo_postal || cliForm.cp || '34000',
+      // Dirección estructurada (mig 056)
+      calle: cliForm.calle || null,
+      numero_exterior: cliForm.numero_exterior || null,
+      numero_interior: cliForm.numero_interior || null,
+      colonia: cliForm.colonia || null,
+      ciudad: cliForm.ciudad || null,
+      estado: cliForm.estado || null,
+      latitud: cliForm.latitud,
+      longitud: cliForm.longitud,
     };
     setRegistrandoCliente(true);
     try {
@@ -435,27 +462,32 @@ export default function NuevaVentaModal({
                   <input value={cliForm.correo} onChange={e => setCliForm(f => ({ ...f, correo: e.target.value }))}
                     className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="correo@empresa.com" type="email" />
                 </div>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Uso CFDI</label>
-                    <select value={cliForm.usoCfdi} onChange={e => setCliForm(f => ({ ...f, usoCfdi: e.target.value }))}
-                      className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white">
-                      {USOS_CFDI.map(u => <option key={u.val} value={u.val}>{u.label}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">C.P.</label>
-                    <input value={cliForm.cp} onChange={e => setCliForm(f => ({ ...f, cp: e.target.value }))}
-                      className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="34000" maxLength={5} />
-                  </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Uso CFDI</label>
+                  <select value={cliForm.usoCfdi} onChange={e => setCliForm(f => ({ ...f, usoCfdi: e.target.value }))}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white">
+                    {USOS_CFDI.map(u => <option key={u.val} value={u.val}>{u.label}</option>)}
+                  </select>
                 </div>
               </div>
             )}
 
+            {/* Dirección estructurada — mig 056. Número exterior obligatorio
+                tanto para entrega como para datos fiscales en CFDI 4.0. */}
+            <div className="bg-white rounded-xl p-3 border border-blue-200">
+              <p className="text-[10px] font-bold text-blue-600 uppercase mb-2">Dirección de entrega</p>
+              <Suspense fallback={<p className="text-xs text-slate-400">Cargando dirección…</p>}>
+                <DireccionForm
+                  value={cliForm}
+                  onChange={(dir) => setCliForm(f => ({ ...f, ...dir }))}
+                />
+              </Suspense>
+            </div>
+
             <button
               type="button"
               onClick={registrarCliente}
-              disabled={registrandoCliente || !cliForm.nombre.trim() || (cliForm.requiereFactura && !cliForm.rfc.trim())}
+              disabled={registrandoCliente || !cliForm.nombre.trim() || (cliForm.requiereFactura && !cliForm.rfc.trim()) || !cliForm.numero_exterior?.trim()}
               className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm disabled:opacity-40 disabled:cursor-not-allowed"
             >
               {registrandoCliente ? 'Registrando…' : 'Registrar cliente y continuar'}

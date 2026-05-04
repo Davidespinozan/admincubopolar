@@ -1,6 +1,6 @@
 # Pendientes técnicos — Cubo Polar
 
-Última actualización: 2026-05-01
+Última actualización: 2026-05-04
 
 Este documento agrupa deuda técnica de bajo riesgo detectada en auditorías recientes. Ninguna acción aquí es urgente. Cada sección dice **claramente** si requiere ejecución de SQL en producción y bajo qué condiciones.
 
@@ -12,8 +12,8 @@ Las migraciones del proyecto viven en `supabase/` directamente (no en una subcar
 
 | Migración | Estado |
 |---|---|
-| Última versionada | `041_archivo_columnas_huerfanas_rutas.sql` |
-| Próximo número libre | `042` |
+| Última versionada | `056_numero_exterior.sql` |
+| Próximo número libre | `057` |
 
 Todas las migraciones son idempotentes (`IF NOT EXISTS` en `ADD COLUMN`, `IF EXISTS` en types/triggers, etc.).
 
@@ -160,4 +160,44 @@ Bug latente descubierto durante el refactor de Producción.
 3. Tests puros de la función de cálculo (cantidad × costo_unitario_empaque).
 
 Tiempo estimado: ~45 min. Postergado a PR dedicado para no inflar el refactor de Producción.
+
+---
+
+## 🟡 Deuda: `clientes.cp` (legacy) vs `clientes.codigo_postal` (mig 009)
+
+**Origen**: la migración `002_safe_migration.sql` agregó `cp VARCHAR(5)` a clientes; meses después la migración `009_clientes_geolocalizacion.sql` agregó `codigo_postal VARCHAR(10)` para la geolocalización. Ambas columnas conviven en producción.
+
+**Estado actual** (verificado en sesión 2026-05-04):
+
+| Columna | Tipo | Origen | Uso en código |
+|---|---|---|---|
+| `cp` | `VARCHAR(5)` | mig 002 | ✅ `addCliente`/`updateCliente` la insertan/actualizan; CFDI 4.0 lee desde aquí |
+| `codigo_postal` | `VARCHAR(10)` | mig 009 | ❌ **sin uso** en clientes — solo se usa en `configuracion_empresa.codigo_postal` |
+
+**Por qué no se consolidó en el PR de número exterior (mig 056)**:
+- Migrar `cp` → `codigo_postal` requiere copiar datos de las 200+ filas existentes, refactorizar todo el código que lee `cp` (incluyendo timbrado Facturama), y eliminar la columna vieja. Es un PR de ~3 hrs con riesgo de romper facturación.
+- En el PR de número exterior, el form persiste **ambas** columnas sincronizadas (`cp = codigo_postal`) para no introducir más divergencia.
+
+**Acción pendiente** (PR dedicado, sin urgencia):
+
+```sql
+-- 1. Confirmar que codigo_postal está vacío en clientes
+SELECT COUNT(*) FILTER (WHERE codigo_postal IS NOT NULL) AS con_cp_nuevo,
+       COUNT(*) FILTER (WHERE cp IS NOT NULL) AS con_cp_legacy
+  FROM clientes;
+
+-- 2. Backfill: copiar de cp a codigo_postal
+UPDATE clientes SET codigo_postal = cp WHERE codigo_postal IS NULL AND cp IS NOT NULL;
+
+-- 3. En el código:
+--    - addCliente/updateCliente: usar codigo_postal en INSERT/UPDATE
+--    - billing-create-invoice: leer cliente.codigo_postal (no cp) para CFDI
+--    - DireccionForm + ClientesView: ya editan codigo_postal
+--    - Al deploy, eliminar cualquier escritura a cp
+
+-- 4. Migración para drop:
+-- ALTER TABLE clientes DROP COLUMN cp;
+```
+
+**Riesgo de no hacerlo**: bajo. La duplicación no rompe nada hoy — el form sincroniza ambas. Si en el futuro alguien edita `codigo_postal` por SQL directo y no `cp`, el CFDI usará el dato viejo. Por ahora documentado y bloqueado en código a través de `DireccionForm`.
 

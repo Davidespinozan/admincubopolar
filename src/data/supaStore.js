@@ -600,7 +600,11 @@ export function useSupaStore(userId, userName, userRol) {
             tipo: c.tipo, contacto: c.contacto,
             nombre_comercial: c.nombreComercial || null,
             calle: c.calle || null, colonia: c.colonia || null,
-            ciudad: c.ciudad || null, zona: c.zona || null,
+            ciudad: c.ciudad || null, estado: c.estado || null, zona: c.zona || null,
+            // Migración 056: numero_exterior obligatorio en form, NULL en BD
+            // para no romper clientes legacy creados antes de esta migración.
+            numero_exterior: c.numeroExterior || c.numero_exterior || null,
+            numero_interior: c.numeroInterior || c.numero_interior || null,
             latitud, longitud,
             credito_autorizado: c.creditoAutorizado ?? false,
             limite_credito: Number(c.limiteCredito) || 0,
@@ -642,6 +646,12 @@ export function useSupaStore(userId, userName, userRol) {
         if (c.calle    !== undefined) update.calle    = c.calle || null;
         if (c.colonia  !== undefined) update.colonia  = c.colonia || null;
         if (c.ciudad   !== undefined) update.ciudad   = c.ciudad || null;
+        if (c.estado   !== undefined) update.estado   = c.estado || null;
+        // Migración 056: numero_exterior/numero_interior. Acepta snake/camel.
+        if (c.numero_exterior !== undefined) update.numero_exterior = c.numero_exterior || null;
+        else if (c.numeroExterior !== undefined) update.numero_exterior = c.numeroExterior || null;
+        if (c.numero_interior !== undefined) update.numero_interior = c.numero_interior || null;
+        else if (c.numeroInterior !== undefined) update.numero_interior = c.numeroInterior || null;
         if (c.zona               !== undefined) update.zona               = c.zona || null;
         if (c.creditoAutorizado  !== undefined) update.credito_autorizado = c.creditoAutorizado;
         if (c.limiteCredito      !== undefined) update.limite_credito     = Number(c.limiteCredito) || 0;
@@ -4443,6 +4453,9 @@ export function useSupaStore(userId, userName, userRol) {
           if (payload.rfc              !== undefined) update.rfc               = String(payload.rfc || '').trim().toUpperCase();
           if (payload.direccionFiscal  !== undefined) update.direccion_fiscal  = payload.direccionFiscal || null;
           if (payload.codigoPostal     !== undefined) update.codigo_postal     = payload.codigoPostal || null;
+          // Migración 056: número exterior/interior del domicilio fiscal.
+          if (payload.numeroExterior   !== undefined) update.numero_exterior   = payload.numeroExterior || null;
+          if (payload.numeroInterior   !== undefined) update.numero_interior   = payload.numeroInterior || null;
           if (payload.telefono         !== undefined) update.telefono          = payload.telefono || null;
           if (payload.correo           !== undefined) update.correo            = payload.correo || null;
           if (payload.regimenFiscal    !== undefined) update.regimen_fiscal    = payload.regimenFiscal || null;

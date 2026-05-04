@@ -1,6 +1,6 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, fmtMoney, useDebounce, useToast, reporteClientes, PAGE_SIZE, Paginator } from './viewsCommon';
-import AddressAutocomplete from '../ui/AddressAutocomplete';
-import { validarRFC, normalizeStr } from '../../utils/safe';
+import DireccionForm from '../ui/DireccionForm';
+import { validarRFC, normalizeStr, formatDireccion, validateDireccion } from '../../utils/safe';
 
 export function ClientesView({ data, actions }) {
   const toast = useToast();
@@ -10,17 +10,54 @@ export function ClientesView({ data, actions }) {
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
   const [filterEstatus, setFilterEstatus] = useState("Activos"); // Activos | Inactivos | Todos
+  const [filterDireccion, setFilterDireccion] = useState(""); // "" | "incompleta"
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
-  const [geocoding, setGeocoding] = useState(false);
-  const empty = { nombre:"",nombreComercial:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",cp:"",correo:"",tipo:"Tienda",contacto:"",calle:"",colonia:"",ciudad:"Durango",zona:"",latitud:"",longitud:"",creditoAutorizado:false,limiteCredito:"" };
+  const empty = {
+    nombre:"",nombreComercial:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",
+    correo:"",tipo:"Tienda",contacto:"",
+    // Dirección estructurada (mig 056). cp legacy queda fuera del DireccionForm
+    // y se llena vía codigo_postal — ver doc deuda en PENDIENTES_TECNICOS.md.
+    calle:"", numero_exterior:"", numero_interior:"",
+    colonia:"", ciudad:"Durango", estado:"Durango",
+    codigo_postal:"", cp:"",
+    zona:"", latitud:null, longitud:null,
+    creditoAutorizado:false, limiteCredito:""
+  };
   const [form, setForm] = useState(empty);
   const [step, setStep] = useState(1);
 
   const dSearch = useDebounce(search);
 
   const openNew = () => { setForm(empty); setErrors({}); setStep(1); setModal("new"); };
-  const openEdit = (c) => { setForm({ nombre:s(c.nombre),nombreComercial:s(c.nombreComercial||c.nombre_comercial),rfc:s(c.rfc),regimen:s(c.regimen)||"Régimen General",usoCfdi:s(c.usoCfdi)||"G03",cp:s(c.cp),correo:s(c.correo),tipo:s(c.tipo),contacto:s(c.contacto),calle:s(c.calle),colonia:s(c.colonia),ciudad:s(c.ciudad)||"Durango",zona:s(c.zona),latitud:c.latitud||"",longitud:c.longitud||"",creditoAutorizado:c.credito_autorizado||false,limiteCredito:c.limite_credito||"" }); setErrors({}); setStep(1); setModal(c); };
+  const openEdit = (c) => {
+    setForm({
+      nombre: s(c.nombre),
+      nombreComercial: s(c.nombreComercial || c.nombre_comercial),
+      rfc: s(c.rfc),
+      regimen: s(c.regimen) || "Régimen General",
+      usoCfdi: s(c.usoCfdi) || "G03",
+      cp: s(c.cp),
+      correo: s(c.correo),
+      tipo: s(c.tipo),
+      contacto: s(c.contacto),
+      calle: s(c.calle),
+      numero_exterior: s(c.numero_exterior),
+      numero_interior: s(c.numero_interior),
+      colonia: s(c.colonia),
+      ciudad: s(c.ciudad) || "Durango",
+      estado: s(c.estado) || "Durango",
+      codigo_postal: s(c.codigo_postal) || s(c.cp),
+      zona: s(c.zona),
+      latitud: c.latitud ?? null,
+      longitud: c.longitud ?? null,
+      creditoAutorizado: c.credito_autorizado || false,
+      limiteCredito: c.limite_credito || "",
+    });
+    setErrors({});
+    setStep(1);
+    setModal(c);
+  };
 
   const validateStep = (currentStep) => {
     const e = {};
@@ -28,10 +65,14 @@ export function ClientesView({ data, actions }) {
       if (!form.nombre.trim()) e.nombre = "Requerido";
       if (!form.rfc.trim()) e.rfc = "Requerido";
       else if (!validarRFC(form.rfc)) e.rfc = "Formato inválido (ej: XAXX010101000)";
+      if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
     }
     if (currentStep === 2) {
-      if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
-      if (form.cp.trim() && !/^\d{5}$/.test(form.cp)) e.cp = "CP debe ser 5 dígitos";
+      // Mig 056: número exterior obligatorio para entregas y CFDI 4.0.
+      const dirErr = validateDireccion(form);
+      if (dirErr) e.numero_exterior = dirErr.error;
+      const cpVal = String(form.codigo_postal || form.cp || '').trim();
+      if (cpVal && !/^\d{5}$/.test(cpVal)) e.codigo_postal = "CP debe ser 5 dígitos";
     }
     return e;
   };
@@ -50,25 +91,27 @@ export function ClientesView({ data, actions }) {
 
     const save = async () => {
     if (saving) return;
-    const e = {};
-    if (!form.nombre.trim()) e.nombre = "Requerido";
-    if (!form.rfc.trim()) e.rfc = "Requerido";
-    else if (!validarRFC(form.rfc)) e.rfc = "Formato inválido (ej: XAXX010101000)";
-    if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
-    if (form.cp.trim() && !/^\d{5}$/.test(form.cp)) e.cp = "CP debe ser 5 dígitos";
+    const e = { ...validateStep(1), ...validateStep(2) };
     if (Object.keys(e).length) {
       // Si hay error en un campo de otro paso, regresar al paso correcto con el campo en rojo
       if (e.nombre || e.rfc || e.correo) setStep(1);
-      else if (e.cp) setStep(2);
+      else if (e.numero_exterior || e.codigo_postal) setStep(2);
       setErrors(e);
       toast?.error('Revisa los campos marcados en rojo');
       return;
     }
     setSaving(true);
     try {
+      // Mantener cp legacy sincronizado con codigo_postal — el resto del
+      // sistema sigue leyendo cp para CFDI hasta que se haga la migración
+      // de consolidación (ver docs/PENDIENTES_TECNICOS.md).
+      const payload = {
+        ...form,
+        cp: form.codigo_postal || form.cp || '',
+      };
       const err = modal === "new"
-        ? await actions.addCliente(form)
-        : await actions.updateCliente(modal.id, form);
+        ? await actions.addCliente(payload)
+        : await actions.updateCliente(modal.id, payload);
       if (err && (err.error || err.message || err.code)) {
         // Si supaStore disparó toast específico (err.error), no duplicar.
         if (!err.error) {
@@ -160,9 +203,13 @@ export function ClientesView({ data, actions }) {
       const me = filterEstatus === "Todos"
         || (filterEstatus === "Activos" && !inactivo)
         || (filterEstatus === "Inactivos" && inactivo);
-      return ms && mt && me;
+      // Mig 056: filtro "Sin número exterior" para encontrar clientes
+      // legacy que necesitan completar su dirección.
+      const md = filterDireccion !== "incompleta"
+        || !s(c.numero_exterior).trim();
+      return ms && mt && me && md;
     });
-  }, [data.clientes, dSearch, filterTipo, filterEstatus]);
+  }, [data.clientes, dSearch, filterTipo, filterEstatus, filterDireccion]);
 
   const paginated = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
@@ -183,11 +230,35 @@ export function ClientesView({ data, actions }) {
           <option value="Inactivos">Inactivos</option>
           <option value="Todos">Todos</option>
         </select>
+        <select value={filterDireccion} onChange={e=>{setFilterDireccion(e.target.value);setPage(0)}} className="px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white min-h-[44px]" title="Filtrar por completitud de dirección">
+          <option value="">Todas direcciones</option>
+          <option value="incompleta">⚠️ Sin número exterior</option>
+        </select>
       </div>
       <DataTable columns={[
-        {key:"nombre",label:"Cliente",bold:true,render:(_,row)=><div><span className="font-semibold">{s(row.nombre)}</span>{row.nombre_comercial&&<span className="block text-xs text-slate-400">{s(row.nombre_comercial)}</span>}</div>},
+        {key:"nombre",label:"Cliente",bold:true,render:(_,row)=>{
+          const sinNumExt = !s(row.numero_exterior).trim();
+          return (
+            <div>
+              <span className="font-semibold">{s(row.nombre)}</span>
+              {sinNumExt && (
+                <span
+                  className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700"
+                  title="Sin número exterior — entrega o CFDI pueden fallar"
+                >⚠️ Sin nº ext.</span>
+              )}
+              {row.nombre_comercial && <span className="block text-xs text-slate-400">{s(row.nombre_comercial)}</span>}
+            </div>
+          );
+        }},
         {key:"rfc",label:"RFC",render:v=><span className="font-mono text-xs text-slate-500">{s(v)}</span>},
         {key:"tipo",label:"Tipo"},{key:"contacto",label:"Contacto"},
+        {key:"direccion",label:"Dirección",hideOnMobile:true,render:(_,row)=>{
+          const dir = formatDireccion(row);
+          return dir
+            ? <span className="text-xs text-slate-500 line-clamp-2">{dir}</span>
+            : <span className="text-xs text-slate-300">—</span>;
+        }},
         {key:"saldo",label:"Saldo",bold:true,render:v=>v?fmtMoney(v):"$0"},
         {key:"credito_autorizado",label:"Crédito",render:(_,row)=>row.credito_autorizado?<span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{"✓ " + fmtMoney(row.limite_credito)}</span>:<span className="text-xs text-slate-400">—</span>},
         {key:"estatus",label:"Estatus",badge:true,render:v=><StatusBadge status={v}/>},
@@ -288,52 +359,24 @@ export function ClientesView({ data, actions }) {
         </div>
       )}
 
-      {/* PASO 2: Dirección */}
+      {/* PASO 2: Dirección — DireccionForm + zona aparte */}
       {step === 2 && (
         <div className="space-y-4">
-          <p className="text-sm text-slate-500">Para que el chofer encuentre al cliente y se pueda mostrar en el mapa de rutas.</p>
+          <p className="text-sm text-slate-500">Para que el chofer encuentre al cliente y el CFDI lleve la dirección completa.</p>
 
-          <AddressAutocomplete onSelect={(addr) => {
-            setForm(f => ({
-              ...f,
-              calle: addr.calle || f.calle,
-              colonia: addr.colonia || f.colonia,
-              ciudad: addr.ciudad || f.ciudad,
-              cp: addr.cp || f.cp,
-              latitud: addr.lat ?? f.latitud,
-              longitud: addr.lng ?? f.longitud,
-            }));
-            toast?.success('Dirección capturada');
-          }} />
+          <DireccionForm
+            value={form}
+            onChange={(dir) => setForm(f => ({ ...f, ...dir }))}
+            error={errors.numero_exterior ? { numero_exterior: errors.numero_exterior } : null}
+          />
+          {errors.codigo_postal && <p className="text-xs text-red-500 -mt-1">{errors.codigo_postal}</p>}
 
-          <details className="mt-2">
-            <summary className="cursor-pointer text-xs text-slate-500 font-semibold hover:text-slate-700">
-              ✏️ Editar campos manualmente
-            </summary>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
-              <FormInput label="Calle y número" value={form.calle} onChange={e=>setForm({...form,calle:e.target.value})} placeholder="Av. Revolución #123" />
-              <FormInput label="Colonia" value={form.colonia} onChange={e=>setForm({...form,colonia:e.target.value})} placeholder="Centro" />
-              <FormInput label="Ciudad" value={form.ciudad} onChange={e=>setForm({...form,ciudad:e.target.value})} />
-              <FormSelect label="Zona" options={["","Centro","Norte","Sur","Oriente","Poniente","Industrial","Periférico Norte","Periférico Sur"]} value={form.zona} onChange={e=>setForm({...form,zona:e.target.value})} />
-              <FormInput label="Código postal" value={form.cp} onChange={e=>setForm({...form,cp:e.target.value})} maxLength={5} error={errors.cp} />
-            </div>
-          </details>
-
-          <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-xl">
-            <span className="text-xs text-slate-500">📍 Ubicación GPS:</span>
-            <span className="text-xs font-mono bg-white px-2 py-1 rounded">{form.latitud && form.longitud ? `${Number(form.latitud).toFixed(5)}, ${Number(form.longitud).toFixed(5)}` : "Sin coordenadas"}</span>
-            {form.calle && form.colonia && !form.latitud && (
-              <button type="button" disabled={geocoding} onClick={async()=>{
-                setGeocoding(true);
-                const geo=await import('../../utils/geocoding.js').then(m=>m.geocodeDireccion(`${form.calle}, ${form.colonia}, ${form.ciudad||'Durango'}, Durango, México`));
-                if(geo){ setForm(f=>({...f,latitud:geo.lat,longitud:geo.lng})); toast?.success('Ubicación obtenida'); }
-                else { toast?.error('No se pudo geocodificar'); }
-                setGeocoding(false);
-              }} className="ml-auto text-xs bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded-lg disabled:opacity-50">
-                {geocoding?'Buscando...':'Obtener'}
-              </button>
-            )}
-          </div>
+          <FormSelect
+            label="Zona (para agrupar rutas)"
+            options={["","Centro","Norte","Sur","Oriente","Poniente","Industrial","Periférico Norte","Periférico Sur"]}
+            value={form.zona}
+            onChange={e=>setForm({...form,zona:e.target.value})}
+          />
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
-import { s, n, fmtMoney, fmtDate, extraerTelefono, todayLocalISO } from '../utils/safe';
+import { s, n, fmtMoney, fmtDate, extraerTelefono, todayLocalISO, formatDireccion } from '../utils/safe';
 import { supabase } from '../lib/supabase';
 import { abrirNavegacion } from '../utils/navegacion';
 import { compressImage } from '../utils/compressImage';
@@ -167,7 +167,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       const total = items.reduce((s, it) => s + it.cant * it.precio, 0);
       const entregada = s(o.estatus) === 'Entregada' || entregas.some(e => String(e.ordenId) === String(o.id));
       const direccionCustom = s(o.direccion_entrega || o.direccionEntrega || '');
-      const direccionCliente = cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '';
+      // Mig 056: usar formatDireccion para obtener "Calle 123 Int. 4, Colonia, Ciudad..."
+      // con número exterior/interior. Fallback a la dirección custom de la orden.
+      const direccionCliente = cli ? formatDireccion(cli) : '';
       const direccion = direccionCustom || direccionCliente;
       const referencia = s(o.referencia_entrega || o.referenciaEntrega || '');
       // Coords: si la orden trae custom (lat/lng_entrega), úsalas; fallback al cliente.
