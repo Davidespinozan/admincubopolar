@@ -19,6 +19,8 @@ export function ConfiguracionView({ data, actions, user }) {
   // ── Datos de la empresa ──
   const [empresaForm, setEmpresaForm] = useState({
     razonSocial: '', rfc: '', direccionFiscal: '', codigoPostal: '',
+    // Mig 056: numero_exterior obligatorio para domicilio fiscal en CFDI 4.0.
+    numeroExterior: '', numeroInterior: '',
     telefono: '', correo: '', regimenFiscal: '', logoUrl: '',
   });
   const [empresaSaving, setEmpresaSaving] = useState(false);
@@ -32,6 +34,8 @@ export function ConfiguracionView({ data, actions, user }) {
       rfc: s(cfg.rfc),
       direccionFiscal: s(cfg.direccionFiscal),
       codigoPostal: s(cfg.codigoPostal),
+      numeroExterior: s(cfg.numeroExterior),
+      numeroInterior: s(cfg.numeroInterior),
       telefono: s(cfg.telefono),
       correo: s(cfg.correo),
       regimenFiscal: s(cfg.regimenFiscal),
@@ -46,6 +50,8 @@ export function ConfiguracionView({ data, actions, user }) {
     if (!empresaForm.rfc.trim()) e.rfc = 'Requerido';
     // RFC de la empresa emisora NUNCA es genérico SAT.
     else if (!validarRFC(empresaForm.rfc, { permitirGenericos: false })) e.rfc = 'Formato inválido (ej: CPO000000XX0)';
+    // Mig 056: número exterior obligatorio para domicilio fiscal en CFDI 4.0.
+    if (!empresaForm.numeroExterior?.trim()) e.numeroExterior = 'Requerido';
     if (Object.keys(e).length) { setEmpresaErrors(e); return; }
     setEmpresaErrors({});
     setEmpresaSaving(true);
@@ -172,8 +178,10 @@ export function ConfiguracionView({ data, actions, user }) {
           <FormInput label="Razón social *" value={empresaForm.razonSocial} onChange={e => setEmpresaForm(f => ({ ...f, razonSocial: e.target.value }))} error={empresaErrors.razonSocial} placeholder="Cubo Polar S.A. de C.V." />
           <FormInput label="RFC *" value={empresaForm.rfc} onChange={e => setEmpresaForm(f => ({ ...f, rfc: e.target.value.toUpperCase() }))} error={empresaErrors.rfc} maxLength={13} placeholder="CPO000000XX0" />
           <div className="sm:col-span-2">
-            <FormInput label="Dirección fiscal" value={empresaForm.direccionFiscal} onChange={e => setEmpresaForm(f => ({ ...f, direccionFiscal: e.target.value }))} placeholder="Av. Revolución 123, Centro, Culiacán" />
+            <FormInput label="Dirección fiscal" value={empresaForm.direccionFiscal} onChange={e => setEmpresaForm(f => ({ ...f, direccionFiscal: e.target.value }))} placeholder="Av. Revolución, Centro, Culiacán" />
           </div>
+          <FormInput label="Número exterior *" value={empresaForm.numeroExterior} onChange={e => setEmpresaForm(f => ({ ...f, numeroExterior: e.target.value }))} error={empresaErrors.numeroExterior} placeholder="Ej. 123" />
+          <FormInput label="Número interior" value={empresaForm.numeroInterior} onChange={e => setEmpresaForm(f => ({ ...f, numeroInterior: e.target.value }))} placeholder="Ej. Local 3 (opcional)" />
           <FormInput label="Código postal" value={empresaForm.codigoPostal} onChange={e => setEmpresaForm(f => ({ ...f, codigoPostal: e.target.value }))} maxLength={10} placeholder="80000" />
           <FormInput label="Teléfono" type="tel" value={empresaForm.telefono} onChange={e => setEmpresaForm(f => ({ ...f, telefono: e.target.value }))} placeholder="667 123 4567" />
           <FormInput label="Correo" type="email" value={empresaForm.correo} onChange={e => setEmpresaForm(f => ({ ...f, correo: e.target.value }))} placeholder="contacto@cubopolar.com" />

@@ -171,6 +171,11 @@ export const fmtDateTime = (v) => {
   return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
 };
 
+// ── Re-export de helpers de dirección (formato + parseo + validación)
+// para que las vistas importen desde un solo lugar. Implementación en
+// `data/direccionLogic.js` para ser testeable sin React/Google Maps.
+export { formatDireccion, parseAddressComponents, validateDireccion, buildPlaceSelection } from '../data/direccionLogic';
+
 // ── Debounce hook for search inputs
 export function useDebounce(value, delay = 300) {
   const [debounced, setDebounced] = useState(value);

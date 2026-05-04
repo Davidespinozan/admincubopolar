@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { buildPlaceSelection } from '../../data/direccionLogic';
 
 const GOOGLE_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
 
@@ -82,33 +83,18 @@ export default function AddressAutocomplete({ onSelect }) {
         });
         pacEl.style.width = '100%';
 
-        // Listener del evento de selección
+        // Listener del evento de selección. Emite el shape estructurado que
+        // construye `buildPlaceSelection` (ver direccionLogic.js):
+        //   { fullAddress, components: { calle, numero_exterior, ... }, latitud, longitud }
+        // Si Google no identificó street_number, components.numero_exterior
+        // queda null y el form padre debe pedirlo manualmente.
         const onPlaceSelect = async (event) => {
           try {
             const place = event.placePrediction.toPlace();
             await place.fetchFields({
               fields: ['addressComponents', 'location', 'formattedAddress'],
             });
-
-            const components = place.addressComponents || [];
-            const get = (type) => {
-              const c = components.find(comp => comp.types?.includes(type));
-              return c?.longText || c?.shortText || '';
-            };
-
-            const route = get('route');
-            const num = get('street_number');
-
-            onSelectRef.current?.({
-              calle: num ? `${route} ${num}` : route,
-              colonia: get('sublocality_level_1') || get('neighborhood') || get('sublocality') || '',
-              ciudad: get('locality') || get('administrative_area_level_2') || '',
-              estado: get('administrative_area_level_1') || '',
-              cp: get('postal_code') || '',
-              lat: place.location?.lat() ?? null,
-              lng: place.location?.lng() ?? null,
-              formatted: place.formattedAddress || '',
-            });
+            onSelectRef.current?.(buildPlaceSelection(place));
           } catch (err) {
             console.error('[AddressAutocomplete] error en select:', err);
             setError('No se pudieron obtener los detalles. Intenta otra dirección.');
