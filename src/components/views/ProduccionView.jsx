@@ -1,4 +1,4 @@
-import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion } from './viewsCommon';
+import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion, todayLocalISO } from './viewsCommon';
 import { traducirError } from '../../utils/errorMessages';
 
 export function ProduccionView({ data, actions }) {
@@ -139,7 +139,7 @@ export function ProduccionView({ data, actions }) {
 
     const cursor = new Date(hoy);
     while (cursor >= fechaMasAntigua) {
-      const fechaStr = cursor.toISOString().slice(0, 10);
+      const fechaStr = todayLocalISO(cursor);
       const dataDia = diasConProduccion[fechaStr] || { fecha: fechaStr, registros: [] };
 
       const porTurno = { 'Turno 1': [], 'Turno 2': [], 'Turno 3': [] };

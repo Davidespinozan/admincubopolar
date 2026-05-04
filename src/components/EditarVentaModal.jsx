@@ -11,6 +11,7 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { s, n, eqId, fmtMoney } from '../utils/safe';
+import { stockDisponiblePorSku, stockDisponibleParaEdicion } from '../utils/stock';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 
@@ -46,15 +47,38 @@ export default function EditarVentaModal({
     [data?.productos]
   );
 
-  const cfStockMap = useMemo(() => {
+  // Stock real desde cuartos_frios.stock JSONB (productos.stock es legacy).
+  const cfStockMap = useMemo(
+    () => stockDisponiblePorSku(data?.cuartosFrios || []),
+    [data?.cuartosFrios]
+  );
+
+  // Cantidad de cada SKU que esta orden tenía ANTES de editar. Si la orden
+  // estaba en flujo legacy y ya descontó stock, esta cantidad ya está fuera
+  // del cuarto y debe sumarse a lo disponible para validar la nueva qty.
+  const cantidadOriginalPorSku = useMemo(() => {
     const map = {};
-    for (const cf of (data?.cuartosFrios || [])) {
-      for (const [sku, qty] of Object.entries(cf?.stock || {})) {
-        map[sku] = (map[sku] || 0) + n(qty);
+    if (!orden) return map;
+    const snap = Array.isArray(orden.preciosSnapshot) ? orden.preciosSnapshot : null;
+    if (snap && snap.length > 0) {
+      for (const ln of snap) {
+        const sku = s(ln.sku);
+        if (!sku) continue;
+        map[sku] = (map[sku] || 0) + n(ln.qty || ln.cantidad);
       }
+      return map;
     }
+    const raw = s(orden.productos);
+    if (!raw) return map;
+    raw.split(',').forEach(part => {
+      const m = part.trim().match(/(\d+)\s*[×x]\s*(\S+)/);
+      if (!m) return;
+      const sku = s(m[2]);
+      if (!sku) return;
+      map[sku] = (map[sku] || 0) + parseInt(m[1] || '0', 10);
+    });
     return map;
-  }, [data?.cuartosFrios]);
+  }, [orden]);
 
   const getPrice = useCallback((cId, sku) => {
     if (cId) {
@@ -65,12 +89,12 @@ export default function EditarVentaModal({
     return prod ? n(prod.precio) : 0;
   }, [data?.preciosEsp, data?.productos]);
 
+  // Para EDITAR: stock disponible = lo que hay físicamente en cuartos
+  // + lo que esta orden ya tenía reservado (que se "libera" al editar).
   const getStock = useCallback((sku) => {
     if (!sku) return 0;
-    if (cfStockMap[sku] !== undefined) return cfStockMap[sku];
-    const p = (data?.productos || []).find(x => s(x.sku) === s(sku));
-    return p ? n(p.stock) : 0;
-  }, [cfStockMap, data?.productos]);
+    return stockDisponibleParaEdicion(cfStockMap, sku, cantidadOriginalPorSku[sku]);
+  }, [cfStockMap, cantidadOriginalPorSku]);
 
   // Pre-cargar form/lines cuando se abre con una orden
   useEffect(() => {
@@ -139,9 +163,9 @@ export default function EditarVentaModal({
   const prodOpts = useMemo(
     () => [{ value: '', label: 'Seleccionar producto...' }, ...prodTerminados.map(p => ({
       value: s(p.sku),
-      label: `${s(p.sku)} — ${s(p.nombre)} (${cfStockMap[p.sku] ?? n(p.stock)} disp.)`,
+      label: `${s(p.sku)} — ${s(p.nombre)} (${getStock(p.sku)} disp.)`,
     }))],
-    [prodTerminados, cfStockMap]
+    [prodTerminados, getStock]
   );
 
   const guardar = async () => {

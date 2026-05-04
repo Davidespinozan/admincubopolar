@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, EmptyState, s, n, fmtMoney, useToast } from './viewsCommon';
+import { useState, useMemo, Modal, EmptyState, s, n, fmtMoney, useToast, todayLocalISO } from './viewsCommon';
 
 export function NominaView({ data, actions }) {
   const toast = useToast();
@@ -47,9 +47,9 @@ export function NominaView({ data, actions }) {
     const result = await actions.addNominaPeriodo({
       numero_semana: numeroSemana,
       ejercicio: ejercicio,
-      fecha_inicio: inicioSemana.toISOString().slice(0, 10),
-      fecha_fin: finSemana.toISOString().slice(0, 10),
-      fecha_pago: finSemana.toISOString().slice(0, 10), // Pagas el sábado
+      fecha_inicio: todayLocalISO(inicioSemana),
+      fecha_fin: todayLocalISO(finSemana),
+      fecha_pago: todayLocalISO(finSemana), // Pagas el sábado
       dias_pago: 7,
       total_percepciones: nuevoTotal,
       total_deducciones: 0,

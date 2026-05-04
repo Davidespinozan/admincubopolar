@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
-import { s, n, eqId, fmtMoney, validarRFC } from '../utils/safe';
+import { s, n, eqId, fmtMoney, validarRFC, todayLocalISO } from '../utils/safe';
+import { stockDisponiblePorSku } from '../utils/stock';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 
@@ -97,15 +98,12 @@ export default function NuevaVentaModal({
     [data?.productos]
   );
 
-  const cfStockMap = useMemo(() => {
-    const map = {};
-    for (const cf of (data?.cuartosFrios || [])) {
-      for (const [sku, qty] of Object.entries(cf?.stock || {})) {
-        map[sku] = (map[sku] || 0) + n(qty);
-      }
-    }
-    return map;
-  }, [data?.cuartosFrios]);
+  // Fuente única de verdad para stock disponible: cuartos_frios.stock JSONB.
+  // productos.stock es legacy (queda en 0 con producción standalone).
+  const cfStockMap = useMemo(
+    () => stockDisponiblePorSku(data?.cuartosFrios || []),
+    [data?.cuartosFrios]
+  );
 
   const getPrice = useCallback((cId, sku) => {
     if (cId) {
@@ -118,10 +116,8 @@ export default function NuevaVentaModal({
 
   const getStock = useCallback((sku) => {
     if (!sku) return 0;
-    if (cfStockMap[sku] !== undefined) return cfStockMap[sku];
-    const p = (data?.productos || []).find(x => s(x.sku) === s(sku));
-    return p ? n(p.stock) : 0;
-  }, [cfStockMap, data?.productos]);
+    return n(cfStockMap[sku]);
+  }, [cfStockMap]);
 
   const clienteSeleccionado = useMemo(
     () => (data?.clientes || []).find(c => eqId(c.id, form.clienteId)) || null,
@@ -294,7 +290,7 @@ export default function NuevaVentaModal({
       const payload = {
         cliente: s(cli?.nombre),
         clienteId: form.clienteId,
-        fecha: form.fecha || new Date().toISOString().slice(0, 10),
+        fecha: form.fecha || todayLocalISO(),
         productos: productosStr,
         total: totalCalc,
         usuarioId: user?.id || null,
@@ -357,7 +353,7 @@ export default function NuevaVentaModal({
   const prodOpts = useMemo(
     () => [{ value: '', label: 'Seleccionar producto...' }, ...prodTerminados.map(p => ({
       value: s(p.sku),
-      label: `${s(p.sku)} — ${s(p.nombre)} (${cfStockMap[p.sku] ?? n(p.stock)} disp.)`,
+      label: `${s(p.sku)} — ${s(p.nombre)} (${n(cfStockMap[p.sku])} disp.)`,
     }))],
     [prodTerminados, cfStockMap]
   );

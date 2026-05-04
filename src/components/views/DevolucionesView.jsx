@@ -1,4 +1,4 @@
-import { useState, useMemo, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, todayLocalISO, PAGE_SIZE, Paginator } from './viewsCommon';
 
 export function DevolucionesView({ data }) {
   const [page, setPage] = useState(0);
@@ -8,9 +8,9 @@ export function DevolucionesView({ data }) {
   const hace30 = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
+    return todayLocalISO(d);
   }, []);
-  const hoy = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const hoy = useMemo(() => todayLocalISO(), []);
   const [fechaInicio, setFechaInicio] = useState(hace30);
   const [fechaFin, setFechaFin] = useState(hoy);
   const [filtroCliente, setFiltroCliente] = useState('');

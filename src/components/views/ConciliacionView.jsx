@@ -1,4 +1,4 @@
-import { useState, useMemo, StatusBadge, PageHeader, Modal, FormBtn, EmptyState, s, n, eqId, fmtDate, fmtMoney } from './viewsCommon';
+import { useState, useMemo, StatusBadge, PageHeader, Modal, FormBtn, EmptyState, s, n, eqId, fmtDate, fmtMoney, todayLocalISO } from './viewsCommon';
 import { useEffect } from 'react';
 import { calcularEsperadoPorRuta, formatDiferencia } from '../../data/cierreCajaLogic';
 import CierreCajaModal from '../CierreCajaModal';
@@ -12,9 +12,9 @@ export function ConciliacionView({ data, actions }) {
   const hace30 = useMemo(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
+    return todayLocalISO(d);
   }, []);
-  const hoyStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const hoyStr = useMemo(() => todayLocalISO(), []);
   const [fechaInicio, setFechaInicio] = useState(hace30);
   const [fechaFin, setFechaFin] = useState(hoyStr);
   const [filtroChofer, setFiltroChofer] = useState('');

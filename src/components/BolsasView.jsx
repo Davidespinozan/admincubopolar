@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { s, n } from '../utils/safe';
+import { s, n, todayLocalISO } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
 
 const BOLSAS_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
@@ -16,7 +16,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
 
   // Cargar historial del día desde la BD (inventarioMov) para empaques
   const historial = useMemo(() => {
-    const hoyStr = new Date().toISOString().slice(0, 10);
+    const hoyStr = todayLocalISO();
     return (data.inventarioMov || [])
       .filter(m => {
         const fecha = s(m.createdAt || m.created_at || m.fecha);

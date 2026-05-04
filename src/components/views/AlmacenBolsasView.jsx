@@ -1,4 +1,4 @@
-import { useMemo, PageHeader, EmptyState, s, n } from './viewsCommon';
+import { useMemo, PageHeader, EmptyState, s, n, todayLocalISO } from './viewsCommon';
 
 export function AlmacenBolsasView({ data }) {
   const bolsas = (data.productos || []).filter(p => s(p.tipo) === "Empaque");
@@ -8,7 +8,7 @@ export function AlmacenBolsasView({ data }) {
     return map;
   }, [data.productos]);
   const movs = useMemo(() => (data.inventarioMov || []).filter(m => bolsas.some(b => s(b.sku) === s(m.producto))).slice(0, 30), [data.inventarioMov, bolsas]);
-  const prodHoy = useMemo(() => (data.produccion || []).filter(p => s(p.fecha) === new Date().toISOString().slice(0, 10)), [data.produccion]);
+  const prodHoy = useMemo(() => (data.produccion || []).filter(p => s(p.fecha) === todayLocalISO()), [data.produccion]);
 
   // Partida doble: entradas vs salidas vs consumo
   const balance = useMemo(() => {
