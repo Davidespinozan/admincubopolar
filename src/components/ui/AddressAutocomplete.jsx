@@ -53,6 +53,14 @@ export default function AddressAutocomplete({ onSelect }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Mantener la referencia más reciente de onSelect en un ref. Esto evita
+  // que el useEffect siguiente (deps=[]) capture una versión obsoleta:
+  // padres que pasan arrow functions inline crean nueva referencia cada
+  // render; antes ese cambio remontaba el web component (cursor saltando,
+  // estado loading permanente). Ahora el listener lee siempre la última.
+  const onSelectRef = useRef(onSelect);
+  useEffect(() => { onSelectRef.current = onSelect; });
+
   useEffect(() => {
     let active = true;
     let pacEl = null;
@@ -91,7 +99,7 @@ export default function AddressAutocomplete({ onSelect }) {
             const route = get('route');
             const num = get('street_number');
 
-            onSelect({
+            onSelectRef.current?.({
               calle: num ? `${route} ${num}` : route,
               colonia: get('sublocality_level_1') || get('neighborhood') || get('sublocality') || '',
               ciudad: get('locality') || get('administrative_area_level_2') || '',
@@ -126,7 +134,9 @@ export default function AddressAutocomplete({ onSelect }) {
       active = false;
       cleanup();
     };
-  }, [onSelect]);
+    // Mount once: dependemos del ref para `onSelect`, no del prop —
+    // así un rerender del padre no remonta el web component.
+  }, []);
 
   return (
     <div>

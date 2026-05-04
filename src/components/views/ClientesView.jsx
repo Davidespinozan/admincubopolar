@@ -1,6 +1,6 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, fmtMoney, useDebounce, useToast, reporteClientes, PAGE_SIZE, Paginator } from './viewsCommon';
 import AddressAutocomplete from '../ui/AddressAutocomplete';
-import { validarRFC } from '../../utils/safe';
+import { validarRFC, normalizeStr } from '../../utils/safe';
 
 export function ClientesView({ data, actions }) {
   const toast = useToast();
@@ -69,8 +69,11 @@ export function ClientesView({ data, actions }) {
       const err = modal === "new"
         ? await actions.addCliente(form)
         : await actions.updateCliente(modal.id, form);
-      if (err && (err.message || err.code)) {
-        toast?.error(modal === "new" ? "No se pudo crear el cliente" : "No se pudo actualizar el cliente");
+      if (err && (err.error || err.message || err.code)) {
+        // Si supaStore disparó toast específico (err.error), no duplicar.
+        if (!err.error) {
+          toast?.error(modal === "new" ? "No se pudo crear el cliente" : "No se pudo actualizar el cliente");
+        }
         return;
       }
       toast?.success(modal === "new" ? "Cliente creado" : "Cliente actualizado");
@@ -145,9 +148,13 @@ export function ClientesView({ data, actions }) {
   };
 
   const filtered = useMemo(() => {
-    const q = dSearch?.toLowerCase() || "";
+    // Normaliza diacríticos: "neveria" matchea "Nevería"; "espinoza" → "ESPINÓZA".
+    const q = normalizeStr(dSearch);
     return (data.clientes || []).filter(c => {
-      const ms = !q || s(c.nombre).toLowerCase().includes(q) || s(c.nombre_comercial).toLowerCase().includes(q) || s(c.rfc).toLowerCase().includes(q);
+      const ms = !q
+        || normalizeStr(c.nombre).includes(q)
+        || normalizeStr(c.nombre_comercial).includes(q)
+        || normalizeStr(c.rfc).includes(q);
       const mt = !filterTipo || c.tipo === filterTipo;
       const inactivo = s(c.estatus) === "Inactivo";
       const me = filterEstatus === "Todos"

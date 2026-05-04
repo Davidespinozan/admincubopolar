@@ -260,14 +260,26 @@ export function validateTransicionOrden(estatusActual, nuevoEstatus) {
 // ─── EDICIÓN ──────────────────────────────────────────────────
 
 /**
- * Valida si una orden puede editarse. Solo se permite en estatus 'Creada'.
+ * Valida si una orden puede editarse. Reglas:
+ *   1. Solo se permite editar órdenes en estatus 'Creada'.
+ *   2. Si la orden está asignada a una ruta cuyo chofer ya confirmó la
+ *      carga física (carga_confirmada_at != null), editar líneas/cantidades
+ *      genera desacuerdo entre la nota y lo cargado al camión. Bloqueamos.
+ *      Admin debe primero quitar la orden de la ruta.
+ *
  * @param {string} estatusActual
+ * @param {Object|null} ruta - { carga_confirmada_at } | null si no aplica
  * @returns {{ error: string }|null}
  */
-export function validateEdicionOrden(estatusActual) {
+export function validateEdicionOrden(estatusActual, ruta = null) {
   const est = String(estatusActual || '').trim();
   if (est !== 'Creada') {
     return { error: 'Solo se pueden editar órdenes en estatus Creada' };
+  }
+  if (ruta && ruta.carga_confirmada_at) {
+    return {
+      error: 'No se puede editar: la ruta ya cargó esta orden. Quítala de la ruta primero.',
+    };
   }
   return null;
 }

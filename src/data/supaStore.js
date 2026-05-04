@@ -607,8 +607,15 @@ export function useSupaStore(userId, userName, userRol) {
           }).select('id').single();
           if (error) {
             console.error('[addCliente]', error.message, error.code);
-            t()?.error('Error al crear cliente: ' + error.message);
-            return error;
+            // Migración 055: idx_clientes_rfc_nominativo bloquea RFC duplicado
+            // de clientes Activos con RFC nominativo (no XAXX/XEXX).
+            const esRfcDuplicado = error.code === '23505'
+              && /idx_clientes_rfc_nominativo/.test(error.message || '');
+            const msg = esRfcDuplicado
+              ? 'Ya existe un cliente activo con este RFC'
+              : 'Error al crear cliente: ' + error.message;
+            t()?.error(msg);
+            return { error: msg, code: error.code };
           }
           rf();
           log('Crear', 'Clientes', `${c.nombre}`);
@@ -647,7 +654,15 @@ export function useSupaStore(userId, userName, userRol) {
           if (geo) { update.latitud = geo.lat; update.longitud = geo.lng; }
         }
         const { error } = await supabase.from('clientes').update(update).eq('id', id);
-        if (error) { t()?.error('Error al actualizar cliente'); return error; }
+        if (error) {
+          const esRfcDuplicado = error.code === '23505'
+            && /idx_clientes_rfc_nominativo/.test(error.message || '');
+          const msg = esRfcDuplicado
+            ? 'Ya existe un cliente activo con este RFC'
+            : 'Error al actualizar cliente';
+          t()?.error(msg);
+          return { error: msg, code: error.code };
+        }
         log('Editar', 'Clientes', `ID ${id}`);
         rf();
       },
@@ -1343,7 +1358,7 @@ export function useSupaStore(userId, userName, userRol) {
 
           const { data: ord, error: errOrd } = await supabase
             .from('ordenes')
-            .select('estatus')
+            .select('estatus, ruta_id')
             .eq('id', ordenId)
             .single();
           if (errOrd || !ord) {
@@ -1352,9 +1367,30 @@ export function useSupaStore(userId, userName, userRol) {
             return { error: msg };
           }
 
+          // Si la orden está asignada a una ruta, leer si esa ruta ya
+          // confirmó carga física. Una orden cuya ruta ya cargó no puede
+          // editarse — generaría desacuerdo entre la nota y el camión.
+          let ruta = null;
+          if (ord.ruta_id) {
+            const { data: rutaRow, error: errRuta } = await supabase
+              .from('rutas')
+              .select('id, carga_confirmada_at')
+              .eq('id', ord.ruta_id)
+              .maybeSingle();
+            if (errRuta) {
+              console.warn('[updateOrden] select ruta:', errRuta.message);
+              t()?.error('No se pudo verificar la ruta');
+              return { error: errRuta.message };
+            }
+            ruta = rutaRow;
+          }
+
           // Validación pura — extraída a ordenLogic.validateEdicionOrden
-          const edicionErr = validateEdicionOrden(s(ord.estatus));
-          if (edicionErr) return edicionErr;
+          const edicionErr = validateEdicionOrden(s(ord.estatus), ruta);
+          if (edicionErr) {
+            t()?.error(edicionErr.error);
+            return edicionErr;
+          }
 
           const { lines, ...resto } = payload;
 

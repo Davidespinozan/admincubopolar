@@ -211,8 +211,9 @@ export default function NuevaVentaModal({
       toast?.error?.('RFC requerido para factura');
       return;
     }
-    if (cliForm.requiereFactura && !validarRFC(cliForm.rfc)) {
-      toast?.error?.('Formato de RFC inválido (ej: XAXX010101000)');
+    // Si requiere factura, RFC debe ser nominativo (rechaza XAXX/XEXX).
+    if (cliForm.requiereFactura && !validarRFC(cliForm.rfc, { permitirGenericos: false })) {
+      toast?.error?.('RFC inválido para facturación nominativa');
       return;
     }
     const payload = {
@@ -230,7 +231,8 @@ export default function NuevaVentaModal({
       const result = await actions.addCliente?.(payload);
       const realId = result?.id ? String(result.id) : null;
       if (!realId) {
-        toast?.error?.('No se pudo registrar el cliente');
+        // Si addCliente disparó toast específico (result.error), no duplicar.
+        if (!result?.error) toast?.error?.('No se pudo registrar el cliente');
         return;
       }
       setForm(f => ({ ...f, clienteId: realId, requiereFactura: cliForm.requiereFactura }));
@@ -563,7 +565,7 @@ export default function NuevaVentaModal({
               type="number"
               min="1"
               value={l.qty}
-              onChange={e => updateLine(i, 'qty', parseInt(e.target.value) || 1)}
+              onChange={e => updateLine(i, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
               className="w-16 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center min-h-[44px] bg-white"
             />
             <span className="text-sm font-semibold text-slate-700 w-20 text-right">{fmtMoney(n(l.qty) * n(l.precio))}</span>
