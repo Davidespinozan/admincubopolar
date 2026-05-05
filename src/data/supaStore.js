@@ -6,6 +6,7 @@ import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, validateMarcarNoEntregada, buildNoEntregaPayload, calcReversoChangesNoEntrega } from './ordenLogic';
 import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
+import { validateTransformacion, buildTransformacionRow, buildInsumoChange, buildOutputChange, buildInsumoRollbackChange } from './transformacionLogic';
 import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion } from './devolucionesLogic';
 import { calcularEsperadoPorRuta, validateCierre, buildCierrePayload, buildPagosSnapshot, fechaCierreDesdeRuta } from './cierreCajaLogic';
 import {
@@ -551,6 +552,21 @@ export function useSupaStore(userId, userName, userRol) {
     const requireAdmin = () => urol() === 'Admin'
       ? null
       : { error: 'Solo Admin puede ejecutar esta acción' };
+
+    // Variante que acepta lista de roles permitidos (auditoría inventario
+    // 🟡-1, Tanda 1). Empleada en actions de inventario donde Admin no es
+    // único actor legítimo (Producción, Bolsas, Chofer pueden ejecutar
+    // ciertas operaciones según su responsabilidad).
+    const requireRol = (rolesPermitidos) => {
+      const rol = urol();
+      if (Array.isArray(rolesPermitidos) && rolesPermitidos.includes(rol)) return null;
+      const lista = Array.isArray(rolesPermitidos) ? rolesPermitidos.join(', ') : '';
+      return {
+        error: lista
+          ? `Tu rol (${rol || 'sin rol'}) no puede ejecutar esta acción. Requerido: ${lista}`
+          : 'Rol no autorizado',
+      };
+    };
 
     // Helper: insert notification (fire-and-forget, never blocks caller)
     const notify = (tipo, titulo, mensaje, icono, referencia) =>
@@ -1468,6 +1484,8 @@ export function useSupaStore(userId, userName, userRol) {
 
       // ── PRODUCCIÓN ──
       addProduccion: async (p) => {
+        const guard = requireRol(['Admin', 'Producción']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_op_seq' });
         const folio = `OP-${String(seq || 89).padStart(3, '0')}`;
         const { error } = await supabase.from('produccion').insert({
@@ -1590,6 +1608,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       updateProduccion: async (id, fields) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         // SKU NO es editable: cambiar SKU requeriría revertir stock. Si
         // admin se equivoca, debe Eliminar (con reverso) y volver a registrar.
         // Cantidad sí editable pero NO toca stock — admin ajusta manualmente
@@ -1608,6 +1628,8 @@ export function useSupaStore(userId, userName, userRol) {
       // suficiente disponible, la migración 047 hace RAISE EXCEPTION y
       // la eliminación falla con mensaje claro.
       deleteProduccion: async (id) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           if (!id) return { error: 'Producción requerida' };
 
@@ -1676,7 +1698,45 @@ export function useSupaStore(userId, userName, userRol) {
             return { error: 'Stock regresado pero la producción no se pudo borrar. Revísalo en Supabase.' };
           }
 
-          await log('Eliminar con reverso', 'Producción', `${folio} — ${cant}×${sku}`);
+          // 6. Reverso de empaque (auditoría 🔴-6, Tanda 1):
+          //    addProduccion descuenta empaque del SKU producido al registrar.
+          //    Al borrar, devolvemos ese empaque a productos.stock vía RPC
+          //    atómica. Best-effort: si falla, log warning + notify pero NO
+          //    bloqueamos el borrado (la producción ya quedó eliminada y el
+          //    stock del CF revertido).
+          let empaqueRevertido = null;
+          try {
+            const { data: prodCatalog } = await supabase
+              .from('productos').select('empaque_sku').eq('sku', sku).maybeSingle();
+            const empaqueSku = prodCatalog?.empaque_sku;
+            if (empaqueSku) {
+              const empaqueChange = {
+                sku: String(empaqueSku),
+                delta: cant,
+                tipo: 'Entrada',
+                origen: `Reverso producción ${folio}`,
+                usuario: uname() || 'Admin',
+              };
+              const { error: errEmp } = await supabase.rpc('update_productos_stock_atomic', {
+                p_changes: [empaqueChange],
+              });
+              if (errEmp) {
+                console.warn('[deleteProduccion] reverso empaque (no crítico):', errEmp.message);
+                notify('advertencia', 'Reverso de empaque pendiente',
+                  `Producción ${folio} eliminada — devuelve manualmente ${cant}× ${empaqueSku} a Insumos.`,
+                  '⚠️', folio);
+              } else {
+                empaqueRevertido = `${cant}× ${empaqueSku}`;
+              }
+            }
+          } catch (eEmp) {
+            console.warn('[deleteProduccion] excepción en reverso empaque:', eEmp);
+          }
+
+          const detalle = empaqueRevertido
+            ? `${folio} — ${cant}×${sku} + empaque ${empaqueRevertido}`
+            : `${folio} — ${cant}×${sku}`;
+          await log('Eliminar con reverso', 'Producción', detalle);
           rf();
           return undefined;
         } catch (e) {
@@ -1726,95 +1786,138 @@ export function useSupaStore(userId, userName, userRol) {
         return undefined;
       },
 
-      // ── TRANSFORMACIÓN: barra → hielo triturado/picado ──
-      // input_sku: SKU de la barra consumida (ej. BH-50K)
-      // input_kg: kg totales de barra consumidos
-      // output_sku: SKU del producto derivado (ej. HT-TRITURADO)
-      // output_kg: kg totales de producto obtenido
-      // merma_kg se calcula automáticamente como input_kg - output_kg
-      addTransformacion: async ({ input_sku, input_kg, output_sku, output_kg, notas }) => {
-        const inputKg  = Number(input_kg  || 0);
-        const outputKg = Number(output_kg || 0);
-        if (inputKg <= 0 || outputKg <= 0) return new Error('Cantidades inválidas');
-        if (outputKg > inputKg) return new Error('El output no puede ser mayor al input');
+      // ── TRANSFORMACIÓN: insumo (barra/materia prima) → producto terminado ──
+      // Modelo híbrido (auditoría inventario 🔴-1, Tanda 1):
+      //   - INSUMO (ej. BH-50K, viene de proveedor): vive en productos.stock.
+      //     Se descuenta vía RPC update_productos_stock_atomic (mig 054)
+      //     con FOR UPDATE + RAISE en negativo.
+      //   - OUTPUT (ej. HT-TRITURADO): producto terminado, va a
+      //     cuartos_frios.stock JSONB del cuarto destino seleccionado por
+      //     el operario. Se suma vía RPC update_stocks_atomic (mig 047).
+      //   - MERMA (opcional): registrada en tabla mermas, sin descontar
+      //     stock (el descuento ya ocurrió implícitamente: input_kg vs
+      //     output_kg, la diferencia es la merma).
+      //
+      // Si el descuento del insumo OK pero la suma al CF falla, se hace
+      // rollback explícito devolviendo el insumo a productos.stock.
+      addTransformacion: async (payload = {}) => {
+        const guard = requireRol(['Admin', 'Producción']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        try {
+          const { input_sku, input_kg, output_sku, output_kg, cuarto_destino, notas } = payload;
+          const inputKg = Number(input_kg);
+          const outputKg = Number(output_kg);
+          const mermaKg = Math.max(0, inputKg - outputKg);
 
-        const mermaKg      = Math.max(0, inputKg - outputKg);
-        const rendimiento  = Math.round((outputKg / inputKg) * 10000) / 100; // e.g. 78.40
+          // Cargar productos involucrados + verificar cuarto destino.
+          // En paralelo para que el round-trip sea uno solo.
+          const [
+            { data: inputProd },
+            { data: outputProd },
+            { data: cuartoRow, error: cuartoErr },
+          ] = await Promise.all([
+            supabase.from('productos').select('id, sku, nombre, stock, tipo').eq('sku', input_sku || '').maybeSingle(),
+            supabase.from('productos').select('id, sku, nombre, tipo').eq('sku', output_sku || '').maybeSingle(),
+            supabase.from('cuartos_frios').select('id, nombre').eq('id', String(cuarto_destino || '')).maybeSingle(),
+          ]);
+          if (cuartoErr) {
+            console.warn('[addTransformacion] select cuarto:', cuartoErr.message);
+            t()?.error('No se pudo leer el cuarto destino');
+            return { error: cuartoErr.message };
+          }
+          // Para validar el cuarto, le pasamos solo el cuarto encontrado
+          // (o array vacío si no existe) — validateTransformacion checa
+          // contra esa lista.
+          const cuartos = cuartoRow ? [cuartoRow] : [];
 
-        // Verificar stock del insumo (input_sku en productos.stock)
-        const { data: inputProd, error: inputErr } = await supabase
-          .from('productos').select('id, stock, nombre').eq('sku', input_sku).single();
-        if (inputErr || !inputProd) return new Error('Insumo no encontrado: ' + input_sku);
-        if (Number(inputProd.stock || 0) < inputKg) {
-          return new Error(`Stock insuficiente de ${input_sku}: tienes ${inputProd.stock} kg, necesitas ${inputKg}`);
-        }
+          const validErr = validateTransformacion(payload, inputProd, outputProd, cuartos);
+          if (validErr) {
+            t()?.error(validErr.error);
+            return validErr;
+          }
 
-        const { data: outputProd, error: outputErr } = await supabase
-          .from('productos').select('id, stock, nombre').eq('sku', output_sku).single();
-        if (outputErr || !outputProd) return new Error('Producto derivado no encontrado: ' + output_sku);
+          const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_op_seq' });
+          const folio = `TR-${String(seq || 1).padStart(3, '0')}`;
+          const hoy = todayLocalISO();
+          const usuario = uname() || 'Sistema';
 
-        const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_op_seq' });
-        const folio = `TR-${String(seq || 1).padStart(3, '0')}`;
-        const hoy   = todayLocalISO();
-
-        // Registrar la transformación en produccion
-        const { error: insErr } = await supabase.from('produccion').insert({
-          folio,
-          fecha:          hoy,
-          turno:          'Transformación',
-          maquina:        'Manual',
-          sku:            output_sku,
-          cantidad:       Math.round(outputKg),
-          estatus:        'Confirmada',
-          tipo:           'Transformacion',
-          input_sku,
-          input_kg:       inputKg,
-          output_kg:      outputKg,
-          merma_kg:       mermaKg,
-          rendimiento,
-          destino:        notas || null,
-        });
-        if (insErr) { t()?.error('Error al registrar transformación'); return insErr; }
-
-        // Descontar insumo (barras)
-        const { error: e2 } = await supabase.from('productos')
-          .update({ stock: Math.max(0, Number(inputProd.stock) - inputKg) })
-          .eq('id', inputProd.id);
-        if (e2) { t()?.error('Error al descontar insumo'); return e2; }
-
-        // Incrementar producto derivado (triturado)
-        const { error: e3 } = await supabase.from('productos')
-          .update({ stock: Number(outputProd.stock || 0) + outputKg })
-          .eq('id', outputProd.id);
-        if (e3) {
-          // Rollback: restaurar stock del insumo
-          await supabase.from('productos').update({ stock: Number(inputProd.stock) }).eq('id', inputProd.id);
-          t()?.error('Error al incrementar producto derivado');
-          return e3;
-        }
-
-        // Movimientos de inventario
-        const now = new Date().toISOString();
-        const { error: e4 } = await supabase.from('inventario_mov').insert([
-          { tipo: 'Salida',  producto: input_sku,  cantidad: inputKg,  origen: `Transformación ${folio}`, usuario: uname(), fecha: now },
-          { tipo: 'Entrada', producto: output_sku, cantidad: outputKg, origen: `Transformación ${folio}`, usuario: uname(), fecha: now },
-        ]);
-        if (e4) { t()?.error('Error al registrar movimientos de inventario'); }
-
-        // Registrar merma si la hay
-        if (mermaKg > 0) {
-          await supabase.from('mermas').insert({
-            sku:      input_sku,
-            cantidad: Math.round(mermaKg),
-            causa:    'Merma de proceso — transformación',
-            origen:   `Transformación ${folio}`,
-            foto_url: '',
+          // 1. Insertar fila en `produccion` (tipo='Transformacion').
+          //    Si esto falla no hay efecto secundario que revertir.
+          const row = buildTransformacionRow({
+            folio, fecha: hoy,
+            input_sku, input_kg: inputKg,
+            output_sku, output_kg: outputKg,
+            merma_kg: mermaKg, notas,
           });
-        }
+          const { error: insErr } = await supabase.from('produccion').insert(row);
+          if (insErr) {
+            console.warn('[addTransformacion] insert produccion:', insErr.message);
+            t()?.error('Error al registrar transformación');
+            return { error: insErr.message };
+          }
 
-        log('Transformar', 'Producción', `${folio} — ${inputKg}kg ${input_sku} → ${outputKg}kg ${output_sku} (merma ${mermaKg}kg, rend. ${rendimiento}%)`);
-        rf();
-        return null;
+          // 2. Descontar insumo de productos.stock vía RPC atómica.
+          const insumoChange = buildInsumoChange({
+            input_sku, input_kg: inputKg, output_sku, folio, usuario,
+          });
+          const { error: insumoErr } = await supabase.rpc('update_productos_stock_atomic', {
+            p_changes: [insumoChange],
+          });
+          if (insumoErr) {
+            // El insert de produccion ya quedó. Borramos la fila para
+            // mantener consistencia (no hay efectos secundarios todavía).
+            await supabase.from('produccion').delete().eq('folio', folio);
+            console.warn('[addTransformacion] descuento insumo:', insumoErr.message);
+            t()?.error(insumoErr.message || 'Error al descontar insumo');
+            return { error: insumoErr.message };
+          }
+
+          // 3. Sumar output al cuarto frío destino vía RPC atómica.
+          const outputChange = buildOutputChange({
+            cuarto_destino, output_sku, output_kg: outputKg,
+            input_sku, folio, usuario,
+            cuartoNombre: cuartoRow?.nombre,
+          });
+          const { error: outputErr } = await supabase.rpc('update_stocks_atomic', {
+            p_changes: [outputChange],
+          });
+          if (outputErr) {
+            // Rollback del insumo: devolver lo descontado en paso 2.
+            const rollback = buildInsumoRollbackChange({ input_sku, input_kg: inputKg, output_sku, folio, usuario });
+            await supabase.rpc('update_productos_stock_atomic', { p_changes: [rollback] });
+            await supabase.from('produccion').delete().eq('folio', folio);
+            console.warn('[addTransformacion] suma a CF, rollback insumo:', outputErr.message);
+            t()?.error('Error al ingresar al cuarto frío — transformación revertida');
+            return { error: outputErr.message };
+          }
+
+          // 4. Registrar merma si la hay (best-effort: si falla, la
+          //    transformación sí ocurrió y la merma puede capturarse manual).
+          if (mermaKg > 0) {
+            const { error: mermaErr } = await supabase.from('mermas').insert({
+              sku: input_sku,
+              cantidad: Math.round(mermaKg),
+              causa: 'Merma de proceso — transformación',
+              origen: `Transformación ${folio}`,
+              foto_url: '',
+            });
+            if (mermaErr) {
+              console.warn('[addTransformacion] insert merma (no crítico):', mermaErr.message);
+              notify('advertencia', 'Merma sin registrar',
+                `Transformación ${folio} — merma de ${mermaKg} ${input_sku} no se registró, captúrala manual.`,
+                '⚠️', folio);
+            }
+          }
+
+          await log('Transformar', 'Producción',
+            `${folio} — ${inputKg}× ${input_sku} → ${outputKg}× ${output_sku} → ${cuartoRow?.nombre || cuarto_destino} (merma ${mermaKg})`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[addTransformacion] excepción:', e);
+          t()?.error('Error inesperado en transformación');
+          return { error: e?.message || 'Error inesperado' };
+        }
       },
 
       // ── CUARTOS FRÍOS — CRUD ──
@@ -1822,6 +1925,8 @@ export function useSupaStore(userId, userName, userRol) {
       // ni default, así que el id se genera client-side con patrón "CF-N"
       // tomando el siguiente número libre desde los existentes.
       addCuartoFrio: async (cf) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           const { data: existentes, error: errSel } = await supabase
             .from('cuartos_frios')
@@ -1859,6 +1964,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       updateCuartoFrio: async (id, cf) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const update = {};
         if (cf.nombre    !== undefined) update.nombre    = cf.nombre;
         if (cf.temp      !== undefined) update.temp      = cf.temp;
@@ -1872,6 +1979,8 @@ export function useSupaStore(userId, userName, userRol) {
       // Bloquea DELETE si el cuarto tiene stock asociado para evitar pérdida
       // silenciosa de inventario. El admin debe vaciar/trasladar el stock primero.
       deleteCuartoFrio: async (id) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           if (!id) return { error: 'Cuarto frío requerido' };
 
@@ -1923,6 +2032,9 @@ export function useSupaStore(userId, userName, userRol) {
       // El RPC también inserta inventario_mov en la misma transacción, por
       // lo que ya no necesitamos rollback manual del stock JSONB.
       meterACuartoFrio: async (cfId, sku, cantidad, opciones = {}) => {
+        // Producción puede meter (vía producirYCongelar). Admin también.
+        const guard = requireRol(['Admin', 'Producción']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           const qty = Number(cantidad);
           if (!cfId) return { error: 'Cuarto frío requerido' };
@@ -1967,6 +2079,9 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       sacarDeCuartoFrio: async (cfId, sku, cantidad, motivo, opciones = {}) => {
+        // Standalone (Producción) saca del CF; Admin desde Inventario también.
+        const guard = requireRol(['Admin', 'Producción']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           const qty = Number(cantidad);
           if (!cfId) return { error: 'Cuarto frío requerido' };
@@ -2002,6 +2117,9 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       traspasoEntreUbicaciones: async ({ origen, destino, sku, cantidad }, opciones = {}) => {
+        // Standalone (Producción) y Admin pueden mover entre cuartos.
+        const guard = requireRol(['Admin', 'Producción']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           const qty = Number(cantidad);
           if (!Number.isFinite(qty) || qty <= 0) return { message: 'Cantidad inválida' };
@@ -2059,6 +2177,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       ajustarStockCuarto: async ({ cuartoId, ajustes, motivo }) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           if (!cuartoId) return { message: 'Cuarto frío requerido' };
           if (!Array.isArray(ajustes) || ajustes.length === 0) return { message: 'Sin ajustes' };
@@ -2152,6 +2272,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       ajustarExistenciaManual: async ({ sku, nuevaExistencia, motivo }) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const target = Number(nuevaExistencia);
         if (!sku || Number.isNaN(target) || target < 0) {
           const err = { message: 'Datos de ajuste inválidos' };
@@ -3181,6 +3303,10 @@ export function useSupaStore(userId, userName, userRol) {
 
       // ── MERMAS ──
       registrarMerma: async (sku, cantidad, causa, origen, fotoUrl) => {
+        // Chofer registra desde ruta; Producción desde standalone; Admin
+        // desde InventarioView.
+        const guard = requireRol(['Admin', 'Chofer', 'Producción']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           const { data: mermaRow, error } = await supabase.from('mermas').insert({
             sku,
@@ -3290,6 +3416,8 @@ export function useSupaStore(userId, userName, userRol) {
       // la foto en Storage best-effort. NO modifica deleteMerma porque el
       // reset masivo del sistema usa esa otra ruta sin reverso.
       borrarMermaConReverso: async (id) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           if (!id) return { error: 'Merma requerida' };
 
@@ -4025,6 +4153,10 @@ export function useSupaStore(userId, userName, userRol) {
 
       // ── ALMACÉN BOLSAS ──
       movimientoBolsa: async (sku, cantidad, tipo, motivo, costo, proveedor, esCredito) => {
+        // Bolsas registra entradas; Producción consume al fabricar; Admin
+        // hace ambos desde Insumos.
+        const guard = requireRol(['Admin', 'Bolsas', 'Producción']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           const qty = Number(cantidad);
           if (!sku) return { error: 'SKU requerido' };
@@ -4337,7 +4469,8 @@ export function useSupaStore(userId, userName, userRol) {
             if (cuartosMerma && cuartosMerma.length > 0) {
               const mermaChanges = [];
               for (const m of mermasArr) {
-                let remaining = Number(m.cant || 0);
+                const cantOriginal = Number(m.cant || 0);
+                let remaining = cantOriginal;
                 for (const cf of cuartosMerma) {
                   if (remaining <= 0) break;
                   const available = Number((cf.stock || {})[m.sku] || 0);
@@ -4350,6 +4483,17 @@ export function useSupaStore(userId, userName, userRol) {
                       usuario: choferNombre || uname(),
                     });
                   }
+                }
+                // Auditoría 🟡-6 (Tanda 1): si después de recorrer todos los
+                // cuartos queda saldo sin descontar, la merma supera el stock
+                // físico disponible. Throw aborta toda la transacción de
+                // cerrarRutaCompleta para que el rollback existente
+                // restaure el estado previo (sin over-counting de stock).
+                if (remaining > 0) {
+                  const descontado = cantOriginal - remaining;
+                  throw new Error(
+                    `Stock insuficiente para registrar merma de ${cantOriginal}×${m.sku}: solo hay ${descontado} disponible en cuartos`
+                  );
                 }
               }
               if (mermaChanges.length > 0) {

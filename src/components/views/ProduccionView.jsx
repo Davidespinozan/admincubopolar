@@ -38,7 +38,14 @@ export function ProduccionView({ data, actions }) {
   // ── Transformación ──
   const [tModal, setTModal] = useState(false);
   const [tErrors, setTErrors] = useState({});
-  const TFORM_DEFAULT = { input_sku: "", input_kg: "", output_sku: "", output_kg: "", notas: "" };
+  const [savingTrans, setSavingTrans] = useState(false);
+  // Default cuarto = primer cuarto frío disponible (mig 057+: el output
+  // de la transformación va al CF, no a productos.stock).
+  const cuartoDefault = useMemo(() => {
+    const cf = (data.cuartosFrios || [])[0];
+    return cf ? String(cf.id) : '';
+  }, [data.cuartosFrios]);
+  const TFORM_DEFAULT = { input_sku: "", input_kg: "", output_sku: "", output_kg: "", cuarto_destino: "", notas: "" };
   const [tForm, setTForm] = useState(TFORM_DEFAULT);
 
   // Materias primas (insumos) = productos con tipo "Materia Prima" o "Barra"
@@ -76,27 +83,40 @@ export function ProduccionView({ data, actions }) {
   }, [tForm.input_sku, data.productos]);
 
   const saveTransformacion = async () => {
+    if (savingTrans) return;
     const e = {};
-    if (!tForm.input_sku)              e.input_sku  = "Selecciona el insumo";
-    if (!tForm.output_sku)             e.output_sku = "Selecciona el producto";
-    if (inputKg <= 0)                  e.input_kg   = "Ingresa los kg de entrada";
-    if (outputKg <= 0)                 e.output_kg  = "Ingresa los kg de salida";
-    if (outputKg > inputKg)            e.output_kg  = "La salida no puede superar la entrada";
-    if (inputKg > inputStock)          e.input_kg   = `Stock insuficiente (disp: ${inputStock} kg)`;
+    if (!tForm.input_sku)              e.input_sku       = "Selecciona el insumo";
+    if (!tForm.output_sku)             e.output_sku      = "Selecciona el producto";
+    if (inputKg <= 0)                  e.input_kg        = "Ingresa los kg de entrada";
+    if (outputKg <= 0)                 e.output_kg       = "Ingresa los kg de salida";
+    if (outputKg > inputKg)            e.output_kg       = "La salida no puede superar la entrada";
+    if (inputKg > inputStock)          e.input_kg        = `Stock insuficiente (disp: ${inputStock} kg)`;
+    if (!tForm.cuarto_destino)         e.cuarto_destino  = "Selecciona el cuarto destino";
     if (Object.keys(e).length) { setTErrors(e); return; }
 
-    const err = await actions.addTransformacion({
-      input_sku:  tForm.input_sku,
-      input_kg:   inputKg,
-      output_sku: tForm.output_sku,
-      output_kg:  outputKg,
-      notas:      tForm.notas,
-    });
-    if (err) { toast?.error(traducirError(err, "Error al registrar transformación")); return; }
-    toast?.success(`Transformación registrada — ${outputKg}kg de ${tForm.output_sku} (merma ${mermaKg}kg)`);
-    setTModal(false);
-    setTForm(TFORM_DEFAULT);
-    setTErrors({});
+    setSavingTrans(true);
+    try {
+      const result = await actions.addTransformacion({
+        input_sku:      tForm.input_sku,
+        input_kg:       inputKg,
+        output_sku:     tForm.output_sku,
+        output_kg:      outputKg,
+        cuarto_destino: tForm.cuarto_destino,
+        notas:          tForm.notas,
+      });
+      if (result?.error) {
+        // El store ya disparó toast específico; no duplicar.
+        return;
+      }
+      toast?.success(`Transformación registrada — ${outputKg}× ${tForm.output_sku} (merma ${mermaKg})`);
+      setTModal(false);
+      setTForm(TFORM_DEFAULT);
+      setTErrors({});
+    } catch (err) {
+      toast?.error(traducirError(err, "Error al registrar transformación"));
+    } finally {
+      setSavingTrans(false);
+    }
   };
 
   // ── Stats ──
@@ -212,7 +232,7 @@ export function ProduccionView({ data, actions }) {
     <PageHeader
       title="Producción"
       subtitle="Hielo y transformaciones"
-      action={tab === 'transformaciones' ? () => { setTModal(true); setTErrors({}); } : null}
+      action={tab === 'transformaciones' ? () => { setTForm({ ...TFORM_DEFAULT, cuarto_destino: cuartoDefault }); setTModal(true); setTErrors({}); } : null}
       actionLabel={tab === 'transformaciones' ? "Registrar transformación" : null}
       extraButtons={exportBtns}
     />
@@ -381,7 +401,7 @@ export function ProduccionView({ data, actions }) {
           message="Sin transformaciones registradas"
           hint="Registra cuando tritures o piques barras de hielo para obtener hielo molido o escarchado"
           cta="Registrar primera transformación"
-          onCta={() => { setTModal(true); setTErrors({}); }}
+          onCta={() => { setTForm({ ...TFORM_DEFAULT, cuarto_destino: cuartoDefault }); setTModal(true); setTErrors({}); }}
         />
       ) : (
         <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
@@ -519,11 +539,20 @@ export function ProduccionView({ data, actions }) {
           </div>
         )}
 
+        {/* Cuarto destino: el output va al CF (mig 057+ comportamiento híbrido) */}
+        <FormSelect
+          label="Cuarto destino *"
+          options={(data.cuartosFrios || []).map(cf => ({ value: String(cf.id), label: `${s(cf.nombre)} (${s(cf.id)})` }))}
+          value={tForm.cuarto_destino}
+          onChange={e => setTForm(f => ({...f, cuarto_destino: e.target.value}))}
+          error={tErrors.cuarto_destino}
+        />
+
         <FormInput label="Notas (opcional)" value={tForm.notas} onChange={e => setTForm(f => ({...f, notas: e.target.value}))} placeholder="Ej: lote de la mañana, máquina picadora 2…" />
       </div>
       <div className="flex justify-end gap-2 mt-5">
         <FormBtn onClick={() => setTModal(false)}>Cancelar</FormBtn>
-        <FormBtn primary onClick={saveTransformacion}>Registrar transformación</FormBtn>
+        <FormBtn primary onClick={saveTransformacion} loading={savingTrans}>Registrar transformación</FormBtn>
       </div>
     </Modal>
 
