@@ -27,6 +27,70 @@ export function validateEdicionRuta(estatusActual) {
 }
 
 /**
+ * Estados de una ruta donde la carga ya descontó stock de cuartos
+ * (mig 047: confirmarCargaRuta y firmarCarga descuentan al pasar a
+ * 'Cargada'/'Pendiente firma'/'En progreso'). Cancelar una ruta en
+ * estos estados requiere devolver el stock al cuarto origen.
+ */
+const ESTADOS_CON_STOCK_FUERA = new Set(['Cargada', 'Pendiente firma', 'En progreso']);
+
+/**
+ * Valida si una ruta puede cancelarse y reporta si requiere devolver
+ * stock al cuarto frío.
+ *
+ * @param {{ estatus: string }} ruta
+ * @returns {{ error: string }|{ requiereDevolucion: boolean }}
+ */
+export function validateCancelacionRuta(ruta) {
+  const est = String(ruta?.estatus || '').trim();
+  if (!est) return { error: 'Ruta no encontrada' };
+  if (ESTADOS_TERMINALES_RUTA.has(est)) {
+    return { error: `Ruta ya está en estado terminal: ${est}` };
+  }
+  return { requiereDevolucion: ESTADOS_CON_STOCK_FUERA.has(est) };
+}
+
+/**
+ * Construye el array de `changes` para devolver al cuarto destino el
+ * stock que fue descontado al confirmar/firmar carga. Lee de
+ * `carga_real` (lo que realmente cargó el chofer) y suma con delta
+ * positivo al cuarto especificado.
+ *
+ * Si `carga_real` está vacío (caso edge: ruta Cargada por flujo legacy
+ * sin carga_real), cae a `carga` (carga total esperada).
+ *
+ * @param {Object} ruta - { folio, carga, carga_real, cargaReal, ... }
+ * @param {string|number} cuartoDestinoId
+ * @param {string} usuario
+ * @returns {Array}
+ */
+export function buildCancelacionChanges(ruta, cuartoDestinoId, usuario) {
+  const cargaReal = (ruta?.carga_real && typeof ruta.carga_real === 'object')
+    ? ruta.carga_real
+    : (ruta?.cargaReal && typeof ruta.cargaReal === 'object')
+      ? ruta.cargaReal
+      : null;
+  const carga = (ruta?.carga && typeof ruta.carga === 'object') ? ruta.carga : {};
+  const fuente = cargaReal && Object.keys(cargaReal).length > 0 ? cargaReal : carga;
+  const folio = String(ruta?.folio || '').trim();
+  const usuarioStr = String(usuario || 'Admin');
+  const changes = [];
+  for (const [sku, qty] of Object.entries(fuente)) {
+    const cant = Number(qty);
+    if (!Number.isFinite(cant) || cant <= 0) continue;
+    changes.push({
+      cuarto_id: String(cuartoDestinoId),
+      sku: String(sku),
+      delta: cant,
+      tipo: 'Entrada',
+      origen: `Cancelación ruta ${folio}`.trim(),
+      usuario: usuarioStr,
+    });
+  }
+  return changes;
+}
+
+/**
  * Convierte el objeto de devoluciones en texto legible para el log.
  * @param {Record<string, number>} devolucionObj — { "HC-5K": 3, "HC-25K": 0 }
  * @returns {string} — "3×HC-5K" | "0" si todo es 0
