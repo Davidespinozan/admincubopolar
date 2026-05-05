@@ -83,7 +83,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const abrirNuevaVenta = () => setModal(true);
 
   return (
-    <div className={VENTAS_SHELL}>
+    <div className={VENTAS_SHELL} data-testid="ventas-shell">
       <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-4 pb-5 text-white shadow-[0_24px_48px_rgba(5,150,105,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-1">
           <div><p className="erp-kicker text-emerald-100/80">Ventas</p><h1 className="font-display text-[1.6rem] font-bold tracking-[-0.04em]">Ventas del día</h1><p className="text-xs text-emerald-100">{s(user?.nombre)}</p></div>

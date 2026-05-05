@@ -199,7 +199,8 @@ export function ConciliacionView({ data, actions }) {
             <input type="date" value={fechaFin} onChange={e => setFechaFin(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white" />
             <select value={filtroChofer} onChange={e => setFiltroChofer(e.target.value)} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
               <option value="">Todos los choferes</option>
-              {(data?.usuarios || []).filter(u => s(u.rol).toLowerCase().includes('chofer')).map(u => (
+              {/* Tanda 10: oculta cuentas E2E del filtro */}
+              {(data?.usuarios || []).filter(u => s(u.rol).toLowerCase().includes('chofer') && !u.is_test_account).map(u => (
                 <option key={u.id} value={u.id}>{s(u.nombre)}</option>
               ))}
             </select>

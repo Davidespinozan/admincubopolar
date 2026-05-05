@@ -307,7 +307,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   const currentMeta = AREA_META[currentArea?.id] || AREA_META.operacion;
 
   return (
-    <div className="min-h-screen text-slate-900">
+    <div className="min-h-screen text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''}>
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className={`absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br ${currentMeta.glow} blur-3xl`} />
         <div className="absolute bottom-[-10%] right-[-6%] h-[22rem] w-[22rem] rounded-full bg-gradient-to-br from-slate-200/60 via-white/20 to-transparent blur-3xl" />
@@ -380,7 +380,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
         <div className="flex h-[76px] flex-shrink-0 items-center justify-between border-t border-white/8 px-5">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-cyan-200 text-sm font-bold text-slate-950">{user?.nombre?.[0] || "A"}</div>
-            <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{user?.nombre || "Admin"}</p><p className="truncate text-xs text-slate-400">{user?.rol}</p></div>
+            <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{user?.nombre || "Admin"}</p><p className="truncate text-xs text-slate-400" data-testid="role-badge">{user?.rol}</p></div>
           </div>
           {onLogout && <button onClick={onLogout} className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/8 hover:text-white" title="Cerrar sesión" aria-label="Cerrar sesión"><Icons.X /></button>}
         </div>

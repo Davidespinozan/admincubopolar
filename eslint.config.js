@@ -5,7 +5,7 @@ import globals from 'globals';
 
 export default [
   {
-    ignores: ['dist/**', 'node_modules/**', 'build/**', '*.config.js', 'supabase/**'],
+    ignores: ['dist/**', 'node_modules/**', 'build/**', '*.config.js', 'supabase/**', 'playwright-report/**', 'test-results/**'],
   },
   js.configs.recommended,
   {

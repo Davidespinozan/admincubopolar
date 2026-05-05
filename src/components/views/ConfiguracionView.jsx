@@ -163,7 +163,8 @@ export function ConfiguracionView({ data, actions, user }) {
     }
   };
 
-  const usuarios = data.usuarios || [];
+  // Tanda 10: oculta cuentas E2E del listado admin (defense in depth).
+  const usuarios = (data.usuarios || []).filter(u => !u.is_test_account);
 
   return (<div className="space-y-6">
     {ConfirmEl}
