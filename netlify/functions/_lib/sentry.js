@@ -5,7 +5,12 @@
 // passthrough (solo invoca el handler) — el ERP sigue funcionando.
 
 import * as Sentry from '@sentry/node';
-import { nodeProfilingIntegration } from '@sentry/profiling-node';
+
+// Tanda 7-fix: NO usamos @sentry/profiling-node — sus binarios nativos
+// .node rompen el bundler de Netlify Functions (esbuild no tiene loader
+// para .node y el fallback publica funciones rotas, lo que arrastra
+// también al SDK frontend). Nos quedamos solo con error reporting +
+// tracing básico, sin profiling.
 
 const SENTRY_DSN = process.env.SENTRY_DSN_BACKEND;
 let initialized = false;
@@ -19,8 +24,6 @@ export function initSentry() {
     environment: process.env.CONTEXT || 'production',
     release: process.env.COMMIT_REF || 'unknown',
     tracesSampleRate: 0.1,
-    profilesSampleRate: 0.1,
-    integrations: [nodeProfilingIntegration()],
   });
 
   initialized = true;
