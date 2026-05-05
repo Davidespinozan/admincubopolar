@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
-import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, validateMarcarNoEntregada, buildNoEntregaPayload, calcReversoChangesNoEntrega } from './ordenLogic';
+import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, validateMarcarNoEntregada, buildNoEntregaPayload, calcReversoChangesNoEntrega, isFacturable, validateCancelacionCFDI } from './ordenLogic';
 import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
 import { validateTransformacion, buildTransformacionRow, buildInsumoChange, buildOutputChange, buildInsumoRollbackChange } from './transformacionLogic';
@@ -251,13 +251,16 @@ export function useSupaStore(userId, userName, userRol) {
       }));
 
       // ── Build facturacionPendiente ──
+      // Tanda 5: usa isFacturable (FSM) — incluye órdenes con CFDI cancelado
+      // pendientes de re-timbrar y excluye las que tienen requiere_factura=false.
       const facturacionPendiente = ordenes
-        .filter(o => o.estatus === 'Entregada')
+        .filter(o => isFacturable(o))
         .map(o => {
           const c = clientes.find(x => x.id === o.cliente_id);
           return {
             id: o.id, folio: o.folio, cliente: c?.nombre || '',
             rfc: c?.rfc || '', fecha: o.fecha, total: Number(o.total),
+            cfdiCanceladoAt: o.cfdi_cancelado_at || null,
           };
         });
 
@@ -3151,6 +3154,38 @@ export function useSupaStore(userId, userName, userRol) {
         log('Timbrar', 'Facturación', `${folio}`);
         notify('factura', 'Factura timbrada', `CFDI generado para ${folio}`, '📄', folio);
         rf();
+      },
+
+      // Tanda 5: cancela un CFDI ya timbrado ante el SAT vía Facturama.
+      // Backend valida auth + idempotency + revierte estatus a Entregada.
+      cancelarCFDI: async ({ ordenId, motivo, motivoDetalle, uuidSustituto }) => {
+        const orden = (data.ordenes || []).find(o => o.id === ordenId);
+        const valid = validateCancelacionCFDI({ orden, motivo, uuidSustituto });
+        if (valid?.error) {
+          t()?.error(valid.error);
+          return { error: valid.error };
+        }
+        try {
+          const resp = await backendPost('billing-cancel-invoice', {
+            ordenId,
+            motivo,
+            motivoDetalle: motivoDetalle || null,
+            uuidSustituto: uuidSustituto || null,
+          });
+          if (resp?.alreadyCancelled) {
+            t()?.info('El CFDI ya estaba cancelado');
+          } else {
+            t()?.success(`CFDI cancelado (motivo ${motivo})`);
+          }
+          log('Cancelar CFDI', 'Facturación', `Orden ${ordenId} — motivo ${motivo}`);
+          notify('factura_cancelada', 'CFDI cancelado', `Cancelación SAT motivo ${motivo} para ${s(orden?.folio)}`, '🗑️', String(ordenId));
+          rf();
+          return undefined;
+        } catch (err) {
+          const msg = err?.message || 'Error al cancelar CFDI';
+          t()?.error(msg);
+          return err;
+        }
       },
 
       reintentarComplemento: async (ordenId) => {

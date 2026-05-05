@@ -1,9 +1,12 @@
 import { badRequest, methodNotAllowed, ok, readJsonBody, serverError } from '../_lib/http.js';
+import { getAuthenticatedProfile } from '../_lib/auth.js';
 import { insertInvoiceAttempt } from '../_lib/persistence.js';
 import { getFacturamaConfig } from '../_lib/providers.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 import { buildCfdiReceiver } from '../_lib/invoiceLogic.js';
 import { translateFacturamaError } from '../_lib/translateFacturama.js';
+
+const ROLES_PERMITIDOS = new Set(['Admin', 'Facturación', 'Ventas']);
 
 const PAYMENT_FORM_MAP = {
   'Efectivo': '01',
@@ -116,7 +119,7 @@ const getOrderContext = async ({ ordenId, folio }) => {
 
   let query = supabase
     .from('ordenes')
-    .select('id, folio, cliente_id, cliente_nombre, productos, total, metodo_pago, estatus, vendedor_id, ruta_id');
+    .select('id, folio, cliente_id, cliente_nombre, productos, total, metodo_pago, estatus, vendedor_id, ruta_id, facturama_id, facturama_uuid, facturama_folio, cfdi_cancelado_at');
 
   query = ordenId ? query.eq('id', ordenId) : query.eq('folio', folio);
 
@@ -198,6 +201,13 @@ export const handler = async (event) => {
   let body = null;
 
   try {
+    const auth = await getAuthenticatedProfile(event);
+    if (auth.errorResponse) return auth.errorResponse;
+
+    if (!ROLES_PERMITIDOS.has(auth.profile.rol)) {
+      return badRequest('Tu rol no puede timbrar facturas');
+    }
+
     body = await readJsonBody(event);
     const { ordenId, folio, facturamaPayload } = body;
 
@@ -206,6 +216,20 @@ export const handler = async (event) => {
     }
 
     const { orden, cliente, lineas, issuerZip } = await getOrderContext({ ordenId, folio });
+
+    // 🔴-Tanda5 idempotency: si la orden ya tiene CFDI vigente (UUID
+    // poblado y NO cancelado), evitamos un re-stamp accidental que
+    // generaría un segundo CFDI duplicado en SAT.
+    if (orden.facturama_uuid && !orden.cfdi_cancelado_at) {
+      return ok({
+        alreadyInvoiced: true,
+        ordenId: orden.id,
+        folio: orden.folio,
+        facturamaUuid: orden.facturama_uuid,
+        facturamaFolio: orden.facturama_folio,
+      });
+    }
+
     let payload = facturamaPayload || buildFacturamaPayload({ orden, cliente, lineas, issuerZip });
 
     let invoice;
@@ -231,7 +255,10 @@ export const handler = async (event) => {
       response_payload: invoice,
     });
 
-    // Save Facturama reference in the order and mark as Facturada
+    // Save Facturama reference in the order and mark as Facturada.
+    // Si la orden venía de un CFDI cancelado (re-timbrado), limpiamos
+    // las anotaciones de cancelación para que el nuevo timbre sea el
+    // CFDI vigente (idempotency lock).
     const supabase = getSupabaseAdmin();
     await supabase
       .from('ordenes')
@@ -240,6 +267,11 @@ export const handler = async (event) => {
         facturama_id: invoice.Id || null,
         facturama_folio: invoice.Folio || null,
         facturama_uuid: invoice.Uuid || invoice.uuid || null,
+        cfdi_cancelado_at: null,
+        cfdi_cancelado_motivo: null,
+        cfdi_cancelado_motivo_detalle: null,
+        cfdi_cancelado_uuid_sustituto: null,
+        cfdi_cancelado_por: null,
       })
       .eq('id', orden.id);
 
