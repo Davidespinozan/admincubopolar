@@ -177,10 +177,27 @@ export function useSupaStore(userId, userName, userRol) {
       });
 
       // ── Map clientes ──
+      // Tanda 2 🟡-4: el saldo del cliente se computa desde la suma de
+      // CxC pendientes (no desde el cache `clientes.saldo` de BD, que
+      // puede divergir — ver caso DAVID ESPINOZA $2000 fantasma limpiado
+      // en mig 055). Sobrescribimos `saldo` aquí para que TODOS los
+      // consumidores (ClientesView, NuevaVentaModal, exportReports, etc.)
+      // reciban el valor correcto sin cambiar su código.
+      // La columna `clientes.saldo` en BD queda como cache deprecated;
+      // su eliminación está documentada en docs/PENDIENTES_TECNICOS.md.
+      const saldoPorCliente = new Map();
+      for (const cxcRow of (cxc || [])) {
+        if (cxcRow?.estatus === 'Pagada') continue;
+        const cid = cxcRow?.cliente_id;
+        if (cid == null) continue;
+        const saldoPend = Number(cxcRow?.saldo_pendiente || 0);
+        if (!Number.isFinite(saldoPend) || saldoPend <= 0) continue;
+        saldoPorCliente.set(cid, (saldoPorCliente.get(cid) || 0) + saldoPend);
+      }
       const clientesMapped = clientes.map(c => ({
         ...c,
         usoCfdi: c.uso_cfdi,
-        saldo: Number(c.saldo),
+        saldo: saldoPorCliente.get(c.id) || 0,
       }));
 
       // ── Map precios especiales ──
@@ -602,6 +619,8 @@ export function useSupaStore(userId, userName, userRol) {
 
       // ── CLIENTES ──
       addCliente: async (c) => {
+        const guard = requireRol(['Admin', 'Ventas']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           // Si el form ya trae coords (desde autocomplete), úsalas. Si no, geocodificar.
           let latitud = c.latitud != null && c.latitud !== '' ? Number(c.latitud) : null;
@@ -649,6 +668,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       updateCliente: async (id, c) => {
+        const guard = requireRol(['Admin', 'Ventas']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const update = {};
         if (c.nombre   !== undefined) update.nombre   = c.nombre;
         if (c.rfc      !== undefined) update.rfc      = c.rfc;
@@ -695,6 +716,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       deactivateCliente: async (id) => {
+        const guard = requireRol(['Admin', 'Ventas']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const { error } = await supabase.from('clientes').update({ estatus: 'Inactivo' }).eq('id', id);
         if (error) { t()?.error('Error al desactivar cliente'); return error; }
         log('Desactivar', 'Clientes', `ID ${id}`);
@@ -702,6 +725,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       deleteCliente: async (id) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           const { error } = await supabase.from('clientes').delete().eq('id', id);
           if (error) {
@@ -723,6 +748,8 @@ export function useSupaStore(userId, userName, userRol) {
 
       // ── PRODUCTOS ──
       addProducto: async (p) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const { error } = await supabase.from('productos').insert({
           sku: p.sku, nombre: p.nombre, tipo: p.tipo,
           stock: Number(p.stock) || 0, ubicacion: p.ubicacion,
@@ -737,6 +764,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       updateProducto: async (id, p) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         // Detectar si el SKU cambió comparando contra el actual en DB
         const { data: current, error: getErr } = await supabase
           .from('productos').select('sku').eq('id', id).single();
@@ -796,6 +825,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
       // ── PRECIOS ESPECIALES ──
       addPrecioEsp: async (p) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const { error } = await supabase.from('precios_esp').insert({
           cliente_id: p.clienteId, sku: p.sku, precio: Number(p.precio),
         });
@@ -805,6 +836,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       deletePrecioEsp: async (id) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const { error } = await supabase.from('precios_esp').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar precio especial'); return error; }
         log('Eliminar', 'Precios Especiales', `ID ${id}`);
@@ -814,6 +847,8 @@ export function useSupaStore(userId, userName, userRol) {
       // Edita solo el precio (cliente y sku son inmutables — para cambiarlos
       // el usuario debe borrar y crear nuevo, evitando bugs de identidad).
       updatePrecioEsp: async (id, payload = {}) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           if (!id) return { error: 'Precio requerido' };
           const { precio } = payload;
@@ -844,6 +879,9 @@ export function useSupaStore(userId, userName, userRol) {
 
       // ── ÓRDENES ──
       addOrden: async (o) => {
+        // Chofer puede crear ventas express en ruta (ChoferView).
+        const guard = requireRol(['Admin', 'Ventas', 'Chofer']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           const items = parseProductos(o.productos);
           const itemsErr = validateItems(items);
@@ -902,16 +940,34 @@ export function useSupaStore(userId, userName, userRol) {
 
           // Validación de límite de crédito. Solo aplica a ventas a crédito
           // y requiere clienteId (las ventas público en general no aplican).
+          // Tanda 2 🟡-4: el saldo se calcula desde SUM(saldo_pendiente) en
+          // cuentas_por_cobrar (NO desde clientes.saldo cache, que puede
+          // divergir y aceptaría ventas que superan el saldo real).
           if (s(o.tipoCobro) === 'Credito' && o.clienteId) {
-            const { data: cliCred, error: errCred } = await supabase
-              .from('clientes')
-              .select('saldo, limite_credito, credito_autorizado, nombre')
-              .eq('id', o.clienteId)
-              .maybeSingle();
+            const [
+              { data: cliCred, error: errCred },
+              { data: cxcRows, error: errCxc },
+            ] = await Promise.all([
+              supabase
+                .from('clientes')
+                .select('limite_credito, credito_autorizado, nombre')
+                .eq('id', o.clienteId)
+                .maybeSingle(),
+              supabase
+                .from('cuentas_por_cobrar')
+                .select('saldo_pendiente')
+                .eq('cliente_id', o.clienteId)
+                .neq('estatus', 'Pagada'),
+            ]);
             if (errCred) {
               console.warn('[addOrden] select cliente para crédito:', errCred.message);
               t()?.error('No se pudo verificar el crédito del cliente');
               return { message: errCred.message };
+            }
+            if (errCxc) {
+              console.warn('[addOrden] select CxC para crédito:', errCxc.message);
+              t()?.error('No se pudo verificar las cuentas por cobrar del cliente');
+              return { message: errCxc.message };
             }
             if (!cliCred?.credito_autorizado) {
               const msg = 'Cliente no tiene crédito autorizado';
@@ -919,7 +975,10 @@ export function useSupaStore(userId, userName, userRol) {
               return { message: msg };
             }
             const limite = Number(cliCred.limite_credito) || 0;
-            const saldo = Number(cliCred.saldo) || 0;
+            const saldo = (cxcRows || []).reduce(
+              (sum, r) => sum + Number(r?.saldo_pendiente || 0),
+              0
+            );
             const disponible = limite - saldo;
             if (Number(total) > disponible) {
               const msg = `Excede límite de crédito. Disponible: $${disponible.toLocaleString('es-MX')}`;
@@ -1186,6 +1245,8 @@ export function useSupaStore(userId, userName, userRol) {
       // para reusar el reverso de stock vía RPC cuando estatus == 'Asignada'.
       // Bloquea cancelación si hay pagos directos o CxC con monto_pagado > 0.
       cancelarOrden: async ({ ordenId, motivo } = {}) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           if (!ordenId) return { error: 'Orden requerida' };
           const motivoTxt = String(motivo || '').trim();
@@ -1380,6 +1441,8 @@ export function useSupaStore(userId, userName, userRol) {
       // Edita orden en estatus 'Creada': UPDATE campos top-level + reemplazo
       // de líneas (DELETE + INSERT). Recalcula total desde las líneas nuevas.
       updateOrden: async (ordenId, payload = {}) => {
+        const guard = requireRol(['Admin', 'Ventas']);
+        if (guard) { t()?.error(guard.error); return guard; }
         try {
           if (!ordenId) return { error: 'Orden requerida' };
 
@@ -1442,34 +1505,33 @@ export function useSupaStore(userId, userName, userRol) {
           // Construir UPDATE — extraído a ordenLogic.buildUpdateFieldsOrden
           const updateFields = buildUpdateFieldsOrden(resto, lineasNuevas, totalNuevo);
 
-          if (Object.keys(updateFields).length > 0) {
-            const { error: errUpd } = await supabase
-              .from('ordenes')
-              .update(updateFields)
-              .eq('id', ordenId);
-            if (errUpd) {
-              t()?.error('No se pudieron actualizar los datos de la orden');
-              return { error: errUpd.message };
-            }
+          // Si no hay nada que actualizar, no llamar al RPC.
+          if (Object.keys(updateFields).length === 0 && !Array.isArray(lines)) {
+            return undefined;
           }
 
-          // Reemplazo atómico-ish de líneas: DELETE + INSERT
-          if (lineasNuevas) {
-            const { error: errDel } = await supabase
-              .from('orden_lineas')
-              .delete()
-              .eq('orden_id', ordenId);
-            if (errDel) {
-              t()?.error('No se pudieron borrar las líneas previas');
-              return { error: errDel.message };
-            }
-            const { error: errIns } = await supabase
-              .from('orden_lineas')
-              .insert(lineasNuevas.map(l => ({ ...l, orden_id: ordenId })));
-            if (errIns) {
-              t()?.error('Error al insertar líneas nuevas — orden quedó sin líneas');
-              return { error: errIns.message, partial: true };
-            }
+          // RPC atómica (mig 058): UPDATE ordenes + DELETE/INSERT lineas
+          // en una transacción. Reemplaza el patrón previo de 3 ops sin
+          // transacción que dejaba la orden sin líneas si el INSERT
+          // fallaba a la mitad.
+          const lineasParaRpc = lineasNuevas
+            ? lineasNuevas.map(l => ({
+                sku: l.sku,
+                cantidad: Number(l.cantidad),
+                precio_unit: Number(l.precio_unit),
+                subtotal: Number(l.subtotal),
+              }))
+            : null;
+
+          const { error: rpcErr } = await supabase.rpc('update_orden_atomic', {
+            p_orden_id: Number(ordenId),
+            p_update_fields: Object.keys(updateFields).length > 0 ? updateFields : {},
+            p_lineas: lineasParaRpc,
+          });
+          if (rpcErr) {
+            console.warn('[updateOrden] rpc update_orden_atomic:', rpcErr.message);
+            t()?.error(rpcErr.message || 'No se pudo actualizar la orden');
+            return { error: rpcErr.message };
           }
 
           await log('Editar', 'Órdenes', `ID ${ordenId}`);
@@ -3930,6 +3992,8 @@ export function useSupaStore(userId, userName, userRol) {
 
       // ── LEADS ──
       addLead: async (l) => {
+        const guard = requireRol(['Admin', 'Ventas']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const { error } = await supabase.from('leads').insert({
           nombre: l.nombre, telefono: l.telefono, correo: l.correo,
           mensaje: l.mensaje, origen: l.origen, estatus: 'Nuevo',
@@ -3941,6 +4005,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       updateLead: async (id, changes) => {
+        const guard = requireRol(['Admin', 'Ventas']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const { error } = await supabase.from('leads').update(changes).eq('id', id);
         if (error) { t()?.error('Error al actualizar lead'); return error; }
         log('Editar', 'Leads', `ID ${id}`);
@@ -3948,6 +4014,8 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       deleteLead: async (id) => {
+        const guard = requireRol(['Admin', 'Ventas']);
+        if (guard) { t()?.error(guard.error); return guard; }
         const { error } = await supabase.from('leads').delete().eq('id', id);
         if (error) { t()?.error('Error al eliminar lead'); return error; }
         log('Eliminar', 'Leads', `ID ${id}`);
