@@ -1,6 +1,7 @@
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
+import { withSentry } from '../_lib/sentry.js';
 
-export const handler = async (event) => {
+const _handler = async (event) => {
   // Support both query param ?o=ID and path param /pagar/ID
   let ordenId = event.queryStringParameters?.o;
   if (!ordenId && event.path) {
@@ -33,3 +34,5 @@ export const handler = async (event) => {
     headers: { Location: data.checkout_url },
   };
 };
+
+export const handler = withSentry(_handler);

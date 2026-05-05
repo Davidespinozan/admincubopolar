@@ -18,6 +18,7 @@ import { insertInvoiceAttempt } from '../_lib/persistence.js';
 import { getFacturamaConfig } from '../_lib/providers.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 import { translateFacturamaError } from '../_lib/translateFacturama.js';
+import { withSentry } from '../_lib/sentry.js';
 
 const MOTIVOS_VALIDOS = new Set(['01', '02', '03', '04']);
 const ROLES_PERMITIDOS = new Set(['Admin', 'Facturación', 'Ventas']);
@@ -59,7 +60,7 @@ const cancelOnFacturama = async ({ facturamaId, motivo, uuidSustituto }) => {
   return raw;
 };
 
-export const handler = async (event) => {
+const _handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   let body = null;
@@ -157,3 +158,5 @@ export const handler = async (event) => {
     return serverError(error.message || 'No se pudo cancelar el CFDI', error.message);
   }
 };
+
+export const handler = withSentry(_handler);

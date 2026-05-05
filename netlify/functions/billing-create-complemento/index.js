@@ -12,6 +12,7 @@ import { getFacturamaConfig } from '../_lib/providers.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 import { resolveRegimeCode } from '../_lib/invoiceLogic.js';
 import { translateFacturamaError } from '../_lib/translateFacturama.js';
+import { withSentry } from '../_lib/sentry.js';
 
 // CP fallback solo si configuracion_empresa.codigo_postal no se capturó.
 // Tanda 4 🔴-6: ahora se lee de configuracion_empresa.
@@ -114,7 +115,7 @@ const postToFacturama = async (payload) => {
   return raw;
 };
 
-export const handler = async (event) => {
+const _handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   let body = null;
@@ -233,3 +234,5 @@ export const handler = async (event) => {
     return serverError(error.message || 'No se pudo generar el complemento de pago', error.message);
   }
 };
+
+export const handler = withSentry(_handler);

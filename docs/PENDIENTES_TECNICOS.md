@@ -12,10 +12,28 @@ Las migraciones del proyecto viven en `supabase/` directamente (no en una subcar
 
 | Migración | Estado |
 |---|---|
-| Última versionada | `058_rpc_update_orden_atomic.sql` |
-| Próximo número libre | `059` |
+| Última versionada | `062_unique_camion_ruta_activa.sql` |
+| Próximo número libre | `063` |
 
 Todas las migraciones son idempotentes (`IF NOT EXISTS` en `ADD COLUMN`, `IF EXISTS` en types/triggers, etc.).
+
+---
+
+## 🟢 Sentry (Tanda 7) — env vars pendientes
+
+Tanda 7 instaló los SDKs de Sentry frontend + backend con source maps,
+pero las env vars deben configurarse en Netlify para activar el reporte.
+**Sin estas vars el ERP funciona idéntico** — Sentry solo queda inerte.
+
+Guía completa: [docs/SENTRY_SETUP.md](./SENTRY_SETUP.md).
+
+| Variable | Origen | Scope |
+|---|---|---|
+| `VITE_SENTRY_DSN` | DSN proyecto frontend (sentry.io) | runtime + build |
+| `SENTRY_DSN_BACKEND` | DSN proyecto backend (sentry.io) | runtime |
+| `SENTRY_ORG` | Slug org sentry.io | build |
+| `SENTRY_PROJECT` | `cubopolar-frontend` | build |
+| `SENTRY_AUTH_TOKEN` | Token con scopes `project:releases` + `org:read` | build |
 
 ---
 

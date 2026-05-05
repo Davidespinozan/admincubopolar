@@ -2,12 +2,13 @@ import { methodNotAllowed, ok, readJsonBody, serverError, badRequest } from '../
 import { canAccessOrden, getAuthenticatedProfile } from '../_lib/auth.js';
 import { getFacturamaConfig } from '../_lib/providers.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
+import { withSentry } from '../_lib/sentry.js';
 
 /**
  * When an order is paid in the ERP, update the payment status in Facturama
  * so both systems stay in sync.
  */
-export const handler = async (event) => {
+const _handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   try {
@@ -58,3 +59,5 @@ export const handler = async (event) => {
     return serverError('Error syncing payment', error.message);
   }
 };
+
+export const handler = withSentry(_handler);
