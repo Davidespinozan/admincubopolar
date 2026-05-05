@@ -15,7 +15,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const [traspasoModal, setTraspasoModal] = useState(false);
   const [sacarModal, setSacarModal] = useState(null); // { cfId, cfNombre }
   const [transModal, setTransModal] = useState(false);
-  const [transForm, setTransForm] = useState({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", notas: "" });
+  const [transForm, setTransForm] = useState({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", cuarto_destino: "CF-1", notas: "" });
   const [guardandoTrans, setGuardandoTrans] = useState(false);
 
   // Producir form — includes destino (congelador) + merma inline opcional
@@ -289,13 +289,24 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const registrarTransformacion = async () => {
     if (guardandoTrans) return;
     if (!transForm.input_sku || !transForm.output_sku || transInputKg <= 0 || transOutputKg <= 0) return;
+    if (!transForm.cuarto_destino) {
+      showToast('Selecciona el cuarto destino');
+      return;
+    }
     setGuardandoTrans(true);
     try {
-      const err = await actions.addTransformacion({ ...transForm, input_kg: transInputKg, output_kg: transOutputKg });
-      if (err && err.message) { showToast('Error: ' + err.message); return; }
-      showToast(`Transformación: ${transInputKg}kg ${transForm.input_sku} → ${transOutputKg}kg ${transForm.output_sku}`);
+      const result = await actions.addTransformacion({
+        ...transForm,
+        input_kg: transInputKg,
+        output_kg: transOutputKg,
+      });
+      if (result?.error) {
+        showToast('Error: ' + result.error);
+        return;
+      }
+      showToast(`Transformación: ${transInputKg}× ${transForm.input_sku} → ${transOutputKg}× ${transForm.output_sku}`);
       setTransModal(false);
-      setTransForm({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", notas: "" });
+      setTransForm({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", cuarto_destino: "CF-1", notas: "" });
     } catch (e) {
       console.error('Error transformación:', e);
       showToast('Error en transformación. Verifica tu conexión.');
@@ -1177,11 +1188,24 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   </div>
                 </div>
               )}
+              {/* Cuarto destino: el output va al CF (mig 057+ comportamiento híbrido) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿A qué cuarto frío entra?</label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {(cuartos || []).map(cf => (
+                    <button key={cf.id} onClick={() => setTransForm(f => ({ ...f, cuarto_destino: String(cf.id) }))}
+                      className={`py-2.5 px-2 rounded-xl text-xs font-bold border-2 text-left ${String(transForm.cuarto_destino) === String(cf.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
+                      {s(cf.nombre)}
+                      <span className="block text-[10px] opacity-70">{s(cf.id)}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
               <input type="text" value={transForm.notas} onChange={e => setTransForm(f => ({ ...f, notas: e.target.value }))}
                 className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm" placeholder="Notas (opcional)" />
             </div>
             <button onClick={registrarTransformacion}
-              disabled={guardandoTrans || !transForm.input_sku || !transForm.output_sku || transInputKg <= 0 || transOutputKg <= 0 || transOutputKg > transInputKg || (transStockInput !== null && transInputKg > transStockInput)}
+              disabled={guardandoTrans || !transForm.input_sku || !transForm.output_sku || !transForm.cuarto_destino || transInputKg <= 0 || transOutputKg <= 0 || transOutputKg > transInputKg || (transStockInput !== null && transInputKg > transStockInput)}
               className="w-full py-4 bg-cyan-700 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40 active:scale-[0.98] transition-transform">
               {guardandoTrans ? 'Guardando...' : 'Registrar transformación'}
             </button>
