@@ -47,4 +47,27 @@ export default [
       'no-empty': ['warn', { allowEmptyCatch: true }],
     },
   },
+  // Tanda 8: bloque dedicado para Netlify Functions (Node.js runtime).
+  // Habilita Buffer/process/console/fetch/URLSearchParams como globals
+  // (env Node + ES2024). Sin esto, eslint reporta no-undef sobre los
+  // 5 globales que el runtime sí provee.
+  {
+    files: ['netlify/functions/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'module',
+      globals: {
+        ...globals.node,
+        ...globals.es2024,
+      },
+    },
+    rules: {
+      'no-undef': 'error',
+      'no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+      }],
+      'no-empty': ['warn', { allowEmptyCatch: true }],
+    },
+  },
 ];

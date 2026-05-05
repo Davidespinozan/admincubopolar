@@ -10,8 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint src --ext .js,.jsx",
-    "lint:fix": "eslint src --ext .js,.jsx --fix"
+    "lint": "eslint src netlify/functions --ext .js,.jsx",
+    "lint:fix": "eslint src netlify/functions --ext .js,.jsx --fix"
   },
   "dependencies": {
     "@sentry/node": "^10.51.0",
