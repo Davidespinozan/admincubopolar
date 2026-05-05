@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { s, n, eqId, fmtMoney, validarRFC, todayLocalISO } from '../utils/safe';
 import { validateDireccion } from '../data/direccionLogic';
+import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
 import { stockDisponiblePorSku } from '../utils/stock';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
@@ -45,7 +46,9 @@ const cliFormEmpty = {
   requiereFactura: false,
   rfc: "",
   correo: "",
-  regimen: "Régimen General",
+  // Tanda 4 🔴-10: regimen guarda código SAT (3 dígitos), no string libre.
+  // 616 = "Sin obligaciones fiscales" (default seguro para cliente sin factura).
+  regimen: "616",
   usoCfdi: "G03",
   cp: "",
   // Dirección estructurada (mig 056). numero_exterior obligatorio.
@@ -240,7 +243,7 @@ export default function NuevaVentaModal({
       tipo: cliForm.tipo,
       rfc: cliForm.requiereFactura ? cliForm.rfc : 'XAXX010101000',
       correo: cliForm.requiereFactura ? cliForm.correo : '',
-      regimen: cliForm.requiereFactura ? cliForm.regimen : 'Sin obligaciones',
+      regimen: cliForm.requiereFactura ? cliForm.regimen : '616',
       usoCfdi: cliForm.requiereFactura ? cliForm.usoCfdi : 'S01',
       cp: cliForm.codigo_postal || cliForm.cp || '34000',
       // Dirección estructurada (mig 056)
@@ -461,6 +464,13 @@ export default function NuevaVentaModal({
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Correo para factura</label>
                   <input value={cliForm.correo} onChange={e => setCliForm(f => ({ ...f, correo: e.target.value }))}
                     className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="correo@empresa.com" type="email" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Régimen fiscal SAT *</label>
+                  <select value={cliForm.regimen} onChange={e => setCliForm(f => ({ ...f, regimen: e.target.value }))}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white">
+                    {REGIMENES_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Uso CFDI</label>

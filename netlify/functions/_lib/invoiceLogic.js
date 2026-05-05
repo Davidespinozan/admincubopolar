@@ -41,16 +41,116 @@ export function isValidRfc(rfc) {
 }
 
 /**
- * Resuelve el código SAT de régimen fiscal.
+ * Detecta si el RFC es el genérico SAT para extranjero sin RFC mexicano.
+ * Tanda 4 🔴-8: el SAT NO permite confundir XEXX con XAXX. Cliente
+ * extranjero debe timbrar con XEXX010101000 + Name='PUBLICO EN GENERAL
+ * EXTRANJERO'; cliente nacional sin RFC con XAXX010101000.
+ */
+export function isRfcExtranjero(rfc) {
+  if (!rfc) return false;
+  return String(rfc).toUpperCase().trim() === 'XEXX010101000';
+}
+
+/**
+ * Detecta si el RFC es el genérico SAT para público en general (nacional
+ * sin RFC).
+ */
+export function isRfcPublicoGeneral(rfc) {
+  if (!rfc) return false;
+  return String(rfc).toUpperCase().trim() === 'XAXX010101000';
+}
+
+/**
+ * Construye el shape del Receiver del CFDI según el tipo de RFC.
+ * Centraliza la decisión nacional vs extranjero vs nominativo.
+ *
+ *   - XEXX → cliente extranjero: Name fijo, CfdiUse='S01', Régimen 616
+ *   - XAXX → público general nacional: Name fijo, CfdiUse='S01', Régimen 616
+ *   - RFC nominativo válido → datos del cliente, fallbacks razonables
+ *   - RFC inválido → tratado como público general nacional (XAXX)
+ *
+ * @param {Object} cliente - { rfc, nombre, regimen, uso_cfdi, cp, correo }
+ * @param {string} fallbackZip - CP del emisor como fallback si cliente sin CP
+ * @returns {{ rfc, name, fiscalRegime, cfdiUse, zipCode, email, isPublicoGeneral, isExtranjero }}
+ */
+export function buildCfdiReceiver(cliente, fallbackZip) {
+  const rfc = String(cliente?.rfc || '').toUpperCase().trim();
+  const fallbackZipStr = String(fallbackZip || '').trim();
+
+  if (isRfcExtranjero(rfc)) {
+    return {
+      rfc: 'XEXX010101000',
+      name: 'PUBLICO EN GENERAL EXTRANJERO',
+      fiscalRegime: '616',
+      cfdiUse: 'S01',
+      zipCode: cliente?.cp || fallbackZipStr,
+      email: cliente?.correo || undefined,
+      isPublicoGeneral: false,
+      isExtranjero: true,
+    };
+  }
+
+  const valido = isValidRfc(rfc);
+  if (valido) {
+    return {
+      rfc,
+      name: cliente?.nombre || 'CLIENTE',
+      fiscalRegime: resolveRegimeCode(cliente?.regimen),
+      cfdiUse: cliente?.uso_cfdi || 'G03',
+      zipCode: cliente?.cp || fallbackZipStr,
+      email: cliente?.correo || undefined,
+      isPublicoGeneral: false,
+      isExtranjero: false,
+    };
+  }
+
+  // Caso default: nacional sin RFC válido o sin RFC → público general
+  return {
+    rfc: 'XAXX010101000',
+    name: 'PUBLICO EN GENERAL',
+    fiscalRegime: '616',
+    cfdiUse: 'S01',
+    zipCode: cliente?.cp || fallbackZipStr,
+    email: cliente?.correo || undefined,
+    isPublicoGeneral: true,
+    isExtranjero: false,
+  };
+}
+
+// Whitelist completa del catálogo SAT c_RegimenFiscal (mismo set que
+// src/data/sat/regimenesFiscales.js — duplicado consciente porque el
+// backend no puede importar src/ y Netlify functions corren standalone).
+const CODIGOS_REGIMEN_SAT = new Set([
+  '601', '603', '605', '606', '607', '608', '610', '611', '612', '614',
+  '615', '616', '620', '621', '622', '623', '624', '625', '626',
+]);
+
+/**
+ * Resuelve el código SAT de régimen fiscal. Tanda 4 🔴-10: la UI ahora
+ * guarda códigos directos (post-mig 060). Esta función:
+ *   1. Si es un código válido del catálogo SAT → devuelve tal cual.
+ *   2. Si es un código de 3 dígitos NO válido → devuelve 616 con warning.
+ *   3. Si es un string legacy ("Régimen General") → mapea por
+ *      REGIME_CODE_MAP (compat con datos pre-mig 060).
+ *   4. Vacío/null/no reconocido → 616 (sin obligaciones, default seguro).
+ *
  * @param {string} rawRegime
  * @returns {string} — código de 3 dígitos
  */
 export function resolveRegimeCode(rawRegime) {
   if (!rawRegime) return '616';
-  const mapped = REGIME_CODE_MAP[rawRegime];
+  const trimmed = String(rawRegime).trim();
+  // Caso normal post-mig 060: ya es código SAT válido.
+  if (CODIGOS_REGIMEN_SAT.has(trimmed)) return trimmed;
+  // Código 3 dígitos pero no es del catálogo → fallback con warning.
+  if (/^\d{3}$/.test(trimmed)) {
+    console.warn(`[invoiceLogic] Código de régimen ${trimmed} no está en catálogo SAT, usando 616`);
+    return '616';
+  }
+  // Compat con strings legacy.
+  const mapped = REGIME_CODE_MAP[trimmed];
   if (mapped) return mapped;
-  if (/^\d{3}$/.test(rawRegime)) return rawRegime; // ya es código
-  return '616'; // público en general fallback
+  return '616';
 }
 
 /**

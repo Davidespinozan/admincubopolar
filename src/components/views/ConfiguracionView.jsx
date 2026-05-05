@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, useToast, supabase } from './viewsCommon';
 import { validarRFC } from '../../utils/safe';
+import { REGIMENES_OPTIONS } from '../../data/sat/regimenesFiscales';
 
 export function ConfiguracionView({ data, actions, user }) {
   const toast = useToast();
@@ -185,7 +186,7 @@ export function ConfiguracionView({ data, actions, user }) {
           <FormInput label="Código postal" value={empresaForm.codigoPostal} onChange={e => setEmpresaForm(f => ({ ...f, codigoPostal: e.target.value }))} maxLength={10} placeholder="80000" />
           <FormInput label="Teléfono" type="tel" value={empresaForm.telefono} onChange={e => setEmpresaForm(f => ({ ...f, telefono: e.target.value }))} placeholder="667 123 4567" />
           <FormInput label="Correo" type="email" value={empresaForm.correo} onChange={e => setEmpresaForm(f => ({ ...f, correo: e.target.value }))} placeholder="contacto@cubopolar.com" />
-          <FormInput label="Régimen fiscal" value={empresaForm.regimenFiscal} onChange={e => setEmpresaForm(f => ({ ...f, regimenFiscal: e.target.value }))} placeholder="601 General de Ley Personas Morales" />
+          <FormSelect label="Régimen fiscal SAT *" options={REGIMENES_OPTIONS} value={empresaForm.regimenFiscal} onChange={e => setEmpresaForm(f => ({ ...f, regimenFiscal: e.target.value }))} />
           <div className="sm:col-span-2">
             <FormInput label="URL del logo (opcional)" value={empresaForm.logoUrl} onChange={e => setEmpresaForm(f => ({ ...f, logoUrl: e.target.value }))} placeholder="https://..." />
           </div>

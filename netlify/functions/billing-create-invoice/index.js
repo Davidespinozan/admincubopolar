@@ -2,6 +2,8 @@ import { badRequest, methodNotAllowed, ok, readJsonBody, serverError } from '../
 import { insertInvoiceAttempt } from '../_lib/persistence.js';
 import { getFacturamaConfig } from '../_lib/providers.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
+import { buildCfdiReceiver } from '../_lib/invoiceLogic.js';
+import { translateFacturamaError } from '../_lib/translateFacturama.js';
 
 const PAYMENT_FORM_MAP = {
   'Efectivo': '01',
@@ -19,66 +21,45 @@ const PAYMENT_METHOD_MAP = {
   'Crédito (fiado)': 'PPD',
 };
 
-// Map SKU to Facturama product catalog
-const PRODUCT_CATALOG = {
-  'HC-5K':  { code: '50202302', name: 'BOLSA CUBO POLAR 5KG' },
-  'HC-25K': { code: '50202302', name: 'BOLSA CUBO POLAR 25KG' },
-  'HT-25K': { code: '50202302', name: 'BOLSA CUBO POLAR 25KG' },
-  'BH-50K': { code: '50202302', name: 'BARRA DE HIELO 50KG' },
-};
+// Defaults SAT cuando productos.clave_prod_serv/clave_unidad están NULL.
+// Backfill por mig 060: hielo→50202302, empaques→24121800. Si quedan
+// productos sin clave (catálogo nuevo), el backend fallback aquí pero
+// loggea warning para que admin actualice el producto.
+const DEFAULT_PROD_SERV_CODE = '50202302';
+const DEFAULT_UNIT_CODE = 'H87'; // pieza
 
-const ISSUER_ZIP_CODE = '34186';
+// CP fallback solo si configuracion_empresa.codigo_postal no está
+// capturado. UX: la UI Configuración pide CP obligatorio.
+const FALLBACK_ISSUER_ZIP = '34186';
 
-// Map human-readable regime to SAT code
-const REGIME_CODE_MAP = {
-  'Régimen General': '601',
-  'General de Ley Personas Morales': '601',
-  'Personas Físicas con Actividades Empresariales': '612',
-  'Régimen Simplificado de Confianza': '626',
-  'Sueldos y Salarios': '605',
-  'Incorporación Fiscal': '621',
-};
-
-// Known generic/test RFCs that should be treated as público general
-const GENERIC_RFCS = new Set(['XAXX010101000', 'XEXX010101000']);
-
-const isValidRfc = (rfc) => {
-  if (!rfc) return false;
-  const upper = rfc.toUpperCase().trim();
-  if (GENERIC_RFCS.has(upper)) return false;
-  // Basic format check: 3-4 letters + 6 digits + 3 alphanumeric
-  return /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/.test(upper);
-};
-
-const buildFacturamaPayload = ({ orden, cliente, lineas }) => {
+const buildFacturamaPayload = ({ orden, cliente, lineas, issuerZip }) => {
   const metodoPago = orden.metodo_pago || 'Efectivo';
   const paymentForm = PAYMENT_FORM_MAP[metodoPago] || '99';
   const paymentMethod = PAYMENT_METHOD_MAP[metodoPago] || 'PUE';
 
-  // If client has valid RFC, use their data; otherwise default to publico general
-  const hasValidRfc = cliente?.rfc && isValidRfc(cliente.rfc);
-  const receiverRfc = hasValidRfc ? cliente.rfc.toUpperCase() : 'XAXX010101000';
-  const receiverName = hasValidRfc ? (cliente.nombre || orden.cliente_nombre) : 'PUBLICO EN GENERAL';
-  const rawRegime = cliente?.regimen || '';
-  const receiverFiscalRegime = REGIME_CODE_MAP[rawRegime] || (/^\d{3}$/.test(rawRegime) ? rawRegime : '616');
-  const receiverCfdiUse = hasValidRfc ? (cliente?.uso_cfdi || 'G03') : 'S01';
-  const receiverZipCode = cliente?.cp || ISSUER_ZIP_CODE;
-  const expeditionPlace = ISSUER_ZIP_CODE;
+  const expeditionPlace = String(issuerZip || FALLBACK_ISSUER_ZIP);
+
+  // 🔴-8 Tanda 4: distinguir XEXX (extranjero) de XAXX (público general
+  // nacional). Lógica centralizada en invoiceLogic.buildCfdiReceiver.
+  const receiver = buildCfdiReceiver(cliente, expeditionPlace);
 
   const items = (lineas || []).map((linea) => {
     const unitPrice = Number(linea.precio_unit || 0);
     const quantity = Number(linea.cantidad || 0);
     const subtotal = Number(linea.subtotal || unitPrice * quantity);
-    // Hielo: IVA tasa 0% (Art. 2-A LIVA)
-    const taxAmount = 0;
 
-    const catalog = PRODUCT_CATALOG[linea.sku] || {};
+    // 🔴-7 Tanda 4: clave SAT viene del producto (mig 060), no de
+    // un PRODUCT_CATALOG hardcoded. Fallback silencioso al default
+    // del catálogo SAT genérico para hielo si null.
+    const claveProdServ = linea.clave_prod_serv || DEFAULT_PROD_SERV_CODE;
+    const claveUnidad = linea.clave_unidad || DEFAULT_UNIT_CODE;
+
     return {
-      ProductCode: catalog.code || '50202302',
+      ProductCode: claveProdServ,
       IdentificationNumber: linea.sku,
-      Description: linea.nombre_producto || catalog.name || linea.sku,
+      Description: linea.nombre_producto || linea.sku,
       Unit: 'Pieza',
-      UnitCode: 'H87',
+      UnitCode: claveUnidad,
       UnitPrice: unitPrice,
       Quantity: quantity,
       Subtotal: subtotal,
@@ -92,11 +73,10 @@ const buildFacturamaPayload = ({ orden, cliente, lineas }) => {
           IsRetention: false,
         },
       ],
-      Total: subtotal, // IVA tasa 0%
+      Total: subtotal, // IVA tasa 0% (Art. 2-A LIVA — hielo)
     };
   });
 
-  const isPublicoGeneral = receiverRfc === 'XAXX010101000';
   const now = new Date();
   const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
   const currentYear = String(now.getFullYear());
@@ -108,17 +88,19 @@ const buildFacturamaPayload = ({ orden, cliente, lineas }) => {
     Currency: 'MXN',
     ExpeditionPlace: expeditionPlace,
     Receiver: {
-      Rfc: receiverRfc,
-      Name: receiverName,
-      FiscalRegime: receiverFiscalRegime,
-      CfdiUse: receiverCfdiUse,
-      TaxZipCode: receiverZipCode,
-      Email: cliente?.correo || undefined,
+      Rfc: receiver.rfc,
+      Name: receiver.name,
+      FiscalRegime: receiver.fiscalRegime,
+      CfdiUse: receiver.cfdiUse,
+      TaxZipCode: receiver.zipCode,
+      Email: receiver.email,
     },
     Items: items,
   };
 
-  if (isPublicoGeneral) {
+  // GlobalInformation solo aplica al XAXX (público general nacional).
+  // Para XEXX el SAT no la requiere/permite.
+  if (receiver.isPublicoGeneral) {
     cfdi.GlobalInformation = {
       Periodicity: '04',
       Months: currentMonth,
@@ -141,30 +123,43 @@ const getOrderContext = async ({ ordenId, folio }) => {
   const { data: orden, error: ordenError } = await query.single();
   if (ordenError || !orden) throw new Error('Orden no encontrada');
 
-  const [{ data: cliente }, { data: lineas, error: lineasError }] = await Promise.all([
+  // 🔴-6 Tanda 4: CP del emisor se lee de configuracion_empresa (id=1
+  // singleton, mig 044) en lugar del hardcoded ISSUER_ZIP_CODE.
+  const [
+    { data: cliente },
+    { data: lineas, error: lineasError },
+    { data: configEmpresa },
+  ] = await Promise.all([
     orden.cliente_id
       ? supabase.from('clientes').select('id, nombre, rfc, regimen, uso_cfdi, cp, correo').eq('id', orden.cliente_id).single()
       : Promise.resolve({ data: null }),
     supabase.from('orden_lineas').select('sku, cantidad, precio_unit, subtotal').eq('orden_id', orden.id),
+    supabase.from('configuracion_empresa').select('codigo_postal').eq('id', 1).maybeSingle(),
   ]);
 
   if (lineasError) throw lineasError;
   if (!lineas || lineas.length === 0) throw new Error('La orden no tiene líneas para facturar');
 
-  // Enrich lines with product names from the productos table
+  // Enrich lines con nombre + clave_prod_serv + clave_unidad del producto.
+  // 🔴-7 Tanda 4: backend lee del catálogo en lugar de PRODUCT_CATALOG hardcoded.
   const skus = [...new Set(lineas.map((l) => l.sku).filter(Boolean))];
   if (skus.length > 0) {
     const { data: productos } = await supabase
       .from('productos')
-      .select('sku, nombre')
+      .select('sku, nombre, clave_prod_serv, clave_unidad')
       .in('sku', skus);
-    const skuNameMap = Object.fromEntries((productos || []).map((p) => [p.sku, p.nombre]));
+    const skuMap = Object.fromEntries((productos || []).map((p) => [p.sku, p]));
     for (const linea of lineas) {
-      linea.nombre_producto = skuNameMap[linea.sku] || linea.sku;
+      const prod = skuMap[linea.sku];
+      linea.nombre_producto = prod?.nombre || linea.sku;
+      linea.clave_prod_serv = prod?.clave_prod_serv || null;
+      linea.clave_unidad = prod?.clave_unidad || null;
     }
   }
 
-  return { orden, cliente, lineas };
+  const issuerZip = configEmpresa?.codigo_postal || FALLBACK_ISSUER_ZIP;
+
+  return { orden, cliente, lineas, issuerZip };
 };
 
 const createFacturamaInvoice = async (payload) => {
@@ -183,9 +178,15 @@ const createFacturamaInvoice = async (payload) => {
   const raw = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401) throw new Error('Credenciales de Facturama incorrectas (401)');
-    const message = raw?.Message || raw?.message || `Facturama HTTP ${response.status}`;
+    // 🟡 I1 Tanda 4: traducir errores de Facturama a mensaje legible
+    // antes de lanzar. El detail crudo (JSON ModelState) se conserva
+    // en el log de invoice_attempts.response_payload para diagnóstico.
+    const friendly = translateFacturamaError(raw, response.status);
     const detail = JSON.stringify(raw?.ModelState || raw);
-    throw new Error(`${message} | ${detail}`);
+    const err = new Error(friendly);
+    err.facturamaDetail = detail;
+    err.facturamaRaw = raw;
+    throw err;
   }
 
   return raw;
@@ -204,8 +205,8 @@ export const handler = async (event) => {
       return badRequest('ordenId or folio is required');
     }
 
-    const { orden, cliente, lineas } = await getOrderContext({ ordenId, folio });
-    let payload = facturamaPayload || buildFacturamaPayload({ orden, cliente, lineas });
+    const { orden, cliente, lineas, issuerZip } = await getOrderContext({ ordenId, folio });
+    let payload = facturamaPayload || buildFacturamaPayload({ orden, cliente, lineas, issuerZip });
 
     let invoice;
     try {
@@ -214,7 +215,7 @@ export const handler = async (event) => {
       // If RFC was rejected, retry as público general
       const isRfcError = firstErr.message && firstErr.message.includes('RFC');
       if (isRfcError && payload.Receiver?.Rfc !== 'XAXX010101000') {
-        payload = buildFacturamaPayload({ orden, cliente: null, lineas });
+        payload = buildFacturamaPayload({ orden, cliente: null, lineas, issuerZip });
         invoice = await createFacturamaInvoice(payload);
       } else {
         throw firstErr;
@@ -252,7 +253,13 @@ export const handler = async (event) => {
           provider_reference: body.folio || null,
           status: 'error',
           request_payload: body.facturamaPayload || {},
-          response_payload: { message: error.message },
+          response_payload: {
+            message: error.message,
+            // 🟡 I1: preservamos el ModelState crudo para diagnóstico
+            // posterior. El usuario solo ve error.message (traducido).
+            facturamaDetail: error.facturamaDetail,
+            facturamaRaw: error.facturamaRaw,
+          },
         });
       } catch {}
     }
