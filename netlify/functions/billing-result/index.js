@@ -1,4 +1,6 @@
-export const handler = async (event) => {
+import { withSentry } from '../_lib/sentry.js';
+
+const _handler = async (event) => {
   const params = event.queryStringParameters || {};
   const status = params.status; // 'success' or 'cancel'
   const folio = params.folio || '';
@@ -61,3 +63,5 @@ export const handler = async (event) => {
     body: html,
   };
 };
+
+export const handler = withSentry(_handler);

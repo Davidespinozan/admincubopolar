@@ -2,8 +2,9 @@ import { Preference } from 'mercadopago';
 import { badRequest, methodNotAllowed, ok, readJsonBody, serverError } from '../_lib/http.js';
 import { getMercadoPagoClient, getStripeClient } from '../_lib/providers.js';
 import { upsertPaymentIntent } from '../_lib/persistence.js';
+import { withSentry } from '../_lib/sentry.js';
 
-export const handler = async (event) => {
+const _handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   try {
@@ -130,3 +131,5 @@ export const handler = async (event) => {
     return serverError(error.message || 'Could not create checkout', error.message);
   }
 };
+
+export const handler = withSentry(_handler);

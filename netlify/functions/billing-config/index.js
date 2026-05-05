@@ -1,6 +1,7 @@
 import { ok } from '../_lib/http.js';
+import { withSentry } from '../_lib/sentry.js';
 
-export const handler = async () => {
+const _handler = async () => {
   return ok({
     payments: {
       stripe: Boolean(process.env.STRIPE_SECRET_KEY),
@@ -11,3 +12,5 @@ export const handler = async () => {
     },
   });
 };
+
+export const handler = withSentry(_handler);

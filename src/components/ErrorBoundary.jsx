@@ -1,5 +1,6 @@
 import { Component } from 'react';
 import { logErrorToDb } from '../utils/errorLog';
+import { captureError } from '../lib/sentry';
 
 const isDev = import.meta.env.DEV;
 
@@ -18,8 +19,12 @@ export default class ErrorBoundary extends Component {
     if (isDev) {
       console.error('ErrorBoundary caught:', error, errorInfo);
     }
-    // Enviar a error_log en Supabase (producción y desarrollo)
+    // Doble destino (Tanda 7):
+    //   1) error_log en Supabase: audit trail interno permanente.
+    //   2) Sentry: alertas en tiempo real, agrupación, source maps, replay.
+    // No hay duplicación lógica; son canales complementarios.
     logErrorToDb(error, errorInfo, { tipo: 'boundary', boundary: 'root' });
+    captureError(error, { componentStack: errorInfo?.componentStack, boundary: 'root' });
   }
 
   handleCopyError = () => {

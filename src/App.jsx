@@ -3,6 +3,7 @@ import LoginScreen from './components/Login'
 import CuboPolarERP from './components/CuboPolarERP'
 import { useSupaStore } from './data/supaStore'
 import { supabase } from './lib/supabase'
+import { setUserContext } from './lib/sentry'
 
 // Lazy-load role-specific views — reduces initial bundle for admin by ~40%
 const ChoferView = lazy(() => import('./components/ChoferView'))
@@ -48,6 +49,13 @@ function App() {
       window.removeEventListener('online', onOnline)
     }
   }, [])
+
+  // Tanda 7: tagear contexto de usuario en Sentry.
+  // Reactivo a login/logout/switch (Admin → adminViewAs no aplica: el user real
+  // no cambió, solo el filtro UI).
+  useEffect(() => {
+    setUserContext(user)
+  }, [user])
 
   const authUserId = user?.authUserId || user?.auth_id || null
 

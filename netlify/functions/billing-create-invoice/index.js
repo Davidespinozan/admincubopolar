@@ -5,6 +5,7 @@ import { getFacturamaConfig } from '../_lib/providers.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 import { buildCfdiReceiver } from '../_lib/invoiceLogic.js';
 import { translateFacturamaError } from '../_lib/translateFacturama.js';
+import { withSentry } from '../_lib/sentry.js';
 
 const ROLES_PERMITIDOS = new Set(['Admin', 'Facturación', 'Ventas']);
 
@@ -195,7 +196,7 @@ const createFacturamaInvoice = async (payload) => {
   return raw;
 };
 
-export const handler = async (event) => {
+const _handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   let body = null;
@@ -298,3 +299,4 @@ export const handler = async (event) => {
     return serverError(error.message || 'Could not create invoice', error.message);
   }
 };
+export const handler = withSentry(_handler);

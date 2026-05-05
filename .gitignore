@@ -9,6 +9,9 @@ dist
 # Local Netlify folder
 .netlify
 
+# Sentry CLI auth token (si se usa local sentry-cli en lugar de env vars)
+.sentryclirc
+
 # Stray files
 npm
 ordenes

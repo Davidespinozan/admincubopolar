@@ -2,8 +2,9 @@ import Stripe from 'stripe';
 import { methodNotAllowed, ok, serverError } from '../_lib/http.js';
 import { requireEnv } from '../_lib/env.js';
 import { insertWebhookEvent, markWebhookEventProcessed, syncOrderPayment, upsertPaymentIntent } from '../_lib/persistence.js';
+import { withSentry } from '../_lib/sentry.js';
 
-export const handler = async (event) => {
+const _handler = async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   try {
@@ -51,3 +52,4 @@ export const handler = async (event) => {
     return serverError('Stripe webhook failed', error.message);
   }
 };
+export const handler = withSentry(_handler);
