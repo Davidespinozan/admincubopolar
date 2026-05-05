@@ -1,5 +1,6 @@
-import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, s, n, eqId, fmtMoney, fmtPct, useToast, useConfirm, Icons } from './viewsCommon';
+import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, s, n, eqId, fmtMoney, fmtPct, useToast, useConfirm, Icons, normalizeStr } from './viewsCommon';
 import { traducirError } from '../../utils/errorMessages';
+import { filtrarPreciosEsp } from '../../data/mejorasMenoresLogic';
 
 export function PreciosView({ data, actions }) {
   const toast = useToast();
@@ -8,6 +9,12 @@ export function PreciosView({ data, actions }) {
   const [errors, setErrors] = useState({});
   const [form, setForm] = useState({clienteId:"",sku:"",precio:""});
   const [saving, setSaving] = useState(false);
+
+  // Tanda 6 🟡-6: filtros de precios especiales para listas con 50+ entradas.
+  const [search, setSearch] = useState('');
+  const [filterSku, setFilterSku] = useState('');
+  const [filterClienteId, setFilterClienteId] = useState('');
+  const [soloDescuentoMayor, setSoloDescuentoMayor] = useState(false);
 
   const openNew = () => {
     setForm({ clienteId: "", sku: "", precio: "" });
@@ -41,6 +48,40 @@ export function PreciosView({ data, actions }) {
     for (const p of data.productos) m[p.sku] = n(p.precio);
     return m;
   }, [data.productos]);
+
+  // Tanda 6 🟡-6: SKUs y clientes con precios especiales para los selects.
+  const skusConPrecios = useMemo(() => {
+    const set = new Set();
+    for (const p of (data.preciosEsp || [])) if (p.sku) set.add(s(p.sku));
+    return [{ value: '', label: 'Todos los SKUs' }, ...[...set].sort().map(sku => ({ value: sku, label: sku }))];
+  }, [data.preciosEsp]);
+
+  const clientesConPrecios = useMemo(() => {
+    const map = new Map();
+    for (const p of (data.preciosEsp || [])) {
+      const id = String(p.clienteId || p.cliente_id || '');
+      if (!id || map.has(id)) continue;
+      map.set(id, s(p.clienteNom || ''));
+    }
+    return [
+      { value: '', label: 'Todos los clientes' },
+      ...[...map.entries()].sort((a, b) => a[1].localeCompare(b[1])).map(([id, nom]) => ({ value: id, label: nom })),
+    ];
+  }, [data.preciosEsp]);
+
+  // Filtro combinado via helper puro (testeable en mejorasMenoresLogic).
+  const preciosFiltered = useMemo(
+    () => filtrarPreciosEsp({
+      precios: data.preciosEsp || [],
+      search,
+      filterSku,
+      filterClienteId,
+      soloDescuentoMayor,
+      precioBaseMap,
+      normalizeStr,
+    }),
+    [data.preciosEsp, search, filterSku, filterClienteId, soloDescuentoMayor, precioBaseMap]
+  );
 
   const save = async () => {
     if (saving) return;
@@ -80,9 +121,40 @@ export function PreciosView({ data, actions }) {
           : prodTerminados.map(p=><div key={p.id} className="flex items-center justify-between gap-2 p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2"><div className="min-w-0"><span className="text-sm font-semibold text-slate-700 truncate block">{s(p.nombre)}</span><span className="text-xs text-slate-400 ml-0">{s(p.sku)}</span></div><span className="text-sm font-bold flex-shrink-0">{fmtMoney(p.precio, { decimals: 2 })}</span></div>)}
       </div>
       <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
-        <h3 className="text-sm font-bold text-slate-700 mb-4">Precios especiales</h3>
-        {(data.preciosEsp || []).length === 0 && <EmptyState message="Sin precios especiales" />}
-        {data.preciosEsp.map(p=>{const base=precioBaseMap[p.sku]||0;const desc=base>0?Math.round(((base-n(p.precio))/base)*100):0;
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <h3 className="text-sm font-bold text-slate-700">Precios especiales</h3>
+          <span className="text-[11px] text-slate-400">{preciosFiltered.length} de {(data.preciosEsp || []).length}</span>
+        </div>
+        {/* Tanda 6 🟡-6: filtros + busqueda */}
+        {(data.preciosEsp || []).length > 0 && (
+          <div className="bg-slate-50 rounded-xl p-2.5 mb-3 space-y-2">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Buscar por cliente o SKU..."
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <FormSelect value={filterSku} onChange={e => setFilterSku(e.target.value)} options={skusConPrecios} />
+              <FormSelect value={filterClienteId} onChange={e => setFilterClienteId(e.target.value)} options={clientesConPrecios} />
+            </div>
+            <label className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={soloDescuentoMayor}
+                onChange={e => setSoloDescuentoMayor(e.target.checked)}
+                className="w-4 h-4"
+              />
+              Mostrar solo descuentos &gt; 10%
+            </label>
+          </div>
+        )}
+        {(data.preciosEsp || []).length === 0
+          ? <EmptyState message="Sin precios especiales" />
+          : preciosFiltered.length === 0
+          ? <EmptyState message="Sin resultados con los filtros aplicados" hint="Ajusta búsqueda o quita filtros" />
+          : preciosFiltered.map(p=>{const base=precioBaseMap[p.sku]||0;const desc=base>0?Math.round(((base-n(p.precio))/base)*100):0;
           return<div key={p.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2"><div className="flex items-center justify-between gap-2"><div className="min-w-0"><span className="text-sm font-semibold text-slate-700 truncate block">{s(p.clienteNom)}</span><span className="text-xs text-slate-400">{s(p.sku)}</span></div><div className="flex items-center gap-2 flex-shrink-0"><span className="text-sm font-bold text-blue-600">{fmtMoney(p.precio, { decimals: 2 })}</span>{desc>0&&<span className="text-xs text-emerald-600">{"-" + fmtPct(desc, 100)}</span>}<button onClick={()=>openEdit(p)} title="Editar precio" aria-label="Editar precio especial" className="text-sm text-slate-500 hover:text-blue-600 p-2 min-w-[36px] min-h-[36px] flex items-center justify-center">✏️</button><button onClick={()=>askConfirm('Eliminar precio especial', `¿Seguro que quieres eliminar el precio especial de ${s(p.clienteNom || 'este cliente')} para ${s(p.sku)}?`, async () => { await actions.deletePrecioEsp(p.id); }, true)} className="text-xs text-red-400 hover:text-red-600 p-2 min-w-[36px] min-h-[36px] flex items-center justify-center" title="Eliminar" aria-label="Eliminar precio especial">✕</button></div></div></div>})}
         <button onClick={openNew} className="mt-3 w-full py-2.5 border border-dashed border-slate-300 rounded-xl text-xs font-semibold text-slate-400 hover:border-blue-400 hover:text-blue-500 flex items-center justify-center gap-1 min-h-[44px]"><Icons.Plus /> Agregar</button>
       </div>

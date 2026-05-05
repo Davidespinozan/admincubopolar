@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { abrirNavegacion } from '../utils/navegacion';
 import { compressImage } from '../utils/compressImage';
 import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
+import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
 import { EmptyState } from './ui/Skeleton';
 const MapaRuta = lazy(() => import('./ui/MapaRuta'));
 
@@ -427,6 +428,13 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const confirmarEntrega = async () => {
     if (confirmandoEntrega || generandoLink) return;
     if (!entregaModal) return;
+    // Tanda 6 🟢-4: la foto del comprobante es obligatoria para Transferencia.
+    // Sin foto el admin no puede conciliar el pago en la cuenta bancaria.
+    const validErr = validarCobroTransferencia({ metodoPago: cobroMetodo, fotoTransf });
+    if (validErr) {
+      showToast(validErr.error);
+      return;
+    }
     // QR / Link de pago → generate checkout
     if (cobroMetodo === "QR / Link de pago") {
       setGenerandoLink(true);
@@ -1115,8 +1123,8 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               {fotoTransf ? (
                 <div><img src={fotoTransf} alt="Comprobante" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoTransf(null)} className="text-xs text-slate-400 mt-1">Tomar otra</button></div>
               ) : (
-                <label className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
-                  <span className="text-lg">📷</span> Foto del comprobante
+                <label className="w-full py-3 border-2 border-dashed border-red-300 bg-red-50/50 rounded-xl text-xs text-red-600 font-semibold flex items-center justify-center gap-2 cursor-pointer">
+                  <span className="text-lg">📷</span> Foto del comprobante (obligatoria)
                   <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePick(setFotoTransf)} />
                 </label>
               )}
@@ -1156,7 +1164,24 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 </label>
               )}
             </div>
-            {!checkoutUrl && <button onClick={confirmarEntrega} disabled={generandoLink || confirmandoEntrega} className={`w-full py-4 text-white font-extrabold rounded-xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform ${(generandoLink || confirmandoEntrega) ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : confirmandoEntrega ? 'Registrando entrega…' : cobroMetodo === "QR / Link de pago" ? "Generar link de pago" : "✓ Confirmar entrega"}</button>}
+            {!checkoutUrl && (() => {
+              // Tanda 6 🟢-4: deshabilitar confirmar si Transferencia sin foto.
+              const faltaFotoTransf = cobroMetodo === "Transferencia" && !fotoTransf;
+              const disabled = generandoLink || confirmandoEntrega || faltaFotoTransf;
+              return (
+                <button
+                  onClick={confirmarEntrega}
+                  disabled={disabled}
+                  className={`w-full py-4 text-white font-extrabold rounded-xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform ${disabled ? 'bg-slate-400' : 'bg-emerald-600'}`}
+                >
+                  {generandoLink ? 'Generando link…'
+                    : confirmandoEntrega ? 'Registrando entrega…'
+                    : faltaFotoTransf ? 'Falta foto del comprobante'
+                    : cobroMetodo === "QR / Link de pago" ? 'Generar link de pago'
+                    : '✓ Confirmar entrega'}
+                </button>
+              );
+            })()}
           </div>
         </div>
       )}
