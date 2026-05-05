@@ -39,7 +39,6 @@ const buildComplementoPayload = ({ orden, cliente, monto, metodoPago, saldoAntes
   // Hielo: IVA tasa 0% — el monto completo es base
   const montoNum = Number(monto);
   const base = montoNum;
-  const iva  = 0;
 
   const paymentDate = new Date().toISOString().replace('Z', '');
 

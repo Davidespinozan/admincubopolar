@@ -165,10 +165,13 @@ export function isPPD(metodoPago) {
 /**
  * Calcula el IVA de un subtotal.
  * Hielo y agua no gasificada: tasa 0% (Art. 2-A LIVA).
- * @param {number} subtotal — precio sin impuesto
+ * El parámetro queda en la firma para que la API funcione si en el
+ * futuro la tasa deja de ser 0; hoy se ignora intencionalmente.
+ *
+ * @param {number} _subtotal — precio sin impuesto (sin uso hoy: tasa 0%)
  * @returns {number}
  */
-export function calcIVA(subtotal) {
+export function calcIVA(_subtotal) {
   return 0; // Hielo: IVA tasa 0%
 }
 
@@ -182,7 +185,6 @@ export function buildCfdiItem(linea, catalog = {}) {
   const unitPrice = Number(linea.precio_unit || 0);
   const quantity  = Number(linea.cantidad || 0);
   const subtotal  = Number(linea.subtotal || unitPrice * quantity);
-  const taxAmount = calcIVA(subtotal);
   const cat       = catalog[linea.sku] || {};
 
   return {

@@ -34,50 +34,6 @@ const markWebhookEventProcessed = async (id) => {
   if (error) throw error;
 };
 
-const syncCuentaPorCobrarPayment = async ({ orden, amount, referencia }) => {
-  const supabase = getSupabaseAdmin();
-  const { data: cxc, error } = await supabase
-    .from('cuentas_por_cobrar')
-    .select('id, cliente_id, monto_original, monto_pagado, saldo_pendiente')
-    .eq('orden_id', orden.id)
-    .order('id', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (error || !cxc) {
-    return { cxcId: null, saldoAntes: 0, saldoDespues: 0 };
-  }
-
-  const montoOriginal = Number(cxc.monto_original || 0);
-  const saldoAntes = Number(cxc.saldo_pendiente || 0);
-  const montoPagado = Number(cxc.monto_pagado || 0);
-  const nuevoMontoPagado = Math.min(montoOriginal, montoPagado + Number(amount || 0));
-  const saldoDespues = Math.max(0, montoOriginal - nuevoMontoPagado);
-  const nuevoEstatus = saldoDespues <= 0 ? 'Pagada' : (nuevoMontoPagado > 0 ? 'Parcial' : 'Pendiente');
-
-  const { error: updateError } = await supabase
-    .from('cuentas_por_cobrar')
-    .update({
-      monto_pagado: nuevoMontoPagado,
-      saldo_pendiente: saldoDespues,
-      estatus: nuevoEstatus,
-    })
-    .eq('id', cxc.id);
-
-  if (updateError) throw updateError;
-
-  const deltaSaldo = saldoAntes - saldoDespues;
-  if (cxc.cliente_id && deltaSaldo > 0) {
-    const { error: saldoError } = await supabase.rpc('increment_saldo', {
-      p_cli: cxc.cliente_id,
-      p_delta: -deltaSaldo,
-    });
-    if (saldoError) throw saldoError;
-  }
-
-  return { cxcId: cxc.id, saldoAntes, saldoDespues, referencia };
-};
-
 const getCuentaPorCobrarPaymentState = async ({ orden, amount }) => {
   const supabase = getSupabaseAdmin();
   const { data: cxc, error } = await supabase
