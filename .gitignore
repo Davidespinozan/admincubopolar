@@ -12,6 +12,11 @@ dist
 # Sentry CLI auth token (si se usa local sentry-cli en lugar de env vars)
 .sentryclirc
 
+# Playwright reports y artifacts
+playwright-report/
+test-results/
+.playwright/
+
 # Stray files
 npm
 ordenes

@@ -49,6 +49,12 @@ export const initSentry = () => {
     // pero todas las llamadas a Sentry quedan inertes.
     return;
   }
+  // Tanda 10: durante tests E2E (Playwright) saltamos Sentry para no
+  // contaminar el dashboard con console.error legítimos de smoke tests.
+  // El flag se setea en page.addInitScript antes de cada test.
+  if (typeof window !== 'undefined' && window.localStorage?.getItem('E2E') === '1') {
+    return;
+  }
 
   Sentry.init({
     dsn: SENTRY_DSN,

@@ -656,7 +656,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
   // ═══ STEP 1: CARGAR (chofer marca cuánto cargó realmente) ═══
   if (step === "cargar") return (
-    <div className={CHOFER_SHELL}>
+    <div className={CHOFER_SHELL} data-testid="chofer-shell">
       <div className="bg-[#07131a] px-4 pb-5 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-4">
           <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cargar camión</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>

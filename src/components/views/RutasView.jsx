@@ -182,8 +182,9 @@ export function RutasView({ data, actions }) {
 
   // Órdenes sin asignar a ruta
   const ordenesSinRuta = useMemo(() => data.ordenes.filter(o => o.estatus === "Asignada" && !o.rutaId), [data.ordenes]);
+  // Tanda 10: filtra cuentas E2E (is_test_account) del dropdown.
   const choferes = useMemo(() => (data.usuarios || [])
-    .filter(u => s(u.rol) === "Chofer")
+    .filter(u => s(u.rol) === "Chofer" && !u.is_test_account)
     .map(u => ({ value: String(u.id), label: s(u.nombre) })), [data.usuarios]);
 
   const ayudantes = useMemo(() => (data.empleados || [])

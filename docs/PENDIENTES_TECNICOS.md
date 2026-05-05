@@ -1,8 +1,78 @@
 # Pendientes técnicos — Cubo Polar
 
-Última actualización: 2026-05-05
+Última actualización: 2026-05-06
 
-Este documento agrupa deuda técnica de bajo riesgo detectada en auditorías recientes. Ninguna acción aquí es urgente. Cada sección dice **claramente** si requiere ejecución de SQL en producción y bajo qué condiciones.
+Este documento agrupa deuda técnica detectada en auditorías recientes. Las secciones marcadas 🔴 son urgentes; el resto es de bajo riesgo. Cada sección dice **claramente** si requiere ejecución de SQL en producción y bajo qué condiciones.
+
+---
+
+## 🔴 SEGURIDAD CRÍTICA — `usuarios.pass` en texto plano
+
+**Descubierto**: Tanda 10 (2026-05-06).
+**Severidad**: ALTA. **Impacto**: confidentiality breach interno.
+
+La columna `usuarios.pass` (`TEXT NOT NULL DEFAULT '1234'`, [001_schema_completo.sql:16](../supabase/001_schema_completo.sql#L16)) conserva contraseñas legacy del sistema pre-Supabase-Auth. Cualquier admin con `SELECT` sobre la tabla (lo cual incluye al rol `Admin` por la política RLS `admin_all` de mig 031) **lee las credenciales de otros usuarios en claro**.
+
+### Por qué no rompe operación
+
+`Login.jsx` no consulta esta columna. La autenticación pasa 100% por `supabase.auth.signInWithPassword` contra `auth.users` (managed). La columna solo es exposición pasiva.
+
+### Plan de fix (PR dedicado, ~2 hrs)
+
+1. **Verificar políticas RLS**: que ningún rol distinto de `service_role` tenga `SELECT` sobre `usuarios.pass`. Posiblemente con `column_privileges` o vista filtrada.
+2. **Limpiar valores**: `UPDATE usuarios SET pass = NULL` para todas las filas (requiere quitar `NOT NULL` primero).
+3. **Migración estructural**: `ALTER TABLE usuarios ALTER COLUMN pass DROP NOT NULL`.
+4. **Auditar consumidores con grep `\.pass\b`** y confirmar que ningún código (frontend, backend, RPCs) lo lee.
+5. **`DROP COLUMN pass`** una vez confirmado paso 4.
+
+### NO hacer en otros PRs
+
+- NO agregar nuevos INSERT que pongan `pass` en algún valor.
+- NO escribir tests que dependan de esta columna.
+- Si un PR necesita crear usuarios via SQL antes del fix, dejar `pass` con su default `'1234'` SOLO para que la cuenta de servicio pueda crearse — pero esa misma cuenta debe autenticar exclusivamente por Supabase Auth.
+
+---
+
+## 🟡 BUG PRE-EXISTENTE — `usuarios.auth_id` faltaba en producción
+
+**Descubierto**: Tanda 10 (2026-05-06).
+**Estado**: ARREGLADO en migración `064_e2e_users_setup.sql`.
+
+`ConfiguracionView.jsx` (creación de usuarios admin), `supaStore.addUsuario` y `auth.js` (backend de netlify functions) asumen que la columna `usuarios.auth_id` existe. La columna estaba prevista en `002_safe_migration.sql:36` pero **no se aplicó en la BD de producción de Cubo Polar** (David verificó con `information_schema.columns` durante Tanda 10).
+
+### Síntoma latente
+
+Cualquier intento de crear un usuario nuevo desde el módulo Configuración fallaba con `column "auth_id" does not exist`. Nadie lo notó porque no se han creado usuarios desde hace tiempo.
+
+El login de usuarios existentes seguía funcionando porque [Login.jsx:29](../src/components/Login.jsx#L29) hace lookup por `email` y App.jsx tiene fallback `byEmail` cuando `byAuth` falla.
+
+### Fix aplicado
+
+Migración 064 agrega la columna defensivamente con `IF NOT EXISTS`:
+
+```sql
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS auth_id UUID;
+CREATE INDEX IF NOT EXISTS idx_usuarios_auth_id ON usuarios (auth_id) WHERE auth_id IS NOT NULL;
+```
+
+Tras correr la migración:
+- ConfiguracionView puede crear usuarios.
+- Los lookups por `auth_id` (App.jsx, auth.js) empiezan a funcionar para cuentas creadas post-064.
+- Cuentas viejas siguen con `auth_id = NULL` y caen al fallback por email — funcional pero no óptimo.
+
+### Backfill opcional (futuro)
+
+Si quieres llenar `auth_id` para todas las cuentas legacy que sí tienen entry en `auth.users` con el mismo email:
+
+```sql
+UPDATE usuarios u
+   SET auth_id = au.id
+  FROM auth.users au
+ WHERE lower(u.email) = lower(au.email)
+   AND u.auth_id IS NULL;
+```
+
+No es urgente — el login funciona sin esto. Solo mejora performance del lookup por auth_id en lugar de email.
 
 ---
 
@@ -12,8 +82,8 @@ Las migraciones del proyecto viven en `supabase/` directamente (no en una subcar
 
 | Migración | Estado |
 |---|---|
-| Última versionada | `062_unique_camion_ruta_activa.sql` |
-| Próximo número libre | `063` |
+| Última versionada | `064_e2e_users_setup.sql` |
+| Próximo número libre | `065` |
 
 Todas las migraciones son idempotentes (`IF NOT EXISTS` en `ADD COLUMN`, `IF EXISTS` en types/triggers, etc.).
 

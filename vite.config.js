@@ -14,6 +14,8 @@ const sentryEnabled = Boolean(
 export default defineConfig(({ mode }) => ({
   test: {
     environment: 'node',
+    // Tanda 10: e2e/** son tests de Playwright (npm run test:e2e), NO de vitest.
+    exclude: ['node_modules/**', 'dist/**', 'e2e/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
