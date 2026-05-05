@@ -386,12 +386,20 @@ export function RutasView({ data, actions }) {
     if (!asignarModal || ordenIds.length === 0) return;
     // Count items for carga
     let totalBolsas = 0;
+    // Tanda 6 🟡-8: detectar clientes sin coords para warning no-bloqueante.
+    const sinCoords = [];
     for (const oid of ordenIds) {
       const ord = data.ordenes.find(o => eqId(o.id, oid));
       if (ord) {
         const prods = s(ord.productos);
         const matches = prods.match(/(\d+)/g);
         if (matches) totalBolsas += matches.reduce((s,v) => s + parseInt(v), 0);
+        const ordLat = ord.latitud_entrega ?? ord.latitudEntrega;
+        const ordLng = ord.longitud_entrega ?? ord.longitudEntrega;
+        const cli = (data.clientes || []).find(c => eqId(c.id, ord.cliente_id || ord.clienteId));
+        const lat = (ordLat !== null && ordLat !== undefined && ordLat !== '') ? Number(ordLat) : cli?.latitud;
+        const lng = (ordLng !== null && ordLng !== undefined && ordLng !== '') ? Number(ordLng) : cli?.longitud;
+        if (!lat || !lng) sinCoords.push(s(ord.cliente || ord.cliente_nombre || `Orden ${ord.folio}`));
       }
     }
     if (actions.asignarOrdenesARuta) {
@@ -402,6 +410,10 @@ export function RutasView({ data, actions }) {
       }
     }
     toast?.success(ordenIds.length + " órdenes asignadas a " + s(asignarModal.nombre));
+    if (sinCoords.length > 0) {
+      const lista = sinCoords.slice(0, 3).join(', ') + (sinCoords.length > 3 ? `, +${sinCoords.length - 3} más` : '');
+      toast?.info(`⚠ Sin ubicación en mapa: ${lista}. El chofer no podrá navegar GPS hasta ${sinCoords.length === 1 ? 'él' : 'ellos'}.`);
+    }
     setAsignarModal(null);
   };
 

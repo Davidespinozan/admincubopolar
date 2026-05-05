@@ -12,6 +12,7 @@ import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react
 import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { s, n, eqId, fmtMoney } from '../utils/safe';
 import { stockDisponiblePorSku, stockDisponibleParaEdicion } from '../utils/stock';
+import { precioParaCliente } from '../data/mejorasMenoresLogic';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 
@@ -33,7 +34,11 @@ export default function EditarVentaModal({
     longitudEntrega: null,
     direccionTouched: false,
   });
-  const [lines, setLines] = useState([{ sku: '', qty: 1, precio: 0 }]);
+  // lines[i]: { sku, qty, precio (actual del catalogo), precioOriginal (snapshot al
+  // momento de la orden). Tanda 6 🟡-2: el modal pre-carga `precio` desde el
+  // catalogo vigente para que coincida con lo que updateOrden persiste, pero
+  // mostramos warning amarillo si difiere de `precioOriginal`.
+  const [lines, setLines] = useState([{ sku: '', qty: 1, precio: 0, precioOriginal: 0 }]);
   const [editandoDireccion, setEditandoDireccion] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -80,14 +85,10 @@ export default function EditarVentaModal({
     return map;
   }, [orden]);
 
-  const getPrice = useCallback((cId, sku) => {
-    if (cId) {
-      const esp = (data?.preciosEsp || []).find(p => eqId(p.clienteId, cId) && p.sku === sku);
-      if (esp) return n(esp.precio);
-    }
-    const prod = (data?.productos || []).find(p => p.sku === sku);
-    return prod ? n(prod.precio) : 0;
-  }, [data?.preciosEsp, data?.productos]);
+  const getPrice = useCallback(
+    (cId, sku) => precioParaCliente(cId, sku, data?.productos || [], data?.preciosEsp || []),
+    [data?.preciosEsp, data?.productos]
+  );
 
   // Para EDITAR: stock disponible = lo que hay físicamente en cuartos
   // + lo que esta orden ya tenía reservado (que se "libera" al editar).
@@ -111,10 +112,18 @@ export default function EditarVentaModal({
     });
     setEditandoDireccion(false);
 
-    // Parsear líneas desde orden.preciosSnapshot (si existe) o desde productos string
+    // Tanda 6 🟡-2: pre-cargar lineas con precio del catalogo vigente
+    // para evitar la inconsistencia "veo $80 pero al guardar cambia a $90".
+    // Conservamos precioOriginal del snapshot para mostrar warning si difiere.
+    const cId = orden.clienteId || orden.cliente_id;
     const snap = Array.isArray(orden.preciosSnapshot) ? orden.preciosSnapshot : null;
     if (snap && snap.length > 0) {
-      setLines(snap.map(l => ({ sku: s(l.sku), qty: n(l.qty), precio: n(l.unitPrice) })));
+      setLines(snap.map(l => ({
+        sku: s(l.sku),
+        qty: n(l.qty),
+        precio: getPrice(cId, s(l.sku)),
+        precioOriginal: n(l.unitPrice),
+      })));
     } else {
       const raw = s(orden.productos);
       const items = [];
@@ -124,12 +133,12 @@ export default function EditarVentaModal({
           if (m) {
             const qty = parseInt(m[1], 10);
             const sku = m[2];
-            const cId = orden.clienteId || orden.cliente_id;
-            items.push({ sku, qty, precio: getPrice(cId, sku) });
+            const precioActual = getPrice(cId, sku);
+            items.push({ sku, qty, precio: precioActual, precioOriginal: precioActual });
           }
         });
       }
-      setLines(items.length ? items : [{ sku: '', qty: 1, precio: 0 }]);
+      setLines(items.length ? items : [{ sku: '', qty: 1, precio: 0, precioOriginal: 0 }]);
     }
   }, [open, orden, getPrice]);
 
@@ -148,17 +157,26 @@ export default function EditarVentaModal({
   );
   const totalCalc = subtotal;
 
-  const addLine = () => setLines(prev => [...prev, { sku: '', qty: 1, precio: 0 }]);
+  const addLine = () => setLines(prev => [...prev, { sku: '', qty: 1, precio: 0, precioOriginal: 0 }]);
   const updateLine = (idx, field, val) => setLines(prev => prev.map((l, i) => {
     if (i !== idx) return l;
     const u = { ...l, [field]: val };
     if (field === 'sku') {
       const cId = orden?.clienteId || orden?.cliente_id;
-      u.precio = getPrice(cId, val);
+      const precio = getPrice(cId, val);
+      u.precio = precio;
+      // SKU recien agregado por el usuario: precioOriginal coincide con precio actual.
+      u.precioOriginal = precio;
     }
     return u;
   }));
   const removeLine = (idx) => setLines(prev => prev.filter((_, i) => i !== idx));
+
+  // Lista de lineas cuyo precio cambio respecto al snapshot original.
+  const lineasConPrecioCambiado = useMemo(
+    () => lines.filter(l => l.sku && n(l.precioOriginal) > 0 && n(l.precio) !== n(l.precioOriginal)),
+    [lines]
+  );
 
   const prodOpts = useMemo(
     () => [{ value: '', label: 'Seleccionar producto...' }, ...prodTerminados.map(p => ({
@@ -246,6 +264,22 @@ export default function EditarVentaModal({
             />
           </div>
 
+          {/* Tanda 6 🟡-2: warning si cambio el precio del catalogo desde
+              que se creo la orden. No bloqueante. */}
+          {lineasConPrecioCambiado.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 space-y-1">
+              <p className="font-bold">⚠ Algunos precios cambiaron desde que se creó la orden</p>
+              <ul className="space-y-0.5 ml-1">
+                {lineasConPrecioCambiado.map((l, i) => (
+                  <li key={i} className="font-mono">
+                    {s(l.sku)}: {fmtMoney(l.precioOriginal, { decimals: 2 })} → <b>{fmtMoney(l.precio, { decimals: 2 })}</b>
+                  </li>
+                ))}
+              </ul>
+              <p>Al guardar se aplicará el precio actual. Si quieres mantener el original, ajústalo manualmente.</p>
+            </div>
+          )}
+
           {/* Productos */}
           <div>
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Productos</label>
@@ -266,6 +300,15 @@ export default function EditarVentaModal({
                       value={l.qty}
                       onChange={e => updateLine(i, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
                       className="w-16 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center min-h-[44px] bg-white"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={l.precio}
+                      onChange={e => updateLine(i, 'precio', Math.max(0, parseFloat(e.target.value) || 0))}
+                      className="w-20 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-right min-h-[44px] bg-white"
+                      title="Precio unitario"
                     />
                     <span className="text-sm font-semibold text-slate-700 w-20 text-right">{fmtMoney(n(l.qty) * n(l.precio))}</span>
                     {lines.length > 1 && (

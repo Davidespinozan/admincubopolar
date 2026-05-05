@@ -4,6 +4,7 @@ import { backendPost } from '../lib/backend';
 import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, validateMarcarNoEntregada, buildNoEntregaPayload, calcReversoChangesNoEntrega, isFacturable, validateCancelacionCFDI } from './ordenLogic';
+import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
 import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
 import { validateTransformacion, buildTransformacionRow, buildInsumoChange, buildOutputChange, buildInsumoRollbackChange } from './transformacionLogic';
@@ -2438,21 +2439,30 @@ export function useSupaStore(userId, userName, userRol) {
         const folio = `R-${String(seq || 13).padStart(3, '0')}`;
         const hoy = new Date().toISOString();
         const cargaObj = r.carga || {};
-        
+
         const { data: newRuta, error } = await supabase.from('rutas').insert({
-          folio, 
-          nombre: r.nombre, 
+          folio,
+          nombre: r.nombre,
           chofer_id: r.choferId || null,
           ayudante_id: r.ayudanteId || null,
           camion_id: r.camionId || null,
-          estatus: 'Programada', 
+          estatus: 'Programada',
           carga: cargaObj,                     // JSONB: {"HC-25K": 50, ...}
           carga_autorizada: r.cargaAutorizada || cargaObj,
           extra_autorizado: r.extraAutorizado || {},
           clientes_asignados: r.clientesAsignados || [],  // [{clienteId, orden}]
           autorizado_at: hoy,
         }).select('id').single();
-        if (error) { t()?.error('Error al crear ruta'); return error; }
+        if (error) {
+          // Tanda 6 🟢-6: traducir violación del UNIQUE de camión activo.
+          const camionMsg = traducirErrorCamionRutaActiva(error);
+          if (camionMsg) {
+            t()?.error(camionMsg);
+            return { error: camionMsg };
+          }
+          t()?.error('Error al crear ruta');
+          return error;
+        }
 
         // Fase 18: ya NO se descuenta inventario al autorizar.
         // El descuento ocurre cuando el chofer confirma carga (confirmarCargaRuta).
@@ -2767,7 +2777,16 @@ export function useSupaStore(userId, userName, userRol) {
         if (r.extraAutorizado !== undefined) update.extra_autorizado = r.extraAutorizado;
         if (r.clientesAsignados !== undefined) update.clientes_asignados = r.clientesAsignados;
         const { error } = await supabase.from('rutas').update(update).eq('id', id);
-        if (error) { t()?.error('Error al actualizar ruta'); return error; }
+        if (error) {
+          // Tanda 6 🟢-6: traducir violación del UNIQUE de camión activo.
+          const camionMsg = traducirErrorCamionRutaActiva(error);
+          if (camionMsg) {
+            t()?.error(camionMsg);
+            return { error: camionMsg };
+          }
+          t()?.error('Error al actualizar ruta');
+          return error;
+        }
         log('Editar', 'Rutas', `Ruta #${id}`);
         rf();
       },

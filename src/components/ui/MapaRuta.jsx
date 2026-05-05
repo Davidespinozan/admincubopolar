@@ -50,7 +50,9 @@ const driverIconHtml = `<div style="
   background:#3b82f6;border:3px solid white;
   box-shadow:0 0 0 4px rgba(59,130,246,0.35)"></div>`;
 
-export default function MapaRuta({ paradas = [] }) {
+// Tanda 6 🟡-8: paradas sin lat/lng se listan en panel lateral con CTA opcional
+// "Editar cliente" si el caller pasa onEditarCliente. Sin coords = no marcador.
+export default function MapaRuta({ paradas = [], onEditarCliente }) {
   const mapRef     = useRef(null);
   const mapInst    = useRef(null);
   const driverMark = useRef(null);
@@ -63,6 +65,10 @@ export default function MapaRuta({ paradas = [] }) {
   const leafletRef = useRef(null);
   const [gpsError, setGpsError] = useState(null);
   const [loading,  setLoading]  = useState(true);
+
+  // Paradas sin coordenadas: no se renderizan en mapa pero el chofer/admin
+  // necesita saber que existen para que pueda capturar la direccion despues.
+  const sinCoords = paradas.filter(p => !p.latitud || !p.longitud);
 
   // ─── Mount-once: crear mapa, capa base, ruta OSRM, watch GPS ──────
   useEffect(() => {
@@ -254,6 +260,31 @@ export default function MapaRuta({ paradas = [] }) {
             <div className="w-3 h-3 rounded-full bg-blue-500 flex-shrink-0" />
             <span className="text-slate-600">Tu posición</span>
           </div>
+        </div>
+      )}
+
+      {/* Tanda 6 🟡-8: panel de paradas sin coordenadas (no aparecen en mapa). */}
+      {!loading && sinCoords.length > 0 && (
+        <div
+          className="absolute top-3 left-3 max-w-[55%] bg-white/95 backdrop-blur-sm rounded-xl px-3 py-2 text-xs shadow border border-amber-300"
+          title="Estas paradas no tienen coordenadas. Necesitan dirección con lat/lng para aparecer en el mapa."
+        >
+          <p className="font-bold text-amber-700 mb-1">⚠ Sin ubicación ({sinCoords.length})</p>
+          <ul className="space-y-1 max-h-32 overflow-y-auto">
+            {sinCoords.map((p, i) => (
+              <li key={p.id ?? i} className="flex items-center justify-between gap-2">
+                <span className="text-slate-700 truncate">{p.nombre || p.cliente || `Parada ${i + 1}`}</span>
+                {onEditarCliente && (
+                  <button
+                    onClick={() => onEditarCliente(p)}
+                    className="text-blue-600 font-semibold hover:underline flex-shrink-0"
+                  >
+                    Editar
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
     </div>
