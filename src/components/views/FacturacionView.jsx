@@ -1,8 +1,11 @@
 import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, EmptyState, s, n, fmtDate, fmtMoney, useToast } from './viewsCommon';
+import CancelarCFDIModal from '../CancelarCFDIModal';
 
 export function FacturacionView({ data, actions }) {
   const toast = useToast();
   const [previewOrden, setPreviewOrden] = useState(null);
+  const [cancelOrden, setCancelOrden] = useState(null);
+  const [filtroEstado, setFiltroEstado] = useState('todas'); // 'todas' | 'vigentes' | 'canceladas'
 
   const { timbradas, totalFact } = useMemo(() => {
     let count = 0, sum = 0;
@@ -22,8 +25,13 @@ const handleReintento = useCallback(async (ordenId) => {
       await actions.reintentarComplemento?.(ordenId);
     }, [actions]);
 
-  // Órdenes ya timbradas
-  const ordenesTimbradas = useMemo(() => (data.ordenes || []).filter(o => o.facturama_id), [data.ordenes]);
+  // Órdenes timbradas (incluye canceladas, que conservan facturama_id como histórico).
+  const ordenesTimbradasAll = useMemo(() => (data.ordenes || []).filter(o => o.facturama_id), [data.ordenes]);
+  const ordenesTimbradas = useMemo(() => {
+    if (filtroEstado === 'vigentes') return ordenesTimbradasAll.filter(o => !o.cfdi_cancelado_at);
+    if (filtroEstado === 'canceladas') return ordenesTimbradasAll.filter(o => !!o.cfdi_cancelado_at);
+    return ordenesTimbradasAll;
+  }, [ordenesTimbradasAll, filtroEstado]);
 
   // Para cada orden timbrada: saber si tiene complemento generado
   const complementosPorOrden = useMemo(() => {
@@ -85,15 +93,34 @@ const handleReintento = useCallback(async (ordenId) => {
     </div>
 
     {/* Facturas timbradas con estado de complemento */}
-    {ordenesTimbradas.length > 0 && (
+    {ordenesTimbradasAll.length > 0 && (
       <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
-        <h3 className="text-sm font-bold text-slate-700 mb-4">Facturas timbradas</h3>
+        <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+          <h3 className="text-sm font-bold text-slate-700">Facturas timbradas</h3>
+          <div className="flex gap-1 text-[11px]">
+            {[
+              { key: 'todas',      label: 'Todas' },
+              { key: 'vigentes',   label: 'Vigentes' },
+              { key: 'canceladas', label: 'Canceladas' },
+            ].map(b => (
+              <button
+                key={b.key}
+                onClick={() => setFiltroEstado(b.key)}
+                className={`px-2.5 py-1 rounded font-semibold ${filtroEstado === b.key ? 'bg-blue-100 text-blue-700' : 'bg-slate-50 text-slate-500 hover:bg-slate-100'}`}
+              >{b.label}</button>
+            ))}
+          </div>
+        </div>
+        {ordenesTimbradas.length === 0 ?
+          <p className="text-xs text-slate-400 text-center py-4">No hay facturas en este filtro</p>
+        :
         <div className="space-y-2">
           {ordenesTimbradas.map(o => {
             const esPPD = s(o.metodo_pago).toLowerCase().includes('crédito');
             const tieneComplemento = complementosPorOrden[o.id];
+            const cancelado = !!o.cfdi_cancelado_at;
             return (
-              <div key={o.id} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0 gap-2 flex-wrap">
+              <div key={o.id} className={`flex items-center justify-between py-2 border-b border-slate-50 last:border-0 gap-2 flex-wrap ${cancelado ? 'opacity-70' : ''}`}>
                 <div className="flex items-center gap-3 min-w-0">
                   <span className="font-mono text-xs font-bold text-slate-700">{s(o.folio)}</span>
                   <span className="text-xs text-slate-500 truncate">{s(o.cliente || o.cliente_nombre)}</span>
@@ -104,24 +131,54 @@ const handleReintento = useCallback(async (ordenId) => {
                       CFDI {s(o.facturama_folio)}
                     </span>
                   )}
+                  {cancelado ? (
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-50 text-red-700"
+                      title={`Motivo ${s(o.cfdi_cancelado_motivo)} — ${fmtDate(o.cfdi_cancelado_at)}`}
+                    >
+                      ✕ Cancelada {s(o.cfdi_cancelado_motivo) ? `(${s(o.cfdi_cancelado_motivo)})` : ''}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                      ✓ Vigente
+                    </span>
+                  )}
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${esPPD ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
                     {esPPD ? 'PPD' : 'PUE'}
                   </span>
-                  {esPPD && (
+                  {!cancelado && esPPD && (
                     tieneComplemento ?
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">✓ Complemento</span> :
                         <button onClick={() => handleReintento(o.id)} className="text-[10px] font-bold px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
                           ⚠ Reintentar complemento
                       </button>
                   )}
-                  {!esPPD && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">✓ Pagado</span>}
+                  {!cancelado && !esPPD && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">✓ Pagado</span>}
+                  {!cancelado && (
+                    <button
+                      onClick={() => setCancelOrden(o)}
+                      className="text-[10px] font-bold px-2.5 py-1 rounded bg-slate-100 text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors"
+                      title="Cancelar este CFDI ante SAT"
+                    >
+                      Cancelar CFDI
+                    </button>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
+        }
       </div>
     )}
+
+    <CancelarCFDIModal
+      open={!!cancelOrden}
+      orden={cancelOrden}
+      actions={actions}
+      onClose={() => setCancelOrden(null)}
+      onSuccess={() => setCancelOrden(null)}
+    />
 
     {/* ═══ MODAL: Vista previa de factura ═══ */}
     <Modal open={!!previewOrden} onClose={() => setPreviewOrden(null)} title="Vista previa de factura" wide>

@@ -81,6 +81,107 @@ export function formatFolio(seq) {
   return `OV-${String(seq || 1).padStart(4, '0')}`;
 }
 
+// ─── FACTURACIÓN (FSM) ───────────────────────────────────────
+// Helpers puros para decidir si una orden está pendiente de timbrar
+// o ya tiene un CFDI vigente. Se usan tanto en supaStore.facturacionPendiente
+// como en FacturacionView y en billing-create-invoice (idempotency).
+//
+// Convenciones:
+//   - requiere_factura: toggle del UI; si es false la orden no aplica para CFDI.
+//   - facturama_uuid: presente cuando se timbró exitosamente.
+//   - cfdi_cancelado_at: presente cuando el CFDI fue cancelado ante SAT
+//     (Tanda 5). Si está poblado, la orden vuelve a ser facturable
+//     (re-timbrado permitido) — el UUID anterior queda como histórico.
+
+/**
+ * Una orden está pendiente de timbrar si:
+ *   - requiere_factura = true
+ *   - estatus = 'Entregada'
+ *   - NO tiene CFDI vigente (sin facturama_uuid, o el último fue cancelado)
+ *
+ * @param {Object} orden — { estatus, requiere_factura, facturama_uuid, cfdi_cancelado_at }
+ * @returns {boolean}
+ */
+export function isFacturable(orden) {
+  if (!orden) return false;
+  if (!orden.requiere_factura) return false;
+  if (String(orden.estatus || '') !== 'Entregada') return false;
+  if (!orden.facturama_uuid) return true;
+  return !!orden.cfdi_cancelado_at;
+}
+
+/**
+ * Una orden está facturada (CFDI vigente ante SAT) si:
+ *   - tiene facturama_uuid
+ *   - cfdi_cancelado_at está vacío
+ *
+ * Nota: no chequeamos requiere_factura — si por alguna razón hay UUID
+ * en la orden (datos legacy), la consideramos facturada igualmente
+ * para no perder el historial.
+ *
+ * @param {Object} orden
+ * @returns {boolean}
+ */
+export function isFacturada(orden) {
+  if (!orden) return false;
+  if (!orden.facturama_uuid) return false;
+  return !orden.cfdi_cancelado_at;
+}
+
+/**
+ * Valida si una orden puede cancelar su CFDI.
+ * Reglas:
+ *   1. Debe tener un CFDI vigente (isFacturada == true).
+ *   2. Motivo debe ser código SAT válido (01-04).
+ *   3. Si motivo='01', uuidSustituto es obligatorio.
+ *
+ * @param {Object} params
+ * @param {Object} params.orden
+ * @param {string} params.motivo
+ * @param {string} [params.uuidSustituto]
+ * @returns {{ error: string }|null}
+ */
+export function validateCancelacionCFDI({ orden, motivo, uuidSustituto }) {
+  if (!isFacturada(orden)) {
+    return { error: 'Esta orden no tiene un CFDI vigente que cancelar' };
+  }
+  const mot = String(motivo || '').trim();
+  if (!['01', '02', '03', '04'].includes(mot)) {
+    return { error: 'Motivo SAT inválido (debe ser 01, 02, 03 o 04)' };
+  }
+  if (mot === '01') {
+    const sus = String(uuidSustituto || '').trim();
+    if (!sus) {
+      return { error: 'El motivo 01 requiere el UUID del CFDI que sustituye al cancelado' };
+    }
+  }
+  return null;
+}
+
+/**
+ * Construye el payload del UPDATE de la orden tras cancelar el CFDI.
+ * Revierte estatus a 'Entregada' (vuelve a aparecer como pendiente
+ * facturable) y guarda las anotaciones de cancelación.
+ *
+ * @param {Object} params
+ * @param {string} params.motivo
+ * @param {string} [params.motivoDetalle]
+ * @param {string} [params.uuidSustituto]
+ * @param {string} params.usuario
+ * @param {Date}   [params.now=new Date()]
+ * @returns {Object}
+ */
+export function buildAnotacionCancelacionCFDI({ motivo, motivoDetalle, uuidSustituto, usuario, now = new Date() }) {
+  return {
+    estatus: 'Entregada',
+    cfdi_cancelado_at: now.toISOString(),
+    cfdi_cancelado_motivo: String(motivo || '').trim(),
+    cfdi_cancelado_motivo_detalle: motivoDetalle ? String(motivoDetalle).trim() : null,
+    cfdi_cancelado_uuid_sustituto: uuidSustituto ? String(uuidSustituto).trim() : null,
+    cfdi_cancelado_por: String(usuario || 'Admin'),
+  };
+}
+
 // ─── CANCELACIÓN ──────────────────────────────────────────────
 
 /**
