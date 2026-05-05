@@ -252,10 +252,15 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     return () => clearInterval(interval);
   }, [step, miRutaActiva?.carga_solicitada_at]);
 
-  // GPS tracking: enviar ubicación cada 30s cuando step = "ruta"
+  // GPS tracking: enviar ubicación cada 30s cuando step = "ruta".
+  // Captura errores de Supabase y muestra una alerta UNA vez por sesión
+  // si hay 5 fallos consecutivos (sin spam de toasts).
   useEffect(() => {
     const esEnRuta = step === 'ruta' && miRutaActiva?.id && user?.id;
     if (!esEnRuta || !navigator.geolocation || !supabase) return;
+
+    let fallosConsecutivos = 0;
+    let avisoMostrado = false;
 
     const enviarUbicacion = () => {
       navigator.geolocation.getCurrentPosition(
@@ -266,9 +271,22 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             latitud: pos.coords.latitude,
             longitud: pos.coords.longitude,
             precision_m: pos.coords.accuracy,
-          }).then(() => {});
+          }).then(({ error }) => {
+            if (error) {
+              fallosConsecutivos += 1;
+              console.warn('[GPS]', error.message);
+              if (fallosConsecutivos >= 5 && !avisoMostrado) {
+                avisoMostrado = true;
+                showToast('GPS no se está registrando — admin no te ve en el mapa');
+              }
+            } else if (fallosConsecutivos > 0) {
+              // Recuperación: reset contador para permitir nuevo aviso si vuelve a fallar
+              fallosConsecutivos = 0;
+              avisoMostrado = false;
+            }
+          });
         },
-        () => {}, // Error silencioso — GPS no disponible
+        () => {}, // Error silencioso del navegador (GPS off, permiso denegado)
         { enableHighAccuracy: true, timeout: 10000 }
       );
     };
@@ -929,6 +947,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         <Suspense fallback={<div className="h-[340px] rounded-[22px] bg-slate-100 flex items-center justify-center text-sm text-slate-400">Cargando mapa...</div>}>
           <MapaRuta
             paradas={ordenesConDetalle.map(o => ({
+              id:        o.id,
               latitud:   o.latitud,
               longitud:  o.longitud,
               nombre:    o.clienteNombre,

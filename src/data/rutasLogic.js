@@ -2,6 +2,31 @@
 import { centavos } from '../utils/safe';
 
 /**
+ * Estados terminales de una ruta. No se puede editar/cancelar/reasignar.
+ * Mantener en sync con el ENUM `estatus_ruta` (mig 001/002 + 039).
+ */
+const ESTADOS_TERMINALES_RUTA = new Set(['Cerrada', 'Cancelada', 'Completada']);
+
+/**
+ * Valida si una ruta puede editarse según su estatus actual.
+ * Bloquea si está en estado terminal (cerrada, cancelada, completada) —
+ * editar carga/chofer/camión a una ruta histórica corrompe los datos
+ * del cierre y los reportes.
+ *
+ * @param {string} estatusActual
+ * @returns {{ error: string }|null}
+ */
+export function validateEdicionRuta(estatusActual) {
+  const est = String(estatusActual || '').trim();
+  if (ESTADOS_TERMINALES_RUTA.has(est)) {
+    return {
+      error: 'No se puede editar una ruta cerrada, cancelada o completada',
+    };
+  }
+  return null;
+}
+
+/**
  * Convierte el objeto de devoluciones en texto legible para el log.
  * @param {Record<string, number>} devolucionObj — { "HC-5K": 3, "HC-25K": 0 }
  * @returns {string} — "3×HC-5K" | "0" si todo es 0
