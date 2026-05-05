@@ -759,6 +759,9 @@ export function useSupaStore(userId, userName, userRol) {
           costo_unitario: Number(p.costo_unitario || p.costoUnitario) || 0,
           proveedor: p.proveedor || null,
           empaque_sku: p.empaque_sku || p.empaqueSku || null,
+          // Tanda 4 🔴-7: claves SAT del producto (mig 060).
+          clave_prod_serv: p.clave_prod_serv || p.claveProdServ || null,
+          clave_unidad: p.clave_unidad || p.claveUnidad || 'H87',
         });
         if (error) { t()?.error('Error al crear producto'); return error; }
         log('Crear', 'Productos', `${p.sku} — ${p.nombre}`);
@@ -797,6 +800,12 @@ export function useSupaStore(userId, userName, userRol) {
           proveedor: p.proveedor || null,
           empaque_sku: p.empaque_sku || p.empaqueSku || null,
         };
+        // Tanda 4 🔴-7: claves SAT (mig 060). Snake o camel; null permitido
+        // para limpiar (fallback en backend).
+        if (p.clave_prod_serv !== undefined) update.clave_prod_serv = p.clave_prod_serv || null;
+        else if (p.claveProdServ !== undefined) update.clave_prod_serv = p.claveProdServ || null;
+        if (p.clave_unidad !== undefined) update.clave_unidad = p.clave_unidad || 'H87';
+        else if (p.claveUnidad !== undefined) update.clave_unidad = p.claveUnidad || 'H87';
         if (p.stock !== undefined && p.stock !== null && p.stock !== '') update.stock = Number(p.stock) || 0;
         const { error } = await supabase.from('productos').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar producto: ' + error.message); return error; }

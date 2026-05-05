@@ -8,14 +8,14 @@ export function ProductosView({ data, actions }) {
   const [filterTipo, setFilterTipo] = useState("");
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
-  const empty = {sku:"",nombre:"",tipo:"Producto Terminado",stock:0,ubicacion:"CF-1",precio:0,costoUnitario:0,proveedor:"",empaqueSku:""};
+  const empty = {sku:"",nombre:"",tipo:"Producto Terminado",stock:0,ubicacion:"CF-1",precio:0,costoUnitario:0,proveedor:"",empaqueSku:"",claveProdServ:"",claveUnidad:"H87"};
   const [form, setForm] = useState(empty);
   const [saving, setSaving] = useState(false);
 
   const dSearch = useDebounce(search);
 
   const openNew = () => { setForm(empty); setErrors({}); setModal("new"); };
-  const openEdit = (p) => { setForm({sku:s(p.sku),nombre:s(p.nombre),tipo:s(p.tipo),stock:n(p.stock),ubicacion:s(p.ubicacion),precio:n(p.precio),costoUnitario:n(p.costo_unitario||p.costoUnitario),proveedor:s(p.proveedor),empaqueSku:s(p.empaque_sku||p.empaqueSku)}); setErrors({}); setModal(p); };
+  const openEdit = (p) => { setForm({sku:s(p.sku),nombre:s(p.nombre),tipo:s(p.tipo),stock:n(p.stock),ubicacion:s(p.ubicacion),precio:n(p.precio),costoUnitario:n(p.costo_unitario||p.costoUnitario),proveedor:s(p.proveedor),empaqueSku:s(p.empaque_sku||p.empaqueSku),claveProdServ:s(p.clave_prod_serv||p.claveProdServ),claveUnidad:s(p.clave_unidad||p.claveUnidad)||"H87"}); setErrors({}); setModal(p); };
 
   const save = async () => {
     if (saving) return;
@@ -33,6 +33,10 @@ export function ProductosView({ data, actions }) {
       costo_unitario: form.tipo === "Empaque" ? Number(form.costoUnitario) || 0 : 0,
       proveedor: form.proveedor || null,
       empaque_sku: form.tipo === "Producto Terminado" ? form.empaqueSku || null : null,
+      // Tanda 4 🔴-7: clave SAT por producto (mig 060). El backend usa
+      // estas para construir el CFDI item; null → fallback con warning.
+      clave_prod_serv: form.claveProdServ?.trim() || null,
+      clave_unidad: form.claveUnidad?.trim() || 'H87',
     };
     setSaving(true);
     try {
@@ -125,6 +129,35 @@ export function ProductosView({ data, actions }) {
             <p className="text-xs text-slate-400 -mt-2">Este costo se usa para calcular el costo de producción</p>
           </>
         )}
+
+        {/* Tanda 4 🔴-7: claves SAT para CFDI 4.0. Hielo: 50202302; Empaque: 24121800. */}
+        <details className="mt-2 sm:col-span-2">
+          <summary className="cursor-pointer text-xs text-slate-500 font-semibold hover:text-slate-700">
+            🧾 Claves SAT para facturación (CFDI 4.0)
+          </summary>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
+            <FormInput
+              label="Clave producto/servicio SAT"
+              value={form.claveProdServ}
+              onChange={e=>setForm({...form,claveProdServ:e.target.value.replace(/\D/g,'').slice(0,8)})}
+              placeholder="Ej: 50202302 (hielo) — 24121800 (empaques)"
+              maxLength={8}
+            />
+            <FormInput
+              label="Clave unidad SAT"
+              value={form.claveUnidad}
+              onChange={e=>setForm({...form,claveUnidad:e.target.value.toUpperCase().slice(0,5)})}
+              placeholder="H87 (pieza) — KGM (kilogramo)"
+              maxLength={5}
+            />
+            <p className="text-[11px] text-slate-400 sm:col-span-2 -mt-1">
+              Catálogo SAT: <a href="https://www.sat.gob.mx/consultas/53693/catalogo-de-productos-y-servicios" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">c_ClaveProdServ</a>
+              {' · '}
+              <a href="https://www.sat.gob.mx/consultas/14060/catalogo-de-claves-de-unidad-de-medida-(c_unidad)" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">c_ClaveUnidad</a>
+              {'. '}Si lo dejas vacío, el backend usa fallback 50202302 / H87 con warning en logs.
+            </p>
+          </div>
+        </details>
       </div>
       {modal !== "new" && (
         <button onClick={() => askConfirm("Eliminar producto", `¿Eliminar "${s(modal.nombre)}" (${s(modal.sku)})? Esta acción no se puede deshacer.`, async () => {

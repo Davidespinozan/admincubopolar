@@ -1,6 +1,7 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, fmtMoney, useDebounce, useToast, reporteClientes, PAGE_SIZE, Paginator } from './viewsCommon';
 import DireccionForm from '../ui/DireccionForm';
 import { validarRFC, normalizeStr, formatDireccion, validateDireccion } from '../../utils/safe';
+import { REGIMENES_OPTIONS } from '../../data/sat/regimenesFiscales';
 
 export function ClientesView({ data, actions }) {
   const toast = useToast();
@@ -14,7 +15,7 @@ export function ClientesView({ data, actions }) {
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
   const empty = {
-    nombre:"",nombreComercial:"",rfc:"",regimen:"Régimen General",usoCfdi:"G03",
+    nombre:"",nombreComercial:"",rfc:"",regimen:"616",usoCfdi:"G03",
     correo:"",tipo:"Tienda",contacto:"",
     // Dirección estructurada (mig 056). cp legacy queda fuera del DireccionForm
     // y se llena vía codigo_postal — ver doc deuda en PENDIENTES_TECNICOS.md.
@@ -35,7 +36,7 @@ export function ClientesView({ data, actions }) {
       nombre: s(c.nombre),
       nombreComercial: s(c.nombreComercial || c.nombre_comercial),
       rfc: s(c.rfc),
-      regimen: s(c.regimen) || "Régimen General",
+      regimen: s(c.regimen) || "616",
       usoCfdi: s(c.usoCfdi) || "G03",
       cp: s(c.cp),
       correo: s(c.correo),
@@ -352,7 +353,7 @@ export function ClientesView({ data, actions }) {
               ⚙️ Datos fiscales avanzados (opcional)
             </summary>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
-              <FormSelect label="Régimen fiscal" options={["Régimen General","Régimen Simplificado","Sin obligaciones"]} value={form.regimen} onChange={e=>setForm({...form,regimen:e.target.value})} />
+              <FormSelect label="Régimen fiscal SAT" options={REGIMENES_OPTIONS} value={form.regimen} onChange={e=>setForm({...form,regimen:e.target.value})} />
               <FormSelect label="Uso CFDI" options={["G01","G03","S01","P01"]} value={form.usoCfdi} onChange={e=>setForm({...form,usoCfdi:e.target.value})} />
             </div>
           </details>

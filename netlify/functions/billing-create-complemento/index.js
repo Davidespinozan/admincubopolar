@@ -10,8 +10,12 @@ import { getAuthenticatedProfile } from '../_lib/auth.js';
 import { insertInvoiceAttempt } from '../_lib/persistence.js';
 import { getFacturamaConfig } from '../_lib/providers.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
+import { resolveRegimeCode } from '../_lib/invoiceLogic.js';
+import { translateFacturamaError } from '../_lib/translateFacturama.js';
 
-const ISSUER_ZIP_CODE = '34186';
+// CP fallback solo si configuracion_empresa.codigo_postal no se capturó.
+// Tanda 4 🔴-6: ahora se lee de configuracion_empresa.
+const FALLBACK_ISSUER_ZIP = '34186';
 
 const PAYMENT_FORM_MAP = {
   'Efectivo': '01',
@@ -23,20 +27,13 @@ const PAYMENT_FORM_MAP = {
   'Crédito': '99',
 };
 
-const REGIME_CODE_MAP = {
-  'Régimen General': '601',
-  'General de Ley Personas Morales': '601',
-  'Personas Físicas con Actividades Empresariales': '612',
-  'Régimen Simplificado de Confianza': '626',
-  'Sueldos y Salarios': '605',
-  'Incorporación Fiscal': '621',
-};
-
-const buildComplementoPayload = ({ orden, cliente, monto, metodoPago, saldoAntes, saldoDespues, pagoNum }) => {
+const buildComplementoPayload = ({ orden, cliente, monto, metodoPago, saldoAntes, saldoDespues, pagoNum, issuerZip }) => {
   // Receiver — same as original invoice
   const rfc = cliente?.rfc?.toUpperCase() || 'XAXX010101000';
-  const rawRegime = cliente?.regimen || '';
-  const fiscalRegime = REGIME_CODE_MAP[rawRegime] || (/^\d{3}$/.test(rawRegime) ? rawRegime : '616');
+  // Tanda 4 🔴-10: resolveRegimeCode acepta tanto códigos directos
+  // (formato moderno post-mig 060) como strings legacy.
+  const fiscalRegime = resolveRegimeCode(cliente?.regimen);
+  const expeditionPlace = String(issuerZip || FALLBACK_ISSUER_ZIP);
 
   // Hielo: IVA tasa 0% — el monto completo es base
   const montoNum = Number(monto);
@@ -48,13 +45,13 @@ const buildComplementoPayload = ({ orden, cliente, monto, metodoPago, saldoAntes
   return {
     CfdiType: 'P',
     Currency: 'XXX',        // Requerido por SAT para el CFDI del complemento
-    ExpeditionPlace: ISSUER_ZIP_CODE,
+    ExpeditionPlace: expeditionPlace,
     Receiver: {
       Rfc: rfc,
       Name: cliente?.nombre || orden.cliente_nombre || 'PUBLICO EN GENERAL',
       FiscalRegime: fiscalRegime,
       CfdiUse: 'CP01',      // Uso exclusivo para complementos de pago
-      TaxZipCode: cliente?.cp || ISSUER_ZIP_CODE,
+      TaxZipCode: cliente?.cp || expeditionPlace,
     },
     Payments: [
       {
@@ -104,9 +101,14 @@ const postToFacturama = async (payload) => {
   const raw = await response.json().catch(() => ({}));
   if (!response.ok) {
     if (response.status === 401) throw new Error('Credenciales de Facturama incorrectas (401)');
-    const message = raw?.Message || raw?.message || `Facturama HTTP ${response.status}`;
+    // 🟡 I1 Tanda 4: traducir errores de Facturama. Detail crudo se
+    // preserva en err.facturamaDetail/Raw para auditoría.
+    const friendly = translateFacturamaError(raw, response.status);
     const detail = JSON.stringify(raw?.ModelState || raw);
-    throw new Error(`${message} | ${detail}`);
+    const err = new Error(friendly);
+    err.facturamaDetail = detail;
+    err.facturamaRaw = raw;
+    throw err;
   }
 
   return raw;
@@ -167,10 +169,19 @@ export const handler = async (event) => {
       return ok({ ...existingAttempt.response_payload, cached: true });
     }
 
-    // Obtener cliente para el receptor del CFDI
-    const { data: cliente } = cxc.cliente_id
-      ? await supabase.from('clientes').select('nombre, rfc, regimen, cp').eq('id', cxc.cliente_id).single()
-      : { data: null };
+    // Obtener cliente para el receptor del CFDI + CP del emisor
+    // (Tanda 4 🔴-6: configuracion_empresa.codigo_postal en lugar de
+    // ISSUER_ZIP_CODE hardcoded).
+    const [
+      { data: cliente },
+      { data: configEmpresa },
+    ] = await Promise.all([
+      cxc.cliente_id
+        ? supabase.from('clientes').select('nombre, rfc, regimen, cp').eq('id', cxc.cliente_id).single()
+        : Promise.resolve({ data: null }),
+      supabase.from('configuracion_empresa').select('codigo_postal').eq('id', 1).maybeSingle(),
+    ]);
+    const issuerZip = configEmpresa?.codigo_postal || FALLBACK_ISSUER_ZIP;
 
     // Número de parcialidad: contar pagos previos a esta CxC
     const { count: pagosAnteriores } = await supabase
@@ -187,6 +198,7 @@ export const handler = async (event) => {
       saldoAntes: saldoAntes ?? monto,
       saldoDespues: saldoDespues ?? 0,
       pagoNum,
+      issuerZip,
     });
 
     const complemento = await postToFacturama(payload);
@@ -210,7 +222,11 @@ export const handler = async (event) => {
           provider_reference: `complemento-cxc-${body.cxcId}`,
           status: 'error',
           request_payload: body,
-          response_payload: { message: error.message },
+          response_payload: {
+            message: error.message,
+            facturamaDetail: error.facturamaDetail,
+            facturamaRaw: error.facturamaRaw,
+          },
         });
       } catch {}
     }
