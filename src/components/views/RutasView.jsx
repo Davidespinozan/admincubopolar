@@ -68,6 +68,9 @@ export function RutasView({ data, actions }) {
   const [reporteModal, setReporteModal] = useState(null);
   const [saving, setSaving] = useState(false);
   const [cerrando, setCerrando] = useState(false);
+  const [cancelarModal, setCancelarModal] = useState(null);
+  const [cancelarMotivo, setCancelarMotivo] = useState('');
+  const [cancelando, setCancelando] = useState(false);
 
   // Fase 13: Grupos colapsables por estatus
   const [gruposColapsados, setGruposColapsados] = useState({
@@ -420,12 +423,41 @@ export function RutasView({ data, actions }) {
     setCerrando(true);
     try {
       if (actions.cerrarRuta) {
-        await actions.cerrarRuta(cierreModal.id, devolucion);
+        const result = await actions.cerrarRuta(cierreModal.id, devolucion);
+        // Tanda 3 🟡-1: si hay órdenes pendientes, el store retorna
+        // {error, pendientes} y dispara su propio toast. No mostramos
+        // success en ese caso.
+        if (result?.error) return;
       }
       toast?.success("Ruta " + s(cierreModal.nombre) + " cerrada");
       setCierreModal(null);
     } finally {
       setCerrando(false);
+    }
+  };
+
+  // Tanda 3 🟡-6: cancelar ruta con devolución de stock al cuarto.
+  const abrirCancelar = (ruta) => {
+    setCancelarModal(ruta);
+    setCancelarMotivo('');
+  };
+  const confirmarCancelacion = async () => {
+    if (cancelando) return;
+    if (!cancelarModal) return;
+    const motivo = s(cancelarMotivo).trim();
+    if (!motivo) {
+      toast?.error('Captura el motivo de cancelación');
+      return;
+    }
+    setCancelando(true);
+    try {
+      const result = await actions.cancelarRutaConDevolucion?.(cancelarModal.id, motivo);
+      if (result?.error) return; // store ya disparó toast
+      toast?.success(`Ruta ${s(cancelarModal.nombre)} cancelada`);
+      setCancelarModal(null);
+      setCancelarMotivo('');
+    } finally {
+      setCancelando(false);
     }
   };
 
@@ -685,6 +717,15 @@ export function RutasView({ data, actions }) {
                                     }} className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 text-blue-700 border-t border-slate-100">
                                       📊 Ver reporte
                                       <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Vista completa con descarga PDF</span>
+                                    </button>
+                                  )}
+                                  {!isCerrada && !isCompletada && (
+                                    <button onClick={(e) => {
+                                      e.currentTarget.closest('details').open = false;
+                                      abrirCancelar(r);
+                                    }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 border-t border-slate-100">
+                                      ⊘ Cancelar ruta
+                                      <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Devuelve stock al cuarto y libera órdenes</span>
                                     </button>
                                   )}
                                   <button onClick={(e) => { e.currentTarget.closest('details').open = false; askConfirm('Eliminar ruta', '¿Eliminar ruta ' + s(r.nombre) + '?', () => actions.deleteRuta(r.id), true); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600">🗑️ Eliminar</button>
@@ -1014,6 +1055,60 @@ export function RutasView({ data, actions }) {
         <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setCierreModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={confirmarCierre} loading={cerrando}>Cerrar ruta</FormBtn></div>
       </Modal>
     )}
+
+    {/* Modal cancelar ruta con devolución (Tanda 3 🟡-6) */}
+    {cancelarModal && (() => {
+      const cargaObj = (cancelarModal.carga_real && typeof cancelarModal.carga_real === 'object' && Object.keys(cancelarModal.carga_real).length > 0)
+        ? cancelarModal.carga_real
+        : (cancelarModal.cargaReal && typeof cancelarModal.cargaReal === 'object' && Object.keys(cancelarModal.cargaReal).length > 0)
+          ? cancelarModal.cargaReal
+          : (cancelarModal.carga && typeof cancelarModal.carga === 'object' ? cancelarModal.carga : {});
+      const tieneStockFuera = ['Cargada', 'Pendiente firma', 'En progreso'].includes(s(cancelarModal.estatus));
+      const totalDevolver = Object.values(cargaObj).reduce((sum, v) => sum + n(v), 0);
+      return (
+        <Modal open={true} onClose={() => { if (!cancelando) setCancelarModal(null); }} title={`Cancelar ${s(cancelarModal.nombre)}`}>
+          <div className="space-y-4">
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900 space-y-2">
+              <p className="font-bold">¿Cancelar la ruta?</p>
+              <p className="text-xs">
+                {tieneStockFuera
+                  ? `Se devolverán ${totalDevolver.toLocaleString()} bolsas al cuarto frío y las órdenes Asignadas se liberarán.`
+                  : 'Las órdenes Asignadas se liberarán a Creada (sin ruta).'}
+              </p>
+              {tieneStockFuera && totalDevolver > 0 && (
+                <div className="text-xs">
+                  <span className="font-semibold">Devolución:</span>{' '}
+                  {Object.entries(cargaObj)
+                    .filter(([, v]) => n(v) > 0)
+                    .map(([sku, v]) => `${n(v)}×${sku}`)
+                    .join(', ')}
+                </div>
+              )}
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Motivo de cancelación *</label>
+              <textarea
+                value={cancelarMotivo}
+                onChange={e => setCancelarMotivo(e.target.value)}
+                rows={3}
+                placeholder="Ej: Camión averiado, chofer enfermo, ruta cancelada por cliente..."
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:border-amber-400"
+              />
+            </div>
+            <div className="flex justify-end gap-2 mt-2">
+              <FormBtn onClick={() => { if (!cancelando) setCancelarModal(null); }}>No cancelar</FormBtn>
+              <button
+                onClick={confirmarCancelacion}
+                disabled={cancelando || !cancelarMotivo.trim()}
+                className="px-4 py-2.5 text-sm font-bold rounded-xl bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {cancelando ? 'Cancelando…' : 'Cancelar ruta'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      );
+    })()}
 
     {/* Modal detalle / resumen */}
     {detalleModal && (

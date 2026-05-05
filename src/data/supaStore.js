@@ -17,6 +17,8 @@ import {
   calcularChangesInventario,
   calcDevolucionLegacy,
   validateEdicionRuta,
+  validateCancelacionRuta,
+  buildCancelacionChanges,
 } from './rutasLogic';
 import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
 
@@ -2759,10 +2761,59 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       deleteRuta: async (id) => {
-        const { error } = await supabase.from('rutas').delete().eq('id', id);
-        if (error) { t()?.error('Error al eliminar ruta'); return error; }
-        log('Eliminar', 'Rutas', `ID ${id}`);
-        rf();
+        // 🟡-5 Tanda 3: solo Admin, solo Programada, solo sin órdenes.
+        // Para rutas con carga confirmada (Cargada/En progreso/Pendiente
+        // firma) admin debe usar cancelarRutaConDevolucion para que el
+        // stock vuelva al cuarto y las órdenes se liberen.
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
+
+        try {
+          if (!id) return { error: 'Ruta requerida' };
+
+          const { data: ruta, error: errRuta } = await supabase
+            .from('rutas')
+            .select('id, folio, estatus')
+            .eq('id', id)
+            .maybeSingle();
+          if (errRuta) {
+            console.warn('[deleteRuta] select:', errRuta.message);
+            t()?.error('No se pudo leer la ruta');
+            return { error: errRuta.message };
+          }
+          if (!ruta) return { error: 'Ruta no encontrada' };
+
+          if (ruta.estatus !== 'Programada') {
+            const msg = `Solo se pueden eliminar rutas en estatus Programada (actual: ${ruta.estatus}). Para rutas con carga, usa Cancelar.`;
+            t()?.error(msg);
+            return { error: msg };
+          }
+
+          const { count, error: errCount } = await supabase
+            .from('ordenes')
+            .select('id', { count: 'exact', head: true })
+            .eq('ruta_id', id);
+          if (errCount) {
+            console.warn('[deleteRuta] count ordenes:', errCount.message);
+            t()?.error('No se pudieron contar las órdenes asignadas');
+            return { error: errCount.message };
+          }
+          if ((count || 0) > 0) {
+            const msg = `La ruta tiene ${count} ${count === 1 ? 'orden asignada' : 'órdenes asignadas'}. Quítalas primero o cancela la ruta.`;
+            t()?.error(msg);
+            return { error: msg };
+          }
+
+          const { error } = await supabase.from('rutas').delete().eq('id', id);
+          if (error) { t()?.error('Error al eliminar ruta'); return { error: error.message }; }
+          await log('Eliminar', 'Rutas', `${ruta.folio} (ID ${id})`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[deleteRuta] excepción:', e);
+          t()?.error('Error inesperado al eliminar ruta');
+          return { error: e?.message || 'Error inesperado' };
+        }
       },
 
       asignarOrdenesARuta: async (rutaId, ordenIds, totalBolsas) => {
@@ -2800,14 +2851,50 @@ export function useSupaStore(userId, userName, userRol) {
         }
       },
 
-      cerrarRuta: async (rutaId, devolucion) => {
+      cerrarRuta: async (rutaId, devolucion, opciones = {}) => {
         // devolucion ahora es un objeto: {"HC-25K": 5, "HC-5K": 3, ...}
-        const devolucionObj = (typeof devolucion === 'object') ? devolucion : { bolsas: devolucion || 0 };
+        const devolucionObj = (typeof devolucion === 'object' && devolucion !== null)
+          ? devolucion
+          : { bolsas: devolucion || 0 };
+        const forzar = opciones?.forzar === true;
+        const motivoForzado = String(opciones?.motivo || '').trim();
+
+        // Solo Admin puede cerrar ruta vía admin (auditoría rutas Tanda 3).
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
+
+        // 🟡-1 Tanda 3: validar entregas pendientes ANTES de marcar Cerrada.
+        // Si chofer aún no envió reporte (vía cerrarRutaCompleta), las
+        // entregas físicas no se procesaron contablemente. Bloquear el
+        // cierre con admin y obligar a esperar reporte; o forzar con motivo
+        // (caso edge: chofer sin celular, accidente).
+        const { data: pendientes, error: errPend } = await supabase
+          .from('ordenes')
+          .select('id, folio, estatus')
+          .eq('ruta_id', rutaId)
+          .in('estatus', ['Asignada', 'En ruta']);
+        if (errPend) {
+          console.warn('[cerrarRuta] select pendientes:', errPend.message);
+          t()?.error('No se pudieron leer las órdenes de la ruta');
+          return { error: errPend.message };
+        }
+
+        if (pendientes && pendientes.length > 0 && !forzar) {
+          const folios = pendientes.slice(0, 3).map(o => o.folio).join(', ');
+          const extra = pendientes.length > 3 ? `, +${pendientes.length - 3} más` : '';
+          const msg = `Hay ${pendientes.length} ${pendientes.length === 1 ? 'orden pendiente' : 'órdenes pendientes'} de entregar (${folios}${extra}). Pídele al chofer que envíe su reporte primero.`;
+          t()?.error(msg);
+          return { error: msg, pendientes: pendientes.length };
+        }
+
+        if (forzar && pendientes && pendientes.length > 0 && !motivoForzado) {
+          return { error: 'Forzar cierre requiere motivo (chofer sin celular, accidente, etc.)' };
+        }
 
         // Obtener primer cuarto frío para regresar devolución
         const { data: cuartos } = await supabase.from('cuartos_frios').select('id').order('id').limit(1);
         const cuartoId = cuartos?.[0]?.id;
-        if (!cuartoId) { t()?.error('No hay cuarto frío configurado'); return new Error('Sin cuarto frío'); }
+        if (!cuartoId) { t()?.error('No hay cuarto frío configurado'); return { error: 'Sin cuarto frío' }; }
 
         // Usar RPC atómica: valida que no esté ya cerrada, regresa stock, marca Cerrada
         const { error } = await supabase.rpc('cerrar_ruta_atomic', {
@@ -2825,12 +2912,142 @@ export function useSupaStore(userId, userName, userRol) {
           } else {
             t()?.error('Error al cerrar la ruta');
           }
-          return error;
+          return { error: error.message };
         }
 
-        const devTxt = Object.entries(devolucionObj).filter(([_,v]) => v > 0).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '0';
-        log('Cerrar', 'Rutas', `Ruta #${rutaId} — devuelto: ${devTxt}`);
+        // Si se forzó cierre con órdenes pendientes, marcarlas como
+        // 'No entregada' con motivo. NO se devuelve stock (físicamente
+        // puede estar perdido por el incidente que originó el forzado).
+        let pendientesProcesadas = 0;
+        if (forzar && pendientes && pendientes.length > 0) {
+          const ids = pendientes.map(o => o.id);
+          const { error: updErr } = await supabase
+            .from('ordenes')
+            .update({
+              estatus: 'No entregada',
+              motivo_no_entrega: `Cierre forzado por admin: ${motivoForzado}`,
+              fecha_no_entrega: new Date().toISOString(),
+            })
+            .in('id', ids);
+          if (updErr) {
+            console.warn('[cerrarRuta forzado] update ordenes No entregada:', updErr.message);
+          } else {
+            pendientesProcesadas = ids.length;
+          }
+        }
+
+        const devTxt = Object.entries(devolucionObj).filter(([_, v]) => v > 0).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '0';
+        const detalle = forzar
+          ? `Ruta #${rutaId} — FORZADO (${motivoForzado}) — devuelto: ${devTxt} — ${pendientesProcesadas} órdenes a No entregada`
+          : `Ruta #${rutaId} — devuelto: ${devTxt}`;
+        await log(forzar ? 'Cerrar (forzado)' : 'Cerrar', 'Rutas', detalle);
         rf();
+        return undefined;
+      },
+
+      // 🟡-6 Tanda 3: cancelar una ruta con devolución de stock al cuarto.
+      //
+      // Aplica a rutas Programada/Cargada/Pendiente firma/En progreso. Si
+      // la carga ya descontó stock (estados Cargada+) se devuelve al cuarto
+      // destino vía update_stocks_atomic. Las órdenes en Asignada se
+      // liberan a Creada (sin ruta_id); las En ruta o Entregadas se quedan
+      // como están — esas son operativamente "ya pasaron" y modificarlas
+      // corrompe el histórico.
+      cancelarRutaConDevolucion: async (rutaId, motivo) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        try {
+          if (!rutaId) return { error: 'Ruta requerida' };
+          const motivoTxt = String(motivo || '').trim();
+          if (!motivoTxt) return { error: 'Motivo requerido' };
+
+          const { data: ruta, error: errRuta } = await supabase
+            .from('rutas')
+            .select('id, folio, estatus, carga, carga_real')
+            .eq('id', rutaId)
+            .maybeSingle();
+          if (errRuta) {
+            console.warn('[cancelarRutaConDevolucion] select ruta:', errRuta.message);
+            t()?.error('No se pudo leer la ruta');
+            return { error: errRuta.message };
+          }
+          if (!ruta) return { error: 'Ruta no encontrada' };
+
+          const validResult = validateCancelacionRuta(ruta);
+          if (validResult.error) {
+            t()?.error(validResult.error);
+            return { error: validResult.error };
+          }
+
+          // Si requiere devolución, calcular el cuarto destino (primer
+          // cuarto frío activo) y construir changes para update_stocks_atomic.
+          if (validResult.requiereDevolucion) {
+            const { data: cuartos, error: errCfs } = await supabase
+              .from('cuartos_frios').select('id').order('id').limit(1);
+            if (errCfs) {
+              console.warn('[cancelarRutaConDevolucion] select cuartos:', errCfs.message);
+              t()?.error('No se pudieron leer cuartos fríos');
+              return { error: errCfs.message };
+            }
+            const cuartoId = cuartos?.[0]?.id;
+            if (!cuartoId) {
+              const msg = 'No hay cuarto frío para devolver el stock';
+              t()?.error(msg);
+              return { error: msg };
+            }
+            const changes = buildCancelacionChanges(ruta, cuartoId, uname() || 'Admin');
+            if (changes.length > 0) {
+              const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
+                p_changes: changes,
+              });
+              if (rpcErr) {
+                console.warn('[cancelarRutaConDevolucion] update_stocks_atomic:', rpcErr.message);
+                t()?.error(rpcErr.message || 'Error al devolver stock al cuarto');
+                return { error: rpcErr.message };
+              }
+            }
+          }
+
+          // Marcar ruta como Cancelada con metadatos (mig 059 agregó las cols)
+          const { error: errUpd } = await supabase
+            .from('rutas')
+            .update({
+              estatus: 'Cancelada',
+              cancelada_at: new Date().toISOString(),
+              motivo_cancelacion: motivoTxt,
+            })
+            .eq('id', rutaId);
+          if (errUpd) {
+            console.warn('[cancelarRutaConDevolucion] update ruta:', errUpd.message);
+            t()?.error('No se pudo marcar la ruta como cancelada');
+            return { error: errUpd.message };
+          }
+
+          // Liberar órdenes Asignadas (devolver a Creada sin ruta_id).
+          // Las En ruta/Entregadas se mantienen — esas ya operaron.
+          const { error: errOrd, count: liberadas } = await supabase
+            .from('ordenes')
+            .update({ estatus: 'Creada', ruta_id: null }, { count: 'exact' })
+            .eq('ruta_id', rutaId)
+            .eq('estatus', 'Asignada');
+          if (errOrd) {
+            console.warn('[cancelarRutaConDevolucion] liberar órdenes (no crítico):', errOrd.message);
+            // No abortamos: la ruta ya quedó cancelada y el stock devuelto.
+            // Admin puede limpiar las órdenes huérfanas manualmente.
+            notify('advertencia', 'Órdenes pendientes de liberar',
+              `Ruta ${ruta.folio} cancelada, pero algunas órdenes Asignadas no se liberaron. Revísalas.`,
+              '⚠️', String(rutaId));
+          }
+
+          await log('Cancelar', 'Rutas',
+            `${ruta.folio} — Motivo: ${motivoTxt} — ${liberadas || 0} órdenes liberadas`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[cancelarRutaConDevolucion] excepción:', e);
+          t()?.error('Error inesperado al cancelar ruta');
+          return { error: e?.message || 'Error inesperado' };
+        }
       },
 
       // ── CAMIONES ──
