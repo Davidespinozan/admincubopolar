@@ -1,6 +1,6 @@
 # Pendientes técnicos — Cubo Polar
 
-Última actualización: 2026-05-04
+Última actualización: 2026-05-05
 
 Este documento agrupa deuda técnica de bajo riesgo detectada en auditorías recientes. Ninguna acción aquí es urgente. Cada sección dice **claramente** si requiere ejecución de SQL en producción y bajo qué condiciones.
 
@@ -12,8 +12,8 @@ Las migraciones del proyecto viven en `supabase/` directamente (no en una subcar
 
 | Migración | Estado |
 |---|---|
-| Última versionada | `057_rpc_asignar_ordenes_ruta.sql` |
-| Próximo número libre | `058` |
+| Última versionada | `058_rpc_update_orden_atomic.sql` |
+| Próximo número libre | `059` |
 
 Todas las migraciones son idempotentes (`IF NOT EXISTS` en `ADD COLUMN`, `IF EXISTS` en types/triggers, etc.).
 
@@ -226,4 +226,31 @@ DROP FUNCTION IF EXISTS check_ruta_transition();
 ```
 
 **Estado actual**: la FSM de rutas se valida solo en JS (`src/data/rutasLogic.js` — `validateEdicionRuta`, transiciones en cada action de `supaStore`) y en BD a nivel de UNIQUE INDEX (`049_unique_chofer_ruta_activa.sql`). No hay trigger de transición; la complejidad de la FSM justifica mantenerla en código y no en SQL.
+
+---
+
+## 🟡 Deprecated: columna `clientes.saldo` (cache stale)
+
+**Origen**: la columna existe desde el schema inicial (`001_schema.sql:39`). Se mantiene actualizada vía RPC `increment_saldo` (en `cerrarRutaCompleta`, `registrarPago`, etc.) — pero como cualquier cache, puede divergir del valor "real" si una operación falla a la mitad o si se hace un cleanup manual de CxC.
+
+**Caso real verificado el 2026-05-04**: cliente `id=97` (DAVID ESPINOZA) tenía `saldo=$2000` pero `SUM(cuentas_por_cobrar.saldo_pendiente WHERE estatus != 'Pagada') = $0`. Limpiado manualmente en `055_unique_rfc_nominativos.sql`.
+
+**Acción ejecutada en Tanda 2** (2026-05-05):
+
+1. **Frontend ya no lee `clientes.saldo` de BD**. El mapeo de clientes en [`supaStore.js`](../src/data/supaStore.js) sobrescribe `c.saldo` con `SUM(saldo_pendiente)` agrupado por `cliente_id` desde `data.cuentasPorCobrar` (excluye estatus 'Pagada'). Todos los consumidores (ClientesView, NuevaVentaModal, exportReports, DashboardView) reciben el valor correcto sin cambiar su código.
+
+2. **`addOrden` valida límite de crédito leyendo de `cuentas_por_cobrar` directo**, no del cache. Cierra el agujero donde una orden a crédito podía aceptarse aunque el saldo real ya hubiera superado el límite.
+
+3. **Las RPCs y flujos que SÍ escriben en `clientes.saldo` siguen funcionando** (`increment_saldo`, `cerrarRutaCompleta` en cierres legacy, etc.). No es necesario tocarlas — la columna queda como "campo cache que nadie lee desde la app, solo se escribe por inercia".
+
+**Acción pendiente** (PR dedicado, sin urgencia):
+
+```sql
+-- 1. Confirmar que ningún consumidor lee clientes.saldo (grep en src/)
+-- 2. Eliminar funciones/triggers que escriben en clientes.saldo
+--    (busca SET saldo = en supabase/*.sql)
+-- 3. ALTER TABLE clientes DROP COLUMN saldo;
+```
+
+**Riesgo de no hacerlo**: nulo. La columna ocupa pocos KB. La fuente de verdad ahora es `cuentas_por_cobrar`.
 
