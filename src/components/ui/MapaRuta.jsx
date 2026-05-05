@@ -23,6 +23,27 @@ const stopIcon = (L, num, entregada) => L.divIcon({
   popupAnchor: [0, -18],
 });
 
+const buildPopupHtml = (p) => {
+  const primary  = navUrl(p.latitud, p.longitud);
+  const fallback = navUrlFallback(p.latitud, p.longitud);
+  return `
+    <div style="min-width:170px;font-family:sans-serif">
+      <p style="font-weight:700;margin:0 0 2px;font-size:14px">${p.nombre || ''}</p>
+      <p style="font-size:11px;color:#64748b;margin:0 0 10px">${p.direccion || '—'}</p>
+      ${p.entregada
+        ? `<p style="text-align:center;color:#10b981;font-weight:600;font-size:13px">✓ Entregada</p>`
+        : `<a href="${primary}"
+             onclick="setTimeout(function(){window.location.href='${fallback}'},600);return true;"
+             style="display:block;text-align:center;background:#1e293b;color:white;
+             padding:7px 12px;border-radius:10px;text-decoration:none;
+             font-size:13px;font-weight:600">
+             Navegar aquí →
+           </a>`
+      }
+    </div>
+  `;
+};
+
 // Ícono de posición del chofer (punto azul pulsante)
 const driverIconHtml = `<div style="
   width:18px;height:18px;border-radius:50%;
@@ -34,9 +55,16 @@ export default function MapaRuta({ paradas = [] }) {
   const mapInst    = useRef(null);
   const driverMark = useRef(null);
   const routeLayer = useRef(null);
+  // Mapa id-de-parada → { marker, entregada } para diff incremental.
+  // Permite actualizar solo lo que cambió cuando `paradas` muta (entregas
+  // confirmadas, paradas removidas) sin destruir el mapa entero.
+  const markersRef = useRef(new Map());
+  // Ref a Leaflet capturada al montar para usar en effects siguientes.
+  const leafletRef = useRef(null);
   const [gpsError, setGpsError] = useState(null);
   const [loading,  setLoading]  = useState(true);
 
+  // ─── Mount-once: crear mapa, capa base, ruta OSRM, watch GPS ──────
   useEffect(() => {
     if (!mapRef.current || mapInst.current) return;
 
@@ -44,6 +72,7 @@ export default function MapaRuta({ paradas = [] }) {
 
     const init = async () => {
       const L = (await import('leaflet')).default;
+      leafletRef.current = L;
 
       // Fix Leaflet default icons broken en Vite
       delete L.Icon.Default.prototype._getIconUrl;
@@ -66,39 +95,15 @@ export default function MapaRuta({ paradas = [] }) {
         maxZoom: 19,
       }).addTo(map);
 
-      // Marcadores de paradas
+      // Ajustar vista para mostrar todas las paradas iniciales
       const conCoords = paradas.filter(p => p.latitud && p.longitud);
-      conCoords.forEach((p, i) => {
-        const marker = L.marker([p.latitud, p.longitud], {
-          icon: stopIcon(L, i + 1, p.entregada),
-        }).addTo(map);
-
-        const primary  = navUrl(p.latitud, p.longitud);
-        const fallback = navUrlFallback(p.latitud, p.longitud);
-        marker.bindPopup(`
-          <div style="min-width:170px;font-family:sans-serif">
-            <p style="font-weight:700;margin:0 0 2px;font-size:14px">${p.nombre}</p>
-            <p style="font-size:11px;color:#64748b;margin:0 0 10px">${p.direccion || '—'}</p>
-            ${p.entregada
-              ? `<p style="text-align:center;color:#10b981;font-weight:600;font-size:13px">✓ Entregada</p>`
-              : `<a href="${primary}"
-                   onclick="setTimeout(function(){window.location.href='${fallback}'},600);return true;"
-                   style="display:block;text-align:center;background:#1e293b;color:white;
-                   padding:7px 12px;border-radius:10px;text-decoration:none;
-                   font-size:13px;font-weight:600">
-                   Navegar aquí →
-                 </a>`
-            }
-          </div>
-        `, { maxWidth: 220 });
-      });
-
-      // Ajustar vista para mostrar todas las paradas
       if (conCoords.length >= 2) {
         map.fitBounds(conCoords.map(p => [p.latitud, p.longitud]), { padding: [40, 40] });
       }
 
-      // Trazar ruta real via OSRM (gratis, sin API key)
+      // Trazar ruta real via OSRM (gratis, sin API key) — solo al mount.
+      // Si las paradas cambian, la ruta queda trazada con las originales;
+      // refrescar polyline en cada cambio sería costoso (fetch + redraw).
       if (conCoords.length >= 2) {
         const coords = conCoords.map(p => `${p.longitud},${p.latitud}`).join(';');
         try {
@@ -158,8 +163,60 @@ export default function MapaRuta({ paradas = [] }) {
       if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; }
       driverMark.current  = null;
       routeLayer.current  = null;
+      markersRef.current.clear();
+      leafletRef.current = null;
     };
+    // Mount-once: la inicialización del mapa solo ocurre al montar.
+    // El effect siguiente sincroniza marcadores con `paradas` reactivamente.
   }, []);
+
+  // ─── Sync incremental de marcadores con `paradas` ──────────────
+  // Diff por id: actualiza icono+popup si entregada cambió, agrega
+  // marcadores nuevos, remueve los que ya no estén. NO destruye el
+  // mapa ni redibuja la ruta OSRM.
+  useEffect(() => {
+    const map = mapInst.current;
+    const L = leafletRef.current;
+    if (!map || !L) return;
+
+    const conCoords = paradas.filter(p => p.latitud && p.longitud);
+    const idsActuales = new Set();
+
+    conCoords.forEach((p, i) => {
+      // Key estable: prefer p.id; fallback a coords (último recurso por
+      // si el caller no pasa id — el marker no será reactivo a entregas
+      // pero al menos no se duplica).
+      const key = p.id != null ? String(p.id) : `${p.latitud},${p.longitud}`;
+      idsActuales.add(key);
+
+      const existing = markersRef.current.get(key);
+      const num = i + 1;
+      if (existing) {
+        // Actualizar icono solo si entregada cambió (evita repintar de más).
+        if (existing.entregada !== !!p.entregada || existing.num !== num) {
+          existing.marker.setIcon(stopIcon(L, num, !!p.entregada));
+          existing.entregada = !!p.entregada;
+          existing.num = num;
+        }
+        // Popup siempre se reemplaza por si nombre/dirección cambiaron.
+        existing.marker.setPopupContent(buildPopupHtml(p));
+      } else {
+        const marker = L.marker([p.latitud, p.longitud], {
+          icon: stopIcon(L, num, !!p.entregada),
+        }).addTo(map);
+        marker.bindPopup(buildPopupHtml(p), { maxWidth: 220 });
+        markersRef.current.set(key, { marker, entregada: !!p.entregada, num });
+      }
+    });
+
+    // Remover markers de paradas que ya no están en la lista.
+    for (const [key, entry] of markersRef.current.entries()) {
+      if (!idsActuales.has(key)) {
+        entry.marker.remove();
+        markersRef.current.delete(key);
+      }
+    }
+  }, [paradas]);
 
   return (
     <div className="relative rounded-[22px] overflow-hidden border border-slate-200/80 shadow-[0_12px_32px_rgba(8,20,27,0.12)]" style={{ height: 340 }}>

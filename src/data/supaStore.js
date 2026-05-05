@@ -15,6 +15,7 @@ import {
   excedeAutorizacion,
   calcularChangesInventario,
   calcDevolucionLegacy,
+  validateEdicionRuta,
 } from './rutasLogic';
 import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
 
@@ -2541,6 +2542,21 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       updateRuta: async (id, r) => {
+        // Bloquear edición si la ruta ya está en estado terminal (mig 057
+        // + auditoría rutas Bloque 1 — 🟡-4). Editar carga/chofer/camión
+        // de una ruta cerrada corrompe reportes históricos.
+        const { data: current, error: errSel } = await supabase
+          .from('rutas').select('estatus').eq('id', id).maybeSingle();
+        if (errSel) {
+          t()?.error('No se pudo leer la ruta');
+          return { error: errSel.message };
+        }
+        const edicionErr = validateEdicionRuta(current?.estatus);
+        if (edicionErr) {
+          t()?.error(edicionErr.error);
+          return edicionErr;
+        }
+
         const update = {};
         if (r.nombre    !== undefined) update.nombre    = r.nombre;
         if (r.choferId  !== undefined) update.chofer_id = r.choferId;
@@ -2566,28 +2582,38 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       asignarOrdenesARuta: async (rutaId, ordenIds, totalBolsas) => {
-        // 1. Asignar ruta_id a todas las órdenes seleccionadas
-        await supabase.from('ordenes').update({ ruta_id: rutaId }).in('id', ordenIds);
+        // RPC atómica (mig 057): valida ruta + cada orden, hace UPDATE de
+        // ruta_id+estatus en una sola transacción, recalcula carga JSONB.
+        // Reemplaza el patrón de 3 UPDATEs secuenciales sin transacción
+        // que dejaba órdenes con ruta_id pero estatus='Creada' si la red
+        // fallaba a la mitad (bug histórico OV-0078).
+        try {
+          if (!rutaId) return { error: 'Ruta requerida' };
+          if (!Array.isArray(ordenIds) || ordenIds.length === 0) {
+            return { error: 'Sin órdenes para asignar' };
+          }
 
-        // 2. Mover Creada → Asignada (FSM correcto: chofer luego puede pasar a Entregada).
-        //    Solo afecta las que estén en 'Creada'; respeta órdenes ya en otro estado.
-        await supabase.from('ordenes')
-          .update({ estatus: 'Asignada' })
-          .in('id', ordenIds)
-          .eq('estatus', 'Creada');
+          const idsNum = ordenIds.map(o => Number(o)).filter(Number.isFinite);
+          const { data: result, error: rpcErr } = await supabase.rpc('asignar_ordenes_a_ruta', {
+            p_ruta_id: Number(rutaId),
+            p_orden_ids: idsNum,
+          });
+          if (rpcErr) {
+            console.warn('[asignarOrdenesARuta] rpc:', rpcErr.message);
+            t()?.error(rpcErr.message || 'No se pudieron asignar las órdenes');
+            return { error: rpcErr.message };
+          }
 
-        // Build desglose by SKU from orden_lineas
-        const { data: lineas } = await supabase.from('orden_lineas').select('sku, cantidad').in('orden_id', ordenIds);
-        const desglose = {};
-        for (const l of (lineas || [])) {
-          const sku = l.sku || '?';
-          desglose[sku] = (desglose[sku] || 0) + Number(l.cantidad || 0);
+          const carga = (result && result.carga && typeof result.carga === 'object') ? result.carga : {};
+          const cargaTxt = Object.entries(carga).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || `${totalBolsas || 0} bolsas`;
+          await log('Asignar órdenes', 'Rutas', `Ruta #${rutaId} — ${ordenIds.length} órdenes — ${cargaTxt}`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[asignarOrdenesARuta] excepción:', e);
+          t()?.error('Error inesperado al asignar órdenes');
+          return { error: e?.message || 'Error inesperado' };
         }
-        // Actualizar carga con desglose JSONB
-        await supabase.from('rutas').update({ carga: desglose }).eq('id', rutaId);
-        const cargaTxt = Object.entries(desglose).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || `${totalBolsas} bolsas`;
-        log('Asignar órdenes', 'Rutas', `Ruta #${rutaId} — ${ordenIds.length} órdenes — ${cargaTxt}`);
-        rf();
       },
 
       cerrarRuta: async (rutaId, devolucion) => {

@@ -12,8 +12,8 @@ Las migraciones del proyecto viven en `supabase/` directamente (no en una subcar
 
 | Migración | Estado |
 |---|---|
-| Última versionada | `056_numero_exterior.sql` |
-| Próximo número libre | `057` |
+| Última versionada | `057_rpc_asignar_ordenes_ruta.sql` |
+| Próximo número libre | `058` |
 
 Todas las migraciones son idempotentes (`IF NOT EXISTS` en `ADD COLUMN`, `IF EXISTS` en types/triggers, etc.).
 
@@ -200,4 +200,30 @@ UPDATE clientes SET codigo_postal = cp WHERE codigo_postal IS NULL AND cp IS NOT
 ```
 
 **Riesgo de no hacerlo**: bajo. La duplicación no rompe nada hoy — el form sincroniza ambas. Si en el futuro alguien edita `codigo_postal` por SQL directo y no `cp`, el CFDI usará el dato viejo. Por ahora documentado y bloqueado en código a través de `DireccionForm`.
+
+---
+
+## ✅ Resuelto: trigger FSM zombie de rutas (mig 057)
+
+**Origen**: `001_schema.sql:230-245` definía el trigger `trg_ruta_state` y la función `check_ruta_transition()` con una whitelist de transiciones que solo permitía:
+- `Programada → En progreso/Cancelada`
+- `En progreso → Completada`
+- `Completada → Cerrada`
+
+Pero el código moderno (post-Fase 18) hace transiciones que NO están en la whitelist:
+- `Programada → Cargada / Pendiente firma`
+- `Pendiente firma → Cargada`
+- `Cargada → En progreso`
+- `En progreso → Cerrada` (saltando Completada en `cerrarRutaCompleta`)
+
+Producción nunca tuvo el trigger activo (mig 002 hizo `ALTER TABLE rutas ADD COLUMN estatus TEXT NOT NULL DEFAULT 'Programada'`, evitando el ENUM y dejando el trigger huérfano sin re-aplicar). Pero un clone del repo + `CREATE` desde `001_schema.sql` lo activaría y rompería todas las operaciones de ruta.
+
+**Acción ejecutada en migración 057** (2026-05-05):
+
+```sql
+DROP TRIGGER IF EXISTS trg_ruta_state ON rutas;
+DROP FUNCTION IF EXISTS check_ruta_transition();
+```
+
+**Estado actual**: la FSM de rutas se valida solo en JS (`src/data/rutasLogic.js` — `validateEdicionRuta`, transiciones en cada action de `supaStore`) y en BD a nivel de UNIQUE INDEX (`049_unique_chofer_ruta_activa.sql`). No hay trigger de transición; la complejidad de la FSM justifica mantenerla en código y no en SQL.
 

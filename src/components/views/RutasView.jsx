@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, fmtDate, fmtMoney, useDebounce, useToast, reporteRutas } from './viewsCommon';
+import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, fmtDate, fmtMoney, useDebounce, useToast, reporteRutas, normalizeStr } from './viewsCommon';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 const ReporteRutaModal = lazy(() => import('../ReporteRutaModal'));
 
@@ -156,13 +156,14 @@ export function RutasView({ data, actions }) {
   }, [ordenesDisponibles, data.clientes]);
 
   const ordenesFiltradas = useMemo(() => {
-    const q = s(searchOrden).toLowerCase();
+    // Normaliza diacríticos: "fernandez" matchea "Fernández"; "neveria" → "Nevería".
+    const q = normalizeStr(searchOrden);
     if (!q) return ordenesConInfo;
     return ordenesConInfo.filter(o =>
-      s(o.folio).toLowerCase().includes(q) ||
-      s(o.clienteNombre).toLowerCase().includes(q) ||
-      s(o.dir).toLowerCase().includes(q) ||
-      s(o.productos).toLowerCase().includes(q)
+      normalizeStr(o.folio).includes(q) ||
+      normalizeStr(o.clienteNombre).includes(q) ||
+      normalizeStr(o.dir).includes(q) ||
+      normalizeStr(o.productos).includes(q)
     );
   }, [ordenesConInfo, searchOrden]);
 
@@ -314,7 +315,8 @@ export function RutasView({ data, actions }) {
           clientesAsignados,
         });
         if (!err && form.ordenesIds.length > 0) {
-          await actions.asignarOrdenesARuta(editingRuta.id, form.ordenesIds, 0);
+          const asignErr = await actions.asignarOrdenesARuta(editingRuta.id, form.ordenesIds, 0);
+          if (asignErr?.error) return; // store ya disparó toast específico
         }
       } else {
         const result = await actions.addRuta({
@@ -331,7 +333,8 @@ export function RutasView({ data, actions }) {
         err = result instanceof Error ? result : null;
         // Link selected orders to the new route
         if (!err && form.ordenesIds.length > 0 && result?.id) {
-          await actions.asignarOrdenesARuta(result.id, form.ordenesIds, 0);
+          const asignErr = await actions.asignarOrdenesARuta(result.id, form.ordenesIds, 0);
+          if (asignErr?.error) return; // store ya disparó toast específico
         }
       }
       if (err) {
@@ -376,7 +379,7 @@ export function RutasView({ data, actions }) {
   };
 
   const asignarOrdenes = (ruta) => { setAsignarModal(ruta); };
-  const confirmarAsignacion = (ordenIds) => {
+  const confirmarAsignacion = async (ordenIds) => {
     if (!asignarModal || ordenIds.length === 0) return;
     // Count items for carga
     let totalBolsas = 0;
@@ -389,7 +392,11 @@ export function RutasView({ data, actions }) {
       }
     }
     if (actions.asignarOrdenesARuta) {
-      actions.asignarOrdenesARuta(asignarModal.id, ordenIds, totalBolsas);
+      const result = await actions.asignarOrdenesARuta(asignarModal.id, ordenIds, totalBolsas);
+      if (result?.error) {
+        // El store ya disparó toast específico; no duplicar.
+        return;
+      }
     }
     toast?.success(ordenIds.length + " órdenes asignadas a " + s(asignarModal.nombre));
     setAsignarModal(null);
@@ -466,9 +473,12 @@ export function RutasView({ data, actions }) {
   };
 
   const filteredRutas = useMemo(() => {
-    const q = dSearch?.toLowerCase() || "";
+    const q = normalizeStr(dSearch);
     return data.rutas.filter(r => {
-      const ms = !q || s(r.nombre).toLowerCase().includes(q) || s(r.folio).toLowerCase().includes(q) || choferLabel(r).toLowerCase().includes(q);
+      const ms = !q
+        || normalizeStr(r.nombre).includes(q)
+        || normalizeStr(r.folio).includes(q)
+        || normalizeStr(choferLabel(r)).includes(q);
       const me = !filterEst || s(r.estatus).toLowerCase() === filterEst.toLowerCase();
       return ms && me;
     });
