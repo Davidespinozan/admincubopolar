@@ -7,7 +7,7 @@ import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { useBodyScrollLock } from './ui/Modal';
 
 const PAGOS = ["Efectivo", "Transferencia SPEI", "Tarjeta (terminal)", "QR / Link de pago", "Crédito (fiado)"];
-const VENTAS_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
+const VENTAS_SHELL = "min-h-dvh w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function VentasStandaloneView({ user, data, actions, onLogout }) {
   const toast = useToast();

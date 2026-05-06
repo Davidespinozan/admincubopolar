@@ -50,7 +50,7 @@ export default class ErrorBoundary extends Component {
     if (this.state.error) {
       const { error, copied } = this.state;
       return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <div className="min-h-dvh flex items-center justify-center bg-slate-50 p-6">
           <div className="max-w-md w-full text-center">
             <div className="w-16 h-16 rounded-2xl bg-red-100 flex items-center justify-center mx-auto mb-4">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

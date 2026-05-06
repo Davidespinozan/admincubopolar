@@ -308,7 +308,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   const currentMeta = AREA_META[currentArea?.id] || AREA_META.operacion;
 
   return (
-    <div className="min-h-screen text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''}>
+    <div className="min-h-dvh text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''}>
       {/* Tanda 16-fix: sidebarOffset evita que el banner tape el logo del aside fijo en lg+. */}
       <ModoPruebaBanner sidebarOffset />
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">

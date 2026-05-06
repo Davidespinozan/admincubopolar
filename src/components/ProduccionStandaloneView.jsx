@@ -8,7 +8,7 @@ import { useBodyScrollLock } from './ui/Modal';
 import { EmptyState } from './ui/Skeleton';
 
 // empaqueMap se deriva dinámicamente de data.productos.empaque_sku
-const PRODUCCION_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf3f6_0%,#e5edf1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
+const PRODUCCION_SHELL = "min-h-dvh w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf3f6_0%,#e5edf1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function ProduccionStandaloneView({ user, data, actions, onLogout }) {
   const [tab, setTab] = useState("producir");

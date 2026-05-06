@@ -14,7 +14,7 @@ const PAGOS = ["Efectivo", "Transferencia", "Tarjeta", "QR / Link de pago", "Cr�
 const MERMA_CAUSAS = ["Bolsa rota", "Hielo derretido", "Daño transporte", "Rechazo cliente"];
 const REGIMENES = ["Régimen General", "Régimen Simplificado", "Sin obligaciones"];
 const USOS_CFDI = ["G01", "G03", "S01", "P01"];
-const CHOFER_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf4f6_0%,#e3eef1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
+const CHOFER_SHELL = "min-h-dvh w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf4f6_0%,#e3eef1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function ChoferView({ user, data, actions, onLogout }) {
   const [stepOverride, setStepOverride] = useState(null);
