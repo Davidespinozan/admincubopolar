@@ -16,6 +16,8 @@
 --       WHERE table_name = 'usuarios'
 --         AND column_name IN ('is_test_account', 'auth_id');
 --    Debe devolver 2 filas.
+-- 3) Migración 065_remove_pass_legacy.sql ya corrió:
+--      ALTER TABLE usuarios DROP COLUMN pass;
 -- ─────────────────────────────────────────────────────────────────
 --
 -- PASO 1 — Crear las cuentas en Supabase Auth (UI dashboard)
@@ -52,24 +54,21 @@
 -- PASO 2 — Insertar perfiles en tabla `usuarios`
 -- ─────────────────────────────────────────────────────────────────
 -- Notas:
---  • pass = '' (string vacío). La columna existe NOT NULL DEFAULT '1234'
---    desde el schema legacy; pasamos '' para no usar el default predecible.
---    Login de las cuentas E2E NUNCA consulta esta columna — va por
---    supabase.auth.signInWithPassword contra auth.users. La columna
---    `pass` se documentó como bug de seguridad en docs/PENDIENTES_TECNICOS.md
---    (entrada 🔴 SEGURIDAD CRÍTICA — usuarios.pass en texto plano).
+--  • Pre-Tanda 12 incluíamos `pass = ''` para esquivar el NOT NULL
+--    DEFAULT '1234' del schema legacy. La migración 065 eliminó la
+--    columna; el INSERT ya no la incluye.
 --  • is_test_account = true las oculta de dropdowns admin (RutasView,
 --    ConciliacionView, ConfiguracionView).
 --  • ON CONFLICT (email) permite re-correr la migración si David necesita
 --    rotar UUIDs o resetear las cuentas.
 
-INSERT INTO usuarios (nombre, email, rol, estatus, pass, auth_id, is_test_account)
+INSERT INTO usuarios (nombre, email, rol, estatus, auth_id, is_test_account)
 VALUES
-  ('E2E Admin',  'e2e-admin@cubopolar.com',  'Admin',  'Activo', '',
+  ('E2E Admin',  'e2e-admin@cubopolar.com',  'Admin',  'Activo',
    '76e1d265-514f-44a2-b665-c348333c2319', true),
-  ('E2E Ventas', 'e2e-ventas@cubopolar.com', 'Ventas', 'Activo', '',
+  ('E2E Ventas', 'e2e-ventas@cubopolar.com', 'Ventas', 'Activo',
    '4c8fca98-503d-4f6d-8ef8-80f42d0adf37', true),
-  ('E2E Chofer', 'e2e-chofer@cubopolar.com', 'Chofer', 'Activo', '',
+  ('E2E Chofer', 'e2e-chofer@cubopolar.com', 'Chofer', 'Activo',
    '012fb66c-f6d6-43d2-adfd-85c1113be583', true)
 ON CONFLICT (email) DO UPDATE SET
   rol             = EXCLUDED.rol,
