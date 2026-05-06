@@ -134,7 +134,7 @@ admincubopolar/
 ## Modelo de Datos (tablas principales)
 
 ```
-usuarios          (id, nombre, email, rol, pass, estatus)
+usuarios          (id, nombre, email, rol, estatus, auth_id, is_test_account)
 clientes          (id, nombre, nombre_comercial, rfc, regimen, uso_cfdi, contacto,
                    calle, colonia, ciudad, latitud, longitud, saldo,
                    credito_autorizado, limite_credito, estatus)

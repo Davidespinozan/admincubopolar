@@ -4,32 +4,7 @@
 
 Este documento agrupa deuda técnica detectada en auditorías recientes. Las secciones marcadas 🔴 son urgentes; el resto es de bajo riesgo. Cada sección dice **claramente** si requiere ejecución de SQL en producción y bajo qué condiciones.
 
----
-
-## 🔴 SEGURIDAD CRÍTICA — `usuarios.pass` en texto plano
-
-**Descubierto**: Tanda 10 (2026-05-06).
-**Severidad**: ALTA. **Impacto**: confidentiality breach interno.
-
-La columna `usuarios.pass` (`TEXT NOT NULL DEFAULT '1234'`, [001_schema_completo.sql:16](../supabase/001_schema_completo.sql#L16)) conserva contraseñas legacy del sistema pre-Supabase-Auth. Cualquier admin con `SELECT` sobre la tabla (lo cual incluye al rol `Admin` por la política RLS `admin_all` de mig 031) **lee las credenciales de otros usuarios en claro**.
-
-### Por qué no rompe operación
-
-`Login.jsx` no consulta esta columna. La autenticación pasa 100% por `supabase.auth.signInWithPassword` contra `auth.users` (managed). La columna solo es exposición pasiva.
-
-### Plan de fix (PR dedicado, ~2 hrs)
-
-1. **Verificar políticas RLS**: que ningún rol distinto de `service_role` tenga `SELECT` sobre `usuarios.pass`. Posiblemente con `column_privileges` o vista filtrada.
-2. **Limpiar valores**: `UPDATE usuarios SET pass = NULL` para todas las filas (requiere quitar `NOT NULL` primero).
-3. **Migración estructural**: `ALTER TABLE usuarios ALTER COLUMN pass DROP NOT NULL`.
-4. **Auditar consumidores con grep `\.pass\b`** y confirmar que ningún código (frontend, backend, RPCs) lo lee.
-5. **`DROP COLUMN pass`** una vez confirmado paso 4.
-
-### NO hacer en otros PRs
-
-- NO agregar nuevos INSERT que pongan `pass` en algún valor.
-- NO escribir tests que dependan de esta columna.
-- Si un PR necesita crear usuarios via SQL antes del fix, dejar `pass` con su default `'1234'` SOLO para que la cuenta de servicio pueda crearse — pero esa misma cuenta debe autenticar exclusivamente por Supabase Auth.
+Al final del documento hay una sección **✅ Resuelto** con entradas históricas para trazabilidad.
 
 ---
 
@@ -82,8 +57,8 @@ Las migraciones del proyecto viven en `supabase/` directamente (no en una subcar
 
 | Migración | Estado |
 |---|---|
-| Última versionada | `064_e2e_users_setup.sql` |
-| Próximo número libre | `065` |
+| Última versionada | `065_remove_pass_legacy.sql` |
+| Próximo número libre | `066` |
 
 Todas las migraciones son idempotentes (`IF NOT EXISTS` en `ADD COLUMN`, `IF EXISTS` en types/triggers, etc.).
 
@@ -341,4 +316,24 @@ DROP FUNCTION IF EXISTS check_ruta_transition();
 ```
 
 **Riesgo de no hacerlo**: nulo. La columna ocupa pocos KB. La fuente de verdad ahora es `cuentas_por_cobrar`.
+
+---
+
+## ✅ Resuelto
+
+Entradas históricas de deuda ya cerrada. Se conservan para trazabilidad.
+
+### ✅ SEGURIDAD CRÍTICA — `usuarios.pass` en texto plano (Tanda 12, 2026-05-06)
+
+**Estado**: ✅ RESUELTO. Migración `065_remove_pass_legacy.sql` eliminó la columna en producción.
+
+**Resumen del problema** (descubierto en Tanda 10): la columna `usuarios.pass` (`TEXT NOT NULL DEFAULT '1234'`) conservaba contraseñas legacy del sistema pre-Supabase-Auth. Cualquier admin con `SELECT` sobre la tabla las leía en claro.
+
+**Solución aplicada en Tanda 12**:
+
+1. **Auditoría exhaustiva**: 0 referencias en `src/`, `netlify/`, `src/__tests__/`. La columna era exposición pasiva — `Login.jsx` siempre usó `supabase.auth.signInWithPassword` contra `auth.users`.
+2. **Migración 065** (idempotente con `DO $$ ... END $$`): `DROP NOT NULL` → `DROP DEFAULT` → `UPDATE pass = NULL` → `DROP COLUMN`.
+3. **Limpieza de docs**: instructivo `e2e-users-setup.sql` actualizado para no referenciar `pass`. `RESUMEN_REPO_PARA_CLAUDE.md` ajustado.
+
+**Verificación post-fix**: 3 smokes E2E (Admin/Ventas/Chofer) verdes contra producción tras la migración. Login no se vio afectado (era el comportamiento esperado).
 
