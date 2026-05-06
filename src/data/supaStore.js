@@ -6,7 +6,7 @@ import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, validateMarcarNoEntregada, buildNoEntregaPayload, calcReversoChangesNoEntrega, isFacturable, validateCancelacionCFDI } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
 import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
-import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
+import { buildUpdateFieldsProduccion, calcReversoChangesProduccion, calcCostoProduccion, buildConceptoProduccion } from './produccionLogic';
 import { validateTransformacion, buildTransformacionRow, buildInsumoChange, buildOutputChange, buildInsumoRollbackChange } from './transformacionLogic';
 import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion } from './devolucionesLogic';
 import { calcularEsperadoPorRuta, validateCierre, buildCierrePayload, buildPagosSnapshot, fechaCierreDesdeRuta } from './cierreCajaLogic';
@@ -1565,10 +1565,14 @@ export function useSupaStore(userId, userName, userRol) {
         if (guard) { t()?.error(guard.error); return guard; }
         const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_op_seq' });
         const folio = `OP-${String(seq || 89).padStart(3, '0')}`;
-        const { error } = await supabase.from('produccion').insert({
-          folio, turno: p.turno, maquina: p.maquina,
-          sku: p.sku, cantidad: Number(p.cantidad),
-        });
+        // Tanda 11: capturamos el ID de la fila para que producirYCongelar
+        // pueda pasarlo al helper de costo de empaque (UPDATE produccion
+        // necesita ID exacto, no se puede deducir por sku+folio sin race).
+        const { data: insertedRow, error } = await supabase
+          .from('produccion')
+          .insert({ folio, turno: p.turno, maquina: p.maquina, sku: p.sku, cantidad: Number(p.cantidad) })
+          .select('id')
+          .single();
         if (error) { t()?.error('Error al registrar producción'); return error; }
         log('Producir', 'Producción', `${folio} — ${p.sku} x${Number(p.cantidad)}`);
         notify('produccion', 'Producción registrada', `${folio} — ${Number(p.cantidad).toLocaleString()} ${p.sku}`, '🏭', folio);
@@ -1612,12 +1616,80 @@ export function useSupaStore(userId, userName, userRol) {
           }
         }
         rf();
+        // Tanda 11: el caller (producirYCongelar) usa { id, folio } para
+        // delegar al helper de costo de empaque después de meterACuartoFrio.
+        return { id: insertedRow?.id, folio };
+      },
+
+      // Tanda 11: helper privado — registra el costo del empaque consumido
+      // por una corrida de producción en contabilidad. Best-effort:
+      //   - Si el producto no tiene empaque_sku  → { skipped: 'sin empaque' }
+      //   - Si el empaque tiene costo_unitario 0 → { skipped: 'costo 0' }
+      //   - Si algún SELECT/INSERT falla         → { error } (NO lanza)
+      // El caller decide si mostrar warning o ignorar.
+      //
+      // Centraliza la lógica que antes estaba inline en confirmarProduccion
+      // y la habilita para producirYCongelar (Tanda 11). DRY.
+      _registrarCostoProduccion: async ({ produccionId, folio, sku, cantidad }) => {
+        try {
+          const cant = Number(cantidad || 0);
+          if (!sku || cant <= 0) return { skipped: 'sku/cantidad inválidos' };
+
+          // 1. Empaque del producto producido.
+          const { data: producto, error: errProd } = await supabase
+            .from('productos').select('empaque_sku').eq('sku', sku).maybeSingle();
+          if (errProd) return { error: errProd.message };
+          const empaqueSku = producto?.empaque_sku;
+          if (!empaqueSku) return { skipped: 'sin empaque' };
+
+          // 2. Costo unitario del empaque.
+          const { data: empaque, error: errEmp } = await supabase
+            .from('productos').select('costo_unitario').eq('sku', empaqueSku).maybeSingle();
+          if (errEmp) return { error: errEmp.message };
+          const costoUnitario = Number(empaque?.costo_unitario || 0);
+          const costoTotal = calcCostoProduccion(cant, costoUnitario);
+          if (costoTotal <= 0) return { skipped: 'costo 0' };
+
+          const hoy = todayLocalISO();
+          const periodo = hoy.slice(0, 7);
+          const concepto = buildConceptoProduccion(folio, produccionId, cant, sku, empaqueSku);
+
+          // 3. UPDATE produccion (costo computado por fila).
+          if (produccionId) {
+            const { error: errUpd } = await supabase
+              .from('produccion')
+              .update({ costo_empaque: costoUnitario, costo_total: costoTotal })
+              .eq('id', produccionId);
+            if (errUpd) return { error: errUpd.message };
+          }
+
+          // 4. costos_historial (auditoría granular).
+          const { error: errHist } = await supabase.from('costos_historial').insert({
+            tipo: 'Producción',
+            categoria: 'Costo de Ventas',
+            concepto, monto: costoTotal, periodo, fecha: hoy,
+          });
+          if (errHist) return { error: errHist.message };
+
+          // 5. movimientos_contables (egreso para estado de resultados).
+          //    usuario_id para auditoría; si uid() no resuelve, NULL.
+          const { error: errMov } = await supabase.from('movimientos_contables').insert({
+            fecha: hoy, tipo: 'Egreso', categoria: 'Costo de Ventas',
+            concepto, monto: costoTotal,
+            usuario_id: uid() || null,
+          });
+          if (errMov) return { error: errMov.message };
+
+          return { ok: true, costoTotal, empaqueSku };
+        } catch (e) {
+          return { error: e?.message || 'Error inesperado al registrar costo' };
+        }
       },
 
       confirmarProduccion: async (id) => {
         // Obtener datos de la producción antes de confirmar
         const { data: prod } = await supabase.from('produccion').select('*').eq('id', id).single();
-        
+
         // Confirmar en backend (actualiza productos.stock)
         const { error } = await supabase.rpc('confirmar_produccion', { p_produccion_id: id, p_usuario_id: uid() });
         if (error) { t()?.error('Error al confirmar producción'); return error; }
@@ -1635,50 +1707,18 @@ export function useSupaStore(userId, userName, userRol) {
           }
         }
 
-        // Calcular costo de producción (costo del empaque consumido)
+        // Tanda 11: registrar costo del empaque vía helper compartido (DRY).
+        // Antes esta lógica vivía inline aquí; ahora también se llama desde
+        // producirYCongelar.
         if (prod) {
-          const cantidad = Number(prod.cantidad || 0);
-          // Buscar el producto y su empaque asociado
-          const { data: producto } = await supabase.from('productos').select('sku, empaque_sku').eq('sku', prod.sku).single();
-          if (producto?.empaque_sku) {
-            // Buscar costo del empaque
-            const { data: empaque } = await supabase.from('productos').select('costo_unitario').eq('sku', producto.empaque_sku).single();
-            const costoUnitario = Number(empaque?.costo_unitario || 0);
-            const costoTotal = centavos(cantidad * costoUnitario);
-            
-            if (costoTotal > 0) {
-              const hoy = todayLocalISO();
-              const periodo = hoy.slice(0, 7);
-              const concepto = `Producción ${prod.folio || id}: ${cantidad}× ${prod.sku} (empaque: ${producto.empaque_sku})`;
-
-              // Actualizar costo en la producción
-              await supabase.from('produccion').update({
-                costo_empaque: costoUnitario,
-                costo_total: costoTotal,
-              }).eq('id', id);
-
-              // Registrar costo de producción en historial
-              await supabase.from('costos_historial').insert({
-                tipo: 'Producción',
-                categoria: 'Costo de Ventas',
-                concepto,
-                monto: costoTotal,
-                periodo,
-                fecha: hoy,
-              });
-
-              // Registrar egreso contable para que aparezca en estado de resultados
-              await supabase.from('movimientos_contables').insert({
-                fecha: hoy,
-                tipo: 'Egreso',
-                categoria: 'Costo de Ventas',
-                concepto,
-                monto: costoTotal,
-              });
-            }
-          }
+          await a._registrarCostoProduccion({
+            produccionId: id,
+            folio: prod.folio,
+            sku: prod.sku,
+            cantidad: prod.cantidad,
+          });
         }
-        
+
         log('Confirmar', 'Producción', `ID ${id}`);
         notify('produccion', 'Producción confirmada', `Orden ${prod?.folio || id} confirmada`, '✅', prod?.folio || String(id));
         rf();
@@ -1843,8 +1883,13 @@ export function useSupaStore(userId, userName, userRol) {
           }
         }
 
-        const errProd = await a.addProduccion(p);
-        if (errProd) return errProd;
+        const prodResult = await a.addProduccion(p);
+        // addProduccion retorna { id, folio } en éxito o un error truthy en falla.
+        // Tanda 11: distinguimos error vs éxito por presencia de `id` (los
+        // shapes de error legacy `{ error }` o un Error nativo no traen id).
+        const isErr = !prodResult || prodResult.error || prodResult.message
+          || prodResult instanceof Error || !prodResult.id;
+        if (isErr) return prodResult;
 
         if (p.destino) {
           const errMeter = await a.meterACuartoFrio(p.destino, p.sku, Number(p.cantidad));
@@ -1858,6 +1903,26 @@ export function useSupaStore(userId, userName, userRol) {
               partial: true,
             };
           }
+        }
+
+        // Tanda 11: registrar costo del empaque consumido. Best-effort:
+        // si falla, NO bloqueamos la producción (ya está en BD + cuarto
+        // frío) — solo emitimos un warning para que admin lo investigue.
+        const costoResult = await a._registrarCostoProduccion({
+          produccionId: prodResult.id,
+          folio: prodResult.folio,
+          sku: p.sku,
+          cantidad: p.cantidad,
+        });
+        if (costoResult?.error) {
+          console.warn('[producirYCongelar] costo empaque NO registrado:', costoResult.error);
+          notify('advertencia', 'Costo empaque no registrado',
+            `Producción ${prodResult.folio} OK pero el costo de empaque no se contabilizó. Avisa a admin.`,
+            '⚠️', prodResult.folio);
+          return {
+            ok: true,
+            warning: 'Producción registrada pero costo de empaque NO se contabilizó. Avisa a admin.',
+          };
         }
 
         return undefined;
