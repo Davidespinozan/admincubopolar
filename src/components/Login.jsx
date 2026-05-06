@@ -53,14 +53,25 @@ export default function LoginScreen({ onLogin }) {
   };
 
   return (
-    <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 px-4 py-6 text-white sm:px-6 sm:py-8">
+    <div
+      className="min-h-dvh overflow-y-auto bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 px-4 text-white sm:px-6"
+      style={{
+        // Tanda 18 P2: respeta notch + home indicator del iPhone.
+        // Mínimo 1.5rem para que en pantallas sin safe-area el padding
+        // no quede en 0.
+        paddingTop: 'max(env(safe-area-inset-top, 0px), 1.5rem)',
+        paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 1.5rem)',
+        paddingLeft: 'max(env(safe-area-inset-left, 0px), 1rem)',
+        paddingRight: 'max(env(safe-area-inset-right, 0px), 1rem)',
+      }}
+    >
       <ModoPruebaBanner />
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-cyan-300/14 blur-3xl" />
         <div className="absolute bottom-[-6%] right-[-8%] h-[22rem] w-[22rem] rounded-full bg-amber-200/12 blur-3xl" />
         <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       </div>
-      <div className="relative mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-md items-center justify-center md:max-w-lg">
+      <div className="relative mx-auto flex min-h-[calc(100dvh-3rem)] w-full max-w-md items-center justify-center md:max-w-lg">
         <div className="relative w-full">
           <div className="mb-6 text-center">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[22px] border border-white/12 bg-white/8 shadow-[0_18px_36px_rgba(3,14,19,0.36)]">

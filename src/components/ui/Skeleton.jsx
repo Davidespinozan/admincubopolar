@@ -1,7 +1,7 @@
 // Full-page skeleton for initial load
 export function PageSkeleton() {
   return (
-    <div className="min-h-screen bg-slate-50 animate-pulse">
+    <div className="min-h-dvh bg-slate-50 animate-pulse">
       {/* Top bar */}
       <div className="h-14 md:h-16 bg-white border-b border-slate-100 flex items-center px-4 md:px-6 md:ml-[240px]">
         <div className="w-32 h-4 bg-slate-200 rounded" />
