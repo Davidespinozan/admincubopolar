@@ -32,4 +32,24 @@ test.describe('Smoke Admin', () => {
     await expect(adminPage.locator('[data-testid="modo-prueba-banner"]'))
       .toBeVisible();
   });
+
+  // Tanda 19: tras un reload de página, la sesión debe restaurarse
+  // automáticamente. Sin el fix de Tanda 19 (getSession + restore al
+  // mount), cada reload mostraba LoginScreen aunque el JWT siguiera
+  // válido en localStorage.
+  test('sesión persiste después de page reload', async ({ adminPage }) => {
+    // El fixture ya hizo login, dashboard-shell visible.
+    await expect(adminPage.locator('[data-testid="dashboard-shell"]')).toBeVisible();
+
+    // Reload de la página.
+    await adminPage.reload();
+
+    // Tras el reload, dashboard-shell debe seguir visible (no hay
+    // redirect a Login). El timeout es generoso porque incluye
+    // re-login programático del fixture si fallara la restauración.
+    await expect(adminPage.locator('[data-testid="dashboard-shell"]'))
+      .toBeVisible({ timeout: 15000 });
+    await expect(adminPage.locator('[data-testid="role-badge"]').first())
+      .toHaveText(/Admin/);
+  });
 });
