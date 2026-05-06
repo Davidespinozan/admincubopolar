@@ -6,6 +6,7 @@ import DashboardView from './views/DashboardView';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
 import { logErrorToDb } from '../utils/errorLog';
 import { traducirError } from '../utils/errorMessages';
+import ModoPruebaBanner from './ui/ModoPruebaBanner';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
 const ClientesView      = lazy(() => import('./views/ClientesView.jsx').then(m => ({ default: m.ClientesView })));
@@ -308,6 +309,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
 
   return (
     <div className="min-h-screen text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''}>
+      <ModoPruebaBanner />
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className={`absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br ${currentMeta.glow} blur-3xl`} />
         <div className="absolute bottom-[-10%] right-[-6%] h-[22rem] w-[22rem] rounded-full bg-gradient-to-br from-slate-200/60 via-white/20 to-transparent blur-3xl" />
