@@ -54,12 +54,13 @@ export default function LoginScreen({ onLogin }) {
 
   return (
     <div
-      className="min-h-dvh overflow-y-auto bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 px-4 text-white sm:px-6"
+      className="min-h-dvh overflow-y-auto bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 px-4 pb-6 text-white sm:px-6 sm:pb-8"
       style={{
-        // Tanda 18 P2: respeta notch + home indicator del iPhone.
-        // Mínimo 1.5rem para que en pantallas sin safe-area el padding
-        // no quede en 0.
-        paddingTop: 'max(env(safe-area-inset-top, 0px), 1.5rem)',
+        // Tanda 18 P2 + 19-fix: NO aplicar paddingTop con safe-area aquí —
+        // el ModoPruebaBanner ya respeta safe-area-inset-top internamente.
+        // Aplicar ambos resulta en doble padding (~156px) que infla el
+        // banner. paddingBottom/left/right sí necesarios (home indicator
+        // y bordes redondeados en landscape).
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 1.5rem)',
         paddingLeft: 'max(env(safe-area-inset-left, 0px), 1rem)',
         paddingRight: 'max(env(safe-area-inset-right, 0px), 1rem)',
