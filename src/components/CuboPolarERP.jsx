@@ -309,7 +309,8 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
 
   return (
     <div className="min-h-screen text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''}>
-      <ModoPruebaBanner />
+      {/* Tanda 16-fix: sidebarOffset evita que el banner tape el logo del aside fijo en lg+. */}
+      <ModoPruebaBanner sidebarOffset />
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className={`absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br ${currentMeta.glow} blur-3xl`} />
         <div className="absolute bottom-[-10%] right-[-6%] h-[22rem] w-[22rem] rounded-full bg-gradient-to-br from-slate-200/60 via-white/20 to-transparent blur-3xl" />
