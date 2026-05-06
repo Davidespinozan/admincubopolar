@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
-import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, useToast, supabase } from './viewsCommon';
+import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, useToast, backendPost } from './viewsCommon';
 import { validarRFC } from '../../utils/safe';
 import { REGIMENES_OPTIONS } from '../../data/sat/regimenesFiscales';
+import { captureError } from '../../lib/sentry';
 
 export function ConfiguracionView({ data, actions, user }) {
   const toast = useToast();
@@ -111,27 +112,28 @@ export function ConfiguracionView({ data, actions, user }) {
     setSaving(true);
     try {
       if (modal === "new") {
-        // Create user via secure Edge Function (validates rol server-side)
-        const { data: fnData, error: fnError } = await supabase.functions.invoke('hyper-endpoint', {
-          body: {
+        // Tanda 20: alta vía Netlify Function propia (admin-create-user)
+        // que reemplaza la Edge Function `hyper-endpoint` rota. Valida
+        // rol contra el catálogo canónico del ERP server-side.
+        let fnData;
+        try {
+          fnData = await backendPost('admin-create-user', {
             email: form.email.trim().toLowerCase(),
             password: form.password,
             nombre: form.nombre.trim(),
             rol: form.rol,
-          }
-        });
-
-        if (fnError) {
-          setErrors({ email: fnError.message || 'Error al crear usuario' });
+          });
+        } catch (err) {
+          captureError(err, {
+            fn: 'admin-create-user',
+            status: err?.status,
+            details: err?.details,
+            email: form.email.trim().toLowerCase(),
+          });
+          setErrors({ email: err?.message || 'Error al crear usuario' });
           return;
         }
 
-        if (fnData?.error) {
-          setErrors({ email: fnData.error });
-          return;
-        }
-
-        // Create profile in usuarios table with auth_id from Edge Function
         const authId = fnData?.user?.id;
         if (!authId) {
           setErrors({ email: 'No se obtuvo ID del usuario creado' });
