@@ -24,6 +24,21 @@
 * { -webkit-tap-highlight-color: transparent; }
 html { -webkit-text-size-adjust: 100%; }
 
+/* ── iOS zoom prevention en focus de inputs (Tanda 16 P0) ──
+   iOS Safari fuerza zoom del viewport cuando un input/select/textarea
+   tiene font-size < 16px. La app usa Tailwind text-sm (14px) en ~110
+   campos para densidad UI desktop; en mobile esto disparaba zoom auto
+   al focus que NO regresa solo. Forzamos 16px solo en mobile (≤768px)
+   para no afectar desktop. !important porque las clases Tailwind
+   utilities tienen el mismo specificity y cargan después.            */
+@media (max-width: 768px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 body {
   font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
