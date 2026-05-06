@@ -1,9 +1,10 @@
-import { useMemo, useState, useEffect, lazy, Suspense } from 'react'
+import { useMemo, useState, useEffect, useRef, lazy, Suspense } from 'react'
 import LoginScreen from './components/Login'
 import CuboPolarERP from './components/CuboPolarERP'
 import { useSupaStore } from './data/supaStore'
 import { supabase } from './lib/supabase'
-import { setUserContext } from './lib/sentry'
+import { setUserContext, Sentry } from './lib/sentry'
+import { buildUserFromSessionAndProfile } from './lib/sessionUser'
 
 // Lazy-load role-specific views — reduces initial bundle for admin by ~40%
 const ChoferView = lazy(() => import('./components/ChoferView'))
@@ -28,6 +29,17 @@ function RoleFallback() {
 function App() {
   const [user, setUser] = useState(null)
   const [adminViewAs, setAdminViewAs] = useState(null)
+  // Tanda 19 A: `restoring` arranca true para evitar flash de Login
+  // mientras supabase.auth.getSession() resuelve al mount. Una vez
+  // intentamos restaurar (con o sin éxito), pasa a false.
+  const [restoring, setRestoring] = useState(true)
+  // Tanda 19 D: ref para distinguir logout manual (botón Cerrar sesión)
+  // vs espontáneo (sesión perdida sin acción del usuario). Se setea a
+  // true ANTES del setUser(null) en handleLogout y se resetea tras
+  // consumirse en el useEffect de telemetría.
+  const isManualLogoutRef = useRef(false)
+  // Para detectar transiciones truthy ↔ null en el useEffect de Sentry.
+  const previousUserRef = useRef(null)
   const { data, actions, loading, error } = useSupaStore(user?.id, user?.nombre, user?.rol)
 
   // ── Detector de offline/online ──
@@ -50,11 +62,115 @@ function App() {
     }
   }, [])
 
-  // Tanda 7: tagear contexto de usuario en Sentry.
-  // Reactivo a login/logout/switch (Admin → adminViewAs no aplica: el user real
-  // no cambió, solo el filtro UI).
+  // Tanda 19 A+C: restaurar sesión al mount + listener global de auth.
+  // Sin esto, cada reload, reapertura de pestaña, o re-mount del PWA
+  // mostraba Login aunque el JWT siguiera válido en localStorage.
+  useEffect(() => {
+    if (!supabase) {
+      setRestoring(false)
+      return
+    }
+    let active = true
+
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session?.user) {
+          if (active) setRestoring(false)
+          return
+        }
+        const email = session.user.email
+        if (!email) {
+          if (active) setRestoring(false)
+          return
+        }
+        const { data: profile } = await supabase
+          .from('usuarios')
+          .select('*')
+          .eq('email', email.toLowerCase())
+          .maybeSingle()
+        const restored = buildUserFromSessionAndProfile(session, profile)
+        if (restored && active) setUser(restored)
+        if (active) setRestoring(false)
+      } catch (e) {
+        if (active) setRestoring(false)
+        try { Sentry?.captureException?.(e, { tags: { source: 'session-restore' } }) } catch { /* noop */ }
+      }
+    })()
+
+    // Listener global. Solo nos importa SIGNED_OUT explícito (otra pestaña
+    // hizo logout, o Supabase invalidó la session por seguridad). Los
+    // demás eventos (TOKEN_REFRESHED OK, INITIAL_SESSION) no requieren
+    // acción aquí — el state del user no debe cambiar por ellos.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT' || (event === 'TOKEN_REFRESHED' && !session)) {
+        setUser(null)
+      }
+    })
+
+    return () => {
+      active = false
+      try { subscription?.unsubscribe?.() } catch { /* noop */ }
+    }
+  }, [])
+
+  // Tanda 7+19D: tagear contexto Sentry + telemetría de cambios de user.
+  // Reactivo a login/logout/switch. adminViewAs NO aplica aquí: el user
+  // real no cambió, solo el filtro UI.
   useEffect(() => {
     setUserContext(user)
+
+    const prev = previousUserRef.current
+    previousUserRef.current = user
+
+    // Logout: truthy → null
+    if (prev && !user) {
+      const meta = {
+        timestamp: new Date().toISOString(),
+        url: typeof window !== 'undefined' ? window.location.href : null,
+        viewport: typeof window !== 'undefined' ? `${window.innerWidth}x${window.innerHeight}` : null,
+        pwa_standalone: typeof window !== 'undefined' && window.matchMedia
+          ? window.matchMedia('(display-mode: standalone)').matches
+          : false,
+        prev_user_id: prev?.id ?? null,
+        prev_user_rol: prev?.rol ?? null,
+      }
+      try {
+        Sentry?.addBreadcrumb?.({
+          category: 'auth',
+          message: 'User logout',
+          level: isManualLogoutRef.current ? 'info' : 'warning',
+          data: { manual: isManualLogoutRef.current, ...meta },
+        })
+        // Logout NO manual = señal de "salida espontánea" que queremos
+        // investigar en Sentry. captureMessage con level=warning para
+        // que aparezca en el feed pero no spamee como error rojo.
+        if (!isManualLogoutRef.current) {
+          Sentry?.captureMessage?.('Unexpected user logout', {
+            level: 'warning',
+            tags: { source: 'auth' },
+            extra: meta,
+          })
+        }
+      } catch { /* noop — no romper la app por telemetría */ }
+      isManualLogoutRef.current = false
+    }
+
+    // Login: null → truthy
+    if (!prev && user) {
+      try {
+        Sentry?.addBreadcrumb?.({
+          category: 'auth',
+          message: 'User login',
+          level: 'info',
+          data: {
+            user_id: user.id ?? null,
+            user_rol: user.rol ?? null,
+            timestamp: new Date().toISOString(),
+          },
+        })
+      } catch { /* noop */ }
+    }
   }, [user])
 
   const authUserId = user?.authUserId || user?.auth_id || null
@@ -137,6 +253,21 @@ function App() {
     return data
   }, [data, user?.rol, usuarioActualId, authUserId, usuarioActual?.nombre, adminViewAs])
 
+  // Tanda 19 A: mientras se restaura la sesión persistida, mostrar
+  // splash en lugar de flash de Login. Sin esto, cada reload mostraba
+  // ~150ms de pantalla Login antes de que getSession resolviera.
+  if (restoring) return (
+    <div className="min-h-dvh flex items-center justify-center px-4" style={{ background: 'linear-gradient(180deg, #f2f8fa 0%, #e7eff2 100%)' }}>
+      <div className="erp-panel erp-shell-blur w-full max-w-sm rounded-[32px] px-8 py-10 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-[20px] bg-slate-900 text-cyan-200 animate-pulse shadow-[0_18px_34px_rgba(8,20,27,0.24)]">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></svg>
+        </div>
+        <p className="erp-kicker text-slate-400">Restaurando sesión</p>
+        <p className="mt-2 text-sm font-medium text-slate-600">Un momento…</p>
+      </div>
+    </div>
+  )
+
   if (!user) return <LoginScreen onLogin={setUser} />
 
   if (loading) return (
@@ -192,6 +323,10 @@ function App() {
       setAdminViewAs(null)
       return
     }
+    // Tanda 19 D: flag para que el useEffect de telemetría no marque
+    // este logout como espontáneo. Se resetea automáticamente cuando
+    // se consume.
+    isManualLogoutRef.current = true
     try { await supabase?.auth?.signOut() } catch { /* best-effort: continuar aunque falle */ }
     setUser(null)
   }
