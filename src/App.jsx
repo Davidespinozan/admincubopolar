@@ -197,7 +197,7 @@ function App() {
   }
 
   const adminBar = isAdmin && adminViewAs ? (
-    <div className="fixed top-0 left-0 right-0 z-[9999] border-b border-white/10 bg-slate-950/92 px-4 py-2 text-cyan-50 erp-shell-blur shadow-[0_14px_30px_rgba(8,20,27,0.28)]">
+    <div className="fixed top-0 left-0 right-0 z-[110] border-b border-white/10 bg-slate-950/92 px-4 py-2 text-cyan-50 erp-shell-blur shadow-[0_14px_30px_rgba(8,20,27,0.28)]">
       <div className="flex items-center justify-between">
         <span className="text-xs font-bold tracking-[0.14em] uppercase">Vista previa: {adminViewAs}</span>
         <button onClick={() => setAdminViewAs(null)} className="rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-white/14">
@@ -210,7 +210,7 @@ function App() {
 
   // Banner sticky de offline + toast efímero "Conexión restaurada"
   const offlineBar = isOffline ? (
-    <div className="fixed top-0 left-0 right-0 z-[10000] border-b border-amber-300 bg-amber-100 px-4 py-2 text-amber-900 shadow-[0_8px_20px_rgba(180,83,9,0.18)]">
+    <div className="fixed top-0 left-0 right-0 z-[120] border-b border-amber-300 bg-amber-100 px-4 py-2 text-amber-900 shadow-[0_8px_20px_rgba(180,83,9,0.18)]">
       <div className="flex items-center justify-center gap-2 text-center">
         <span className="text-base">⚠️</span>
         <p className="text-xs font-semibold sm:text-sm">Sin conexión. Los cambios se guardarán cuando vuelva la conexión.</p>
@@ -219,7 +219,7 @@ function App() {
   ) : null
 
   const reconectadoBar = showReconectado && !isOffline ? (
-    <div className="fixed top-0 left-0 right-0 z-[10000] border-b border-emerald-300 bg-emerald-100 px-4 py-2 text-emerald-900 shadow-[0_8px_20px_rgba(5,150,105,0.18)]">
+    <div className="fixed top-0 left-0 right-0 z-[120] border-b border-emerald-300 bg-emerald-100 px-4 py-2 text-emerald-900 shadow-[0_8px_20px_rgba(5,150,105,0.18)]">
       <div className="flex items-center justify-center gap-2 text-center">
         <span className="text-base">✓</span>
         <p className="text-xs font-semibold sm:text-sm">Conexión restaurada</p>

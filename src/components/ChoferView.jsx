@@ -6,6 +6,7 @@ import { compressImage } from '../utils/compressImage';
 import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
 import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
+import { useBodyScrollLock } from './ui/Modal';
 import { EmptyState } from './ui/Skeleton';
 const MapaRuta = lazy(() => import('./ui/MapaRuta'));
 
@@ -56,6 +57,13 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [noEntregaModal, setNoEntregaModal] = useState(null); // orden o null
   const [noEntregaForm, setNoEntregaForm] = useState({ motivo: MOTIVOS_NO_ENTREGA[0], otroMotivo: '', reagendar: true });
   const [marcandoNoEntrega, setMarcandoNoEntrega] = useState(false);
+  // Tanda 17 P1: body scroll lock cuando cualquier modal custom esté
+  // abierto. Sin esto, arrastrar sobre el backdrop del modal hacía
+  // scrollear el body de fondo (mismo bug que Modal.jsx ya arregló).
+  useBodyScrollLock(
+    !!firmaModal || !!excepcionModal || !!entregaModal ||
+    !!ventaModal || !!mermaModal || !!noEntregaModal
+  );
   const [toast, setToast] = useState("");
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
 
@@ -662,7 +670,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       <div className="bg-[#07131a] px-4 pb-5 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-4">
           <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cargar camión</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
-          <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white">Salir</button>
+          <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-4 py-2.5 text-sm font-semibold text-white min-h-[44px]">Salir</button>
         </div>
         <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">Paso 1 de 3</p>
@@ -746,7 +754,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         <div className="bg-[#07131a] px-4 pb-5 text-white" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
           <div className="flex items-center justify-between mb-4">
             <div><p className="erp-kicker text-cyan-200/70">Esperando firma</p><h1 className="font-display text-[1.4rem] font-bold tracking-[-0.04em]">Producción debe autorizar</h1></div>
-            <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white">Salir</button>
+            <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-4 py-2.5 text-sm font-semibold text-white min-h-[44px]">Salir</button>
           </div>
         </div>
         <div className="px-4 pt-4 space-y-4">
@@ -903,7 +911,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         <div className="bg-[#07131a] px-4 pb-5 text-white" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
           <div className="flex items-center justify-between mb-4">
             <div><p className="erp-kicker text-cyan-200/70">Lista para salir</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Carga firmada ✓</h1></div>
-            <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white">Salir</button>
+            <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-4 py-2.5 text-sm font-semibold text-white min-h-[44px]">Salir</button>
           </div>
         </div>
         <div className="px-4 pt-4 space-y-4">
@@ -942,7 +950,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           <div className="flex items-center gap-3">
             <button
               onClick={() => setMapaVisible(v => !v)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${mapaVisible ? 'bg-blue-500 text-white' : 'bg-white/15 text-cyan-200'}`}
+              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all min-h-[44px] ${mapaVisible ? 'bg-blue-500 text-white' : 'bg-white/15 text-cyan-200'}`}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><line x1="9" y1="4" x2="9" y2="17"/><line x1="15" y1="7" x2="15" y2="20"/></svg>
               {mapaVisible ? 'Ocultar mapa' : 'Ver mapa'}
@@ -1013,7 +1021,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                             <a
                               href={`tel:${tel}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="px-2 py-1 bg-slate-900 text-white text-[10px] font-bold rounded-md flex items-center gap-1"
+                              className="px-3 py-2 bg-slate-900 text-white text-xs font-bold rounded-md flex items-center gap-1.5 min-h-[40px]"
                               aria-label="Llamar"
                             >
                               📞 Llamar
@@ -1023,7 +1031,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="px-2 py-1 bg-emerald-600 text-white text-[10px] font-bold rounded-md flex items-center gap-1"
+                              className="px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-md flex items-center gap-1.5 min-h-[40px]"
                               aria-label="WhatsApp"
                             >
                               💬 WA
@@ -1126,7 +1134,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             {cobroMetodo==="Transferencia" && <div className="mb-4 space-y-2">
               <input value={cobroRef} onChange={e=>setCobroRef(e.target.value)} className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Referencia (últimos 6 dígitos)" />
               {fotoTransf ? (
-                <div><img src={fotoTransf} alt="Comprobante" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoTransf(null)} className="text-xs text-slate-400 mt-1">Tomar otra</button></div>
+                <div><img src={fotoTransf} alt="Comprobante" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoTransf(null)} className="text-xs text-slate-400 mt-1 px-3 py-2 min-h-[36px]">Tomar otra</button></div>
               ) : (
                 <label className="w-full py-3 border-2 border-dashed border-red-300 bg-red-50/50 rounded-xl text-xs text-red-600 font-semibold flex items-center justify-center gap-2 cursor-pointer">
                   <span className="text-lg">📷</span> Foto del comprobante (obligatoria)
@@ -1161,7 +1169,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <div className="mb-4">
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Evidencia de entrega (opcional)</label>
               {fotoEntrega ? (
-                <div><img src={fotoEntrega} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoEntrega(null)} className="text-xs text-slate-400 mt-1">Tomar otra</button></div>
+                <div><img src={fotoEntrega} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoEntrega(null)} className="text-xs text-slate-400 mt-1 px-3 py-2 min-h-[36px]">Tomar otra</button></div>
               ) : (
                 <label className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
                   <span className="text-lg">📷</span> Foto de nota o entrega
@@ -1286,7 +1294,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <div className="mt-4">
               <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Evidencia (foto) *</label>
               {fotoMerma ? (
-                <div className="mb-3"><img src={fotoMerma} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoMerma(null)} className="text-xs text-slate-400 mt-1">Tomar otra</button></div>
+                <div className="mb-3"><img src={fotoMerma} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoMerma(null)} className="text-xs text-slate-400 mt-1 px-3 py-2 min-h-[36px]">Tomar otra</button></div>
               ) : (
                 <label className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer mb-3">
                   <span className="text-lg">📷</span> Tomar foto de evidencia
@@ -1379,7 +1387,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
           <div className="flex items-center justify-between">
             <div><p className="erp-kicker text-cyan-200/70">Paso 3 de 3</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cierre de ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)} · {fmtDate(new Date())}</p></div>
-            {!rutaCerrada && <button onClick={() => setStep("ruta")} className="text-xs bg-white/8 border border-white/10 px-3 py-1.5 rounded-full">← Volver</button>}
+            {!rutaCerrada && <button onClick={() => setStep("ruta")} className="text-xs bg-white/8 border border-white/10 px-4 py-2.5 rounded-full min-h-[44px]">← Volver</button>}
           </div>
         </div>
         <div className="px-4 pt-4 space-y-4">

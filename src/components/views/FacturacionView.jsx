@@ -224,8 +224,10 @@ const handleReintento = useCallback(async (ordenId) => {
           {/* Conceptos */}
           <div>
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Conceptos</p>
-            <div className="border border-slate-200 rounded-xl overflow-hidden">
-              <table className="w-full text-sm">
+            {/* Tanda 17 P1: overflow-x con overscroll-contain para que el
+                scroll horizontal en mobile no rebote al body. */}
+            <div className="border border-slate-200 rounded-xl overflow-x-auto overscroll-contain">
+              <table className="w-full text-sm min-w-[480px]">
                 <thead className="bg-slate-50"><tr>
                   <th className="text-left px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">SKU</th>
                   <th className="text-left px-3 py-2 text-[10px] font-bold text-slate-400 uppercase">Producto</th>

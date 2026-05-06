@@ -4,6 +4,7 @@ import { s, n, fmtDate, fmtPct, todayLocalISO } from '../utils/safe';
 import { compressImage } from '../utils/compressImage';
 import { puedeAgregarAlCuarto, tarimasOcupadasEnCuarto, colorTarimasUso } from '../utils/tarimas';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
+import { useBodyScrollLock } from './ui/Modal';
 import { EmptyState } from './ui/Skeleton';
 
 // empaqueMap se deriva dinámicamente de data.productos.empaque_sku
@@ -33,6 +34,8 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const [mermaModal, setMermaModal] = useState(false);
   const [mForm, setMForm] = useState({ sku: "", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" });
+  // Tanda 17 P1: body scroll lock con boolean agregado de los 5 modales del archivo.
+  useBodyScrollLock(!!modal || !!traspasoModal || !!sacarModal || !!transModal || !!mermaModal);
   const [fotoMermaFile, setFotoMermaFile] = useState(null);
   const [fotoMermaPreview, setFotoMermaPreview] = useState('');
   const [guardandoMerma, setGuardandoMerma] = useState(false);

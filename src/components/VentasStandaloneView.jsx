@@ -4,6 +4,7 @@ import { EmptyState } from './ui/Skeleton';
 import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
+import { useBodyScrollLock } from './ui/Modal';
 
 const PAGOS = ["Efectivo", "Transferencia SPEI", "Tarjeta (terminal)", "QR / Link de pago", "Crédito (fiado)"];
 const VENTAS_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
@@ -13,6 +14,8 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const [tab, setTab] = useState("ventas");
   const [modal, setModal] = useState(false);
   const [pagoModal, setPagoModal] = useState(null);
+  // Tanda 17 P1: body scroll lock cuando algún modal custom está abierto.
+  useBodyScrollLock(!!modal || !!pagoModal);
   const [pagoForm, setPagoForm] = useState({ metodo: "Efectivo", referencia: "" });
   const [checkoutProvider] = useState('stripe');
   const [checkoutUrl, setCheckoutUrl] = useState(null);
