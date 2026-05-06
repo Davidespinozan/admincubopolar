@@ -481,7 +481,9 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             onClick={() => setMobileDrawerOpen(false)}
           />
           <aside
-            className="lg:hidden fixed top-0 left-0 bottom-0 w-[85%] max-w-[320px] bg-white z-50 shadow-2xl overflow-y-auto animate-slideInLeft flex flex-col"
+            // Tanda 16 P0: overscroll-contain previene que el scroll
+            // del drawer se propague al body en iOS Safari.
+            className="lg:hidden fixed top-0 left-0 bottom-0 w-[85%] max-w-[320px] bg-white z-50 shadow-2xl overflow-y-auto overscroll-contain animate-slideInLeft flex flex-col"
             role="dialog"
             aria-modal="true"
             aria-label="Menú principal"

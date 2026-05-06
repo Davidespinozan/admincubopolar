@@ -2,7 +2,34 @@ import { useState, useCallback, useEffect } from 'react';
 import { Icons } from './Icons';
 import { BtnSpinner } from './Skeleton';
 
+/**
+ * Bloquea el scroll del body mientras `active === true`. Tanda 16 P0.
+ *
+ * Sin esto, en iOS Safari los gestos que empiezan FUERA del modal
+ * (sobre el backdrop) o que llegan al final del scroll interno del
+ * modal hacen scrollear el body de fondo — síntoma de "scroll falla".
+ *
+ * Restaura el valor original al desmontar (clave si una librería UI
+ * externa puso overflow custom; no asumimos '' ).
+ *
+ * Exportable por si hay modales custom (ChoferView, ProduccionStandalone)
+ * que quieran usarlo sin importar Modal completo.
+ */
+export function useBodyScrollLock(active) {
+  useEffect(() => {
+    if (!active) return;
+    const original = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = original;
+    };
+  }, [active]);
+}
+
 export default function Modal({ open, onClose, title, wide, children, closeOnEscape = true }) {
+  // Tanda 16 P0: lock body scroll mientras el modal está abierto.
+  useBodyScrollLock(open);
+
   // Cierre con tecla Escape. Default activo. Componentes que tengan
   // saving en curso o forms grandes a medio llenar pueden pasar
   // closeOnEscape={false} (o closeOnEscape={!saving}) para bloquearlo.
@@ -20,7 +47,9 @@ export default function Modal({ open, onClose, title, wide, children, closeOnEsc
     <div className="fixed inset-0 z-[90] flex items-end md:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-sm" aria-hidden="true" />
       <div
-        className={`relative mx-3 mb-0 w-full max-h-[92vh] max-w-lg overflow-y-auto rounded-t-[28px] border border-slate-200/80 bg-white shadow-[0_24px_56px_rgba(3,14,19,0.16)] sm:max-h-[88vh] md:mx-4 md:mb-0 md:max-h-[85vh] md:rounded-[28px] ${wide ? "md:max-w-2xl lg:max-w-3xl" : "md:max-w-md lg:max-w-lg"}`}
+        // overscroll-contain (Tanda 16 P0): cuando el scroll interno
+        // llega al final, NO propaga al body en iOS Safari.
+        className={`relative mx-3 mb-0 w-full max-h-[92vh] max-w-lg overflow-y-auto overscroll-contain rounded-t-[28px] border border-slate-200/80 bg-white shadow-[0_24px_56px_rgba(3,14,19,0.16)] sm:max-h-[88vh] md:mx-4 md:mb-0 md:max-h-[85vh] md:rounded-[28px] ${wide ? "md:max-w-2xl lg:max-w-3xl" : "md:max-w-md lg:max-w-lg"}`}
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
@@ -101,6 +130,8 @@ export function FormBtn({ children, primary, danger, ghost, onClick, disabled, l
 // Usage: <ConfirmDialog open={showConfirm} onClose={()=>set(false)} onConfirm={doDelete} title="..." message="..." danger />
 export function ConfirmDialog({ open, onClose, onConfirm, title, message, confirmLabel, danger }) {
   const [loading, setLoading] = useState(false);
+  // Tanda 16 P0: lock body scroll también en confirmaciones.
+  useBodyScrollLock(open);
   // Escape cancela. NO ejecuta onConfirm (no hay riesgo de borrado accidental).
   // Si hay un onConfirm async corriendo (loading=true), Escape no cierra para
   // evitar que el usuario crea que canceló cuando ya se está ejecutando.
