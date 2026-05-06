@@ -1,11 +1,14 @@
 import { useState, useMemo } from 'react';
 import { s, n, todayLocalISO } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
+import { useBodyScrollLock } from './ui/Modal';
 
 const BOLSAS_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function BolsasView({ user, data, actions, onLogout }) {
   const [modal, setModal] = useState(null); // "entrada" | "salida"
+  // Tanda 17 P1: body scroll lock cuando modal está abierto.
+  useBodyScrollLock(modal !== null);
   const [form, setForm] = useState({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
   const [toast, setToast] = useState("");
   const [registrando, setRegistrando] = useState(false);

@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { s, n } from '../utils/safe';
 import { useToast } from './views/viewsCommon';
+import { useBodyScrollLock } from './ui/Modal';
 
 export default function BotonFirmasPendientes({ user, data, actions, mostrarBannerUrgente = false }) {
   const toast = useToast();
@@ -10,6 +11,8 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
   const [firmaDibujando, setFirmaDibujando] = useState(false);
   const [firmando, setFirmando] = useState(false);
   const [advertenciaAdmin, setAdvertenciaAdmin] = useState(null);
+  // Tanda 17 P1: body scroll lock para los 2 modales custom de este componente.
+  useBodyScrollLock(!!rutaSeleccionada || !!advertenciaAdmin);
 
   // Tracking de rutas ya mostradas en popup automático para no repetir
   const rutasYaMostradas = useRef(new Set());

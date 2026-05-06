@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense, Component } from 'react';
 import { Icons } from './ui/Icons';
-import { useConfirm } from './ui/Modal';
+import { useConfirm, useBodyScrollLock } from './ui/Modal';
 import { useToast } from './ui/Toast';
 import DashboardView from './views/DashboardView';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
@@ -603,6 +603,8 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
 function ComodatosView({ data, actions }) {
   const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(null);
+  // Tanda 17 P1: body scroll lock cuando modal de comodato está abierto.
+  useBodyScrollLock(modal !== null);
   const empty = { clienteId: "", negocio: "", direccion: "", contacto: "", congeladorModelo: "", capacidad: "60", stockMaximo: "60", frecuencia: "Diario" };
   const [form, setForm] = useState(empty);
   const comodatos = data.comodatos || [];
@@ -729,6 +731,8 @@ function LeadsView({ data, actions }) {
   const [askConfirm, ConfirmEl] = useConfirm();
   const toast = useToast();
   const [modal, setModal] = useState(false); // false | "new" | <lead obj>
+  // Tanda 17 P1: body scroll lock cuando modal de lead está abierto.
+  useBodyScrollLock(!!modal);
   const empty = { nombre: "", telefono: "", correo: "", mensaje: "", origen: "Landing page" };
   const [form, setForm] = useState(empty);
   const leads = data.leads || [];
