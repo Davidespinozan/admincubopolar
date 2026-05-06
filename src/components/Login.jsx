@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import ModoPruebaBanner from './ui/ModoPruebaBanner';
 
 export default function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -53,6 +54,7 @@ export default function LoginScreen({ onLogin }) {
 
   return (
     <div className="min-h-screen overflow-y-auto bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 px-4 py-6 text-white sm:px-6 sm:py-8">
+      <ModoPruebaBanner />
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-cyan-300/14 blur-3xl" />
         <div className="absolute bottom-[-6%] right-[-8%] h-[22rem] w-[22rem] rounded-full bg-amber-200/12 blur-3xl" />

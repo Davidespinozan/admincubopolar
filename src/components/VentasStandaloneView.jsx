@@ -3,6 +3,7 @@ import { s, n, fmtMoney, extraerTelefono, todayLocalISO } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
 import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
+import ModoPruebaBanner from './ui/ModoPruebaBanner';
 
 const PAGOS = ["Efectivo", "Transferencia SPEI", "Tarjeta (terminal)", "QR / Link de pago", "Crédito (fiado)"];
 const VENTAS_SHELL = "min-h-screen w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
@@ -84,6 +85,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
 
   return (
     <div className={VENTAS_SHELL} data-testid="ventas-shell">
+      <ModoPruebaBanner />
       <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-4 pb-5 text-white shadow-[0_24px_48px_rgba(5,150,105,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-1">
           <div><p className="erp-kicker text-emerald-100/80">Ventas</p><h1 className="font-display text-[1.6rem] font-bold tracking-[-0.04em]">Ventas del día</h1><p className="text-xs text-emerald-100">{s(user?.nombre)}</p></div>

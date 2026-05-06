@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, EmptyState, s, n, fmtDate, fmtMoney, useToast } from './viewsCommon';
 import CancelarCFDIModal from '../CancelarCFDIModal';
+import { isSandboxMode } from '../../lib/facturamaMode';
 
 export function FacturacionView({ data, actions }) {
   const toast = useToast();
@@ -61,6 +62,14 @@ const handleReintento = useCallback(async (ordenId) => {
 
   return (<div>
     <PageHeader title="Facturación CFDI" subtitle="Timbrado y complementos de pago" />
+    {isSandboxMode() && (
+      <div
+        data-testid="facturacion-modo-prueba-aviso"
+        className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs sm:text-sm text-amber-900"
+      >
+        📋 <span className="font-bold">Modo prueba</span> — Las facturas timbradas en sandbox tienen UUID válido en Facturama pero <b>NO son válidas ante SAT</b>. Usar este módulo para entrenar; emitir facturas reales requiere cambiar a producción (ver docs/CUTOVER_PRODUCCION.md).
+      </div>
+    )}
     <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
       <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5 text-center"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase">Por facturar</p><p className="text-xl sm:text-3xl font-extrabold text-amber-600 mt-1 sm:mt-2">{(data.facturacionPendiente || []).length}</p></div>
       <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5 text-center"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase">Facturadas</p><p className="text-xl sm:text-3xl font-extrabold text-emerald-600 mt-1 sm:mt-2">{timbradas}</p></div>

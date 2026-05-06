@@ -5,6 +5,7 @@ import { abrirNavegacion } from '../utils/navegacion';
 import { compressImage } from '../utils/compressImage';
 import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
 import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
+import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { EmptyState } from './ui/Skeleton';
 const MapaRuta = lazy(() => import('./ui/MapaRuta'));
 
@@ -657,6 +658,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   // ═══ STEP 1: CARGAR (chofer marca cuánto cargó realmente) ═══
   if (step === "cargar") return (
     <div className={CHOFER_SHELL} data-testid="chofer-shell">
+      <ModoPruebaBanner />
       <div className="bg-[#07131a] px-4 pb-5 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-4">
           <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cargar camión</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
@@ -740,6 +742,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
     return (
       <div className={CHOFER_SHELL}>
+        <ModoPruebaBanner />
         <div className="bg-[#07131a] px-4 pb-5 text-white" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
           <div className="flex items-center justify-between mb-4">
             <div><p className="erp-kicker text-cyan-200/70">Esperando firma</p><h1 className="font-display text-[1.4rem] font-bold tracking-[-0.04em]">Producción debe autorizar</h1></div>
@@ -896,6 +899,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   if (step === "cargada") {
     return (
       <div className={CHOFER_SHELL}>
+        <ModoPruebaBanner />
         <div className="bg-[#07131a] px-4 pb-5 text-white" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
           <div className="flex items-center justify-between mb-4">
             <div><p className="erp-kicker text-cyan-200/70">Lista para salir</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Carga firmada ✓</h1></div>
@@ -931,6 +935,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   // ═══ STEP 2: RUTA ═══
   if (step === "ruta") return (
     <div className={CHOFER_SHELL} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
+      <ModoPruebaBanner />
       <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-2">
           <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.4rem] font-bold tracking-[-0.04em]">En ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
@@ -1370,6 +1375,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
     return (
       <div className={CHOFER_SHELL}>
+        <ModoPruebaBanner />
         <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
           <div className="flex items-center justify-between">
             <div><p className="erp-kicker text-cyan-200/70">Paso 3 de 3</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cierre de ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)} · {fmtDate(new Date())}</p></div>
