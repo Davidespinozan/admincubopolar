@@ -112,15 +112,26 @@ Reglas:
 
 ---
 
-## Cadencia de ejecución recomendada
+## Cadencia de ejecución (Tanda 13: CI activo)
 
-| Frecuencia | Quién dispara | Acción si falla |
+Los 3 smokes corren automáticamente vía GitHub Actions
+([.github/workflows/e2e-smokes.yml](../.github/workflows/e2e-smokes.yml)):
+
+| Trigger | Cuándo | Setup |
 |---|---|---|
-| **Manual pre-release** | David antes de mergear cambios sensibles | Bloquea release |
-| **Cron diario** (futuro Tanda 11) | GitHub Actions a las 7am MX | Email a David |
-| **Pre-merge CI** | Pendiente; requiere acceso a env vars en GHA | — |
+| **Cron diario** | `0 9 * * *` UTC = 3 AM Durango (UTC-6) | Automático |
+| **Post-deploy** | Cada `push` a `main` | Automático |
+| **Manual dispatch** | UI de GitHub → Actions → "E2E Smoke Tests" → Run workflow | A demanda |
+| **Local pre-release** | `npm run test:e2e` antes de mergear cambios sensibles | Manual cuando quieras |
 
-Por ahora **NO hay CI automático**. Los smokes se corren manualmente.
+Si un run falla:
+
+- **Email automático** al owner del repo (configurable en GitHub →
+  User settings → Notifications → Actions).
+- **Artifact `playwright-report-XXX.zip`** queda 7 días en el run con
+  screenshots, video y trace para diagnóstico.
+
+Setup completo + troubleshooting: [docs/CI_SETUP.md](./CI_SETUP.md).
 
 ---
 

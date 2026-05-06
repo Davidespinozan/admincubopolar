@@ -1,0 +1,64 @@
+name: E2E Smoke Tests
+
+# Tanda 13: cron diario + post-deploy + manual dispatch para los 3
+# smokes Playwright contra producción. Read-only: no contamina BD.
+#
+# Cron: 0 9 * * * UTC
+#   = 3:00 AM Durango (UTC-6, sin DST)
+#   = 11:00 AM Valencia en verano CEST (UTC+2)
+#   = 10:00 AM Valencia en invierno CET  (UTC+1)
+# Si el horario te incomoda, ajustar aquí (formato: minuto hora * * *).
+#
+# Notificación de fallo: GitHub envía email automático al owner del
+# repo. Plus, Playwright HTML report queda como artifact (7 días).
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smokes:
+    name: Smokes contra sistema.cubopolar.com
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        # --with-deps trae las libs de sistema que chromium necesita en
+        # ubuntu-latest (libnss, libatk, fontconfig, etc.). Sin esto el
+        # browser no levanta.
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E smokes
+        run: npm run test:e2e
+        env:
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
+          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_VENTAS_EMAIL: ${{ secrets.E2E_VENTAS_EMAIL }}
+          E2E_VENTAS_PASSWORD: ${{ secrets.E2E_VENTAS_PASSWORD }}
+          E2E_CHOFER_EMAIL: ${{ secrets.E2E_CHOFER_EMAIL }}
+          E2E_CHOFER_PASSWORD: ${{ secrets.E2E_CHOFER_PASSWORD }}
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: playwright-report/
+          retention-days: 7
