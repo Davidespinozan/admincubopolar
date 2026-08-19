@@ -5,6 +5,8 @@ import { abrirNavegacion } from '../utils/navegacion';
 import { compressImage } from '../utils/compressImage';
 import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
 import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
+import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas } from '../data/colaOfflineLogic';
+import { useColaOffline } from '../data/useColaOffline';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { useBodyScrollLock } from './ui/Modal';
 import { EmptyState } from './ui/Skeleton';
@@ -116,6 +118,34 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }) || null;
   }, [data.rutas, user, isAdminPreview]);
 
+  // ── COLA OFFLINE (Tanda 22) ──
+  // Sin señal, entrega/no-entrega/merma se encolan en localStorage y se
+  // reintentan al reconectar. Los ejecutores traducen cada tipo a su
+  // acción de supaStore normalizando la convención de error a truthy.
+  const ejecutoresOffline = useMemo(() => ({
+    [TIPOS_MUTACION.ENTREGA]: async (p) => {
+      const err = await actions.updateOrdenEstatus?.(p.ordenId, 'Entregada', p.metodoPago, { folioNota: p.folioNota || null });
+      return err || null;
+    },
+    [TIPOS_MUTACION.NO_ENTREGA]: async (p) => {
+      const r = await actions.marcarNoEntregada?.(p.ordenId, p.motivo, p.reagendar);
+      return (r && r.error) ? r : null;
+    },
+    [TIPOS_MUTACION.MERMA]: async (p) => {
+      const r = await actions.registrarMerma?.(p.sku, p.cant, p.causa, p.origen, p.foto);
+      return (r && (r.error || r.message)) ? r : null;
+    },
+  }), [actions]);
+  const {
+    cola: colaOffline,
+    online,
+    sincronizando,
+    agregar: encolarOffline,
+    sincronizar: sincronizarCola,
+    pendientesActuales: pendientesCola,
+    limpiar: limpiarCola,
+  } = useColaOffline({ rutaId: miRutaActiva?.id, ejecutores: ejecutoresOffline, avisar: showToast });
+
   // Derivar step desde el estado real de la ruta — si ya está "En progreso" saltar directo a ruta
   const rutaEnProgreso = miRutaActiva && (s(miRutaActiva.estatus).toLowerCase() === 'en progreso' || s(miRutaActiva.estatus).toLowerCase() === 'en_progreso');
   const rutaPendienteFirma = miRutaActiva && s(miRutaActiva.estatus).toLowerCase() === 'pendiente firma';
@@ -211,13 +241,56 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       }));
     if (dbEntregas.length > 0) {
       setEntregas(prev => {
-        // Merge: keep local entries not in DB, add DB entries
+        // Merge: keep local entries not in DB, add DB entries.
+        // Tanda 22 fix: las ventas exprés no tienen ordenId — el filtro
+        // anterior (e.ordenId && ...) las descartaba en cada refresh.
         const dbIds = new Set(dbEntregas.map(e => String(e.ordenId)));
-        const localOnly = prev.filter(e => e.ordenId && !dbIds.has(String(e.ordenId)));
+        const localOnly = prev.filter(e => !e.ordenId || !dbIds.has(String(e.ordenId)));
         return [...dbEntregas, ...localOnly];
       });
     }
   }, [ordenesConDetalle]);
+
+  // Tanda 22: persistir entregas por ruta (igual que mermas). Antes, un
+  // reload a media ruta perdía ventas exprés, referencias de
+  // transferencia y fotos de comprobante — la DB solo recupera órdenes
+  // ya marcadas Entregada, sin ese detalle local.
+  useEffect(() => {
+    if (!miRutaActiva?.id) return;
+    const clave = 'entregas_ruta_' + miRutaActiva.id;
+    const saved = localStorage.getItem(clave);
+    if (!saved) return;
+    try {
+      const arr = JSON.parse(saved);
+      if (!Array.isArray(arr) || arr.length === 0) return;
+      setEntregas(prev => {
+        const vistos = new Set(prev.map(e => String(e.ordenId ?? e.id)));
+        const nuevos = arr.filter(e => e && !vistos.has(String(e.ordenId ?? e.id)));
+        return [...prev, ...nuevos];
+      });
+    } catch {
+      localStorage.removeItem(clave);
+    }
+  }, [miRutaActiva?.id]);
+
+  useEffect(() => {
+    // Solo persistir cuando hay algo — evita que el mount inicial (con
+    // estado vacío) pise lo guardado antes de que cargue el effect de
+    // arriba. Al cerrar ruta se hace removeItem explícito.
+    if (!miRutaActiva?.id || entregas.length === 0) return;
+    const clave = 'entregas_ruta_' + miRutaActiva.id;
+    try {
+      localStorage.setItem(clave, JSON.stringify(entregas));
+    } catch {
+      // Quota (fotos base64): persistir sin fotos como degradado — se
+      // pierde la evidencia si recarga, pero no los montos ni métodos.
+      try {
+        localStorage.setItem(clave, JSON.stringify(
+          entregas.map(({ foto: _foto, fotoEntrega: _fotoEntrega, ...resto }) => resto)
+        ));
+      } catch { /* sin espacio ni para eso: la copia en memoria sigue viva */ }
+    }
+  }, [entregas, miRutaActiva?.id]);
 
   // Load mermas from localStorage on mount (persist across reloads)
   useEffect(() => {
@@ -306,7 +379,11 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     return () => clearInterval(interval);
   }, [step, miRutaActiva?.id, user?.id]);
 
-  const pendientes = ordenesConDetalle.filter(o => !o.entregada);
+  // Tanda 22: excluir de "Por entregar" las órdenes ya atendidas
+  // offline (entrega o no-entrega en cola) para no atender dos veces
+  // la misma parada mientras se espera señal.
+  const ordenesEnColaOffline = useMemo(() => ordenesBloqueadas(colaOffline), [colaOffline]);
+  const pendientes = ordenesConDetalle.filter(o => !o.entregada && !ordenesEnColaOffline.has(String(o.id)));
   const entregadasList = ordenesConDetalle.filter(o => o.entregada);
 
 
@@ -446,6 +523,10 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }
     // QR / Link de pago → generate checkout
     if (cobroMetodo === "QR / Link de pago") {
+      if (!online) {
+        showToast('Sin señal — el link de pago necesita conexión. Usa otro método.');
+        return;
+      }
       setGenerandoLink(true);
       try {
         const result = await actions.crearCheckoutPago?.(entregaModal.id, checkoutProvider);
@@ -478,6 +559,21 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     };
     setConfirmandoEntrega(true);
     try {
+      if (!online) {
+        // Tanda 22: sin señal → encolar la mutación y confirmar local.
+        // La orden desaparece de "Por entregar" (entregas la marca) y
+        // la sincronización corre sola al reconectar.
+        encolarOffline(TIPOS_MUTACION.ENTREGA, {
+          ordenId: entregaModal.id,
+          metodoPago: cobroMetodo,
+          folioNota: folioNota || null,
+        });
+        setEntregas(prev => [...prev, { ...entrega, offline: true }]);
+        showToast("Sin señal — entrega guardada en el teléfono");
+        setEntregaModal(null);
+        setFotoTransf(null);
+        return;
+      }
       // Update order status in store
       const err = actions.updateOrdenEstatus
         ? await actions.updateOrdenEstatus(entregaModal.id, "Entregada", cobroMetodo, { folioNota: folioNota || null })
@@ -512,6 +608,18 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }
     setMarcandoNoEntrega(true);
     try {
+      if (!online) {
+        // Tanda 22: sin señal → encolar; la parada sale de "Por
+        // entregar" vía ordenesEnColaOffline hasta que sincronice.
+        encolarOffline(TIPOS_MUTACION.NO_ENTREGA, {
+          ordenId: noEntregaModal.id,
+          motivo: motivoFinal,
+          reagendar: noEntregaForm.reagendar,
+        });
+        showToast('Sin señal — se marcará no entregada al reconectar');
+        setNoEntregaModal(null);
+        return;
+      }
       const result = await actions.marcarNoEntregada?.(
         noEntregaModal.id,
         motivoFinal,
@@ -593,8 +701,18 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }
     setRegistrandoMerma(true);
     try {
-      // Save to store with audit trail
-      if (actions.registrarMerma) {
+      if (!online) {
+        // Tanda 22: sin señal → encolar el registro en BD; el estado
+        // local (mermas + localStorage) se actualiza igual que online.
+        encolarOffline(TIPOS_MUTACION.MERMA, {
+          sku: mForm.sku,
+          cant: n(mForm.cant),
+          causa: mForm.causa,
+          origen: s(user?.nombre),
+          foto: fotoMerma,
+        });
+      } else if (actions.registrarMerma) {
+        // Save to store with audit trail
         await actions.registrarMerma(mForm.sku, n(mForm.cant), mForm.causa, s(user?.nombre), fotoMerma);
       }
       setMermas(prev => {
@@ -605,7 +723,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         }
         return updated;
       });
-      showToast("Merma registrada");
+      showToast(online ? "Merma registrada" : "Sin señal — merma guardada en el teléfono");
       setMermaModal(false);
       setFotoMerma(null);
       setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" });
@@ -616,6 +734,22 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
   const cerrarRuta = async () => {
     if (cerrandoRuta || rutaCerrada) return;
+
+    // Tanda 22: el cierre necesita conexión y cola sincronizada — las
+    // no-entregas encoladas NO viajan en cerrarRutaCompleta, y cerrar
+    // con mutaciones pendientes dejaría el reporte incompleto.
+    if (!online) {
+      showToast('Sin señal — busca conexión para cerrar la ruta');
+      return;
+    }
+    if (pendientesCola().length > 0) {
+      showToast('Sincronizando pendientes…');
+      await sincronizarCola();
+      if (pendientesCola().length > 0) {
+        showToast('Hay operaciones sin sincronizar — reintenta en un momento');
+        return;
+      }
+    }
 
     // Validar que no haya inventario negativo (entregó más de lo que cargó)
     for (const p of productos) {
@@ -653,7 +787,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       }
       if (miRutaActiva?.id) {
         localStorage.removeItem('mermas_ruta_' + miRutaActiva.id);
+        localStorage.removeItem('entregas_ruta_' + miRutaActiva.id);
       }
+      limpiarCola();
       setRutaCerrada(true);
       showToast("Reporte enviado ✓");
     } catch {
@@ -944,6 +1080,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   if (step === "ruta") return (
     <div className={CHOFER_SHELL} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
       <ModoPruebaBanner />
+      <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
       <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
         <div className="flex items-center justify-between mb-2">
           <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.4rem] font-bold tracking-[-0.04em]">En ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
@@ -1384,6 +1521,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     return (
       <div className={CHOFER_SHELL}>
         <ModoPruebaBanner />
+        <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
         <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
           <div className="flex items-center justify-between">
             <div><p className="erp-kicker text-cyan-200/70">Paso 3 de 3</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cierre de ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)} · {fmtDate(new Date())}</p></div>
@@ -1453,6 +1591,34 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     );
   }
   return null;
+}
+
+// Tanda 22: estado de la cola offline. Sin conexión → aviso de que las
+// operaciones se guardan en el teléfono; con pendientes y conexión →
+// contador + botón de sincronización manual; fallidas → alerta roja.
+function BannerColaOffline({ online, cola, sincronizando, onSincronizar }) {
+  const pendientes = mutacionesPendientes(cola).length;
+  const fallidas = mutacionesFallidas(cola).length;
+  if (online && pendientes === 0 && fallidas === 0) return null;
+  return (
+    <div className={`px-4 py-2.5 text-xs font-semibold flex items-center justify-between gap-2 ${!online ? 'bg-amber-100 text-amber-800 border-b border-amber-200' : 'bg-cyan-50 text-cyan-800 border-b border-cyan-200'}`} role="status">
+      <span>
+        {!online
+          ? `📴 Sin conexión — tus operaciones se guardan en el teléfono${pendientes > 0 ? ` (${pendientes} en espera)` : ''}`
+          : `☁️ ${pendientes} ${pendientes === 1 ? 'operación pendiente' : 'operaciones pendientes'} de sincronizar`}
+        {fallidas > 0 && <span className="ml-2 text-red-700 font-bold">⚠ {fallidas} sin poder sincronizar — avisa al admin</span>}
+      </span>
+      {online && pendientes > 0 && (
+        <button
+          onClick={onSincronizar}
+          disabled={sincronizando}
+          className="flex-shrink-0 px-3 py-1.5 bg-cyan-700 text-white rounded-lg font-bold disabled:opacity-50 min-h-[32px]"
+        >
+          {sincronizando ? 'Sincronizando…' : 'Sincronizar'}
+        </button>
+      )}
+    </div>
+  );
 }
 
 function Toast({ msg }) {
