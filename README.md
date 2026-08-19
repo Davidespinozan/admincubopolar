@@ -1,79 +1,69 @@
 # CUBOPOLAR ERP
 
-Sistema ERP para Fábrica de Productos de Hielo S.A. de C.V.
+ERP de Cubo Polar (fábrica de productos de hielo). React 18 + Vite + Tailwind,
+backend en Supabase (Auth + Postgres + Storage + Realtime), serverless en
+Netlify Functions, deploy automático desde `main`.
+
+> Referencia técnica completa: [`DOSSIER.md`](DOSSIER.md) y [`CLAUDE.md`](CLAUDE.md).
 
 ## Setup local
 
 ```bash
-# 1. Instalar dependencias
 npm install
-
-# 2. Correr en modo desarrollo
-npm run dev
-
-# 3. Abrir en el navegador
-# → http://localhost:5173
+npm run dev          # http://localhost:5173
+npm run dev:full     # netlify dev (frontend + functions)
 ```
 
-## Deploy en Netlify (vía GitHub)
-
-1. Sube este repo a GitHub
-2. En Netlify → "Add new site" → "Import an existing project"
-3. Conecta tu repo de GitHub
-4. Configuración de build:
-   - **Build command:** `npm run build`
-   - **Publish directory:** `dist`
-5. Click "Deploy site"
-
-Cada `git push` desplegará automáticamente.
-
-## Estructura del proyecto
+Variables de entorno (`.env`):
 
 ```
-cubopolar-erp/
-├── index.html              ← Entry point
-├── package.json            ← Dependencias
-├── vite.config.js          ← Config de Vite
-├── tailwind.config.js      ← Config de Tailwind
-├── postcss.config.js       ← PostCSS
-├── netlify.toml            ← Config de Netlify
-├── public/
-│   └── favicon.svg         ← Icono
-└── src/
-    ├── main.jsx            ← Monta React
-    ├── App.jsx             ← Componente raíz
-    ├── index.css           ← Estilos globales + Tailwind
-    ├── data/
-    │   └── mockData.js     ← Datos de ejemplo (reemplazar con API)
-    └── components/
-        ├── CuboPolarERP.jsx    ← Layout principal (sidebar + topbar)
-        ├── ui/
-        │   ├── Icons.jsx       ← Todos los iconos SVG
-        │   └── Components.jsx  ← Componentes reutilizables
-        └── views/
-            ├── DashboardView.jsx   ← Dashboard
-            └── ModuleViews.jsx     ← Todos los módulos
+VITE_SUPABASE_URL=...
+VITE_SUPABASE_ANON_KEY=...
+VITE_GOOGLE_MAPS_API_KEY=...      # geocodificación de direcciones
+VITE_FACTURAMA_MODE=sandbox       # sandbox | production (banner MODO PRUEBA)
+VITE_SENTRY_DSN=...               # opcional, telemetría frontend
 ```
 
-## Módulos incluidos
+Las functions usan además `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` y las
+credenciales de Stripe / MercadoPago / Facturama — ver `docs/` (setup de
+Sentry, CI, E2E y cutover de Facturama).
 
-- **Login** con roles (Admin, Chofer, Ventas, Almacén, Facturación)
-- **Vista Chofer (móvil)** — órdenes asignadas, entregas, ventas exprés, registro de merma
-- Dashboard (resumen operativo)
-- Clientes (datos fiscales)
-- Productos (empaque + producto terminado)
-- Precios (público general + overrides por cliente)
-- Producción (órdenes diarias por turno/máquina)
-- Inventario (cuartos fríos, kardex, movimientos)
-- Órdenes de Venta (programadas + exprés)
-- Rutas y Entregas (distribución, evidencias)
-- Facturación CFDI (timbrado manual)
-- Conciliación (cargado vs vendido vs devuelto vs merma)
-- Auditoría (historial de acciones)
-- Configuración (usuarios, roles, alertas, ubicaciones)
+## Comandos
+
+| Comando | Qué hace |
+|---|---|
+| `npm run dev` | Servidor de desarrollo |
+| `npm run build` | Build de producción (inyecta versión del service worker) |
+| `npm test` | Suite Vitest (950+ tests de lógica pura) |
+| `npm run lint` | ESLint sobre `src/` y `netlify/functions/` |
+| `npm run test:e2e` | Smokes Playwright (ver `docs/E2E_SETUP.md`) |
+
+## Arquitectura (resumen)
+
+- **Vistas por rol** (lazy): Admin/Facturación usan el shell completo
+  (`CuboPolarERP.jsx`, 24 módulos en 4 áreas, navegación con hash `#/modulo`);
+  Chofer, Producción, Ventas y Almacén Bolsas tienen vistas standalone móviles.
+- **Datos**: `src/data/supaStore.js` (hook `useSupaStore`) — fetch por núcleo +
+  slices con realtime granular; lógica pura extraída a `src/data/*Logic.js`
+  con tests en `src/__tests__/`.
+- **Chofer offline**: entregas, no-entregas y mermas se encolan en el teléfono
+  sin señal y se sincronizan al reconectar (`colaOfflineLogic.js`).
+- **Serverless**: 12 functions de billing/CFDI/leads/usuarios + 2 crons de
+  alertas (cartera vencida, rutas sin cerrar) en `netlify/functions/`.
+- **Base de datos**: 70 scripts SQL en `supabase/` (ver
+  `supabase/MIGRATIONS_README.md`), RLS por rol y RPCs atómicos.
+- **PWA**: service worker propio con versión inyectada en build
+  (`scripts/swAutoVersion.mjs`) — no requiere bump manual.
+
+## Deploy
+
+Netlify deploya cada push a `main` (`netlify.toml`: SPA fallback, headers de
+seguridad, redirects de pago `/pagar/:id`, crons agendados). Requiere realtime
+habilitado en Supabase para las tablas suscritas (incluye `notificaciones` y
+`chofer_ubicaciones`).
 
 ## Notas
 
-El login utiliza autenticación real de Supabase. No hay usuarios de demostración activados en el código; las credenciales se gestionan en la base de datos.
-
-Los choferes ven una vista móvil diferente con sus órdenes, ventas exprés y registro de merma.
+- Autenticación real de Supabase; no hay usuarios demo en el código.
+- El banner "MODO PRUEBA" aparece mientras Facturama esté en sandbox; el plan
+  de cutover a producción está en `docs/CUTOVER_PRODUCCION.md`.
