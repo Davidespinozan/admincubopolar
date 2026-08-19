@@ -22,6 +22,7 @@ import {
   buildCancelacionChanges,
 } from './rutasLogic';
 import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
+import { TABLAS_CORE_RT, TABLAS_SLICE_RT } from './realtimeLogic';
 
 // ═══════════════════════════════════════════════════════════════
 // useSupaStore — fuente única de verdad para toda la app
@@ -105,24 +106,182 @@ export function useSupaStore(userId, userName, userRol) {
   const toastRef = useRef(toast);
   toastRef.current = toast;
 
-  // ── Fetch all data ──────────────────────────────────────────
-  const fetchAll = useCallback(async () => {
+  // ── Slices independientes (Tanda 23) ────────────────────────
+  // Tablas sin joins con el núcleo: cada una se trae y mapea sola, y
+  // el realtime refetchea SOLO la afectada (1-2 queries) en vez del
+  // fetchAll completo. Las que cambian juntas comparten slice (cxp
+  // arrastra pagos_proveedores, nómina sus recibos, costos su
+  // historial). La partición vive en realtimeLogic.js.
+  const fetchSlice = useCallback(async (tabla) => {
+    switch (tabla) {
+      case 'produccion': {
+        const pro = await safeRows(supabase.from('produccion').select('*').order('id', { ascending: false }));
+        setData(prev => ({ ...prev, produccion: pro.map(p => ({ ...p, cantidad: Number(p.cantidad) })) }));
+        return;
+      }
+      case 'inventario_mov': {
+        const mov = await safeRows(supabase.from('inventario_mov').select('*').order('id', { ascending: false }).limit(200));
+        setData(prev => ({
+          ...prev,
+          inventarioMov: mov.map(m => ({
+            ...m,
+            producto: m.producto || m.sku || '',   // columna real: "producto"
+            sku:      m.producto || m.sku || '',   // alias para compatibilidad
+            cantidad: Number(m.cantidad),
+            usuario:  m.usuario || 'Sistema',      // columna real: "usuario" texto
+          })),
+        }));
+        return;
+      }
+      case 'pagos': {
+        const pag = await safeRows(supabase.from('pagos').select('*').order('id', { ascending: false }).limit(200));
+        setData(prev => ({ ...prev, pagos: pag.map(p => ({ ...toCamel(p), monto: Number(p.monto) })) }));
+        return;
+      }
+      case 'auditoria': {
+        const aud = await safeRows(supabase.from('auditoria').select('*').order('id', { ascending: false }).limit(500));
+        setData(prev => ({ ...prev, auditoria: aud.map(a => ({ ...a, usuario: a.usuario || 'Sistema' })) }));
+        return;
+      }
+      case 'comodatos': {
+        const com = await safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false }));
+        setData(prev => ({ ...prev, comodatos: com.map(toCamel) }));
+        return;
+      }
+      case 'leads': {
+        const lea = await safeRows(supabase.from('leads').select('*').order('id', { ascending: false }));
+        setData(prev => ({ ...prev, leads: lea.map(toCamel) }));
+        return;
+      }
+      case 'movimientos_contables': {
+        const movC = await safeRows(supabase.from('movimientos_contables').select('*').order('id', { ascending: false }).limit(500));
+        const movContables = movC.map(m => ({ ...toCamel(m), monto: Number(m.monto) }));
+        setData(prev => ({
+          ...prev,
+          movContables,
+          contabilidad: {
+            ingresos: movContables.filter(m => m.tipo === 'Ingreso'),
+            egresos:  movContables.filter(m => m.tipo === 'Egreso'),
+          },
+        }));
+        return;
+      }
+      case 'mermas': {
+        const mer = await safeRows(supabase.from('mermas').select('*').order('id', { ascending: false }).limit(200));
+        const mermas = await Promise.all(mer.map(async (m) => {
+          const row = { ...toCamel(m), cantidad: Number(m.cantidad) };
+          const fotoPath = s(m.foto_url);
+          row.fotoPath = fotoPath;
+          row.fotoUrl = fotoPath;
+          if (fotoPath && !/^https?:\/\//.test(fotoPath) && !/^data:/.test(fotoPath) && !/^blob:/.test(fotoPath)) {
+            const { data: signedData, error: signedErr } = await supabase.storage
+              .from('mermas')
+              .createSignedUrl(fotoPath, 60 * 60 * 12);
+            if (!signedErr && signedData?.signedUrl) {
+              row.fotoUrl = signedData.signedUrl;
+            }
+          }
+          return row;
+        }));
+        setData(prev => ({ ...prev, mermas }));
+        return;
+      }
+      case 'nomina_periodos': {
+        const [nomP, nomR] = await Promise.all([
+          safeRows(supabase.from('nomina_periodos').select('*').order('id', { ascending: false })),
+          safeRows(supabase.from('nomina_recibos').select('*').order('id', { ascending: false })),
+        ]);
+        setData(prev => ({ ...prev, nominaPeriodos: nomP.map(toCamel), nominaRecibos: nomR.map(toCamel) }));
+        return;
+      }
+      case 'cuentas_por_pagar': {
+        const [cxp, pagProv] = await Promise.all([
+          safeRows(supabase.from('cuentas_por_pagar').select('*').order('id', { ascending: false }).limit(500)),
+          safeRows(supabase.from('pagos_proveedores').select('*').order('id', { ascending: false }).limit(200)),
+        ]);
+        setData(prev => ({
+          ...prev,
+          cuentasPorPagar: cxp.map(c => ({
+            ...toCamel(c),
+            montoOriginal: Number(c.monto_original),
+            montoPagado: Number(c.monto_pagado),
+            saldoPendiente: Number(c.saldo_pendiente),
+          })),
+          pagosProveedores: pagProv.map(p => ({ ...toCamel(p), monto: Number(p.monto) })),
+        }));
+        return;
+      }
+      case 'costos_fijos': {
+        const [costF, costH] = await Promise.all([
+          safeRows(supabase.from('costos_fijos').select('*').order('id')),
+          safeRows(supabase.from('costos_historial').select('*').order('id', { ascending: false }).limit(200)),
+        ]);
+        setData(prev => ({
+          ...prev,
+          costosFijos: costF.map(c => ({ ...toCamel(c), monto: Number(c.monto) })),
+          costosHistorial: costH.map(c => ({ ...toCamel(c), monto: Number(c.monto) })),
+        }));
+        return;
+      }
+      case 'devoluciones': {
+        const devs = await safeRows(supabase.from('devoluciones').select('*').order('id', { ascending: false }).limit(200));
+        setData(prev => ({ ...prev, devoluciones: devs.map(d => ({ ...toCamel(d), total: Number(d.total) })) }));
+        return;
+      }
+      case 'cierres_diarios': {
+        const cierres = await safeRows(supabase.from('cierres_diarios').select('*').order('id', { ascending: false }).limit(200));
+        setData(prev => ({
+          ...prev,
+          cierresDiarios: cierres.map(c => ({
+            ...toCamel(c),
+            esperadoEfectivo: Number(c.esperado_efectivo),
+            esperadoTransferencia: Number(c.esperado_transferencia),
+            esperadoCredito: Number(c.esperado_credito),
+            esperadoTotal: Number(c.esperado_total),
+            contadoEfectivo: Number(c.contado_efectivo),
+            contadoTransferencia: Number(c.contado_transferencia),
+            contadoTotal: Number(c.contado_total),
+            diferencia: Number(c.diferencia),
+          })),
+        }));
+        return;
+      }
+      case 'notificaciones': {
+        const notif = await safeRows(supabase.from('notificaciones').select('*').order('id', { ascending: false }).limit(100));
+        setData(prev => ({ ...prev, notificaciones: notif.map(toCamel) }));
+        return;
+      }
+      case 'chofer_ubicaciones': {
+        const chUbi = await safeRows(supabase.from('chofer_ubicaciones').select('*').order('created_at', { ascending: false }).limit(50));
+        setData(prev => ({ ...prev, choferUbicaciones: chUbi.map(toCamel) }));
+        return;
+      }
+      default:
+        return;
+    }
+  }, []);
+
+  // ── Núcleo interdependiente (Tanda 23) ──────────────────────
+  // Estas tablas se cruzan en el mapeo: el saldo del cliente sale de
+  // CxC, la ruta cuenta sus órdenes y resuelve chofer/ayudante/camión,
+  // las alertas mezclan productos + umbrales + cuartos + órdenes + CxC
+  // + invoice_attempts. Cambia una → se recargan juntas.
+  const fetchCore = useCallback(async () => {
     try {
-      // Tablas core
-      const [cli, prod, pe, ord, ol, rut, pro, mov, cf, aud, usr, umb, pag] = await Promise.all([
+      const [cli, prod, pe, ord, ol, rut, cf, usr, umb, cxc, emp, cam, invAttempts] = await Promise.all([
         safeRows(supabase.from('clientes').select('*').order('id')),
         safeRows(supabase.from('productos').select('*').order('id')),
         safeRows(supabase.from('precios_esp').select('*').order('id')),
         safeRows(supabase.from('ordenes').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('orden_lineas').select('*').order('orden_id')),
         safeRows(supabase.from('rutas').select('*').order('id', { ascending: false })),
-        safeRows(supabase.from('produccion').select('*').order('id', { ascending: false })),
-        safeRows(supabase.from('inventario_mov').select('*').order('id', { ascending: false }).limit(200)),
         safeRows(supabase.from('cuartos_frios').select('*')),
-        safeRows(supabase.from('auditoria').select('*').order('id', { ascending: false }).limit(500)),
         safeRows(supabase.from('usuarios').select('*').order('id')),
         safeRows(supabase.from('umbrales').select('*')),
-        safeRows(supabase.from('pagos').select('*').order('id', { ascending: false }).limit(200)),
+        safeRows(supabase.from('cuentas_por_cobrar').select('*').order('id', { ascending: false }).limit(500)),
+        safeRows(supabase.from('empleados').select('*').order('id')),
+        safeRows(supabase.from('camiones').select('*').order('id')),
+        safeRows(supabase.from('invoice_attempts').select('orden_id, provider_reference, status, created_at, request_payload').order('id', { ascending: false }).limit(300)),
       ]);
 
       // Configuracion de empresa (singleton id=1)
@@ -131,28 +290,6 @@ export function useSupaStore(userId, userName, userRol) {
         .select('*')
         .eq('id', 1)
         .maybeSingle();
-
-      // Tablas opcionales
-      const [com, lea, emp, nomP, nomR, movC, mer, cxc, costF, costH, cxp, pagProv, invAttempts, cam, notif, chUbi, devs, cierres] = await Promise.all([
-        safeRows(supabase.from('comodatos').select('*').order('id', { ascending: false })),
-        safeRows(supabase.from('leads').select('*').order('id', { ascending: false })),
-        safeRows(supabase.from('empleados').select('*').order('id')),
-        safeRows(supabase.from('nomina_periodos').select('*').order('id', { ascending: false })),
-        safeRows(supabase.from('nomina_recibos').select('*').order('id', { ascending: false })),
-        safeRows(supabase.from('movimientos_contables').select('*').order('id', { ascending: false }).limit(500)),
-        safeRows(supabase.from('mermas').select('*').order('id', { ascending: false }).limit(200)),
-        safeRows(supabase.from('cuentas_por_cobrar').select('*').order('id', { ascending: false }).limit(500)),
-        safeRows(supabase.from('costos_fijos').select('*').order('id')),
-        safeRows(supabase.from('costos_historial').select('*').order('id', { ascending: false }).limit(200)),
-        safeRows(supabase.from('cuentas_por_pagar').select('*').order('id', { ascending: false }).limit(500)),
-        safeRows(supabase.from('pagos_proveedores').select('*').order('id', { ascending: false }).limit(200)),
-        safeRows(supabase.from('invoice_attempts').select('orden_id, provider_reference, status, created_at, request_payload').order('id', { ascending: false }).limit(300)),
-        safeRows(supabase.from('camiones').select('*').order('id')),
-        safeRows(supabase.from('notificaciones').select('*').order('id', { ascending: false }).limit(100)),
-        safeRows(supabase.from('chofer_ubicaciones').select('*').order('created_at', { ascending: false }).limit(50)),
-        safeRows(supabase.from('devoluciones').select('*').order('id', { ascending: false }).limit(200)),
-        safeRows(supabase.from('cierres_diarios').select('*').order('id', { ascending: false }).limit(200)),
-      ]);
       const clientes  = cli;
       const productos = prod;
       const ordenLineas = ol;
@@ -235,21 +372,6 @@ export function useSupaStore(userId, userName, userRol) {
           entregadas: linked.filter(o => o.estatus === 'Entregada' || o.estatus === 'Facturada').length,
         };
       });
-
-      // ── Map inventario_mov (usa "producto" y "usuario" como texto) ──
-      const inventarioMov = (mov || []).map(m => ({
-        ...m,
-        producto: m.producto || m.sku || '',   // columna real: "producto"
-        sku:      m.producto || m.sku || '',   // alias para compatibilidad
-        cantidad: Number(m.cantidad),
-        usuario:  m.usuario || 'Sistema',      // columna real: "usuario" texto
-      }));
-
-      // ── Map produccion ──
-      const produccion = (pro || []).map(p => ({
-        ...p,
-        cantidad: Number(p.cantidad),
-      }));
 
       // ── Build facturacionPendiente ──
       // Tanda 5: usa isFacturable (FSM) — incluye órdenes con CFDI cancelado
@@ -371,124 +493,59 @@ export function useSupaStore(userId, userName, userRol) {
         }
       }
 
-      // ── Map auditoria (usa "usuario" como texto directo) ──
-      const auditoria = (aud || []).map(a => ({
-        ...a,
-        usuario: a.usuario || 'Sistema',   // columna real: "usuario" texto
-      }));
-
       // ── Map umbrales ──
       const umbralesMapped = umbrales.map(u => {
         const p = productos.find(x => x.sku === u.sku);
         return { ...u, producto: p ? `${p.sku} (${p.nombre})` : u.sku };
       });
 
-      // ── Map movimientos contables ──
-      const movContables = (movC || []).map(m => ({
-        ...toCamel(m),
-        monto: Number(m.monto),
-      }));
-      const contabilidadObj = {
-        ingresos: movContables.filter(m => m.tipo === 'Ingreso'),
-        egresos:  movContables.filter(m => m.tipo === 'Egreso'),
-      };
-
-      const mermasMapped = await Promise.all((mer || []).map(async (m) => {
-        const row = { ...toCamel(m), cantidad: Number(m.cantidad) };
-        const fotoPath = s(m.foto_url);
-        row.fotoPath = fotoPath;
-        row.fotoUrl = fotoPath;
-
-        if (fotoPath && !/^https?:\/\//.test(fotoPath) && !/^data:/.test(fotoPath) && !/^blob:/.test(fotoPath)) {
-          const { data: signedData, error: signedErr } = await supabase.storage
-            .from('mermas')
-            .createSignedUrl(fotoPath, 60 * 60 * 12);
-          if (!signedErr && signedData?.signedUrl) {
-            row.fotoUrl = signedData.signedUrl;
-          }
-        }
-
-        return row;
-      }));
-
-      setData({
+      // Patch merge: el núcleo solo pisa SUS llaves; los slices
+      // independientes conservan lo suyo (Tanda 23).
+      setData(prev => ({
+        ...prev,
         clientes: clientesMapped,
         productos: productos.map(p => ({ ...p, stock: Number(p.stock), precio: Number(p.precio) })),
         preciosEsp,
         ordenes,
         rutas: rutasMapped,
-        produccion,
-        inventarioMov,
         cuartosFrios,
         alertas,
         facturacionPendiente,
         conciliacion: [],
-        auditoria,
         usuarios,
         umbrales: umbralesMapped,
-        pagos: (pag || []).map(p => ({ ...toCamel(p), monto: Number(p.monto) })),
-        comodatos: (com || []).map(toCamel),
-        leads: (lea || []).map(toCamel),
         empleados: (emp || []).map(toCamel),
-        nominaPeriodos: (nomP || []).map(toCamel),
-        nominaRecibos:  (nomR || []).map(toCamel),
-        movContables,
-        mermas: mermasMapped,
+        camiones: (cam || []).map(toCamel),
         cuentasPorCobrar: (cxc || []).map(c => ({
           ...toCamel(c),
           montoOriginal: Number(c.monto_original),
           montoPagado: Number(c.monto_pagado),
           saldoPendiente: Number(c.saldo_pendiente),
         })),
-        costosFijos: (costF || []).map(c => ({
-          ...toCamel(c),
-          monto: Number(c.monto),
-        })),
-        costosHistorial: (costH || []).map(c => ({
-          ...toCamel(c),
-          monto: Number(c.monto),
-        })),
-        cuentasPorPagar: (cxp || []).map(c => ({
-          ...toCamel(c),
-          montoOriginal: Number(c.monto_original),
-          montoPagado: Number(c.monto_pagado),
-          saldoPendiente: Number(c.saldo_pendiente),
-        })),
-        pagosProveedores: (pagProv || []).map(p => ({
-          ...toCamel(p),
-          monto: Number(p.monto),
-        })),
         invoiceAttempts: (invAttempts || []).map(toCamel),
-        camiones: (cam || []).map(toCamel),
-        notificaciones: (notif || []).map(toCamel),
-        choferUbicaciones: (chUbi || []).map(toCamel),
-        devoluciones: (devs || []).map(d => ({
-          ...toCamel(d),
-          total: Number(d.total),
-        })),
-        cierresDiarios: (cierres || []).map(c => ({
-          ...toCamel(c),
-          esperadoEfectivo: Number(c.esperado_efectivo),
-          esperadoTransferencia: Number(c.esperado_transferencia),
-          esperadoCredito: Number(c.esperado_credito),
-          esperadoTotal: Number(c.esperado_total),
-          contadoEfectivo: Number(c.contado_efectivo),
-          contadoTransferencia: Number(c.contado_transferencia),
-          contadoTotal: Number(c.contado_total),
-          diferencia: Number(c.diferencia),
-        })),
-        contabilidad: contabilidadObj,
         configEmpresa: configEmpresaRow ? toCamel(configEmpresaRow) : null,
-      });
+      }));
 
-      setLoading(false);
       setError(null);
+    } catch (err) {
+      console.error('[fetchCore] ❌ catch error:', err?.message || err);
+      setError(err.message);
+    }
+  }, []);
+
+  // ── Fetch all data ──────────────────────────────────────────
+  // Carga inicial y refresh completo tras acciones (rf()): núcleo +
+  // todos los slices en paralelo. El realtime usa las piezas sueltas.
+  const fetchAll = useCallback(async () => {
+    try {
+      await Promise.all([fetchCore(), ...TABLAS_SLICE_RT.map(t => fetchSlice(t))]);
     } catch (err) {
       console.error('[fetchAll] ❌ catch error:', err?.message || err);
       setError(err.message);
+    } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchCore, fetchSlice]);
 
   // Re-fetch on mount y cuando cambia el userId (ej. después del login)
   // Wait for Supabase auth session to be ready when there is a userId to avoid
@@ -526,38 +583,41 @@ export function useSupaStore(userId, userName, userRol) {
     return () => { cancelled = true; if (sub && sub.unsubscribe) try { sub.unsubscribe(); } catch { /* noop */ } };
   }, [fetchAll, userId]);
 
-  // ── Realtime subscriptions ──────────────────────────────────
-  // Debounce 500ms: con 18 tablas suscritas, una operación común (ej. cierre
-  // de ruta) puede disparar 5+ eventos en milésimas de segundo. Sin debounce
-  // cada evento dispara fetchAll() completo (18 tablas + 200 mov + 500 audit)
-  // y satura la conexión. Con debounce, los eventos en burst se colapsan en
-  // un único refetch.
+  // ── Realtime subscriptions (Tanda 23: granular) ─────────────
+  // Antes, CUALQUIER cambio en 20 tablas disparaba fetchAll completo
+  // (~30 queries) con un debounce global de 500ms. Ahora cada evento
+  // refetchea solo su grupo: las tablas del núcleo (joins cruzados)
+  // recargan el núcleo, y las independientes SOLO su slice (1-2
+  // queries). Debounce por grupo para colapsar bursts (un cierre de
+  // ruta dispara 5+ eventos en milésimas). Nuevas suscripciones:
+  // notificaciones (la campana ve las alertas de los crons al
+  // instante) y chofer_ubicaciones (GPS en vivo en el mapa del admin).
   useEffect(() => {
-    const tables = [
-      'clientes', 'productos', 'ordenes', 'rutas',
-      'produccion', 'inventario_mov', 'pagos', 'auditoria',
-      'cuartos_frios', 'comodatos', 'leads', 'empleados',
-      'movimientos_contables', 'mermas', 'nomina_periodos', 'cuentas_por_cobrar',
-      'cuentas_por_pagar', 'costos_fijos', 'devoluciones', 'cierres_diarios',
-    ];
-    let debounceTimer = null;
-    const debouncedFetch = () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        debounceTimer = null;
-        fetchAll();
-      }, 500);
+    const timers = new Map();
+    const disparar = (clave, fn, delay) => {
+      if (timers.has(clave)) clearTimeout(timers.get(clave));
+      timers.set(clave, setTimeout(() => {
+        timers.delete(clave);
+        Promise.resolve(fn()).catch(e => console.error('[realtime]', clave, e?.message));
+      }, delay));
     };
-    const channels = tables.map(table =>
-      supabase.channel(`rt_${table}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table }, debouncedFetch)
-        .subscribe()
-    );
+    const channels = [
+      ...TABLAS_CORE_RT.map(table =>
+        supabase.channel(`rt_${table}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table }, () => disparar('core', fetchCore, 500))
+          .subscribe()
+      ),
+      ...TABLAS_SLICE_RT.map(table =>
+        supabase.channel(`rt_${table}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table }, () => disparar(table, () => fetchSlice(table), 300))
+          .subscribe()
+      ),
+    ];
     return () => {
-      if (debounceTimer) clearTimeout(debounceTimer);
+      for (const t of timers.values()) clearTimeout(t);
       channels.forEach(ch => supabase.removeChannel(ch));
     };
-  }, [fetchAll]);
+  }, [fetchCore, fetchSlice]);
 
   // ── Actions ─────────────────────────────────────────────────
   const actionsRef = useRef(null);
