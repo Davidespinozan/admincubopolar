@@ -8,6 +8,7 @@ import { logErrorToDb } from '../utils/errorLog';
 import { traducirError } from '../utils/errorMessages';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
+import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
 import { todayLocalISO } from '../utils/safe';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
@@ -213,8 +214,33 @@ const AREA_META = {
   },
 };
 
+const IDS_MODULOS = new Set(AREAS.flatMap(a => a.items.map(i => i.id)));
+
 export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }) {
-  const [view, setView] = useState('dashboard');
+  // Tanda 25: la vista vive también en la URL (#/rutas) — deep links
+  // compartibles y botón atrás del navegador. Hash inválido → dashboard.
+  const [view, setView] = useState(() => viewDesdeHash(window.location.hash, IDS_MODULOS) || 'dashboard');
+
+  // vista → hash. El primer sync (sin hash previo) usa replaceState
+  // para no meter un paso extra al historial en el load.
+  useEffect(() => {
+    const destino = hashDesdeView(view);
+    if (window.location.hash === destino) return;
+    if (!window.location.hash) {
+      window.history.replaceState(null, '', destino);
+    } else {
+      window.location.hash = destino;
+    }
+  }, [view]);
+
+  // hash → vista (botón atrás/adelante, o alguien pega un link).
+  useEffect(() => {
+    const onHashChange = () => {
+      setView(viewDesdeHash(window.location.hash, IDS_MODULOS) || 'dashboard');
+    };
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
 
   // Estado de áreas expandidas/colapsadas en sidebar (con persistencia)
   const [areasExpandidas, setAreasExpandidas] = useState(() => {
@@ -466,7 +492,13 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                 ) : (
                   <div className="divide-y divide-slate-100">
                     {notifRecientes.map(nt => (
-                      <div key={nt.id} className={`px-4 py-3 flex gap-3 items-start cursor-pointer hover:bg-slate-50 transition-colors ${!nt.leida ? 'bg-blue-50/50' : ''}`} onClick={() => !nt.leida && actions.marcarNotifLeida(nt.id)}>
+                      <div key={nt.id} className={`px-4 py-3 flex gap-3 items-start cursor-pointer hover:bg-slate-50 transition-colors ${!nt.leida ? 'bg-blue-50/50' : ''}`} onClick={() => {
+                        // Tanda 25: la notificación navega al módulo donde
+                        // se atiende (crons → cobros/rutas, venta → ordenes…)
+                        if (!nt.leida) actions.marcarNotifLeida(nt.id);
+                        const destino = moduloParaNotificacion(nt);
+                        if (destino) { go(destino); setNotifOpen(false); }
+                      }}>
                         <span className="text-lg flex-shrink-0 mt-0.5">{nt.icono || '🔔'}</span>
                         <div className="min-w-0 flex-1">
                           <p className={`text-sm ${!nt.leida ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>{nt.titulo}</p>
