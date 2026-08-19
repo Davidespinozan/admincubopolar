@@ -5,7 +5,7 @@ import { centavos } from '../utils/safe';
  * Estados terminales de una ruta. No se puede editar/cancelar/reasignar.
  * Mantener en sync con el ENUM `estatus_ruta` (mig 001/002 + 039).
  */
-const ESTADOS_TERMINALES_RUTA = new Set(['Cerrada', 'Cancelada', 'Completada']);
+export const ESTADOS_TERMINALES_RUTA = new Set(['Cerrada', 'Cancelada', 'Completada']);
 
 /**
  * Valida si una ruta puede editarse según su estatus actual.

@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { sentryVitePlugin } from '@sentry/vite-plugin'
+import { swAutoVersionPlugin } from './scripts/swAutoVersion.mjs'
 
 // Solo subimos source maps a Sentry cuando todo está configurado:
 // AUTH_TOKEN + ORG + PROJECT presentes y mode == production. En dev/CI
@@ -23,6 +24,10 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     react(),
+    // Tanda 21: inyecta CACHE_VERSION única (commit+timestamp) en
+    // dist/sw.js en cada build — elimina el bump manual que causó
+    // el incidente de assets stale de las Tandas 14-18.
+    swAutoVersionPlugin(),
     // Sentry plugin debe ir DESPUÉS de los demás plugins de output.
     // disable=true omite la subida pero NO rompe el build.
     sentryVitePlugin({

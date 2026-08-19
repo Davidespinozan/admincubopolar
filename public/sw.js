@@ -1,4 +1,4 @@
-const CACHE_VERSION = 4; // Bump on each deploy. Tanda 19: invalida assets stale acumulados desde Tandas 14-18 que no bumpearon esta variable.
+const CACHE_VERSION = 'dev'; // NO bumpear a mano — el build inyecta commit+timestamp (scripts/swAutoVersion.mjs, Tanda 21). 'dev' solo aplica en npm run dev.
 const CACHE_NAME = `cubopolar-v${CACHE_VERSION}`;
 const SHELL_ASSETS = [
   '/',

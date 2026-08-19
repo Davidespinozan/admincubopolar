@@ -19,6 +19,15 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+# Crons (Tanda 21). Netlify agenda en UTC: 13:00 UTC = 7:00 CDMX.
+# El schedule DEBE declararse aquí; sin este bloque la función existe
+# pero nunca corre sola.
+[functions."cron-cxc-vencidas"]
+  schedule = "0 13 * * *"
+
+[functions."cron-rutas-atoradas"]
+  schedule = "30 13 * * *"
+
 # Assets con hash en nombre → cache inmutable (1 año)
 [[headers]]
   for = "/assets/*"
