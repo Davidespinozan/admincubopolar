@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { s, n, fmtMoney, fmtDate, extraerTelefono, todayLocalISO, formatDireccion } from '../utils/safe';
 import { supabase } from '../lib/supabase';
+import { backendPost } from '../lib/backend';
 import { abrirNavegacion } from '../utils/navegacion';
 import { compressImage } from '../utils/compressImage';
 import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
@@ -586,6 +587,32 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       setFotoTransf(null);
     } finally {
       setConfirmandoEntrega(false);
+    }
+  };
+
+  // Tanda 28: genera el link público firmado de la nota y lo comparte
+  // (share sheet nativo o copia al portapapeles). Requiere conexión y
+  // RECIBO_SECRET configurado en Netlify (si falta → aviso, no error).
+  const [compartiendoNota, setCompartiendoNota] = useState(false);
+  const compartirNota = async (e) => {
+    if (compartiendoNota || !e.ordenId) return;
+    setCompartiendoNota(true);
+    try {
+      const r = await backendPost('recibo', { ordenId: e.ordenId });
+      const url = window.location.origin + r.url;
+      if (navigator.share) {
+        await navigator.share({ title: `Nota ${s(e.folio)}`, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        showToast('Link de la nota copiado');
+      }
+    } catch (err) {
+      if (err?.name === 'AbortError') return; // canceló el share sheet
+      showToast(err?.status === 501
+        ? 'Notas públicas sin configurar — avisa al admin'
+        : 'No se pudo generar la nota');
+    } finally {
+      setCompartiendoNota(false);
     }
   };
 
@@ -1204,7 +1231,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
             <div key={e.ordenId || e.id} className="bg-emerald-50/90 rounded-[20px] p-3 border border-emerald-200 mb-2">
               <div className="flex justify-between items-center">
                 <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="text-[10px] text-slate-400 ml-1">Nota: {e.folioNota}</span>}<span className="text-sm font-semibold text-slate-700 ml-2">{s(e.cliente)}</span>{e.express && <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded ml-1">Exprés</span>}{e.factura && <span className="text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded ml-1">Factura</span>}</div>
-                <div className="text-right flex items-center gap-2">{e.fotoEntrega && <span className="text-emerald-500 text-xs">📷</span>}<div><p className="text-sm font-bold">{fmtMoney(e.total)}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div></div>
+                <div className="text-right flex items-center gap-2">{e.fotoEntrega && <span className="text-emerald-500 text-xs">📷</span>}<div><p className="text-sm font-bold">{fmtMoney(e.total)}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div>{online && e.ordenId && (
+                  <button onClick={() => compartirNota(e)} disabled={compartiendoNota} className="flex-shrink-0 px-2.5 py-2 bg-white border border-emerald-300 text-emerald-700 text-xs font-bold rounded-lg min-h-[36px] disabled:opacity-50" title="Compartir nota" aria-label={`Compartir nota ${s(e.folio)}`}>🔗</button>
+                )}</div>
               </div>
             </div>
           ))}

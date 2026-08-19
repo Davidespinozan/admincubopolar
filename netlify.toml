@@ -4,6 +4,14 @@
   status = 200
   force = true
 
+# Nota de venta pública con token firmado (Tanda 28). El query ?t=...
+# pasa íntegro a la function.
+[[redirects]]
+  from = "/nota/:id"
+  to = "/.netlify/functions/recibo?o=:id"
+  status = 200
+  force = true
+
 [[redirects]]
   from = "/pago-resultado"
   to = "/.netlify/functions/billing-result"
