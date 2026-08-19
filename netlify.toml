@@ -36,6 +36,10 @@
 [functions."cron-rutas-atoradas"]
   schedule = "30 13 * * *"
 
+# Tanda 30: reparte Web Push de notificaciones nuevas cada 5 min.
+[functions."cron-push"]
+  schedule = "*/5 * * * *"
+
 # Assets con hash en nombre → cache inmutable (1 año)
 [[headers]]
   for = "/assets/*"

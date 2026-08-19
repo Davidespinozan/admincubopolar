@@ -25,6 +25,38 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+// ── Web Push (Tanda 30) ──
+// El payload lo arma buildPushPayload (src/data/pushLogic.ts) desde
+// cron-push: { title, body, url } con deep link #/modulo.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { /* payload no-JSON: usar defaults */ }
+  event.waitUntil(
+    self.registration.showNotification(data.title || 'CuboPolar', {
+      body: data.body || '',
+      icon: '/icon-192.png',
+      badge: '/icon-192.png',
+      data: { url: data.url || '/' },
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((ventanas) => {
+      for (const v of ventanas) {
+        if ('focus' in v) {
+          v.navigate(url);
+          return v.focus();
+        }
+      }
+      return self.clients.openWindow(url);
+    })
+  );
+});
+
 // Fetch strategies
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);

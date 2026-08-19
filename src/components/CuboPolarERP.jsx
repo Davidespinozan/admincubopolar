@@ -5,6 +5,7 @@ import { useToast } from './ui/Toast';
 import DashboardView from './views/DashboardView';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
 import BusquedaGlobal from './ui/BusquedaGlobal';
+import AvisosPush from './ui/AvisosPush';
 import { logErrorToDb } from '../utils/errorLog';
 import { traducirError } from '../utils/errorMessages';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
@@ -489,6 +490,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                   </div>
                   {notifNoLeidas.length > 0 && <button onClick={() => actions.marcarTodasLeidas()} className="text-xs text-blue-600 font-semibold hover:text-blue-800">Marcar todas</button>}
                 </div>
+                <AvisosPush />
                 {notifRecientes.length === 0 ? (
                   <div className="p-4 text-center text-sm text-slate-400">Sin notificaciones</div>
                 ) : (
