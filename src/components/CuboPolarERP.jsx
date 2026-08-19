@@ -7,6 +7,8 @@ import BotonFirmasPendientes from './BotonFirmasPendientes';
 import { logErrorToDb } from '../utils/errorLog';
 import { traducirError } from '../utils/errorMessages';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
+import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
+import { todayLocalISO } from '../utils/safe';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
 const ClientesView      = lazy(() => import('./views/ClientesView.jsx').then(m => ({ default: m.ClientesView })));
@@ -30,6 +32,7 @@ const CobrosView        = lazy(() => import('./views/CobrosView.jsx').then(m => 
 const CostosView        = lazy(() => import('./views/CostosView.jsx').then(m => ({ default: m.CostosView })));
 const CuentasPorPagarView = lazy(() => import('./views/CuentasPorPagarView.jsx').then(m => ({ default: m.CuentasPorPagarView })));
 const DevolucionesView    = lazy(() => import('./views/DevolucionesView.jsx').then(m => ({ default: m.DevolucionesView })));
+const BandejaView         = lazy(() => import('./views/BandejaView.jsx').then(m => ({ default: m.BandejaView })));
 
 // Auto-reload when a lazy chunk can't load (stale deployment)
 if (typeof window !== 'undefined') {
@@ -142,6 +145,7 @@ const AREAS = [
   { id: "operacion", label: "Operación", icon: "Factory", color: "blue",
     items: [
       { id: "dashboard", label: "Resumen", icon: "Dashboard" },
+      { id: "bandeja", label: "Mi bandeja", icon: "ClipboardCheck" },
       { id: "produccion", label: "Producción", icon: "Factory" },
       { id: "inventario", label: "Congeladores", icon: "Warehouse" },
       { id: "mermas", label: "Mermas", icon: "AlertTriangle" },
@@ -249,6 +253,13 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   const notifRecientes = useMemo(() => (data.notificaciones || []).slice(0, 30), [data.notificaciones]);
 
   const vp = useMemo(() => ({ data, actions, user }), [data, actions, user]);
+
+  // Tanda 24: badge de "Mi bandeja" en el menú — solo cuenta urgentes
+  // (prioridad alta) para que el número signifique "atiende ahora".
+  const urgentesBandeja = useMemo(
+    () => contarUrgentes(construirBandeja(data, todayLocalISO())),
+    [data]
+  );
   const alertasActivas = useMemo(() => {
     return (data.alertas || []).filter(a => {
       const msg = (a?.msg || a?.mensaje || a?.detalle || a?.titulo || '').toString().trim();
@@ -275,6 +286,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   const renderView = () => {
     switch (view) {
       case 'dashboard': return <DashboardView data={data} user={user} onNavigate={go} />;
+      case 'bandeja': return <BandejaView data={data} user={user} onNavigate={go} />;
       case 'clientes': return <ClientesView {...vp} />;
       case 'productos': return <ProductosView {...vp} />;
       case 'bolsas': return <AlmacenBolsasView {...vp} />;
@@ -358,7 +370,10 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                           className={`w-full rounded-[18px] px-3 py-2.5 text-left text-sm transition-all ${active ? 'bg-blue-50 text-blue-900 shadow-[0_16px_28px_rgba(2,10,15,0.16)]' : 'text-slate-300/82 hover:bg-white/6 hover:text-white'}`}>
                           <span className="flex items-center gap-3">
                             <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[14px] ${active ? 'bg-blue-600 text-white' : 'bg-white/6 text-slate-300'}`}><Ic /></span>
-                          <span className="truncate">{item.label}</span>
+                          <span className="truncate flex-1">{item.label}</span>
+                          {item.id === 'bandeja' && urgentesBandeja > 0 && (
+                            <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">{urgentesBandeja}</span>
+                          )}
                           </span>
                         </button>
                       );
@@ -533,7 +548,12 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                             : 'text-slate-700 hover:bg-slate-100 active:bg-slate-200'
                         }`}
                       >
-                        {item.label}
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="truncate">{item.label}</span>
+                          {item.id === 'bandeja' && urgentesBandeja > 0 && (
+                            <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">{urgentesBandeja}</span>
+                          )}
+                        </span>
                       </button>
                     ))}
                   </div>
