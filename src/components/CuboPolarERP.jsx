@@ -325,7 +325,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       case 'ordenes': return <OrdenesView {...vp} />;
       case 'rutas': return <RutasView {...vp} />;
       case 'facturacion': return <FacturacionView {...vp} />;
-      case 'conciliacion': return <ConciliacionView data={data} />;
+      case 'conciliacion': return <ConciliacionView {...vp} />;
       case 'auditoria': return <AuditoriaView data={data} />;
       case 'nomina': return <NominaView {...vp} />;
       case 'contabilidad': return <ContabilidadView {...vp} />;
