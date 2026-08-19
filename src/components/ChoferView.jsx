@@ -131,10 +131,8 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       const r = await actions.marcarNoEntregada?.(p.ordenId, p.motivo, p.reagendar);
       return (r && r.error) ? r : null;
     },
-    [TIPOS_MUTACION.MERMA]: async (p) => {
-      const r = await actions.registrarMerma?.(p.sku, p.cant, p.causa, p.origen, p.foto);
-      return (r && (r.error || r.message)) ? r : null;
-    },
+    // Nota: TIPOS_MUTACION.MERMA no se encola desde ruta — la merma de
+    // ruta es local hasta el cierre (ver registrarMerma, Tanda 23 fix).
   }), [actions]);
   const {
     cola: colaOffline,
@@ -701,20 +699,12 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }
     setRegistrandoMerma(true);
     try {
-      if (!online) {
-        // Tanda 22: sin señal → encolar el registro en BD; el estado
-        // local (mermas + localStorage) se actualiza igual que online.
-        encolarOffline(TIPOS_MUTACION.MERMA, {
-          sku: mForm.sku,
-          cant: n(mForm.cant),
-          causa: mForm.causa,
-          origen: s(user?.nombre),
-          foto: fotoMerma,
-        });
-      } else if (actions.registrarMerma) {
-        // Save to store with audit trail
-        await actions.registrarMerma(mForm.sku, n(mForm.cant), mForm.causa, s(user?.nombre), fotoMerma);
-      }
+      // Tanda 23 fix: la merma de ruta es SOLO local hasta el cierre.
+      // Antes se llamaba también actions.registrarMerma aquí, y
+      // cerrarRutaCompleta volvía a insertarla → doble fila en `mermas`
+      // y doble descuento de cuartos fríos por el mismo evento físico.
+      // El cierre es el único camino: inserta con ruta_id, descuenta
+      // stock una vez y registra el egreso contable.
       setMermas(prev => {
         const nuevaMerma = { ...mForm, id: Date.now(), cant: n(mForm.cant), foto: fotoMerma, hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) };
         const updated = [...prev, nuevaMerma];
@@ -723,7 +713,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         }
         return updated;
       });
-      showToast(online ? "Merma registrada" : "Sin señal — merma guardada en el teléfono");
+      showToast("Merma registrada — se reporta al cerrar la ruta");
       setMermaModal(false);
       setFotoMerma(null);
       setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" });
