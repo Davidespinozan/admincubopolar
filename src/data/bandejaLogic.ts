@@ -1,34 +1,52 @@
-// bandejaLogic.js — "Mi bandeja": centro de pendientes del admin
-// (Tanda 24, roadmap item 8).
+// bandejaLogic.ts — "Mi bandeja": centro de pendientes del admin
+// (Tanda 24, roadmap item 8; TS en Tanda 29).
 //
 // Responde la pregunta "¿qué tengo que atender ahora?" agregando los
 // pendientes reales del negocio desde `data` (el store ya mapeado en
 // camelCase) y enrutando cada uno al módulo donde se resuelve. Nació
 // del feedback de los dueños (abril 2026): no sabían por dónde seguía
 // el flujo — la bandeja se los dice.
-//
-// Cada tarea: { id, prioridad: 'alta'|'media', icono, titulo, detalle,
-// modulo (id de vista del shell), count }.
 
 import { ESTADOS_TERMINALES_RUTA } from './rutasLogic';
 
-const money = (v) =>
+type Fila = Record<string, unknown>;
+
+export interface DataBandeja {
+  rutas?: Fila[];
+  ordenes?: Fila[];
+  cuentasPorCobrar?: Fila[];
+  cierresDiarios?: Fila[];
+  alertas?: Fila[];
+  facturacionPendiente?: Fila[];
+  leads?: Fila[];
+}
+
+export interface TareaBandeja {
+  id: string;
+  prioridad: 'alta' | 'media';
+  icono: string;
+  titulo: string;
+  detalle: string;
+  modulo: string;
+  count: number;
+}
+
+const money = (v: unknown): string =>
   new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(v) || 0);
 
-const plural = (n, sing, plur) => `${n} ${n === 1 ? sing : plur}`;
+const plural = (n: number, sing: string, plur: string): string => `${n} ${n === 1 ? sing : plur}`;
 
 /**
  * Construye la lista de tareas pendientes, ordenada: prioridad alta
  * primero, y dentro de cada prioridad en el orden de detección
  * (operación antes que finanzas antes que comercial).
  *
- * @param {object} data el `data` del store (camelCase, ya mapeado)
- * @param {string} hoy 'YYYY-MM-DD' (inyectable en tests)
- * @returns {Array<object>} tareas
+ * @param data el `data` del store (camelCase, ya mapeado)
+ * @param hoy 'YYYY-MM-DD' (inyectable en tests)
  */
-export function construirBandeja(data, hoy) {
+export function construirBandeja(data: DataBandeja | null | undefined, hoy: string): TareaBandeja[] {
   const d = data || {};
-  const tareas = [];
+  const tareas: TareaBandeja[] = [];
 
   // ── 1. Cargas esperando firma (bloquean la salida del camión) ──
   const firmas = (d.rutas || []).filter(r => String(r.estatus || '').trim() === 'Pendiente firma');
@@ -197,6 +215,6 @@ export function construirBandeja(data, hoy) {
 }
 
 /** Total de pendientes prioridad alta — para el badge del menú. */
-export function contarUrgentes(tareas) {
+export function contarUrgentes(tareas: TareaBandeja[] | null | undefined): number {
   return (tareas || []).filter(t => t.prioridad === 'alta').length;
 }

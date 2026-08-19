@@ -2,6 +2,7 @@ import js from '@eslint/js';
 import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
+import tseslint from 'typescript-eslint';
 
 export default [
   {
@@ -45,6 +46,26 @@ export default [
       'react/prop-types': 'off',
       'react/react-in-jsx-scope': 'off',
       'no-empty': ['warn', { allowEmptyCatch: true }],
+    },
+  },
+  // Tanda 29: TypeScript gradual. Reglas recomendadas de
+  // typescript-eslint SOLO sobre los .ts/.tsx (el resto del repo sigue
+  // en JS con el bloque de arriba). El chequeo fuerte de tipos lo hace
+  // `npm run typecheck` (tsc --noEmit); aquí solo lint sintáctico.
+  ...tseslint.configs.recommended.map(c => ({ ...c, files: ['src/**/*.{ts,tsx}'] })),
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.es2024,
+      },
+    },
+    rules: {
+      '@typescript-eslint/no-unused-vars': ['warn', {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+      }],
     },
   },
   // Tanda 8: bloque dedicado para Netlify Functions (Node.js runtime).

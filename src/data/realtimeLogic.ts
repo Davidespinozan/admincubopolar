@@ -53,8 +53,10 @@ export const TABLAS_SLICE_RT = [
   'chofer_ubicaciones',
 ];
 
+export type GrupoRealtime = 'core' | 'slice';
+
 /** Grupo de refetch para una tabla suscrita: 'core' | 'slice' | null. */
-export function grupoParaTabla(tabla) {
+export function grupoParaTabla(tabla: string): GrupoRealtime | null {
   if (TABLAS_CORE_RT.includes(tabla)) return 'core';
   if (TABLAS_SLICE_RT.includes(tabla)) return 'slice';
   return null;

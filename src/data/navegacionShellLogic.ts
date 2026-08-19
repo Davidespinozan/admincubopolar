@@ -15,7 +15,7 @@
  * @param {Iterable<string>} idsValidos ids de módulos del shell
  * @returns {string|null}
  */
-export function viewDesdeHash(hash, idsValidos) {
+export function viewDesdeHash(hash: string | null | undefined, idsValidos: Iterable<string>): string | null {
   const limpio = String(hash || '').replace(/^#\/?/, '').trim();
   if (!limpio) return null;
   const ids = idsValidos instanceof Set ? idsValidos : new Set(idsValidos || []);
@@ -23,7 +23,7 @@ export function viewDesdeHash(hash, idsValidos) {
 }
 
 /** Hash canónico para una vista: 'rutas' → '#/rutas'. */
-export function hashDesdeView(view) {
+export function hashDesdeView(view: string | null | undefined): string {
   return `#/${String(view || 'dashboard')}`;
 }
 
@@ -33,10 +33,10 @@ export function hashDesdeView(view) {
  * cron-rutas:), luego por `tipo` (el catálogo de mig 027). null = la
  * notificación no navega (solo se marca leída).
  *
- * @param {{ tipo?: string, referencia?: string }} notif fila camelCase
- * @returns {string|null} id de vista del shell
+ * @param notif fila camelCase de notificaciones
+ * @returns id de vista del shell
  */
-export function moduloParaNotificacion(notif) {
+export function moduloParaNotificacion(notif: { tipo?: string; referencia?: string } | null | undefined): string | null {
   if (!notif) return null;
   const ref = String(notif.referencia || '');
   if (ref.startsWith('cron-cxc:')) return 'cobros';

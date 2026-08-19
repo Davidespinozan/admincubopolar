@@ -1,4 +1,5 @@
-// colaOfflineLogic.js — lógica pura de la cola offline del chofer (Tanda 22).
+// colaOfflineLogic.ts — lógica pura de la cola offline del chofer (Tanda 22;
+// migrado a TypeScript en Tanda 29).
 //
 // El chofer opera en campo con red intermitente. Cuando no hay señal,
 // las mutaciones críticas (entrega, no-entrega, merma) se encolan en
@@ -6,9 +7,6 @@
 // pura y testeable: estructura de la cola, FIFO, reintentos y helpers
 // derivados para la UI. La parte con efectos (localStorage, listeners
 // online, ejecución contra supaStore) vive en useColaOffline.js.
-//
-// Forma de una mutación encolada:
-//   { id, tipo, payload, creadaEn, intentos }
 //
 // Política de reintentos: FIFO estricto. Un fallo detiene la pasada
 // (probable red intermitente) y se reintenta después. Tras MAX_INTENTOS
@@ -21,26 +19,40 @@ export const TIPOS_MUTACION = {
   ENTREGA: 'entrega',
   NO_ENTREGA: 'no_entrega',
   MERMA: 'merma',
-};
+} as const;
 
-const TIPOS_VALIDOS = new Set(Object.values(TIPOS_MUTACION));
+export type TipoMutacion = (typeof TIPOS_MUTACION)[keyof typeof TIPOS_MUTACION];
+
+export interface MutacionPayload {
+  ordenId?: string | number;
+  [clave: string]: unknown;
+}
+
+export interface Mutacion {
+  id: string;
+  tipo: TipoMutacion;
+  payload: MutacionPayload;
+  creadaEn: number;
+  intentos: number;
+}
+
+const TIPOS_VALIDOS = new Set<string>(Object.values(TIPOS_MUTACION));
 
 export const MAX_INTENTOS = 5;
 
-export const claveColaRuta = (rutaId) => `cola_offline_ruta_${rutaId}`;
+export const claveColaRuta = (rutaId: string | number): string => `cola_offline_ruta_${rutaId}`;
 
 /**
  * Agrega una mutación al final de la cola (inmutable). El id combina
  * timestamp + secuencia derivada de la propia cola para ser único y
  * determinista en tests.
- *
- * @param {Array<object>} cola
- * @param {string} tipo uno de TIPOS_MUTACION
- * @param {object} payload datos para el ejecutor del tipo
- * @param {number} [ahora] timestamp inyectable en tests
- * @returns {Array<object>} nueva cola
  */
-export function encolar(cola, tipo, payload, ahora = Date.now()) {
+export function encolar(
+  cola: Mutacion[] | null | undefined,
+  tipo: TipoMutacion,
+  payload: MutacionPayload,
+  ahora: number = Date.now()
+): Mutacion[] {
   if (!TIPOS_VALIDOS.has(tipo)) {
     throw new Error(`Tipo de mutación desconocido: ${tipo}`);
   }
@@ -55,28 +67,28 @@ export function encolar(cola, tipo, payload, ahora = Date.now()) {
   ];
 }
 
-/** @returns {Array<object>} cola sin la mutación indicada */
-export function quitar(cola, id) {
+/** Cola sin la mutación indicada. */
+export function quitar(cola: Mutacion[] | null | undefined, id: string): Mutacion[] {
   return (cola || []).filter((m) => m.id !== id);
 }
 
-/** @returns {Array<object>} cola con intentos+1 en la mutación indicada */
-export function marcarIntento(cola, id) {
+/** Cola con intentos+1 en la mutación indicada. */
+export function marcarIntento(cola: Mutacion[] | null | undefined, id: string): Mutacion[] {
   return (cola || []).map((m) => (m.id === id ? { ...m, intentos: (m.intentos || 0) + 1 } : m));
 }
 
 /** Mutaciones que aún deben reintentarse (intentos < MAX_INTENTOS). */
-export function mutacionesPendientes(cola) {
+export function mutacionesPendientes(cola: Mutacion[] | null | undefined): Mutacion[] {
   return (cola || []).filter((m) => (m.intentos || 0) < MAX_INTENTOS);
 }
 
 /** Mutaciones que agotaron reintentos — la UI las reporta al chofer. */
-export function mutacionesFallidas(cola) {
+export function mutacionesFallidas(cola: Mutacion[] | null | undefined): Mutacion[] {
   return (cola || []).filter((m) => (m.intentos || 0) >= MAX_INTENTOS);
 }
 
 /** Primera mutación reintentable en orden FIFO, o null. */
-export function siguientePendiente(cola) {
+export function siguientePendiente(cola: Mutacion[] | null | undefined): Mutacion | null {
   return mutacionesPendientes(cola)[0] || null;
 }
 
@@ -85,13 +97,10 @@ export function siguientePendiente(cola) {
  * JSON corrupto → []; entradas sin id/tipo válido o sin payload se
  * descartan (mejor perder una entrada malformada que tronar la vista
  * del chofer en campo).
- *
- * @param {string|null} json
- * @returns {Array<object>}
  */
-export function parseCola(json) {
+export function parseCola(json: string | null | undefined): Mutacion[] {
   if (!json) return [];
-  let arr;
+  let arr: unknown;
   try {
     arr = JSON.parse(json);
   } catch {
@@ -99,13 +108,13 @@ export function parseCola(json) {
   }
   if (!Array.isArray(arr)) return [];
   return arr.filter(
-    (m) =>
-      m &&
+    (m): m is Mutacion =>
+      Boolean(m) &&
       typeof m === 'object' &&
-      typeof m.id === 'string' &&
-      TIPOS_VALIDOS.has(m.tipo) &&
-      m.payload &&
-      typeof m.payload === 'object'
+      typeof (m as Mutacion).id === 'string' &&
+      TIPOS_VALIDOS.has((m as Mutacion).tipo) &&
+      Boolean((m as Mutacion).payload) &&
+      typeof (m as Mutacion).payload === 'object'
   );
 }
 
@@ -113,12 +122,9 @@ export function parseCola(json) {
  * Ids de órdenes que ya fueron atendidas offline (entrega o no-entrega
  * en cola). La lista de "Por entregar" las excluye para que el chofer
  * no atienda dos veces la misma parada mientras espera señal.
- *
- * @param {Array<object>} cola
- * @returns {Set<string>}
  */
-export function ordenesBloqueadas(cola) {
-  const ids = new Set();
+export function ordenesBloqueadas(cola: Mutacion[] | null | undefined): Set<string> {
+  const ids = new Set<string>();
   for (const m of cola || []) {
     if (m.tipo === TIPOS_MUTACION.ENTREGA || m.tipo === TIPOS_MUTACION.NO_ENTREGA) {
       if (m.payload?.ordenId !== undefined && m.payload?.ordenId !== null) {
@@ -130,7 +136,7 @@ export function ordenesBloqueadas(cola) {
 }
 
 /** Etiqueta corta y humana de una mutación, para listarla en la UI. */
-export function descripcionMutacion(m) {
+export function descripcionMutacion(m: Mutacion | null | undefined): string {
   if (!m) return '';
   const p = m.payload || {};
   switch (m.tipo) {
