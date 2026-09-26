@@ -73,6 +73,31 @@ Si se despliega **antes** de 1: el pago en efectivo de una venta exprés anónim
 
 ---
 
+## 🔴 P1 Fase A — Integridad financiera (mig 069): pendiente de aplicar en producción
+
+**Cierra:** P0-1 (doble cobro de orden pagada por link al cerrar ruta), P0-2 (sobrecobro por link tras abono), P0-3 (cualquier `authenticated` escribía CxC/pagos/ingresos por REST).
+
+**Principio:** ningún actor altera dinero escribiendo tablas financieras por REST. Los flujos pasan por contratos `SECURITY DEFINER` que verifican rol **y estatus Activo** (`fin_actor_permitido`), o por el backend (`service_role`).
+
+| Tabla | Antes (prod) | Después (069) | Contrato para escribir |
+|---|---|---|---|
+| `cuentas_por_cobrar` | `cxc_write` ALL para todo authenticated; `auth_insert`; `write_roles`/`update_roles` (Ventas/Facturación/Chofer); `rollback_delete` (Chofer/Admin) | `read_all` SELECT; `admin_all` (reparación documentada) | `crear_cxc_orden`, `abonar_cxc`, `registrar_pago_orden`, `cerrar_ruta_financiero` |
+| `pagos` | `auth_insert`; `insert_roles` (Ventas/Chofer/Facturación); `rollback_delete` | `read_all`; `admin_all` | `registrar_pago_orden`, `abonar_cxc`, `cerrar_ruta_financiero`, backend webhook |
+| `movimientos_contables` | `auth_insert`; `rollback_delete` | `admin_all`; `facturacion_read`; `egreso_operativo_insert` (Chofer/Producción/Almacén Bolsas: solo Egreso Mermas/Costo de Ventas/Proveedores sin orden) | `registrar_ingreso_orden`, `abonar_cxc` |
+| `ordenes` | `ventas_update` sin restricción de columnas | misma policy + trigger `trg_ordenes_guard_financiero`: `total`, `cliente_id`, `tipo_cobro`, `requiere_factura`, `facturama_*`, `cfdi_*` inmutables por REST; `estatus` solo por transiciones de la FSM; `metodo_pago` solo al pasar a Entregada; `ruta_id` solo Admin o asignación | `update_orden_atomic` (Creada), backend |
+| `clientes` | `chofer_update_saldo` (cualquier columna) | eliminada; `saldo` solo por contratos / `increment_saldo` (Admin) | — |
+| funciones | EXECUTE para PUBLIC/anon/authenticated en todo, incl. `timbrar_orden`, `registrar_pago`, `increment_saldo` (SECURITY DEFINER) | `timbrar_orden`/`registrar_pago`/`move_stock`/`check_orden_transition` sin EXECUTE; el resto sin anon/PUBLIC; `increment_saldo` verifica actor | — |
+
+**Requiere SQL en producción: SÍ** — `supabase/069_rls_financiera.sql` (idempotente; sin cambios de datos). Verificado en base local reconstruida con las migraciones del repo + paridad con el catálogo de producción: `supabase/tests/069_rls_financiera_test.sql` (ataques A–K y flujos L–V) en verde. Reversión de permisos: `supabase/069_rls_financiera_rollback.sql` (reabre P0-3; solo si un flujo legítimo queda bloqueado).
+
+**Orden de despliegue:** 1) correr 069, 2) deploy del commit que usa los contratos (el código nuevo llama `crear_cxc_orden`/`registrar_ingreso_orden`/`abonar_cxc`/`cerrar_ruta_financiero`; el código viejo con 069 aplicada queda bloqueado en cobros de Ventas/Chofer por RLS, y el código nuevo sin 069 falla por función inexistente). Ventana corta entre ambos.
+
+**Capacidad de reparación:** Admin conserva `admin_all` en `pagos`, `cuentas_por_cobrar`, `movimientos_contables` (y ContabilidadView sigue permitiendo editar/borrar movimientos). Queda como P1: sustituir por `anular_cobro` con fila de reversión y quitar el DELETE.
+
+**Backlog P1/P2 registrado (no tocado en Fase A):** `clasificarMetodo('Crédito (fiado)')`, `validarCobroTransferencia` vs `'Transferencia SPEI'`, `calcTotalesCobro` legacy, referencia/foto SPEI no persistidas en cobro online, `VentasStandaloneView` "Enviar a ruta" sin `ruta_id`, doble cierre de caja si cambia `fecha_fin`, `rutas.total_cobrado/total_credito` en 0, IVA visual en venta exprés, etiquetas de DevolucionesView, egresos de merma no revertidos en rollback de cierre de ruta (quedan para Admin), `deleteMovContable` sobre ingresos autogenerados, `resetSistema`.
+
+---
+
 ## Convención de migraciones
 
 Las migraciones del proyecto viven en `supabase/` directamente (no en una subcarpeta `migrations/`).

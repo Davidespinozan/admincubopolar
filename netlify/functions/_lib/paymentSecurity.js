@@ -145,9 +145,10 @@ const ESTATUS_ORDEN_NO_COBRABLE = new Set(['Cancelada']);
  * @param {Object|null} p.orden  - fila de ordenes { id, total, estatus, cliente_id }
  * @param {Object} p.payment     - { status, amount, currency } normalizado
  * @param {string} [p.expectedCurrency='MXN']
+ * @param {number} [p.expectedAmount] - P0-2: pendiente real de la orden (total - SUM(pagos)); si se omite, ordenes.total
  * @returns {{ ok: boolean, code?: string, detail?: string }}
  */
-export function evaluatePaymentInvariants({ provider, providerReference, orden, payment, expectedCurrency = 'MXN' }) {
+export function evaluatePaymentInvariants({ provider, providerReference, orden, payment, expectedCurrency = 'MXN', expectedAmount }) {
   if (provider !== 'stripe' && provider !== 'mercadopago') {
     return { ok: false, code: 'provider_invalid', detail: String(provider) };
   }
@@ -170,12 +171,12 @@ export function evaluatePaymentInvariants({ provider, providerReference, orden, 
   }
 
   const montoConfirmado = Number(payment?.amount);
-  const montoEsperado = Number(orden.total);
+  const montoEsperado = Number(expectedAmount ?? orden.total);
   if (!Number.isFinite(montoConfirmado) || montoConfirmado <= 0) {
     return { ok: false, code: 'amount_invalid', detail: String(payment?.amount) };
   }
   if (!Number.isFinite(montoEsperado) || montoEsperado <= 0) {
-    return { ok: false, code: 'orden_total_invalid', detail: String(orden.total) };
+    return { ok: false, code: 'orden_total_invalid', detail: String(expectedAmount ?? orden.total) };
   }
   if (Math.abs(montoConfirmado - montoEsperado) > CENTAVO) {
     return { ok: false, code: 'amount_mismatch', detail: `esperado=${montoEsperado} confirmado=${montoConfirmado}` };

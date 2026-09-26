@@ -131,7 +131,21 @@ const syncOrderPayment = async ({ provider, providerReference, payment, rawPaylo
   if (ordenError) throw ordenError;
   if (!orden) return { applied: false, code: 'orden_not_found' };
 
-  const invariantes = evaluatePaymentInvariants({ provider, providerReference, orden, payment });
+  // P0-2: el monto esperado es el PENDIENTE real (total - SUM(pagos)),
+  // no el total. Un abono previo (manual o por link) reduce lo cobrable;
+  // un pago por el total sobre una orden con abono va a review.
+  const { data: pagosPrevios, error: pagosPreviosError } = await supabase
+    .from('pagos')
+    .select('monto')
+    .eq('orden_id', orden.id);
+  if (pagosPreviosError) throw pagosPreviosError;
+  const pagado = (pagosPrevios || []).reduce((acc, p) => acc + Number(p?.monto || 0), 0);
+  const pendiente = Math.round((Number(orden.total || 0) - pagado) * 100) / 100;
+  if (pendiente <= 0) {
+    return { applied: false, code: 'duplicate', detail: `orden sin pendiente (pagado=${pagado})` };
+  }
+
+  const invariantes = evaluatePaymentInvariants({ provider, providerReference, orden, payment, expectedAmount: pendiente });
   if (!invariantes.ok) {
     // Registro NO financiero: queda en payment_intents con status
     // review:<code> para que Admin lo concilie a mano. No se toca

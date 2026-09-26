@@ -1200,60 +1200,24 @@ export function useSupaStore(userId, userName, userRol) {
               let downstreamError = null;
 
               if (esCredito && ord.cliente_id) {
-                const { data: existingCxc, error: errExCxc } = await supabase
-                  .from('cuentas_por_cobrar')
-                  .select('id')
-                  .eq('orden_id', id)
-                  .maybeSingle();
-                if (errExCxc) {
-                  console.warn('[updateOrdenEstatus] select existingCxc:', errExCxc.message);
-                  downstreamError = errExCxc;
-                } else if (!existingCxc) {
-                  const fechaVenc = new Date();
-                  fechaVenc.setDate(fechaVenc.getDate() + 30);
-                  const { error: cxcError } = await supabase.from('cuentas_por_cobrar').insert({
-                    cliente_id: ord.cliente_id,
-                    orden_id: id,
-                    fecha_venta: todayLocalISO(),
-                    fecha_vencimiento: todayLocalISO(fechaVenc),
-                    monto_original: centavos(n(ord.total)),
-                    monto_pagado: 0,
-                    saldo_pendiente: centavos(n(ord.total)),
-                    concepto: `${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
-                    estatus: 'Pendiente',
-                  });
-                  if (cxcError) {
-                    downstreamError = cxcError;
-                  } else {
-                    notify('credito', 'Venta a crédito', `${s(ord.folio)} — ${cli?.nombre || 'Cliente'} — $${n(ord.total).toLocaleString()} a 30 días`, '💳', s(ord.folio));
-                    const { error: saldoError } = await supabase.rpc('increment_saldo', {
-                      p_cli: ord.cliente_id,
-                      p_delta: centavos(n(ord.total)),
-                    });
-                    if (saldoError) downstreamError = saldoError;
-                  }
+                // P1 Fase A: contrato atómico (CxC + saldo del cliente en una
+                // transacción, idempotente por orden).
+                const { data: cxcRes, error: cxcError } = await supabase.rpc('crear_cxc_orden', {
+                  p_orden_id: id,
+                  p_dias_vencimiento: 30,
+                });
+                if (cxcError) {
+                  downstreamError = cxcError;
+                } else if (cxcRes?.creada) {
+                  notify('credito', 'Venta a crédito', `${s(ord.folio)} — ${cli?.nombre || 'Cliente'} — $${n(ord.total).toLocaleString()} a 30 días`, '💳', s(ord.folio));
                 }
               } else {
-                const { data: existingIngreso, error: errExIng } = await supabase
-                  .from('movimientos_contables')
-                  .select('id')
-                  .eq('orden_id', id)
-                  .eq('tipo', 'Ingreso')
-                  .eq('categoria', 'Ventas')
-                  .maybeSingle();
-                if (errExIng) {
-                  console.warn('[updateOrdenEstatus] select existingIngreso:', errExIng.message);
-                  downstreamError = errExIng;
-                } else if (!existingIngreso) {
-                  const { error: ingresoError } = await supabase.from('movimientos_contables').insert({
-                    fecha: todayLocalISO(),
-                    tipo: 'Ingreso', categoria: 'Ventas',
-                    concepto: `Cobro ${s(ord.folio)} — ${cli?.nombre || 'Cliente'}`,
-                    monto: centavos(n(ord.total)),
-                    orden_id: id,
-                  });
-                  if (ingresoError) downstreamError = ingresoError;
-                }
+                // P1 Fase A: ingreso contable por contrato (idempotente).
+                const { error: ingresoError } = await supabase.rpc('registrar_ingreso_orden', {
+                  p_orden_id: id,
+                  p_usuario_id: uid(),
+                });
+                if (ingresoError) downstreamError = ingresoError;
               }
 
               if (downstreamError) {
@@ -3365,89 +3329,32 @@ export function useSupaStore(userId, userName, userRol) {
 
       // Cobrar contra una cuenta por cobrar específica
       cobrarCxC: async (cxcId, monto, metodoPago, referencia) => {
-        const hoy = todayLocalISO();
         const montoNum = centavos(n(monto));
 
-        // Obtener la CxC actual
         const { data: cxc, error: e1 } = await supabase
           .from('cuentas_por_cobrar')
-          .select('*')
+          .select('id, orden_id, cliente_id, concepto, saldo_pendiente, estatus')
           .eq('id', cxcId)
           .single();
         if (e1 || !cxc) { t()?.error('Cuenta por cobrar no encontrada'); return e1; }
         if (cxc.estatus === 'Pagada') { t()?.error('Esta cuenta ya fue liquidada'); return; }
 
-        const nuevoMontoPagado = centavos(Number(cxc.monto_pagado) + montoNum);
-        const nuevoSaldo = centavos(Number(cxc.monto_original) - nuevoMontoPagado);
-        const nuevoEstatus = nuevoSaldo <= 0 ? 'Pagada' : (nuevoMontoPagado > 0 ? 'Parcial' : 'Pendiente');
-
-        // Actualizar CxC
-        const { error: e2 } = await supabase
-          .from('cuentas_por_cobrar')
-          .update({
-            monto_pagado: nuevoMontoPagado,
-            saldo_pendiente: Math.max(0, nuevoSaldo),
-            estatus: nuevoEstatus,
-          })
-          .eq('id', cxcId);
-        if (e2) { t()?.error('Error al actualizar cuenta'); return e2; }
-
-        // Registrar pago
-        const { data: pagoInsertado, error: pagoError } = await supabase.from('pagos').insert({
-          cliente_id: cxc.cliente_id,
-          orden_id: cxc.orden_id,
-          cxc_id: cxcId,
-          monto: montoNum,
-          metodo_pago: metodoPago || 'Efectivo',
-          fecha: hoy,
-          referencia: referencia || `Abono CxC #${cxcId}`,
-          saldo_antes: cxc.saldo_pendiente,
-          saldo_despues: Math.max(0, nuevoSaldo),
-          usuario_id: uid(),
-        }).select('id').single();
-        if (pagoError) {
-          await supabase.from('cuentas_por_cobrar').update({
-            monto_pagado: cxc.monto_pagado,
-            saldo_pendiente: cxc.saldo_pendiente,
-            estatus: cxc.estatus,
-          }).eq('id', cxcId);
-          t()?.error('Error al registrar pago');
-          return pagoError;
+        // P1 Fase A: abono por contrato atómico (valida monto <= saldo,
+        // inserta pago + ingreso Cobranza y ajusta el saldo del cliente en
+        // una sola transacción; sin compensaciones por DELETE).
+        const { data: abono, error: abonoErr } = await supabase.rpc('abonar_cxc', {
+          p_cxc_id: cxcId,
+          p_monto: montoNum,
+          p_metodo: metodoPago || 'Efectivo',
+          p_referencia: referencia || null,
+          p_usuario_id: uid(),
+        });
+        if (abonoErr) {
+          t()?.error(abonoErr.message || 'Error al registrar el abono');
+          return abonoErr;
         }
-
-        // Registrar ingreso contable
-        const { data: ingresoInsertado, error: ingresoError } = await supabase.from('movimientos_contables').insert({
-          fecha: hoy, tipo: 'Ingreso', categoria: 'Cobranza',
-          concepto: `Cobro CxC #${cxcId} — ${s(cxc.concepto) || 'Cliente'}`,
-          monto: montoNum,
-          orden_id: cxc.orden_id,
-        }).select('id').single();
-        if (ingresoError) {
-          await supabase.from('pagos').delete().eq('id', pagoInsertado?.id);
-          await supabase.from('cuentas_por_cobrar').update({
-            monto_pagado: cxc.monto_pagado,
-            saldo_pendiente: cxc.saldo_pendiente,
-            estatus: cxc.estatus,
-          }).eq('id', cxcId);
-          t()?.error('Error al registrar ingreso contable');
-          return ingresoError;
-        }
-
-        // Reducir saldo del cliente
-        if (cxc.cliente_id) {
-          const { error: saldoError } = await supabase.rpc('increment_saldo', { p_cli: cxc.cliente_id, p_delta: -montoNum });
-          if (saldoError) {
-            await supabase.from('movimientos_contables').delete().eq('id', ingresoInsertado?.id);
-            await supabase.from('pagos').delete().eq('id', pagoInsertado?.id);
-            await supabase.from('cuentas_por_cobrar').update({
-              monto_pagado: cxc.monto_pagado,
-              saldo_pendiente: cxc.saldo_pendiente,
-              estatus: cxc.estatus,
-            }).eq('id', cxcId);
-            t()?.error('Error al actualizar saldo del cliente');
-            return saldoError;
-          }
-        }
+        const nuevoSaldo = Number(abono?.saldo_despues ?? 0);
+        const nuevoEstatus = s(abono?.estatus) || 'Parcial';
 
         // Generar Complemento de Pago (CFDI tipo P) automáticamente si la orden tiene factura PPD timbrada
         if (cxc.orden_id) {
@@ -4686,220 +4593,39 @@ export function useSupaStore(userId, userName, userRol) {
       cerrarRutaCompleta: async (reporte) => {
         const { rutaId, choferNombre, entregas, mermas: mermasArr, cobros, carga } = reporte;
         const hoy = todayLocalISO();
-        const fechaVenc = todayLocalISO(new Date(Date.now() + 15 * 24 * 60 * 60 * 1000));
-        const createdOrderIds = [];
-        const updatedOrders = [];
-        const createdPagoIds = [];
         const createdMovIds = [];
-        const createdCxcIds = [];
         const createdMermaIds = [];
-        const saldoAdjustments = [];
         const mermaStockReversal = [];
 
         try {
-          for (const e of (entregas || [])) {
-            const esVentaExpress = Boolean(e?.express) || !e?.ordenId;
-
-            if (!esVentaExpress) {
-              const { data: existingOrd, error: existingOrdErr } = await supabase
-                .from('ordenes')
-                .select('id, folio, cliente_id, cliente_nombre, total, estatus, metodo_pago, ruta_id')
-                .eq('id', e.ordenId)
-                .single();
-              if (existingOrdErr || !existingOrd) throw existingOrdErr || new Error('No se pudo encontrar la orden asignada');
-
-              const metodoPago = s(e.pago || existingOrd.metodo_pago) || 'Efectivo';
-              const esCredito = metodoPago === 'Crédito';
-              const clienteNombre = s(e.cliente) || s(existingOrd.cliente_nombre) || 'Cliente';
-              const total = centavos(n(e.total || existingOrd.total));
-
-              const { error: updateOrdErr } = await supabase
-                .from('ordenes')
-                .update({
-                  estatus: 'Entregada',
-                  metodo_pago: metodoPago,
-                  ruta_id: rutaId || existingOrd.ruta_id || null,
-                })
-                .eq('id', existingOrd.id);
-              if (updateOrdErr) throw updateOrdErr;
-
-              updatedOrders.push({
-                id: existingOrd.id,
-                estatus: existingOrd.estatus,
-                metodo_pago: existingOrd.metodo_pago,
-                ruta_id: existingOrd.ruta_id,
-              });
-
-              if (total > 0) {
-                if (esCredito && existingOrd.cliente_id) {
-                  const { data: existingCxc } = await supabase
-                    .from('cuentas_por_cobrar')
-                    .select('id')
-                    .eq('orden_id', existingOrd.id)
-                    .maybeSingle();
-
-                  if (!existingCxc) {
-                    const { data: cxcRow, error: cxcErr } = await supabase.from('cuentas_por_cobrar').insert({
-                      cliente_id: existingOrd.cliente_id,
-                      orden_id: existingOrd.id,
-                      fecha_venta: hoy,
-                      fecha_vencimiento: fechaVenc,
-                      monto_original: total,
-                      monto_pagado: 0,
-                      saldo_pendiente: total,
-                      concepto: `${s(existingOrd.folio)} — ${clienteNombre}`,
-                      estatus: 'Pendiente',
-                    }).select('id').single();
-                    if (cxcErr || !cxcRow) throw cxcErr || new Error('No se pudo crear la cuenta por cobrar');
-                    createdCxcIds.push(cxcRow.id);
-
-                    const { error: saldoErr } = await supabase.rpc('increment_saldo', { p_cli: existingOrd.cliente_id, p_delta: total });
-                    if (saldoErr) throw saldoErr;
-                    saldoAdjustments.push({ clienteId: existingOrd.cliente_id, delta: total });
-                  }
-                } else {
-                  const referencia = s(e.referencia) || `${s(existingOrd.folio) || `ORD-${existingOrd.id}`}-${metodoPago}`;
-                  const { data: existingPago } = await supabase
-                    .from('pagos')
-                    .select('id')
-                    .eq('referencia', referencia)
-                    .maybeSingle();
-
-                  if (!existingPago) {
-                    const { data: pagoRow, error: pagoErr } = await supabase.from('pagos').insert({
-                      cliente_id: existingOrd.cliente_id ?? null,
-                      orden_id: existingOrd.id,
-                      monto: total,
-                      metodo_pago: metodoPago,
-                      fecha: hoy,
-                      referencia,
-                      saldo_antes: 0,
-                      saldo_despues: 0,
-                      usuario_id: uid(),
-                    }).select('id').single();
-                    if (pagoErr || !pagoRow) throw pagoErr || new Error('No se pudo registrar el pago');
-                    createdPagoIds.push(pagoRow.id);
-                  }
-
-                  const { data: existingIngreso } = await supabase
-                    .from('movimientos_contables')
-                    .select('id')
-                    .eq('orden_id', existingOrd.id)
-                    .eq('tipo', 'Ingreso')
-                    .eq('categoria', 'Ventas')
-                    .maybeSingle();
-
-                  if (!existingIngreso) {
-                    const { data: movRow, error: movErr } = await supabase.from('movimientos_contables').insert({
-                      fecha: hoy,
-                      tipo: 'Ingreso',
-                      categoria: 'Ventas',
-                      concepto: `Cobro ${s(existingOrd.folio)} — ${clienteNombre} (${metodoPago})`,
-                      monto: total,
-                      orden_id: existingOrd.id,
-                    }).select('id').single();
-                    if (movErr || !movRow) throw movErr || new Error('No se pudo registrar el ingreso');
-                    createdMovIds.push(movRow.id);
-                  }
-                }
-              }
-
-              continue;
-            }
-
-            const { data: seq, error: seqErr } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
-            if (seqErr) throw seqErr;
-
-            const folio = `OV-${String(seq || 42).padStart(4, '0')}`;
-            const itemsStr = (e.items || []).map(it => `${it.cant || it.qty || 0}×${it.sku}`).join(', ');
-            const clienteNombre = s(e.cliente) || 'Público en general';
-            const total = centavos(n(e.total));
-            const metodoPago = s(e.pago) || 'Efectivo';
-            const esCredito = metodoPago === 'Crédito';
-            const requiereFactura = e.factura === true;
-            // P0: una venta exprés con factura solo puede persistirse contra
-            // un cliente registrado (su identidad fiscal vive en clientes).
-            // Nunca se descartan datos en silencio: se aborta el cierre.
-            if (requiereFactura && !e.clienteId) {
-              throw new Error(`Venta exprés ${s(e.folio) || ''} marcada con factura sin cliente registrado`);
-            }
-
-            const { data: newOrd, error: ordErr } = await supabase.from('ordenes').insert({
-              folio,
-              cliente_id: e.clienteId || null,
-              cliente_nombre: clienteNombre,
-              productos: itemsStr || 'Varios',
-              fecha: hoy,
-              total,
-              estatus: 'Entregada',
-              metodo_pago: metodoPago,
-              ruta_id: rutaId || null,
-              requiere_factura: requiereFactura,
-            }).select('id').single();
-            if (ordErr || !newOrd) throw ordErr || new Error('No se pudo crear la orden exprés');
-            createdOrderIds.push(newOrd.id);
-
-            if (e.items && e.items.length > 0) {
-              const { error: lineErr } = await supabase.from('orden_lineas').insert(
-                e.items.map(it => ({
-                  orden_id: newOrd.id,
-                  sku: it.sku,
-                  cantidad: Number(it.cant || it.qty || 0),
-                  precio_unit: centavos(Number(it.precio || 0)),
-                  subtotal: centavos(Number(it.cant || it.qty || 0) * Number(it.precio || 0)),
-                }))
-              );
-              if (lineErr) throw lineErr;
-            }
-
-            if (total > 0) {
-              if (esCredito) {
-                if (e.clienteId) {
-                  const { data: cxcRow, error: cxcErr } = await supabase.from('cuentas_por_cobrar').insert({
-                    cliente_id: e.clienteId,
-                    orden_id: newOrd.id,
-                    fecha_venta: hoy,
-                    fecha_vencimiento: fechaVenc,
-                    monto_original: total,
-                    monto_pagado: 0,
-                    saldo_pendiente: total,
-                    concepto: `${folio} — ${clienteNombre}`,
-                    estatus: 'Pendiente',
-                  }).select('id').single();
-                  if (cxcErr || !cxcRow) throw cxcErr || new Error('No se pudo crear la cuenta por cobrar');
-                  createdCxcIds.push(cxcRow.id);
-
-                  const { error: saldoErr } = await supabase.rpc('increment_saldo', { p_cli: e.clienteId, p_delta: total });
-                  if (saldoErr) throw saldoErr;
-                  saldoAdjustments.push({ clienteId: e.clienteId, delta: total });
-                }
-              } else {
-                const { data: pagoRow, error: pagoErr } = await supabase.from('pagos').insert({
-                  cliente_id: e.clienteId || null,
-                  orden_id: newOrd.id,
-                  monto: total,
-                  metodo_pago: metodoPago,
-                  fecha: hoy,
-                  referencia: s(e.referencia) || folio,
-                  saldo_antes: 0,
-                  saldo_despues: 0,
-                  usuario_id: uid(),
-                }).select('id').single();
-                if (pagoErr || !pagoRow) throw pagoErr || new Error('No se pudo registrar el pago');
-                createdPagoIds.push(pagoRow.id);
-
-                const { data: movRow, error: movErr } = await supabase.from('movimientos_contables').insert({
-                  fecha: hoy,
-                  tipo: 'Ingreso',
-                  categoria: 'Ventas',
-                  concepto: `Cobro ${folio} — ${clienteNombre} (${metodoPago})`,
-                  monto: total,
-                  orden_id: newOrd.id,
-                }).select('id').single();
-                if (movErr || !movRow) throw movErr || new Error('No se pudo registrar el ingreso');
-                createdMovIds.push(movRow.id);
-              }
-            }
+          // P1 Fase A: toda la sección financiera (órdenes entregadas, ventas
+          // exprés, pagos, CxC, saldos e ingresos) ocurre en UNA transacción
+          // en el servidor (cerrar_ruta_financiero). Usa ordenes.total del
+          // servidor y nunca cobra más que el pendiente (P0-1). Ya no hay
+          // rollback por DELETE de historia financiera.
+          const entregasPayload = (entregas || []).map(e => ({
+            ordenId: e?.ordenId || null,
+            express: Boolean(e?.express) || !e?.ordenId,
+            pago: s(e?.pago) || null,
+            referencia: s(e?.referencia) || null,
+            clienteId: e?.clienteId || null,
+            cliente: s(e?.cliente) || null,
+            factura: e?.factura === true,
+            items: (e?.items || []).map(it => ({
+              sku: it.sku,
+              cant: Number(it.cant || it.qty || 0),
+              precio: Number(it.precio || 0),
+            })),
+          }));
+          const { data: finRes, error: finErr } = await supabase.rpc('cerrar_ruta_financiero', {
+            p_ruta_id: rutaId || null,
+            p_entregas: entregasPayload,
+            p_usuario_id: uid(),
+            p_usuario_nombre: choferNombre || uname(),
+          });
+          if (finErr) throw finErr;
+          if (Array.isArray(finRes?.saltadas) && finRes.saltadas.length > 0) {
+            await log('Cierre Ruta', 'Rutas', `Cobros omitidos (ya pagadas): ${finRes.saltadas.map(x => x.folio || x.orden_id).join(', ')}`);
           }
 
           for (const m of (mermasArr || [])) {
@@ -5020,24 +4746,14 @@ export function useSupaStore(userId, userName, userRol) {
           notify('venta', 'Ruta cerrada', `${choferNombre} cerró ruta — ${(entregas || []).length} entregas, $${(cobros?.Efectivo || 0).toLocaleString()} efectivo`, '🚛', String(rutaId));
           rf();
         } catch (err) {
-          for (const ord of updatedOrders.reverse()) {
-            await supabase.from('ordenes').update({
-              estatus: ord.estatus,
-              metodo_pago: ord.metodo_pago,
-              ruta_id: ord.ruta_id,
-            }).eq('id', ord.id);
-          }
-          for (const saldoAdj of saldoAdjustments.reverse()) {
-            await supabase.rpc('increment_saldo', { p_cli: saldoAdj.clienteId, p_delta: -saldoAdj.delta });
-          }
+          // P1 Fase A: lo financiero es atómico en el servidor y no requiere
+          // compensación aquí. Solo se revierten mermas y su stock. Los
+          // egresos de merma ya insertados no se borran por REST (sin
+          // rollback_delete para Chofer): quedan para revisión de Admin.
           if (mermaStockReversal.length) await supabase.rpc('update_stocks_atomic', { p_changes: mermaStockReversal });
           if (createdMermaIds.length) await supabase.from('mermas').delete().in('id', createdMermaIds);
-          if (createdMovIds.length) await supabase.from('movimientos_contables').delete().in('id', createdMovIds);
-          if (createdPagoIds.length) await supabase.from('pagos').delete().in('id', createdPagoIds);
-          if (createdCxcIds.length) await supabase.from('cuentas_por_cobrar').delete().in('id', createdCxcIds);
-          if (createdOrderIds.length) {
-            await supabase.from('orden_lineas').delete().in('orden_id', createdOrderIds);
-            await supabase.from('ordenes').delete().in('id', createdOrderIds);
+          if (createdMovIds.length) {
+            console.warn('[cerrarRutaCompleta] egresos de merma sin revertir (revisar en Contabilidad):', createdMovIds.join(','));
           }
           t()?.error('No se pudo cerrar la ruta correctamente');
           return err;
