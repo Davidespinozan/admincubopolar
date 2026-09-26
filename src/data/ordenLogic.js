@@ -458,6 +458,9 @@ export function buildOrdenPayload(o, ctx) {
     metodo_pago: o.metodoPago || 'Efectivo',
     vendedor_id: o.usuarioId || null,
     tipo_cobro: o.tipoCobro || 'Contado',
+    // P0: intención explícita de factura. Solo `true` estricto persiste
+    // true; undefined/null/'' → false. Nunca se infiere del RFC.
+    requiere_factura: o.requiereFactura === true,
     folio_nota: o.folioNota || null,
     direccion_entrega: dir || null,
     referencia_entrega: ref || null,

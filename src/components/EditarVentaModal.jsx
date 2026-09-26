@@ -13,6 +13,7 @@ import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { s, n, eqId, fmtMoney } from '../utils/safe';
 import { stockDisponiblePorSku, stockDisponibleParaEdicion } from '../utils/stock';
 import { precioParaCliente } from '../data/mejorasMenoresLogic';
+import { placeSelectionToEntrega } from '../data/direccionLogic';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 
@@ -382,17 +383,7 @@ export default function EditarVentaModal({
               <div className="space-y-2">
                 <Suspense fallback={<p className="text-xs text-slate-400">Cargando autocompletar…</p>}>
                   <AddressAutocomplete
-                    onSelect={(addr) => {
-                      const formatted = addr?.formatted
-                        || [addr?.calle, addr?.colonia, addr?.ciudad].filter(Boolean).join(', ');
-                      setForm(f => ({
-                        ...f,
-                        direccionEntrega: formatted,
-                        latitudEntrega: addr?.lat ?? null,
-                        longitudEntrega: addr?.lng ?? null,
-                        direccionTouched: true,
-                      }));
-                    }}
+                    onSelect={(selection) => setForm(f => ({ ...f, ...placeSelectionToEntrega(selection), direccionTouched: true }))}
                   />
                 </Suspense>
                 <FormInput

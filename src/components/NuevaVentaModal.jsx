@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { s, n, eqId, fmtMoney, validarRFC, todayLocalISO } from '../utils/safe';
-import { validateDireccion } from '../data/direccionLogic';
+import { validateDireccion, placeSelectionToEntrega } from '../data/direccionLogic';
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
 import { stockDisponiblePorSku } from '../utils/stock';
 
@@ -706,17 +706,7 @@ export default function NuevaVentaModal({
           <div className="space-y-2">
             <Suspense fallback={<p className="text-xs text-slate-400">Cargando autocompletar…</p>}>
               <AddressAutocomplete
-                onSelect={(addr) => {
-                  const formatted = addr?.formatted
-                    || [addr?.calle, addr?.colonia, addr?.ciudad].filter(Boolean).join(', ');
-                  setForm(f => ({
-                    ...f,
-                    direccionEntrega: formatted,
-                    latitudEntrega: addr?.lat ?? null,
-                    longitudEntrega: addr?.lng ?? null,
-                    direccionTouched: true,
-                  }));
-                }}
+                onSelect={(selection) => setForm(f => ({ ...f, ...placeSelectionToEntrega(selection), direccionTouched: true }))}
               />
             </Suspense>
             <FormInput

@@ -51,6 +51,28 @@ No es urgente — el login funciona sin esto. Solo mejora performance del lookup
 
 ---
 
+## 🔴 P0 Seguridad financiera (2026-09-25) — requiere migración 068 + env var ANTES del deploy
+
+**Qué cambió (código):**
+- `billing-webhook-mercadopago` verifica `x-signature` (HMAC-SHA256 del manifest oficial) con `MERCADOPAGO_WEBHOOK_SECRET` y consulta el pago al proveedor; el body nunca es fuente de verdad. Sin la env var, **todos** los webhooks de MP se rechazan (401, falla cerrado).
+- `syncOrderPayment` aplica invariantes (orden existe, status pagado, MXN, monto == `ordenes.total`, idempotencia por `pagos.referencia`) antes de tocar pagos / CxC / `clientes.saldo`. Un mismatch queda en `payment_intents.status = review:<code>` para conciliación manual.
+- `billing-create-checkout` exige JWT + `canAccessOrden`; monto/líneas/email salen de la BD.
+- `admin-create-user` inserta en `usuarios` server-side con rollback en Auth.
+- `pagos.cliente_id` deja de escribirse como `0`: órdenes anónimas → `NULL`.
+
+**Requiere SQL en producción: SÍ** — `supabase/068_pagos_cliente_id_nullable.sql` (DROP NOT NULL + DROP DEFAULT + `0 → NULL`). Idempotente.
+
+**Orden obligatorio de despliegue:**
+1. Correr `068` en el SQL Editor.
+2. Configurar `MERCADOPAGO_WEBHOOK_SECRET` en Netlify (Mercado Pago → Tus integraciones → Webhooks → clave secreta). Verificar que la URL del webhook en MP apunte a `/.netlify/functions/billing-webhook-mercadopago` y que el evento sea `payment`.
+3. Deploy.
+
+Si se despliega **antes** de 1: el pago en efectivo de una venta exprés anónima (cierre de ruta) y el webhook de una orden sin cliente fallan por `NOT NULL` en `pagos.cliente_id`. Si se despliega **antes** de 2: los pagos por Mercado Pago no se reflejan en el ERP hasta configurar la clave (MP reintenta durante varios días).
+
+**Test pre-existente sensible a zona horaria:** `cierreCaja.test.js › fechaCierreDesdeRuta › formato YYYY-MM-DD siempre` falla en máquinas con TZ ≠ UTC (pasa con `TZ=UTC`). Detectado en esta tanda, no introducido por ella; pendiente de corregir en `cierreCajaLogic` (usar fecha local en vez de `new Date('YYYY-MM-DD')`).
+
+---
+
 ## Convención de migraciones
 
 Las migraciones del proyecto viven en `supabase/` directamente (no en una subcarpeta `migrations/`).

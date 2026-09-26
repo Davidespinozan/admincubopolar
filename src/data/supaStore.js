@@ -3235,44 +3235,12 @@ export function useSupaStore(userId, userName, userRol) {
             return { error: ordenError?.message || 'Orden no encontrada' };
           }
 
-          // Fetch order lines with product names
-          const [{ data: lineas }, { data: prods }] = await Promise.all([
-            supabase.from('orden_lineas').select('sku, cantidad, precio_unit, subtotal').eq('orden_id', ordenId),
-            supabase.from('productos').select('sku, nombre'),
-          ]);
-
-          const items = (lineas || []).map(l => {
-            const prod = prods.find(p => s(p.sku) === s(l.sku));
-            return {
-              name: prod ? s(prod.nombre) || s(l.sku) : s(l.sku),
-              sku: s(l.sku),
-              quantity: l.cantidad,
-              unitPrice: l.precio_unit,
-            };
-          });
-
-          let cliente = null;
-          if (orden.cliente_id) {
-            const { data: cli } = await supabase
-              .from('clientes')
-              .select('nombre, correo')
-              .eq('id', orden.cliente_id)
-              .single();
-            cliente = cli;
-          }
-
+          // P0: el backend lee monto, líneas, moneda y email desde la BD.
+          // El frontend solo referencia la orden.
           const origin = typeof window !== 'undefined' ? window.location.origin : '';
           const payload = await backendPost('billing-create-checkout', {
             provider,
             ordenId: orden.id,
-            amount: n(orden.total),
-            currency: 'MXN',
-            description: `Orden ${orden.folio} — ${orden.cliente_nombre || 'Cliente'}`,
-            items: items.length > 0 ? items : undefined,
-            customer: {
-              email: cliente?.correo || undefined,
-              name: cliente?.nombre || orden.cliente_nombre || 'Cliente',
-            },
             successUrl: origin ? `${origin}/pago-resultado?status=success&folio=${encodeURIComponent(orden.folio)}` : undefined,
             cancelUrl: origin ? `${origin}/pago-resultado?status=cancel&folio=${encodeURIComponent(orden.folio)}` : undefined,
           });
@@ -4599,6 +4567,11 @@ export function useSupaStore(userId, userName, userRol) {
         rf();
       },
 
+      // Recarga completa del store (núcleo + slices). Usado tras altas
+      // hechas por Netlify Functions (admin-create-user) sobre tablas
+      // sin realtime (usuarios).
+      recargarDatos: () => rf(),
+
       // ── USUARIOS ──
       addUsuario: async (u) => {
         const { data: row, error } = await supabase.from('usuarios').insert({
@@ -4794,7 +4767,7 @@ export function useSupaStore(userId, userName, userRol) {
 
                   if (!existingPago) {
                     const { data: pagoRow, error: pagoErr } = await supabase.from('pagos').insert({
-                      cliente_id: existingOrd.cliente_id || 0,
+                      cliente_id: existingOrd.cliente_id ?? null,
                       orden_id: existingOrd.id,
                       monto: total,
                       metodo_pago: metodoPago,
@@ -4843,6 +4816,13 @@ export function useSupaStore(userId, userName, userRol) {
             const total = centavos(n(e.total));
             const metodoPago = s(e.pago) || 'Efectivo';
             const esCredito = metodoPago === 'Crédito';
+            const requiereFactura = e.factura === true;
+            // P0: una venta exprés con factura solo puede persistirse contra
+            // un cliente registrado (su identidad fiscal vive en clientes).
+            // Nunca se descartan datos en silencio: se aborta el cierre.
+            if (requiereFactura && !e.clienteId) {
+              throw new Error(`Venta exprés ${s(e.folio) || ''} marcada con factura sin cliente registrado`);
+            }
 
             const { data: newOrd, error: ordErr } = await supabase.from('ordenes').insert({
               folio,
@@ -4854,6 +4834,7 @@ export function useSupaStore(userId, userName, userRol) {
               estatus: 'Entregada',
               metodo_pago: metodoPago,
               ruta_id: rutaId || null,
+              requiere_factura: requiereFactura,
             }).select('id').single();
             if (ordErr || !newOrd) throw ordErr || new Error('No se pudo crear la orden exprés');
             createdOrderIds.push(newOrd.id);
@@ -4894,7 +4875,7 @@ export function useSupaStore(userId, userName, userRol) {
                 }
               } else {
                 const { data: pagoRow, error: pagoErr } = await supabase.from('pagos').insert({
-                  cliente_id: e.clienteId || 0,
+                  cliente_id: e.clienteId || null,
                   orden_id: newOrd.id,
                   monto: total,
                   metodo_pago: metodoPago,

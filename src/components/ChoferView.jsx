@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { s, n, fmtMoney, fmtDate, extraerTelefono, todayLocalISO, formatDireccion } from '../utils/safe';
+import { validarVentaExpressFactura } from '../data/ventaExpressLogic';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { abrirNavegacion } from '../utils/navegacion';
@@ -15,8 +16,6 @@ const MapaRuta = lazy(() => import('./ui/MapaRuta'));
 
 const PAGOS = ["Efectivo", "Transferencia", "Tarjeta", "QR / Link de pago", "Crédito"];
 const MERMA_CAUSAS = ["Bolsa rota", "Hielo derretido", "Daño transporte", "Rechazo cliente"];
-const REGIMENES = ["Régimen General", "Régimen Simplificado", "Sin obligaciones"];
-const USOS_CFDI = ["G01", "G03", "S01", "P01"];
 const CHOFER_SHELL = "min-h-dvh w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf4f6_0%,#e3eef1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
 export default function ChoferView({ user, data, actions, onLogout }) {
@@ -48,7 +47,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [confirmandoEntrega, setConfirmandoEntrega] = useState(false);
   const [creandoVenta, setCreandoVenta] = useState(false);
   const [registrandoMerma, setRegistrandoMerma] = useState(false);
-  const [vForm, setVForm] = useState({ clienteId: "", cliente: "", sku: "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
+  const [vForm, setVForm] = useState({ clienteId: "", cliente: "", sku: "", cant: "", pago: "Efectivo", factura: false });
   const [mForm, setMForm] = useState({ sku: "", cant: "", causa: "Bolsa rota" });
   const [fotoMerma, setFotoMerma] = useState(null);
   const [fotoTransf, setFotoTransf] = useState(null);
@@ -91,6 +90,8 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const productos = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
   const clientesActivos = useMemo(() => (data.clientes || []).filter(c => s(c.estatus || 'Activo') === 'Activo'), [data.clientes]);
   const clienteExpressSel = useMemo(() => (data.clientes || []).find(c => String(c.id) === String(vForm.clienteId)), [data.clientes, vForm.clienteId]);
+  // P0: con factura, la identidad fiscal es la del cliente registrado.
+  const errorFacturaExpress = validarVentaExpressFactura({ factura: vForm.factura, cliente: clienteExpressSel })?.error || null;
 
   // Get price for a client+sku (special price or default)
   const getPrice = useCallback((clienteNombre, sku) => {
@@ -669,15 +670,8 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
     const clienteNombre = s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general";
 
-    if (vForm.factura) {
-      if (!clienteNombre.trim()) { showToast("Captura razón social para facturar"); return; }
-      if (!vForm.rfc.trim()) { showToast("RFC requerido para factura"); return; }
-      if (vForm.rfc.trim().length < 12 || vForm.rfc.trim().length > 13) { showToast("RFC debe tener 12-13 caracteres"); return; }
-      if (!vForm.correo.trim()) { showToast("Correo requerido para factura"); return; }
-      if (!vForm.regimen) { showToast("Selecciona régimen fiscal"); return; }
-      if (!vForm.usoCfdi) { showToast("Selecciona uso CFDI"); return; }
-      if (!vForm.cp.trim() || vForm.cp.trim().length !== 5) { showToast("CP fiscal debe tener 5 dígitos"); return; }
-    }
+    const errFactura = validarVentaExpressFactura({ factura: vForm.factura, cliente: clienteExpressSel });
+    if (errFactura) { showToast(errFactura.error); return; }
 
     const sku = vForm.sku || s(productos[0]?.sku);
     // Check available inventory
@@ -700,16 +694,11 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
         express: true,
         factura: vForm.factura,
-        rfc: vForm.factura ? vForm.rfc : "",
-        correo: vForm.factura ? vForm.correo : "",
-        regimen: vForm.factura ? vForm.regimen : "",
-        usoCfdi: vForm.factura ? vForm.usoCfdi : "",
-        cp: vForm.factura ? vForm.cp : "",
       };
       setEntregas(prev => [...prev, venta]);
       showToast("Venta exprés: " + fmtMoney(total) + (vForm.factura ? " (factura)" : ""));
       setVentaModal(false);
-      setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" });
+      setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false });
     } finally {
       setCreandoVenta(false);
     }
@@ -1264,7 +1253,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           );
         })()}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-          <button onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false, rfc: "", correo: "", regimen: "Régimen General", usoCfdi: "G03", cp: "" }); }} className="w-full py-4 bg-cyan-200 text-slate-950 text-sm font-bold rounded-[18px]">Venta rápida</button>
+          <button onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false }); }} className="w-full py-4 bg-cyan-200 text-slate-950 text-sm font-bold rounded-[18px]">Venta rápida</button>
           <button onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="w-full py-4 px-5 bg-white/10 text-amber-200 text-sm font-bold rounded-[18px]">Registrar merma</button>
           <button onClick={() => setStep("cierre")} className="w-full py-4 px-5 bg-white text-slate-950 text-sm font-bold rounded-[18px]">Cerrar ruta</button>
         </div>
@@ -1384,25 +1373,17 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                 </button>
               </div>
               {vForm.factura && (
-                <div className="bg-purple-50 rounded-xl p-3 border border-purple-200 space-y-2">
-                  <div><label className="block text-[10px] font-bold text-purple-600 uppercase mb-0.5">Razón social *</label>
-                    <input value={vForm.cliente} onChange={e => setVForm(f=>({...f,cliente:e.target.value}))}
-                      className="w-full px-3 py-2.5 border border-purple-200 rounded-xl text-sm bg-white" placeholder="Nombre o razón social" /></div>
-                  <div><label className="block text-[10px] font-bold text-purple-600 uppercase mb-0.5">RFC *</label>
-                    <input value={vForm.rfc} onChange={e => setVForm(f=>({...f,rfc:e.target.value.toUpperCase()}))}
-                      className="w-full px-3 py-2.5 border border-purple-200 rounded-xl text-sm font-mono bg-white" placeholder="XAXX010101000" maxLength={13} /></div>
-                  <div><label className="block text-[10px] font-bold text-purple-600 uppercase mb-0.5">Régimen fiscal *</label>
-                    <select value={vForm.regimen} onChange={e => setVForm(f=>({...f,regimen:e.target.value}))}
-                      className="w-full px-3 py-2.5 border border-purple-200 rounded-xl text-sm bg-white">{REGIMENES.map(r => <option key={r} value={r}>{r}</option>)}</select></div>
-                  <div><label className="block text-[10px] font-bold text-purple-600 uppercase mb-0.5">Uso CFDI *</label>
-                    <select value={vForm.usoCfdi} onChange={e => setVForm(f=>({...f,usoCfdi:e.target.value}))}
-                      className="w-full px-3 py-2.5 border border-purple-200 rounded-xl text-sm bg-white">{USOS_CFDI.map(u => <option key={u} value={u}>{u}</option>)}</select></div>
-                  <div><label className="block text-[10px] font-bold text-purple-600 uppercase mb-0.5">CP fiscal *</label>
-                    <input value={vForm.cp} onChange={e => setVForm(f=>({...f,cp:e.target.value.replace(/\D/g, "").slice(0,5)}))}
-                      className="w-full px-3 py-2.5 border border-purple-200 rounded-xl text-sm bg-white" placeholder="34000" maxLength={5} /></div>
-                  <div><label className="block text-[10px] font-bold text-purple-600 uppercase mb-0.5">Correo para factura</label>
-                    <input value={vForm.correo} onChange={e => setVForm(f=>({...f,correo:e.target.value}))}
-                      className="w-full px-3 py-2.5 border border-purple-200 rounded-xl text-sm bg-white" placeholder="correo@ejemplo.com" type="email" /></div>
+                <div className="bg-purple-50 rounded-xl p-3 border border-purple-200 space-y-1">
+                  {errorFacturaExpress ? (
+                    <p className="text-xs font-semibold text-purple-700">{errorFacturaExpress}</p>
+                  ) : (
+                    <>
+                      <p className="text-[10px] font-bold text-purple-600 uppercase">Datos fiscales del cliente</p>
+                      <p className="text-sm font-semibold text-slate-800">{s(clienteExpressSel?.nombre)}</p>
+                      <p className="text-xs font-mono text-slate-600">RFC {s(clienteExpressSel?.rfc)} · Régimen {s(clienteExpressSel?.regimen) || '—'} · Uso {s(clienteExpressSel?.uso_cfdi) || '—'} · CP {s(clienteExpressSel?.cp) || '—'}</p>
+                      <p className="text-[10px] text-slate-400">La factura se emite después desde Facturación con estos datos.</p>
+                    </>
+                  )}
                 </div>
               )}
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
@@ -1430,7 +1411,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               </div>
 
             </div>
-            <button onClick={crearVentaExpress} disabled={creandoVenta||!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&(!vForm.cliente.trim()||!vForm.rfc.trim()||!vForm.correo.trim()||!vForm.regimen||!vForm.usoCfdi||vForm.cp.trim().length!==5||vForm.rfc.trim().length<12||vForm.rfc.trim().length>13))} className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40">{creandoVenta ? "Creando venta…" : vForm.factura ? "Crear venta con factura" : "Crear venta"}</button>
+            <button onClick={crearVentaExpress} disabled={creandoVenta||!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&!!errorFacturaExpress)} className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40">{creandoVenta ? "Creando venta…" : vForm.factura ? "Crear venta con factura" : "Crear venta"}</button>
           </div>
         </div>
       )}

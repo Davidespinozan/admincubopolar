@@ -134,25 +134,13 @@ export function ConfiguracionView({ data, actions, user }) {
           return;
         }
 
-        const authId = fnData?.user?.id;
-        if (!authId) {
-          setErrors({ email: 'No se obtuvo ID del usuario creado' });
+        // P0: la function ya insertó en `usuarios` (unidad lógica con
+        // rollback en Auth si el INSERT falla). Solo recargamos el catálogo.
+        if (!fnData?.usuario?.id) {
+          setErrors({ email: 'No se obtuvo el usuario creado' });
           return;
         }
-
-        const insertError = await actions.addUsuario({
-          nombre: form.nombre.trim(),
-          email: form.email.trim().toLowerCase(),
-          rol: form.rol,
-          auth_id: authId,
-          estatus: "Activo"
-        });
-
-        if (insertError) {
-          setErrors({ email: `Error al guardar en base de datos: ${insertError.message}` });
-          return;
-        }
-
+        await actions.recargarDatos?.();
         toast?.success("Usuario creado — ya puede iniciar sesión");
       } else {
         // Edit — only update profile (nombre, rol), not auth

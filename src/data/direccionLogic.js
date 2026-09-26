@@ -126,3 +126,32 @@ export function buildPlaceSelection(place) {
     longitud: lng ?? null,
   };
 }
+
+/**
+ * P0 — Contrato canónico entre `AddressAutocomplete.onSelect` y los
+ * modales de venta (NuevaVentaModal / EditarVentaModal).
+ *
+ * Entrada: el shape que emite `buildPlaceSelection`:
+ *   { fullAddress, components: { calle, numero_exterior, colonia, ciudad, estado, codigo_postal }, latitud, longitud }
+ * Salida: los 3 campos de override de entrega de la orden.
+ *
+ * Texto: `fullAddress` de Google; si viene vacío se arma desde
+ * components con `formatDireccion`. Coordenadas: numéricas o null.
+ *
+ * @param {Object|null} selection
+ * @returns {{ direccionEntrega: string, latitudEntrega: number|null, longitudEntrega: number|null }}
+ */
+export function placeSelectionToEntrega(selection) {
+  const full = typeof selection?.fullAddress === 'string' ? selection.fullAddress.trim() : '';
+  const desdeComponentes = formatDireccion(selection?.components || {});
+  const toCoord = (v) => {
+    if (v === null || v === undefined || v === '') return null;
+    const num = Number(v);
+    return Number.isFinite(num) ? num : null;
+  };
+  return {
+    direccionEntrega: full || desdeComponentes,
+    latitudEntrega: toCoord(selection?.latitud),
+    longitudEntrega: toCoord(selection?.longitud),
+  };
+}

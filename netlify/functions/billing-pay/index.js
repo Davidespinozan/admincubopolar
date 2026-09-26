@@ -17,6 +17,7 @@ const _handler = async (event) => {
     .from('payment_intents')
     .select('checkout_url')
     .eq('orden_id', Number(ordenId))
+    .not('checkout_url', 'is', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .single();
