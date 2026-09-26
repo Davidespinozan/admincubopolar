@@ -1,5 +1,5 @@
 import { getSupabaseAdmin } from './supabaseAdmin.js';
-import { evaluatePaymentInvariants } from './paymentSecurity.js';
+import { evaluatePaymentInvariants, METODO_PAGO_LINK, metodoPagoTrasCobroLink } from './paymentSecurity.js';
 
 // Todas las funciones aceptan un cliente Supabase opcional (último
 // parámetro) para poder probarlas con un cliente falso sin red. En
@@ -114,11 +114,10 @@ const applyCuentaPorCobrarPaymentState = async (cxcState, supabase) => {
  * @param {'stripe'|'mercadopago'} p.provider
  * @param {string} p.providerReference
  * @param {{ ordenId:number|null, status:string, amount:number, currency:string }} p.payment
- * @param {string} p.metodoPago
  * @param {Object} p.rawPayload
  * @param {{ supabase?: Object }} [deps]
  */
-const syncOrderPayment = async ({ provider, providerReference, payment, metodoPago, rawPayload }, deps = {}) => {
+const syncOrderPayment = async ({ provider, providerReference, payment, rawPayload }, deps = {}) => {
   const supabase = deps.supabase || getSupabaseAdmin();
   const ordenId = payment?.ordenId ?? null;
 
@@ -126,7 +125,7 @@ const syncOrderPayment = async ({ provider, providerReference, payment, metodoPa
 
   const { data: orden, error: ordenError } = await supabase
     .from('ordenes')
-    .select('id, cliente_id, folio, total, estatus')
+    .select('id, cliente_id, folio, total, estatus, metodo_pago')
     .eq('id', ordenId)
     .maybeSingle();
   if (ordenError) throw ordenError;
@@ -183,7 +182,8 @@ const syncOrderPayment = async ({ provider, providerReference, payment, metodoPa
       orden_id: orden.id,
       cxc_id: cxcState.cxcId,
       monto: amount,
-      metodo_pago: metodoPago,
+      // P0.2: método del catálogo (PAYMENT_FORM_MAP), nunca el proveedor.
+      metodo_pago: METODO_PAGO_LINK,
       fecha: new Date().toISOString().slice(0, 10),
       referencia,
       saldo_antes: cxcState.saldoAntes,
@@ -210,9 +210,11 @@ const syncOrderPayment = async ({ provider, providerReference, payment, metodoPa
   }
 
   if (orden.estatus !== 'Facturada') {
+    // P0.2: metodo_pago conserva el contrato del catálogo. Crédito (PPD)
+    // se respeta; cualquier otro método pasa a 'QR / Link de pago'.
     const { error: ordenUpdError } = await supabase
       .from('ordenes')
-      .update({ estatus: 'Entregada', metodo_pago: metodoPago })
+      .update({ estatus: 'Entregada', metodo_pago: metodoPagoTrasCobroLink(orden.metodo_pago) })
       .eq('id', orden.id);
     if (ordenUpdError) throw ordenUpdError;
   }

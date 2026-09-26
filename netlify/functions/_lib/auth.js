@@ -1,4 +1,4 @@
-import { unauthorized } from './http.js';
+import { json, unauthorized } from './http.js';
 import { getSupabaseAdmin } from './supabaseAdmin.js';
 
 const getBearerToken = (event) => {
@@ -8,24 +8,39 @@ const getBearerToken = (event) => {
   return header.slice(7).trim();
 };
 
-// If Supabase env vars are not configured, return a permissive admin-like profile
-// so billing functions work even without SUPABASE_SERVICE_ROLE_KEY in Netlify.
-const isSupabaseConfigured = () =>
-  Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+// P0.1 — FAIL CLOSED.
+//
+// ANTES (commit c10c671 "Make billing auth resilient to missing Supabase
+// env vars"): si faltaban SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY este
+// helper devolvía un perfil { rol: 'Admin' } sin validar ningún token,
+// y canAccessOrden devolvía true cuando no había cliente Supabase. Era
+// un seam de conveniencia para probar billing en local sin env; en
+// producción significaba "sin configuración → Admin".
+//
+// AHORA: configuración ausente → 503 explícito (configuration error).
+// Nunca se construye un perfil privilegiado sin JWT válido + fila en
+// `usuarios`. Los tests inyectan `deps.supabase` (cliente falso); no
+// existe bypass productivo.
 
-const getAuthenticatedProfile = async (event) => {
-  if (!isSupabaseConfigured()) {
-    return {
-      authUser: null,
-      profile: { id: null, nombre: 'Sistema', email: null, rol: 'Admin', estatus: 'Activo' },
-      supabase: null,
-    };
-  }
+const configurationError = () =>
+  json(503, { error: 'Autenticación no configurada en el servidor (faltan SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)', code: 'AUTH_NOT_CONFIGURED' });
 
+/**
+ * @param {Object} event - evento Netlify
+ * @param {{ supabase?: Object }} [deps] - solo para tests (cliente falso)
+ */
+const getAuthenticatedProfile = async (event, deps = {}) => {
   const token = getBearerToken(event);
   if (!token) return { errorResponse: unauthorized('Missing authorization token') };
 
-  const supabase = getSupabaseAdmin();
+  let supabase;
+  try {
+    supabase = deps.supabase || getSupabaseAdmin();
+  } catch (error) {
+    console.error('[auth] configuración ausente:', error?.message);
+    return { errorResponse: configurationError() };
+  }
+
   const { data: authData, error: authError } = await supabase.auth.getUser(token);
   const authUser = authData?.user;
   if (authError || !authUser) return { errorResponse: unauthorized('Invalid authorization token') };
@@ -64,7 +79,8 @@ const getAuthenticatedProfile = async (event) => {
 const canAccessOrden = async ({ profile, orden, supabase }) => {
   if (!profile || !orden) return false;
   if (profile.rol === 'Admin') return true;
-  if (!supabase) return true; // Supabase not configured — allow through
+  // Sin cliente Supabase no se puede verificar propiedad → denegar.
+  if (!supabase) return false;
 
   if (profile.rol === 'Ventas') {
     // Allow access if this Ventas rep owns the order, or if vendedor_id is not set (legacy orders)

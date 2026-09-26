@@ -246,7 +246,7 @@ describe('billing-webhook-mercadopago', () => {
     expect(res.statusCode).toBe(200);
     expect(JSON.parse(res.body)).toMatchObject({ received: true, applied: true, code: 'applied' });
     expect(fake.db.pagos).toHaveLength(1);
-    expect(fake.db.pagos[0]).toMatchObject({ cliente_id: 32, orden_id: 46, monto: 350, referencia: 'mercadopago:123456', metodo_pago: 'Mercado Pago' });
+    expect(fake.db.pagos[0]).toMatchObject({ cliente_id: 32, orden_id: 46, monto: 350, referencia: 'mercadopago:123456', metodo_pago: 'QR / Link de pago' });
     expect(fake.db.ordenes[0].estatus).toBe('Entregada');
     expect(fake.db.payment_intents[0]).toMatchObject({ provider: 'mercadopago', provider_reference: '123456', status: 'paid', amount: 350 });
     expect(fake.db.payment_webhook_events[0].processed).toBe(true);
@@ -276,7 +276,7 @@ describe('billing-webhook-mercadopago', () => {
 describe('syncOrderPayment', () => {
   it('sin ordenId → sin writes', async () => {
     const fake = makeFakeSupabase(seedBase());
-    const r = await syncOrderPayment({ provider: 'stripe', providerReference: 'cs_1', payment: { ordenId: null, status: 'paid', amount: 350, currency: 'MXN' }, metodoPago: 'Stripe' }, { supabase: fake });
+    const r = await syncOrderPayment({ provider: 'stripe', providerReference: 'cs_1', payment: { ordenId: null, status: 'paid', amount: 350, currency: 'MXN' } }, { supabase: fake });
     expect(r.code).toBe('orden_id_missing');
     expect(fake.writes).toHaveLength(0);
   });
@@ -285,7 +285,7 @@ describe('syncOrderPayment', () => {
     const seed = seedBase();
     seed.ordenes[0].estatus = 'Facturada';
     const fake = makeFakeSupabase(seed);
-    const r = await syncOrderPayment({ provider: 'stripe', providerReference: 'cs_1', payment: { ordenId: 46, status: 'paid', amount: 350, currency: 'MXN' }, metodoPago: 'Stripe' }, { supabase: fake });
+    const r = await syncOrderPayment({ provider: 'stripe', providerReference: 'cs_1', payment: { ordenId: 46, status: 'paid', amount: 350, currency: 'MXN' } }, { supabase: fake });
     expect(r.applied).toBe(true);
     expect(fake.db.ordenes[0].estatus).toBe('Facturada');
   });

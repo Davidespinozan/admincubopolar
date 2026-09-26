@@ -47,7 +47,6 @@ export const createHandler = ({
         provider: 'stripe',
         providerReference: session.id,
         payment,
-        metodoPago: 'Stripe',
         rawPayload: session,
       }, { supabase });
     } else if (String(payload.type || '').startsWith('checkout.session.')) {

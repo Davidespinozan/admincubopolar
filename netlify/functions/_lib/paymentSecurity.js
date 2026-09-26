@@ -213,3 +213,30 @@ export function normalizeStripeSession(session) {
     ordenId: resolveOrdenIdFromPayment({ metadata: session.metadata, external_reference: session.client_reference_id }),
   };
 }
+
+// ─── Contrato de ordenes.metodo_pago / pagos.metodo_pago ─────────────
+//
+// `metodo_pago` es el MÉTODO de pago (forma de pago SAT, claves de
+// PAYMENT_FORM_MAP: Efectivo, Transferencia, Tarjeta, QR / Link de
+// pago, Crédito...). NO es el proveedor. El proveedor vive en
+// payment_intents.provider y en el prefijo de pagos.referencia
+// (`stripe:` / `mercadopago:`).
+//
+// Un cobro confirmado por Stripe o Mercado Pago es, para el ERP, un
+// pago por "QR / Link de pago" (valor existente del catálogo, el mismo
+// que elige el chofer cuando el cliente paga por link).
+
+export const METODO_PAGO_LINK = 'QR / Link de pago';
+
+const METODOS_CREDITO = new Set(['Crédito', 'Crédito (fiado)']);
+
+/**
+ * Método que debe quedar en la orden tras un cobro por link.
+ * Una orden a crédito (PPD) conserva su método: el cobro es un abono a
+ * la CxC y el CFDI sigue siendo PPD + complemento.
+ */
+export function metodoPagoTrasCobroLink(metodoActual) {
+  const actual = String(metodoActual || '').trim();
+  if (METODOS_CREDITO.has(actual)) return actual;
+  return METODO_PAGO_LINK;
+}

@@ -112,6 +112,12 @@ export function makeFakeSupabase(seed = {}, opts = {}) {
 
   const authCalls = { createUser: [], deleteUser: [] };
   const auth = {
+    // opts.tokens = { '<jwt>': { id, email } } — cualquier otro token es inválido
+    async getUser(token) {
+      const user = opts.tokens?.[token];
+      if (!user) return { data: { user: null }, error: { message: 'invalid JWT' } };
+      return { data: { user }, error: null };
+    },
     admin: {
       async createUser(params) {
         authCalls.createUser.push(params);

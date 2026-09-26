@@ -102,7 +102,6 @@ export const createHandler = ({
         provider: 'mercadopago',
         providerReference: payment.id,
         payment,
-        metodoPago: 'Mercado Pago',
         rawPayload: paymentRaw,
       }, { supabase });
     } else {

@@ -11,6 +11,12 @@
 // Seam (patrón renovacell): si RECIBO_SECRET no está configurado en
 // Netlify, ambos modos responden 501 y la UI degrada con un aviso —
 // nada truena. Generar el secret: `openssl rand -hex 32`.
+//
+// P0.1: el POST SIEMPRE verifica la orden y la autorización. Antes,
+// `if (supabase)` saltaba la verificación cuando auth.js devolvía el
+// perfil Admin de emergencia por falta de env; ese seam ya no existe
+// (auth.js falla cerrado con 503) y aquí tampoco hay camino sin
+// verificación. `createHandler(deps)` solo para tests.
 
 import { json, methodNotAllowed, badRequest, forbidden, readJsonBody, serverError, ok } from '../_lib/http.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
@@ -37,8 +43,12 @@ const paginaError = (titulo, detalle) =>
 <p style="font-size:40px;margin:0 0 8px">🧊</p><h1 style="font-size:18px;margin:0 0 6px">${titulo}</h1>
 <p style="font-size:14px;color:#5a6b7a;margin:0">${detalle}</p></div></body></html>`;
 
-const _handler = async (event) => {
-  const secret = getReciboSecret();
+export const createHandler = ({
+  getProfile = getAuthenticatedProfile,
+  getSupabase = getSupabaseAdmin,
+  getSecret = getReciboSecret,
+} = {}) => async (event) => {
+  const secret = getSecret();
 
   if (event.httpMethod === 'GET') {
     if (!secret) return html(501, paginaError('Notas no disponibles', 'Esta función no está configurada todavía.'));
@@ -50,7 +60,7 @@ const _handler = async (event) => {
       return html(403, paginaError('Link inválido', 'Este link de nota no es válido o fue alterado.'));
     }
 
-    const supabase = getSupabaseAdmin();
+    const supabase = getSupabase();
     const { data: orden, error: ordErr } = await supabase
       .from('ordenes')
       .select('id, folio, folio_nota, cliente_id, cliente_nombre, fecha, created_at, total, estatus, metodo_pago')
@@ -79,9 +89,11 @@ const _handler = async (event) => {
   if (event.httpMethod === 'POST') {
     if (!secret) return json(501, { error: 'Notas públicas no configuradas (falta RECIBO_SECRET en Netlify)' });
 
-    const auth = await getAuthenticatedProfile(event);
+    const auth = await getProfile(event);
     if (auth.errorResponse) return auth.errorResponse;
-    const { profile, supabase } = auth;
+    const { profile } = auth;
+    if (!profile) return forbidden('Perfil no resuelto');
+    const supabase = auth.supabase || getSupabase();
 
     let body;
     try {
@@ -92,19 +104,17 @@ const _handler = async (event) => {
     const ordenId = Number(body?.ordenId);
     if (!Number.isInteger(ordenId) || ordenId <= 0) return badRequest('ordenId requerido');
 
-    if (supabase) {
-      const { data: orden, error } = await supabase
-        .from('ordenes')
-        .select('id, folio, vendedor_id, ruta_id')
-        .eq('id', ordenId)
-        .maybeSingle();
-      if (error) return serverError('No se pudo verificar la orden', error.message);
-      if (!orden) return badRequest('Orden no encontrada');
-      // Facturación comparte notas de cualquier orden; el resto pasa por
-      // la regla estándar (Admin todo, Ventas las suyas, Chofer su ruta).
-      const permitido = profile.rol === 'Facturación' || await canAccessOrden({ profile, orden, supabase });
-      if (!permitido) return forbidden('Tu rol no puede compartir la nota de esta orden');
-    }
+    const { data: orden, error } = await supabase
+      .from('ordenes')
+      .select('id, folio, vendedor_id, ruta_id')
+      .eq('id', ordenId)
+      .maybeSingle();
+    if (error) return serverError('No se pudo verificar la orden', error.message);
+    if (!orden) return badRequest('Orden no encontrada');
+    // Facturación comparte notas de cualquier orden; el resto pasa por
+    // la regla estándar (Admin todo, Ventas las suyas, Chofer su ruta).
+    const permitido = profile.rol === 'Facturación' || await canAccessOrden({ profile, orden, supabase });
+    if (!permitido) return forbidden('Tu rol no puede compartir la nota de esta orden');
 
     return ok({ url: `/nota/${ordenId}?t=${firmarRecibo(ordenId, secret)}` });
   }
@@ -112,4 +122,4 @@ const _handler = async (event) => {
   return methodNotAllowed(['GET', 'POST']);
 };
 
-export const handler = withSentry(_handler);
+export const handler = withSentry(createHandler());
