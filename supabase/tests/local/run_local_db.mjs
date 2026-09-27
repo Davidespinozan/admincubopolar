@@ -127,6 +127,11 @@ await c.query(`
   -- Producción (verificado 2026-09-27): sin triggers prevent_mutation en inventario_mov ni auditoria.
   DROP TRIGGER IF EXISTS trg_inv_mov_immutable ON inventario_mov;
   DROP TRIGGER IF EXISTS trg_auditoria_immutable ON auditoria;
+  -- Producción (verificado 2026-09-27): sin FKs hacia productos y sin triggers en produccion.
+  ALTER TABLE orden_lineas DROP CONSTRAINT IF EXISTS orden_lineas_sku_fkey;
+  ALTER TABLE umbrales DROP CONSTRAINT IF EXISTS umbrales_sku_fkey;
+  DROP TRIGGER IF EXISTS trg_produccion_state ON produccion;
+  DROP TRIGGER IF EXISTS trg_produccion_updated ON produccion;
   DROP INDEX IF EXISTS idx_clientes_rfc;
   -- Producción (verificado 2026-09-27): RLS DESHABILITADO en estas 4 tablas.
   ALTER TABLE pagos DISABLE ROW LEVEL SECURITY;
@@ -377,6 +382,24 @@ console.log('── PRUEBAS 073 (B2-V)');
 const r073t = await runFile(c, path.join(ROOT, 'supabase/tests/073_vista_gps_test.sql'), { stopOnError: true, echo: true });
 if (r073t.aborted) { console.log('RESULTADO: FALLÓ (073)'); process.exit(1); }
 
+// ── F1: 074 (rename_sku solo Admin activo, token exacto, D2) ─────────────
+console.log('── aplicar 074 (1/2)');
+let r074 = await runFile(c, path.join(ROOT, 'supabase/074_rename_sku_admin.sql'), { stopOnError: true });
+if (r074.aborted) process.exit(1);
+console.log('── aplicar 074 (2/2, idempotencia)');
+r074 = await runFile(c, path.join(ROOT, 'supabase/074_rename_sku_admin.sql'), { stopOnError: true });
+if (r074.aborted) process.exit(1);
+if (!(await rlsCheck('tras 074 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 074)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[074]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 074 (F1)');
+const r074t = await runFile(c, path.join(ROOT, 'supabase/tests/074_rename_sku_test.sql'), { stopOnError: true, echo: true });
+if (r074t.aborted) { console.log('RESULTADO: FALLÓ (074)'); process.exit(1); }
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -391,7 +414,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 071
   'erp_actor','erp_rol_activo','erp_usuario_id','erp_actor_nombre','erp_es_activo','erp_actor_etiqueta','update_stocks_atomic','update_productos_stock_atomic',
   // 072
-  'erp_foto_merma_en_uso','registrar_merma','registrar_mermas_ruta','revertir_merma'];
+  'erp_foto_merma_en_uso','registrar_merma','registrar_mermas_ruta','revertir_merma',
+  // 074
+  'rename_sku'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
