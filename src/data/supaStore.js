@@ -5,7 +5,7 @@ import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, validateMarcarNoEntregada, buildNoEntregaPayload, calcReversoChangesNoEntrega, isFacturable, validateCancelacionCFDI } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
-import { seleccionarCuartoFIFOInverso, validarMermaParaReverso, buildReversoMermaChange, matchConceptoMerma, decidirBorrarMovimientoContable } from './mermasLogic';
+import { buildRegistrarMermaArgs, buildMermasRutaPayload, buildMermaTransformacionArgs, mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion, calcCostoProduccion, buildConceptoProduccion } from './produccionLogic';
 import { validateTransformacion, buildTransformacionRow, buildInsumoChange, buildOutputChange, buildInsumoRollbackChange } from './transformacionLogic';
 import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion } from './devolucionesLogic';
@@ -2057,18 +2057,15 @@ export function useSupaStore(userId, userName, userRol) {
             return { error: outputErr.message };
           }
 
-          // 4. Registrar merma si la hay (best-effort: si falla, la
+          // 4. Registrar merma de proceso si la hay (best-effort: si falla, la
           //    transformación sí ocurrió y la merma puede capturarse manual).
-          if (mermaKg > 0) {
-            const { error: mermaErr } = await supabase.from('mermas').insert({
-              sku: input_sku,
-              cantidad: Math.round(mermaKg),
-              causa: 'Merma de proceso — transformación',
-              origen: `Transformación ${folio}`,
-              foto_url: '',
-            });
+          //    Contrato 072: sin efecto de stock propio (el descuento ya
+          //    ocurrió al transformar); el servidor valida el folio.
+          const mermaTr = buildMermaTransformacionArgs({ input_sku, mermaKg, folio });
+          if (mermaTr.args) {
+            const { error: mermaErr } = await supabase.rpc('registrar_merma', mermaTr.args);
             if (mermaErr) {
-              console.warn('[addTransformacion] insert merma (no crítico):', mermaErr.message);
+              console.warn('[addTransformacion] registrar_merma (no crítico):', mermaErr.message);
               notify('advertencia', 'Merma sin registrar',
                 `Transformación ${folio} — merma de ${mermaKg} ${input_sku} no se registró, captúrala manual.`,
                 '⚠️', folio);
@@ -3643,100 +3640,28 @@ export function useSupaStore(userId, userName, userRol) {
         rf();
       },
 
-      // ── MERMAS ──
+      // ── MERMAS ── (contrato 072: evento server-authoritative e inmutable)
+      // registrar_merma descuenta stock (FIFO por cuarto, con lock), crea el
+      // kardex, el egreso contable y la merma en UNA transacción; actor y
+      // atribución salen del JWT. Producción desde standalone; Admin desde
+      // el shell. El chofer registra solo al cerrar ruta
+      // (registrar_mermas_ruta en cerrarRutaCompleta).
       registrarMerma: async (sku, cantidad, causa, origen, fotoUrl) => {
-        // Chofer registra desde ruta; Producción desde standalone; Admin
-        // desde InventarioView.
-        const guard = requireRol(['Admin', 'Chofer', 'Producción']);
+        const guard = requireRol(['Admin', 'Producción']);
         if (guard) { t()?.error(guard.error); return guard; }
+        const built = buildRegistrarMermaArgs({ sku, cantidad, causa, origen, foto: fotoUrl });
+        if (built.error) { t()?.error(built.error); return { error: built.error }; }
         try {
-          const { data: mermaRow, error } = await supabase.from('mermas').insert({
-            sku,
-            cantidad: Number(cantidad),
-            causa,
-            origen,
-            foto_url: fotoUrl || '',
-            usuario_id: uid() || null,
-          }).select('id').single();
+          const { error } = await supabase.rpc('registrar_merma', built.args);
           if (error) {
-            console.warn('[registrarMerma] insert mermas:', error.message);
-            t()?.error('Error al registrar merma');
-            return error;
+            const msg = mensajeErrorMerma(error);
+            console.warn('[registrarMerma] rpc registrar_merma:', error.message);
+            t()?.error(msg);
+            return { error: msg };
           }
-          const mermaId = mermaRow?.id;
-
-          // Descontar del inventario en cuartos fríos. Si falla, hacemos
-          // rollback de la merma (DELETE) — son operaciones críticas que
-          // deben ir juntas o no ir.
-          const qty = Number(cantidad);
-          if (qty > 0) {
-            const { data: cuartos, error: errCfs } = await supabase
-              .from('cuartos_frios').select('id, stock').order('id');
-            if (errCfs) {
-              if (mermaId) await supabase.from('mermas').delete().eq('id', mermaId);
-              console.warn('[registrarMerma] select cuartos_frios, rollback merma:', errCfs.message);
-              t()?.error('No se pudo leer cuartos fríos — merma revertida');
-              return { error: errCfs.message };
-            }
-
-            if (cuartos && cuartos.length > 0) {
-              const changes = [];
-              let remaining = qty;
-              for (const cf of cuartos) {
-                if (remaining <= 0) break;
-                const available = Number((cf.stock || {})[sku] || 0);
-                if (available > 0) {
-                  const toTake = Math.min(available, remaining);
-                  remaining -= toTake;
-                  changes.push({ cuarto_id: cf.id, sku, delta: -toTake, tipo: 'Merma', origen: causa || origen || 'Merma', usuario: uname() });
-                }
-              }
-              if (changes.length > 0) {
-                const { error: errRpc } = await supabase.rpc('update_stocks_atomic', { p_changes: changes });
-                if (errRpc) {
-                  if (mermaId) await supabase.from('mermas').delete().eq('id', mermaId);
-                  console.warn('[registrarMerma] rpc update_stocks_atomic, rollback merma:', errRpc.message);
-                  t()?.error('No se pudo descontar el inventario — merma revertida');
-                  return { error: errRpc.message };
-                }
-              }
-            }
-
-            // Registrar egreso contable por el costo de la merma.
-            // Si esto falla NO hacemos rollback: la merma + descuento son
-            // críticos y ya están bien. El asiento contable es secundario y
-            // puede regenerarse manualmente desde admin.
-            const { data: prod, error: errProd } = await supabase
-              .from('productos').select('costo_unitario, nombre').eq('sku', sku).maybeSingle();
-            if (errProd) {
-              console.warn('[registrarMerma] select costo unit (no crítico):', errProd.message);
-            } else {
-              const costoUnit = Number(prod?.costo_unitario || 0);
-              if (costoUnit > 0) {
-                const costoMerma = centavos(qty * costoUnit);
-                const { error: errEgr } = await supabase.from('movimientos_contables').insert({
-                  fecha: todayLocalISO(),
-                  tipo: 'Egreso',
-                  categoria: 'Mermas',
-                  concepto: `Merma ${qty}× ${sku}${prod?.nombre ? ` (${prod.nombre})` : ''} — ${causa || origen || 'Sin causa'}`,
-                  monto: costoMerma,
-                });
-                if (errEgr) {
-                  console.warn('[registrarMerma] insert egreso contable (no crítico):', errEgr.message);
-                  notify('advertencia', 'Asiento contable pendiente', `Merma ${qty}× ${sku} — egreso contable no se registró, regístralo manual.`, '⚠️', sku);
-                  t()?.error('Merma registrada, pero el egreso contable no. Regístralo manual.');
-                  // Continuamos al éxito: side effects principales sí ocurrieron.
-                  await checkStockBajo([sku]);
-                  rf();
-                  return { error: errEgr.message, partial: true };
-                }
-              }
-            }
-          }
-
-          notify('merma', 'Merma registrada', `${cantidad}× ${sku} — ${causa || origen || 'Sin causa'}`, '⚠️', sku);
-          log('Registrar', 'Mermas', `${cantidad}×${sku} — ${causa}`);
-          await checkStockBajo([sku]);
+          notify('merma', 'Merma registrada', `${built.args.p_cantidad}× ${built.args.p_sku} — ${causa || origen || 'Sin causa'}`, '⚠️', built.args.p_sku);
+          log('Registrar', 'Mermas', `${built.args.p_cantidad}×${built.args.p_sku} — ${causa}`);
+          await checkStockBajo([built.args.p_sku]);
           rf();
           return undefined;
         } catch (e) {
@@ -3746,143 +3671,31 @@ export function useSupaStore(userId, userName, userRol) {
         }
       },
 
-      deleteMerma: async (id) => {
-        const { error } = await supabase.from('mermas').delete().eq('id', id);
-        if (error) { t()?.error('Error al eliminar merma'); return error; }
-        log('Eliminar', 'Mermas', `ID ${id}`);
-        rf();
-      },
-
-      // Borra una merma desde admin, regresando el stock al primer cuarto
-      // frío activo (FIFO inverso) y borrando el egreso contable asociado y
-      // la foto en Storage best-effort. NO modifica deleteMerma porque el
-      // reset masivo del sistema usa esa otra ruta sin reverso.
-      borrarMermaConReverso: async (id) => {
+      // Revierte una merma (solo Admin). El servidor carga la merma, regresa
+      // exactamente los efectos persistidos a sus cuartos originales, borra
+      // el egreso ligado por id, marca la merma Revertida (no la borra),
+      // conserva la foto como evidencia y audita. Un segundo reverso se
+      // rechaza sin cambios. Ya no existe borrado de mermas desde el cliente.
+      revertirMerma: async (id, motivo = '') => {
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
+        if (!id) return { error: 'Merma requerida' };
         try {
-          if (!id) return { error: 'Merma requerida' };
-
-          // 1. SELECT merma completa
-          const { data: merma, error: errSel } = await supabase
-            .from('mermas')
-            .select('*')
-            .eq('id', id)
-            .single();
-          if (errSel || !merma) {
-            return { error: errSel?.message || 'Merma no encontrada' };
-          }
-
-          const sku = s(merma.sku);
-          const cant = n(merma.cantidad);
-          const fotoPath = s(merma.foto_url);
-          const causa = s(merma.causa);
-          const origen = s(merma.origen);
-          const fecha = s(merma.fecha);
-
-          // Validación pura — extraída a mermasLogic.validarMermaParaReverso.
-          // Defensivo: si cantidad ≤ 0 (no debería por CHECK), borrar sin reverso.
-          const validErr = validarMermaParaReverso({ ...merma, sku, cantidad: cant });
-          if (validErr) {
-            const { error: errDel } = await supabase.from('mermas').delete().eq('id', id);
-            if (errDel) {
-              t()?.error('Error al borrar merma');
-              return { error: errDel.message };
-            }
-            await log('Borrar (sin reverso)', 'Mermas', `ID ${id} — ${validErr.error}`);
-            rf();
-            return undefined;
-          }
-
-          // 2. RPC update_stocks_atomic con FIFO inverso (regresar al primer
-          //    cuarto frío activo)
-          const { data: cuartos, error: errCfs } = await supabase
-            .from('cuartos_frios')
-            .select('id, nombre')
-            .order('id');
-          if (errCfs) {
-            t()?.error('No se pudieron leer cuartos fríos');
-            return { error: errCfs.message };
-          }
-          // Selección pura — extraída a mermasLogic.seleccionarCuartoFIFOInverso
-          const cuartoDestino = seleccionarCuartoFIFOInverso(cuartos);
-          if (!cuartoDestino) {
-            return { error: 'No hay cuartos fríos activos para regresar el stock' };
-          }
-
-          // Construcción del change pura — extraída a mermasLogic.buildReversoMermaChange
-          const change = buildReversoMermaChange(
-            { ...merma, sku, cantidad: cant, causa },
-            cuartoDestino,
-            uname() || 'Admin'
-          );
-          const { error: errRpc } = await supabase.rpc('update_stocks_atomic', {
-            p_changes: [change],
+          const { error } = await supabase.rpc('revertir_merma', {
+            p_merma_id: Number(id),
+            p_motivo: s(motivo) || null,
           });
-          if (errRpc) {
-            console.warn('[borrarMermaConReverso] rpc update_stocks_atomic:', errRpc.message);
-            t()?.error('No se pudo regresar el stock — merma NO borrada');
-            return { error: 'No se pudo regresar el stock — merma NO borrada. ' + (errRpc.message || '') };
+          if (error) {
+            const msg = mensajeErrorMerma(error);
+            console.warn('[revertirMerma] rpc revertir_merma:', error.message);
+            t()?.error(msg);
+            return { error: msg };
           }
-
-          // 3. DELETE de movimiento contable asociado (best-effort, match único)
-          let avisoMovsMultiples = false;
-          try {
-            // Match pura — extraída a mermasLogic.matchConceptoMerma
-            const conceptoMatch = matchConceptoMerma({ sku, cantidad: cant });
-            const { data: movs } = await supabase
-              .from('movimientos_contables')
-              .select('id')
-              .eq('categoria', 'Mermas')
-              .ilike('concepto', `%${conceptoMatch}%`)
-              .gte('fecha', fecha)
-              .lte('fecha', fecha);
-
-            // Decisión pura — extraída a mermasLogic.decidirBorrarMovimientoContable
-            const decision = decidirBorrarMovimientoContable(movs);
-            if (decision.accion === 'delete') {
-              await supabase.from('movimientos_contables').delete().eq('id', decision.id);
-            } else if (decision.accion === 'aviso') {
-              avisoMovsMultiples = true;
-              console.warn(`[borrarMermaConReverso] múltiples egresos contables matchean merma ${id}, ninguno borrado`);
-            }
-          } catch (eMov) {
-            console.warn('[borrarMermaConReverso] best-effort delete movimiento contable:', eMov);
-          }
-
-          // 4. DELETE de foto en Storage (best-effort)
-          if (fotoPath) {
-            try {
-              // Si es path relativo (no http/data/blob), borrar del bucket
-              if (!/^https?:\/\//.test(fotoPath) && !/^data:/.test(fotoPath) && !/^blob:/.test(fotoPath)) {
-                await supabase.storage.from('mermas').remove([fotoPath]);
-              }
-            } catch (eFoto) {
-              console.warn('[borrarMermaConReverso] best-effort delete foto:', eFoto);
-            }
-          }
-
-          // 5. DELETE de la merma
-          const { error: errDel } = await supabase.from('mermas').delete().eq('id', id);
-          if (errDel) {
-            console.warn('[borrarMermaConReverso] CRÍTICO: stock revertido pero merma no se pudo borrar:', errDel);
-            t()?.error('Stock regresado pero la merma no se pudo borrar. Revísalo en Supabase.');
-            return { error: 'Stock regresado pero la merma no se pudo borrar. Revísalo en Supabase.' };
-          }
-
-          // 6. Audit
-          await log('Borrar con reverso', 'Mermas',
-            `ID ${id} — ${cant}×${sku} → ${s(cuartoDestino.nombre)} | causa: ${causa || '—'} | origen: ${origen || '—'}`
-          );
-
           rf();
-          if (avisoMovsMultiples) {
-            return { partial: true, error: 'Merma borrada y stock regresado, pero el egreso contable no se eliminó automáticamente (múltiples coincidencias). Revísalo en Contabilidad.' };
-          }
           return undefined;
         } catch (e) {
-          console.error('[borrarMermaConReverso] excepción:', e);
-          t()?.error('Error inesperado al borrar merma');
+          console.error('[revertirMerma] excepción:', e);
+          t()?.error('Error inesperado al revertir merma');
           return { error: e?.message || 'Error inesperado' };
         }
       },
@@ -4593,10 +4406,6 @@ export function useSupaStore(userId, userName, userRol) {
       cerrarRutaCompleta: async (reporte) => {
         const { rutaId, choferNombre, entregas, mermas: mermasArr, cobros, carga } = reporte;
         const hoy = todayLocalISO();
-        const createdMovIds = [];
-        const createdMermaIds = [];
-        const mermaStockReversal = [];
-
         try {
           // P1 Fase A: toda la sección financiera (órdenes entregadas, ventas
           // exprés, pagos, CxC, saldos e ingresos) ocurre en UNA transacción
@@ -4628,78 +4437,21 @@ export function useSupaStore(userId, userName, userRol) {
             await log('Cierre Ruta', 'Rutas', `Cobros omitidos (ya pagadas): ${finRes.saltadas.map(x => x.folio || x.orden_id).join(', ')}`);
           }
 
-          for (const m of (mermasArr || [])) {
-            const { data: mermaRow, error: mermaErr } = await supabase.from('mermas').insert({
-              sku: m.sku,
-              cantidad: Number(m.cant),
-              causa: m.causa,
-              origen: 'Ruta ' + choferNombre,
-              foto_url: m.foto || '',
-              ruta_id: rutaId || null,
-            }).select('id').single();
-            if (mermaErr || !mermaRow) throw mermaErr || new Error('No se pudo registrar la merma');
-            createdMermaIds.push(mermaRow.id);
-          }
-
-          // Descontar mermas del stock en cuartos fríos (BUG FIX: antes no se descontaba)
+          // Contrato 072: TODAS las mermas de la ruta en una transacción del
+          // servidor (merma + descuento FIFO con lock + kardex + egreso), o
+          // ninguna. Idempotente por ruta: un reintento del cierre no las
+          // duplica. Actor y atribución salen del JWT del chofer.
           if (mermasArr && mermasArr.length > 0) {
-            const { data: cuartosMerma, error: cfMermaErr } = await supabase
-              .from('cuartos_frios').select('id, stock').order('id');
-            if (cfMermaErr) throw cfMermaErr;
-            if (cuartosMerma && cuartosMerma.length > 0) {
-              const mermaChanges = [];
-              for (const m of mermasArr) {
-                const cantOriginal = Number(m.cant || 0);
-                let remaining = cantOriginal;
-                for (const cf of cuartosMerma) {
-                  if (remaining <= 0) break;
-                  const available = Number((cf.stock || {})[m.sku] || 0);
-                  if (available > 0) {
-                    const toTake = Math.min(available, remaining);
-                    remaining -= toTake;
-                    mermaChanges.push({
-                      cuarto_id: cf.id, sku: m.sku, delta: -toTake,
-                      tipo: 'Merma', origen: `Merma ruta ${choferNombre}`,
-                      usuario: choferNombre || uname(),
-                    });
-                  }
-                }
-                // Auditoría 🟡-6 (Tanda 1): si después de recorrer todos los
-                // cuartos queda saldo sin descontar, la merma supera el stock
-                // físico disponible. Throw aborta toda la transacción de
-                // cerrarRutaCompleta para que el rollback existente
-                // restaure el estado previo (sin over-counting de stock).
-                if (remaining > 0) {
-                  const descontado = cantOriginal - remaining;
-                  throw new Error(
-                    `Stock insuficiente para registrar merma de ${cantOriginal}×${m.sku}: solo hay ${descontado} disponible en cuartos`
-                  );
-                }
-              }
-              if (mermaChanges.length > 0) {
-                const { error: mermaStockErr } = await supabase.rpc('update_stocks_atomic', { p_changes: mermaChanges });
-                if (mermaStockErr) throw mermaStockErr;
-                // Guardar reversal para rollback
-                mermaStockReversal.push(...mermaChanges.map(c => ({ ...c, delta: -c.delta, tipo: 'Entrada', origen: 'Rollback merma ruta' })));
-              }
-              // Egreso contable por costo de cada merma
-              for (const m of mermasArr) {
-                const cant = Number(m.cant || 0);
-                if (cant <= 0) continue;
-                const { data: prodMerma } = await supabase.from('productos')
-                  .select('costo_unitario, nombre').eq('sku', m.sku).maybeSingle();
-                const costoUnit = Number(prodMerma?.costo_unitario || 0);
-                if (costoUnit > 0) {
-                  const { data: egresoRow, error: egresoErr } = await supabase.from('movimientos_contables').insert({
-                    fecha: hoy, tipo: 'Egreso', categoria: 'Mermas',
-                    concepto: `Merma ruta ${choferNombre}: ${cant}× ${m.sku}${prodMerma?.nombre ? ` (${prodMerma.nombre})` : ''} — ${m.causa || 'Sin causa'}`,
-                    monto: centavos(cant * costoUnit),
-                  }).select('id').single();
-                  if (!egresoErr && egresoRow) createdMovIds.push(egresoRow.id);
-                }
-              }
-              await checkStockBajo(mermasArr.map(m => m.sku));
+            if (!rutaId) throw new Error('No se pueden registrar mermas sin ruta');
+            const { data: mermasRes, error: mermasErr } = await supabase.rpc('registrar_mermas_ruta', {
+              p_ruta_id: rutaId,
+              p_mermas: buildMermasRutaPayload(mermasArr),
+            });
+            if (mermasErr) throw new Error(mensajeErrorMerma(mermasErr));
+            if (mermasRes?.skipped) {
+              await log('Cierre Ruta', 'Rutas', `Mermas de la ruta ${rutaId} ya registradas (reintento): no se duplicaron`);
             }
+            await checkStockBajo(mermasArr.map(m => m.sku));
           }
 
           // Fase 18: detectar si la ruta es legacy (creada antes del modelo "carga real").
@@ -4746,15 +4498,9 @@ export function useSupaStore(userId, userName, userRol) {
           notify('venta', 'Ruta cerrada', `${choferNombre} cerró ruta — ${(entregas || []).length} entregas, $${(cobros?.Efectivo || 0).toLocaleString()} efectivo`, '🚛', String(rutaId));
           rf();
         } catch (err) {
-          // P1 Fase A: lo financiero es atómico en el servidor y no requiere
-          // compensación aquí. Solo se revierten mermas y su stock. Los
-          // egresos de merma ya insertados no se borran por REST (sin
-          // rollback_delete para Chofer): quedan para revisión de Admin.
-          if (mermaStockReversal.length) await supabase.rpc('update_stocks_atomic', { p_changes: mermaStockReversal });
-          if (createdMermaIds.length) await supabase.from('mermas').delete().in('id', createdMermaIds);
-          if (createdMovIds.length) {
-            console.warn('[cerrarRutaCompleta] egresos de merma sin revertir (revisar en Contabilidad):', createdMovIds.join(','));
-          }
+          // Lo financiero (069) y las mermas (072) son atómicos e idempotentes
+          // en el servidor: no hay compensación por REST. Un reintento del
+          // cierre salta cobros ya aplicados y mermas ya registradas.
           t()?.error('No se pudo cerrar la ruta correctamente');
           return err;
         }
@@ -4849,7 +4595,8 @@ export function useSupaStore(userId, userName, userRol) {
             'cuentas_por_cobrar',
             'orden_lineas',
             'invoice_attempts',
-            'mermas',
+            // 'mermas' NO se borra (072): es evento histórico inmutable, sin
+            // DELETE para clientes. Igual que auditoria.
             'inventario_mov',
             'chofer_ubicaciones',
             'ordenes',

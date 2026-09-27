@@ -4,6 +4,8 @@ import { EmptyState } from './Skeleton';
 // ─── STATUS BADGE ───
 const STATUS_COLORS = {
   "Activo": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
+  "Activa": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
+  "Revertida": "bg-slate-100/80 text-slate-600 border-slate-200/80",
   "Inactivo": "bg-slate-100/90 text-slate-600 border-slate-200",
   "Creada": "bg-amber-100/80 text-amber-900 border-amber-200/80",
   "Asignada": "bg-sky-100/90 text-sky-900 border-sky-200/80",

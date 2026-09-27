@@ -1,10 +1,12 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, useToast, todayLocalISO, PAGE_SIZE, Paginator } from './viewsCommon';
+import { esMermaActiva, puedeRevertirMerma } from '../../data/mermasLogic';
 
 export function MermasView({ data, actions }) {
   const toast = useToast();
   const [page, setPage] = useState(0);
   const [confirmando, setConfirmando] = useState(false);
   const [borrarModal, setBorrarModal] = useState(null);
+  const [motivoReverso, setMotivoReverso] = useState('');
   const [fotoModal, setFotoModal] = useState(null);
 
   // Filtros (default: últimos 30 días)
@@ -59,11 +61,15 @@ export function MermasView({ data, actions }) {
   // KPI: total $ y cuenta de mermas en período
   const kpi = useMemo(() => {
     let total = 0;
+    let count = 0;
+    let revertidas = 0;
     for (const m of mermasFiltradas) {
+      if (!esMermaActiva(m)) { revertidas++; continue; }
       const costo = productosBySku[s(m.sku)]?.costo || 0;
       total += n(m.cantidad) * costo;
+      count++;
     }
-    return { total, count: mermasFiltradas.length };
+    return { total, count, revertidas };
   }, [mermasFiltradas, productosBySku]);
 
   // Opciones para filtros
@@ -100,18 +106,14 @@ export function MermasView({ data, actions }) {
     if (!borrarModal || confirmando) return;
     setConfirmando(true);
     try {
-      const result = await actions.borrarMermaConReverso?.(borrarModal.id);
+      const result = await actions.revertirMerma?.(borrarModal.id, motivoReverso);
       if (result?.error) {
-        if (result.partial) {
-          toast?.warning?.(result.error) || toast?.error?.(result.error);
-          setBorrarModal(null);
-          return;
-        }
         toast?.error?.(result.error);
         return;
       }
-      toast?.success?.('Merma borrada y stock regresado');
+      toast?.success?.('Merma revertida y stock regresado a su cuarto original');
       setBorrarModal(null);
+      setMotivoReverso('');
     } finally {
       setConfirmando(false);
     }
@@ -134,7 +136,7 @@ export function MermasView({ data, actions }) {
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
         <p className="text-[10px] text-amber-500 uppercase font-bold">Total en período</p>
         <p className="text-2xl font-extrabold text-amber-700">{fmtMoney(kpi.total)}</p>
-        <p className="text-xs text-amber-500 mt-0.5">{kpi.count} {kpi.count === 1 ? 'merma' : 'mermas'}</p>
+        <p className="text-xs text-amber-500 mt-0.5">{kpi.count} {kpi.count === 1 ? 'merma' : 'mermas'}{kpi.revertidas > 0 ? ` · ${kpi.revertidas} revertida${kpi.revertidas === 1 ? '' : 's'} (no suman)` : ''}</p>
       </div>
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between">
         <div>
@@ -208,6 +210,7 @@ export function MermasView({ data, actions }) {
               }},
               { key: 'cantidad', label: 'Cant.', render: v => <span className="font-mono font-semibold text-amber-700">{n(v).toLocaleString()}</span> },
               { key: 'causa', label: 'Causa', badge: true, render: v => <StatusBadge status={s(v)} /> },
+              { key: 'estatus', label: 'Estatus', badge: true, render: (_, r) => <StatusBadge status={esMermaActiva(r) ? 'Activa' : 'Revertida'} /> },
               { key: 'origen', label: 'Origen', hideOnMobile: true },
               { key: 'rutaId', label: 'Ruta', hideOnMobile: true, render: (v, r) => {
                 const rid = String(v || r.ruta_id || '');
@@ -226,18 +229,22 @@ export function MermasView({ data, actions }) {
               { key: 'costo', label: 'Costo $', render: (_, r) => {
                 const costo = productosBySku[s(r.sku)]?.costo || 0;
                 const totalLinea = n(r.cantidad) * costo;
-                return <span className="font-bold text-slate-800">{fmtMoney(totalLinea)}</span>;
+                return <span className={`font-bold ${esMermaActiva(r) ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{fmtMoney(totalLinea)}</span>;
               }},
               { key: 'acciones', label: '', render: (_, row) => (
                 <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    onClick={() => setBorrarModal(row)}
-                    aria-label="Borrar merma con reverso"
-                    title="Borrar y regresar stock"
-                    className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
-                  >
-                    <span className="text-base leading-none">🗑</span>
-                  </button>
+                  {puedeRevertirMerma(row).ok ? (
+                    <button
+                      onClick={() => { setMotivoReverso(''); setBorrarModal(row); }}
+                      aria-label="Revertir merma"
+                      title="Revertir y regresar stock"
+                      className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                    >
+                      <span className="text-base leading-none">↩</span>
+                    </button>
+                  ) : (
+                    <span className="text-[11px] text-slate-400" title={s(row.motivoReverso || row.motivo_reverso)}>Revertida</span>
+                  )}
                 </div>
               )},
             ]}
@@ -257,8 +264,10 @@ export function MermasView({ data, actions }) {
                 <div className="text-xs text-slate-500">
                   <div>{fmtDate(r.fecha)} · {s(r.causa)} · {s(r.origen)}</div>
                   <div className="mt-1 flex items-center justify-between">
-                    <span className="font-bold text-amber-700">{fmtMoney(n(r.cantidad) * costo)}</span>
-                    <button onClick={(e) => { e.stopPropagation(); setBorrarModal(r); }} className="text-xs text-red-600 font-bold">🗑 Borrar</button>
+                    <span className={`font-bold ${esMermaActiva(r) ? 'text-amber-700' : 'text-slate-400 line-through'}`}>{fmtMoney(n(r.cantidad) * costo)}</span>
+                    {puedeRevertirMerma(r).ok
+                      ? <button onClick={(e) => { e.stopPropagation(); setMotivoReverso(''); setBorrarModal(r); }} className="text-xs text-red-600 font-bold min-h-[44px] px-2">↩ Revertir</button>
+                      : <span className="text-xs text-slate-400">Revertida</span>}
                   </div>
                 </div>
               );
@@ -270,7 +279,7 @@ export function MermasView({ data, actions }) {
     </div>
 
     {/* Modal de confirmación al borrar */}
-    <Modal open={!!borrarModal} onClose={() => { if (!confirmando) setBorrarModal(null); }} title="Borrar merma con reverso de inventario">
+    <Modal open={!!borrarModal} onClose={() => { if (!confirmando) setBorrarModal(null); }} title="Revertir merma">
       {borrarModal && (() => {
         const info = productosBySku[s(borrarModal.sku)];
         const costo = info?.costo || 0;
@@ -281,18 +290,24 @@ export function MermasView({ data, actions }) {
         return (
           <div className="space-y-3">
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-900 space-y-2">
-              <p className="font-bold">¿Borrar esta merma?</p>
+              <p className="font-bold">¿Revertir esta merma?</p>
               <p className="text-xs">
-                Se regresarán <span className="font-bold">{n(borrarModal.cantidad)}×</span> <span className="font-bold">{info?.nombre || s(borrarModal.sku)}</span> al inventario (primer cuarto frío activo).
+                Se regresarán <span className="font-bold">{n(borrarModal.cantidad)}×</span> <span className="font-bold">{info?.nombre || s(borrarModal.sku)}</span> a los mismos cuartos fríos de donde se descontaron.
               </p>
               <p className="text-xs">
                 Causa: <span className="font-semibold">{s(borrarModal.causa)}</span> · Fecha: <span className="font-semibold">{fmtDate(borrarModal.fecha)}</span> · Costo recuperado: <span className="font-semibold">{fmtMoney(total)}</span>
               </p>
-              <p className="text-xs">El egreso contable asociado y la foto en evidencia también serán eliminados.</p>
+              <p className="text-xs">Se elimina el egreso contable ligado a esta merma. La merma queda en el historial como «Revertida» y la foto se conserva como evidencia.</p>
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Motivo (opcional)</label>
+              <input type="text" value={motivoReverso} maxLength={200} onChange={e => setMotivoReverso(e.target.value)}
+                placeholder="Ej. error de captura"
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-base sm:text-sm bg-white min-h-[44px]" />
             </div>
             {esVieja && (
               <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">
-                ⚠️ Esta merma es de hace {dias} días. Borrarla afectará el inventario actual. Asegúrate de que es lo correcto.
+                ⚠️ Esta merma es de hace {dias} días. Revertirla afectará el inventario actual. Asegúrate de que es lo correcto.
               </div>
             )}
             <div className="flex justify-end gap-2 mt-2">
@@ -302,7 +317,7 @@ export function MermasView({ data, actions }) {
                 disabled={confirmando}
                 className="px-4 py-2.5 text-sm font-bold rounded-xl bg-red-600 text-white hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {confirmando ? 'Borrando…' : 'Borrar y regresar stock'}
+                {confirmando ? 'Revirtiendo…' : 'Revertir y regresar stock'}
               </button>
             </div>
           </div>

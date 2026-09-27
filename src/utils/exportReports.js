@@ -3,6 +3,7 @@
  * CuboPolar ERP
  */
 import * as XLSX from 'xlsx';
+import { mermasActivas } from '../data/mermasLogic';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -627,7 +628,7 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, us
   }
 
   // Calcular merma por SKU
-  const mermasRuta = (mermas || []).filter(m => String(m.ruta_id || m.rutaId || '') === String(ruta.id));
+  const mermasRuta = mermasActivas(mermas).filter(m => String(m.ruta_id || m.rutaId || '') === String(ruta.id));
   const mermaPorSku = {};
   for (const m of mermasRuta) {
     const sku = s(m.sku);

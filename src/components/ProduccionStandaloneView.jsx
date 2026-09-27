@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { mermasActivas } from '../data/mermasLogic';
 import { supabase } from '../lib/supabase';
 import { s, n, fmtDate, fmtPct, todayLocalISO } from '../utils/safe';
 import { compressImage } from '../utils/compressImage';
@@ -173,7 +174,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const mermasHoyList = useMemo(() => {
     const hoy = todayLocalISO();
-    return (data.mermas || []).filter(m => s(m.fecha).slice(0, 10) === hoy);
+    return mermasActivas(data.mermas).filter(m => s(m.fecha).slice(0, 10) === hoy);
   }, [data.mermas]);
 
   const mermaHoy = useMemo(() => mermasHoyList.reduce((sum, item) => sum + n(item.cantidad), 0), [mermasHoyList]);

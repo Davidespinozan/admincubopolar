@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { mermasActivas } from '../data/mermasLogic';
 import { Modal, FormBtn, useToast, s, n, fmtMoney } from './views/viewsCommon';
 import { reporteRutaDiaria } from '../utils/exportReports';
 
@@ -49,7 +50,7 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
 
   const choferNombre = s(ruta.choferNombre || ruta.chofer_nombre || ruta.chofer);
   const mermasRuta = useMemo(() =>
-    mermas.filter(m => String(m.ruta_id || m.rutaId || '') === String(ruta.id)),
+    mermasActivas(mermas).filter(m => String(m.ruta_id || m.rutaId || '') === String(ruta.id)),
     [mermas, ruta.id]
   );
 

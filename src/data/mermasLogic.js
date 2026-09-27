@@ -1,89 +1,129 @@
-// mermasLogic.js — lógica pura para flujo de mermas (sin Supabase).
-// Extraída de actions.borrarMermaConReverso (supaStore.js) para que sea
-// testeable sin mocks. Las partes I/O del store consumen estos helpers.
+// mermasLogic.js — lógica pura del contrato de mermas (Fase B / B1, mig 072).
+//
+// La merma es un evento server-authoritative e inmutable:
+//   registrar_merma        (Admin / Producción; Chofer solo vía ruta)
+//   registrar_mermas_ruta  (cierre de ruta: todo o nada, idempotente)
+//   revertir_merma         (solo Admin; revierte los efectos persistidos)
+// El cliente ya no descuenta stock, no crea egresos contables, no borra filas
+// ni fotos de mermas. Estos helpers solo arman argumentos y traducen
+// resultados; toda la autoridad vive en el servidor.
+
+export const MERMA_ESTATUS = Object.freeze({ ACTIVA: 'Activa', REVERTIDA: 'Revertida' });
+
+const txt = (v) => (v == null ? '' : String(v)).trim();
 
 /**
- * Decide a qué cuarto frío regresar el stock de una merma borrada.
- * Estrategia FIFO inverso: el primer cuarto activo en el orden recibido.
- * Asume que `cuartos` viene ordenado por id (como retorna supabase).
- *
- * @param {Array<{id:any, nombre?:string}>} cuartos - Lista de cuartos disponibles
- * @returns {{id:any, nombre?:string}|null}  El cuarto destino o null si no hay
+ * ¿La merma sigue vigente? Filas sin estatus (caché previa a 072) cuentan
+ * como activas.
  */
-export function seleccionarCuartoFIFOInverso(cuartos) {
-  if (!Array.isArray(cuartos) || cuartos.length === 0) return null;
-  return cuartos[0];
+export function esMermaActiva(merma) {
+  if (!merma || typeof merma !== 'object') return false;
+  return txt(merma.estatus || MERMA_ESTATUS.ACTIVA) !== MERMA_ESTATUS.REVERTIDA;
+}
+
+/** Solo las mermas vigentes (para KPIs, reportes y stock). */
+export function mermasActivas(list) {
+  return Array.isArray(list) ? list.filter(esMermaActiva) : [];
 }
 
 /**
- * Valida si una merma puede revertirse (cantidad > 0, sku presente).
- * Defensivo: la BD tiene CHECK cantidad > 0 pero validamos por si llega
- * un row corrupto o de una versión vieja.
- *
- * @param {Object} merma - Row de tabla mermas (sku, cantidad)
- * @returns {{error:string}|null}  null si puede revertirse
+ * ¿Mostrar la acción de revertir? El servidor decide al final (una fila
+ * legacy sin efectos registrados se rechaza allá); aquí solo se oculta lo
+ * que ya se sabe imposible.
+ * @returns {{ok:boolean, motivo?:string}}
  */
-export function validarMermaParaReverso(merma) {
-  if (!merma || typeof merma !== 'object') {
-    return { error: 'Merma requerida' };
-  }
-  if (!merma.sku || !String(merma.sku).trim()) {
-    return { error: 'SKU de merma faltante' };
-  }
-  const cant = Number(merma.cantidad);
-  if (!Number.isFinite(cant) || cant <= 0) {
-    return { error: 'Cantidad de merma inválida' };
-  }
-  return null;
+export function puedeRevertirMerma(merma) {
+  if (!merma || typeof merma !== 'object' || merma.id == null) return { ok: false, motivo: 'Merma requerida' };
+  if (!esMermaActiva(merma)) return { ok: false, motivo: 'La merma ya fue revertida' };
+  return { ok: true };
+}
+
+/** Cantidad válida para el contrato: entero > 0. */
+function cantidadEntera(v) {
+  const q = Number(v);
+  if (!Number.isFinite(q) || q <= 0) return { error: 'La cantidad debe ser mayor a 0' };
+  if (!Number.isInteger(q)) return { error: 'La cantidad de merma debe ser un número entero' };
+  return { q };
 }
 
 /**
- * Construye el objeto change para la RPC `update_stocks_atomic`.
- * El delta es POSITIVO (entrada) porque estamos revirtiendo una merma.
- *
- * @param {Object} merma           Row con sku, cantidad, causa, id
- * @param {Object} cuartoDestino   Cuarto seleccionado por FIFO inverso
- * @param {string} usuario         Usuario que ejecuta el reverso
- * @returns {Object}               Change para p_changes del RPC
+ * Argumentos de `registrar_merma` (flujo de Producción / Admin). No existe
+ * parámetro de usuario, delta de stock ni monto: el servidor los deriva.
+ * @returns {{args:Object}|{error:string}}
  */
-export function buildReversoMermaChange(merma, cuartoDestino, usuario) {
-  const cant = Number(merma.cantidad);
-  const causa = String(merma.causa || '').trim() || 'sin causa';
+export function buildRegistrarMermaArgs({ sku, cantidad, causa, origen, foto } = {}) {
+  const skuT = txt(sku);
+  if (!skuT) return { error: 'Selecciona el producto de la merma' };
+  const c = cantidadEntera(cantidad);
+  if (c.error) return { error: c.error };
+  const fotoT = txt(foto);
   return {
-    cuarto_id: cuartoDestino.id,
-    sku: String(merma.sku),
-    delta: cant,
-    tipo: 'Reverso merma',
-    origen: `Borrado merma id=${merma.id} (${causa})`,
-    usuario: String(usuario || 'Admin'),
+    args: {
+      p_sku: skuT,
+      p_cantidad: c.q,
+      p_causa: txt(causa) || null,
+      p_origen: txt(origen) || null,
+      p_foto: fotoT || null,
+    },
   };
 }
 
 /**
- * Genera el patrón LIKE para encontrar el egreso contable asociado a
- * una merma. El concepto al registrarse es: "Merma {qty}× {sku} (...) — ..."
- * Buscamos el prefijo que es estable entre registros distintos.
- *
- * @param {Object} merma - Row con sku, cantidad
- * @returns {string}     Substring para usar en `.ilike(concepto, '%...%')`
+ * Payload de `registrar_mermas_ruta` desde las mermas locales del chofer
+ * ({ sku, cant, causa, foto }). Descarta campos locales (id, hora).
  */
-export function matchConceptoMerma(merma) {
-  const cant = Number(merma.cantidad);
-  return `Merma ${cant}× ${String(merma.sku)}`;
+export function buildMermasRutaPayload(mermas) {
+  return (Array.isArray(mermas) ? mermas : [])
+    .filter(m => m && typeof m === 'object')
+    .map(m => ({
+      sku: txt(m.sku),
+      cant: Number(m.cant ?? m.cantidad ?? 0),
+      causa: txt(m.causa) || null,
+      foto: txt(m.foto) || null,
+    }));
 }
 
 /**
- * Decide qué hacer con los movimientos contables que matchean una merma:
- *   - 0 matches → no borrar nada (no había egreso registrado)
- *   - 1 match  → borrar (limpieza completa)
- *   - 2+ matches → NO borrar automáticamente, avisar al usuario
- *
- * @param {Array} movs - Resultado de la query de movimientos_contables filtrados
- * @returns {{accion:'noop'|'delete'|'aviso', id?:any}}
+ * Merma de proceso de una transformación: sin efecto de stock propio (el
+ * descuento ya ocurrió al transformar). El servidor valida el folio en
+ * `produccion`, una sola merma por folio y cantidad ≤ merma_kg.
+ * @returns {{args:Object}|{skip:true}}
  */
-export function decidirBorrarMovimientoContable(movs) {
-  const arr = Array.isArray(movs) ? movs : [];
-  if (arr.length === 0) return { accion: 'noop' };
-  if (arr.length === 1) return { accion: 'delete', id: arr[0].id };
-  return { accion: 'aviso' };
+export function buildMermaTransformacionArgs({ input_sku, mermaKg, folio } = {}) {
+  const q = Math.round(Number(mermaKg) || 0);
+  if (q <= 0 || !txt(input_sku) || !txt(folio)) return { skip: true };
+  return {
+    args: {
+      p_sku: txt(input_sku),
+      p_cantidad: q,
+      p_causa: 'Merma de proceso — transformación',
+      p_origen: `Transformación ${txt(folio)}`,
+      p_foto: null,
+      p_ruta_id: null,
+      p_afecta_stock: false,
+    },
+  };
+}
+
+/**
+ * Mensaje en español para errores del contrato de mermas.
+ * @param {{message?:string, code?:string}|string|null} error
+ */
+export function mensajeErrorMerma(error) {
+  const msg = txt(typeof error === 'string' ? error : error?.message);
+  const code = txt(typeof error === 'object' && error ? error.code : '');
+  if (/es legacy/i.test(msg)) {
+    return 'Esta merma es anterior al registro con efectos exactos y no se puede revertir automáticamente. Ajusta el inventario manualmente.';
+  }
+  if (/ya fue revertida/i.test(msg)) return 'La merma ya estaba revertida.';
+  if (/Stock insuficiente/i.test(msg)) return msg.replace(/^.*?(Stock insuficiente)/i, '$1');
+  if (/no pertenece al chofer/i.test(msg)) return 'La ruta no pertenece a este chofer.';
+  if (/foto no pertenece|ruta de foto inválida|foto no existe|foto ya está ligada|foto demasiado grande/i.test(msg)) {
+    return 'La foto de evidencia no es válida. Tómala de nuevo.';
+  }
+  if (/SKU no encontrado/i.test(msg)) return 'El producto de la merma no existe.';
+  if (/cantidad/i.test(msg) && /mayor a 0|entera|inválida/i.test(msg)) return 'La cantidad de merma debe ser un entero mayor a 0.';
+  if (/no autorizado/i.test(msg) || code === '42501') return 'No tienes permiso para esta operación de mermas.';
+  if (/cuarto .* ya no existe/i.test(msg)) return 'El cuarto frío original ya no existe; no se puede revertir automáticamente.';
+  return msg || 'Error en la operación de mermas';
 }
