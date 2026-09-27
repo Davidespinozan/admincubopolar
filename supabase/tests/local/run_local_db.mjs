@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -343,6 +343,39 @@ await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
 const r071b = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
 if (r071b.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 072)'); process.exit(1); }
 console.log('  071 tras 072: PASS');
+
+// ── B2-V: 073 (vista GPS con security_invoker; anon sin acceso) ─────────
+{
+  console.log('── DETECTOR B2-V (antes de 073: la vista debe exponer GPS a anon)');
+  await c.query(`BEGIN;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus) VALUES (7390, 'Det 73', 'det73@t', 'Chofer', 'Activo');
+    INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus) VALUES (7390, 'R-7390', 'Det', 7390, 'Det 73', 'Cerrada');
+    INSERT INTO chofer_ubicaciones (ruta_id, chofer_id, latitud, longitud) VALUES (7390, 7390, 1, 1);
+    SET LOCAL ROLE anon;
+    SELECT set_config('request.jwt.claims', '{"role":"anon"}', true);`);
+  const vista = Number((await c.query(`SELECT count(*) AS n FROM chofer_ubicacion_actual WHERE ruta_id = 7390`)).rows[0].n);
+  const base = Number((await c.query(`SELECT count(*) AS n FROM chofer_ubicaciones WHERE ruta_id = 7390`)).rows[0].n);
+  await c.query('ROLLBACK');
+  const detecta = vista > 0 && base === 0;
+  console.log(`  anon vista=${vista} base=${base} → detector ${detecta ? 'REPRODUCE el hueco' : 'NO reproduce (FALLA DEL DETECTOR)'}`);
+  if (!detecta) { console.log('RESULTADO: FALLÓ (detector 073)'); process.exit(1); }
+}
+console.log('── aplicar 073 (1/2)');
+let r073 = await runFile(c, path.join(ROOT, 'supabase/073_contencion_vista_gps.sql'), { stopOnError: true });
+if (r073.aborted) process.exit(1);
+console.log('── aplicar 073 (2/2, idempotencia)');
+r073 = await runFile(c, path.join(ROOT, 'supabase/073_contencion_vista_gps.sql'), { stopOnError: true });
+if (r073.aborted) process.exit(1);
+if (!(await rlsCheck('tras 073 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 073)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[073]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 073 (B2-V)');
+const r073t = await runFile(c, path.join(ROOT, 'supabase/tests/073_vista_gps_test.sql'), { stopOnError: true, echo: true });
+if (r073t.aborted) { console.log('RESULTADO: FALLÓ (073)'); process.exit(1); }
 
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
