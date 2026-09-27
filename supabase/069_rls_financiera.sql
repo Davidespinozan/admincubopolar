@@ -58,7 +58,7 @@ $$;
 -- Rol del usuario del ERP SOLO si su perfil está Activo (get_my_rol ignora
 -- estatus; un JWT de un usuario desactivado sigue siendo válido en Auth).
 CREATE OR REPLACE FUNCTION fin_mi_rol_activo() RETURNS TEXT
-LANGUAGE sql STABLE SECURITY DEFINER AS $$
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
   SELECT rol::TEXT FROM usuarios
    WHERE lower(email) = lower(auth.jwt() ->> 'email')
      AND COALESCE(estatus, 'Activo') = 'Activo'
@@ -66,7 +66,7 @@ LANGUAGE sql STABLE SECURITY DEFINER AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION fin_actor_permitido(p_roles TEXT[]) RETURNS BOOLEAN
-LANGUAGE plpgsql STABLE SECURITY DEFINER AS $$
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_jwt TEXT := fin_jwt_role();
 BEGIN
   IF v_jwt IS NULL OR v_jwt = 'service_role' THEN RETURN TRUE; END IF;
@@ -95,7 +95,7 @@ REVOKE EXECUTE ON FUNCTION fin_marcar_ctx() FROM PUBLIC, anon, authenticated;
 -- ═══════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE FUNCTION increment_saldo(p_cli BIGINT, p_delta NUMERIC)
-RETURNS void LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 BEGIN
   IF NOT fin_actor_permitido(ARRAY['Admin']) THEN
     RAISE EXCEPTION 'increment_saldo: operación financiera no autorizada para este actor'
@@ -138,7 +138,7 @@ END $$;
 -- 2a. CxC de una orden a crédito. Idempotente (idx_cxc_orden_unique).
 --     Inserta la CxC y sube clientes.saldo en la misma transacción.
 CREATE OR REPLACE FUNCTION crear_cxc_orden(p_orden_id BIGINT, p_dias_vencimiento INT DEFAULT 30)
-RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   v_ord   ordenes%ROWTYPE;
   v_cli   RECORD;
@@ -177,7 +177,7 @@ END $$;
 
 -- 2b. Ingreso contable "Ventas" de una orden de contado. Idempotente.
 CREATE OR REPLACE FUNCTION registrar_ingreso_orden(p_orden_id BIGINT, p_usuario_id BIGINT DEFAULT NULL)
-RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   v_ord ordenes%ROWTYPE;
   v_id  BIGINT;
@@ -209,7 +209,7 @@ END $$;
 --     cadena de 4 escrituras con compensaciones manuales de cobrarCxC.
 CREATE OR REPLACE FUNCTION abonar_cxc(
   p_cxc_id BIGINT, p_monto NUMERIC, p_metodo TEXT, p_referencia TEXT DEFAULT NULL, p_usuario_id BIGINT DEFAULT NULL
-) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   v_cxc   cuentas_por_cobrar%ROWTYPE;
   v_monto NUMERIC := round(COALESCE(p_monto, 0), 2);
@@ -271,7 +271,7 @@ END $$;
 --     Si la orden tiene CxC, el cobro es un abono a esa CxC.
 CREATE OR REPLACE FUNCTION registrar_pago_orden(
   p_orden_id BIGINT, p_metodo TEXT, p_referencia TEXT DEFAULT NULL, p_usuario_id BIGINT DEFAULT NULL
-) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   v_ord     ordenes%ROWTYPE;
   v_cxc     cuentas_por_cobrar%ROWTYPE;
@@ -328,7 +328,7 @@ END $$;
 --     por DELETE. Usa ordenes.total del servidor (nunca e.total).
 CREATE OR REPLACE FUNCTION cerrar_ruta_financiero(
   p_ruta_id BIGINT, p_entregas JSONB, p_usuario_id BIGINT DEFAULT NULL, p_usuario_nombre TEXT DEFAULT NULL
-) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER AS $$
+) RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   v_ruta    rutas%ROWTYPE;
   v_rol     TEXT;
@@ -539,7 +539,7 @@ BEGIN
 
   RETURN jsonb_build_object('success', true, 'orden_id', p_orden_id, 'lineas_insertadas', v_count_lineas);
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 -- 3b. cerrar_ruta_atomic (059) — inserta un Ingreso agregado: solo Admin.
 --     (cerrarRutaCompleta no la usa; cerrarRuta administrativo sí.)
@@ -633,14 +633,14 @@ BEGIN
 EXCEPTION WHEN OTHERS THEN
   RAISE EXCEPTION 'Error cerrando ruta: %', SQLERRM;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp;
 
 -- ═══════════════════════════════════════════════════════════════
 -- 4. TRIGGER GUARD EN ordenes (compara OLD vs NEW; RLS no puede)
 -- ═══════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE FUNCTION ordenes_guard_financiero() RETURNS TRIGGER
-LANGUAGE plpgsql SECURITY DEFINER AS $$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE
   v_jwt TEXT := fin_jwt_role();
   v_rol TEXT;
