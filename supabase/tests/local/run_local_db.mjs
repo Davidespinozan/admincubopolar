@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -130,6 +130,18 @@ await c.query(`
   ALTER TABLE cuentas_por_cobrar DISABLE ROW LEVEL SECURITY;
   ALTER TABLE movimientos_contables DISABLE ROW LEVEL SECURITY;
   ALTER TABLE mermas DISABLE ROW LEVEL SECURITY;
+  -- Producción NO tiene estas tablas (003/005 solo existen en el repo) ni las
+  -- policies read_all de empleados/nómina (allí solo hay admin_all).
+  DROP TABLE IF EXISTS ruta_plantilla_clientes CASCADE;
+  DROP TABLE IF EXISTS ruta_plantillas CASCADE;
+  DROP TABLE IF EXISTS categorias_contables CASCADE;
+  DROP TABLE IF EXISTS departamentos CASCADE;
+  DROP POLICY IF EXISTS read_all ON empleados;
+  DROP POLICY IF EXISTS read_all ON nomina_periodos;
+  DROP POLICY IF EXISTS read_all ON nomina_recibos;
+  -- Producción tiene estas columnas de cierre en rutas (añadidas fuera del repo).
+  ALTER TABLE rutas ADD COLUMN IF NOT EXISTS cierre_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS total_cobrado NUMERIC, ADD COLUMN IF NOT EXISTS total_credito NUMERIC;
+  ALTER TABLE auditoria ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now();
   ALTER TABLE cuentas_por_cobrar ADD COLUMN IF NOT EXISTS concepto TEXT DEFAULT '';
   DROP TRIGGER IF EXISTS trg_cxc_updated ON cuentas_por_cobrar;
   DROP POLICY IF EXISTS pagos_write ON pagos;
@@ -212,6 +224,23 @@ const rlsOk = await rlsCheck('069 + 070');
 if (!rlsOk || !rlsSolo069 === false) { /* reportado arriba */ }
 if (!rlsOk) { console.log('RESULTADO: FALLÓ (RLS_CHECK)'); process.exit(1); }
 
+// ── Fase B P0: 071 (actor activo por auth.uid, lectura sin USING true, RPC de stock)
+console.log('── aplicar 071 (1/2)');
+let r071 = await runFile(c, path.join(ROOT, 'supabase/071_actor_activo_rls_lectura_stock.sql'), { stopOnError: true });
+if (r071.aborted) process.exit(1);
+console.log('── aplicar 071 (2/2, idempotencia)');
+r071 = await runFile(c, path.join(ROOT, 'supabase/071_actor_activo_rls_lectura_stock.sql'), { stopOnError: true });
+if (r071.aborted) process.exit(1);
+// Escaneo permanente: ninguna policy USING/CHECK true fuera de la deuda conocida.
+const PERMISIVAS_DEUDA = ['auditoria|insert_all', 'error_log|insert_all', 'notificaciones|insert_all', 'mermas|auth_insert'];
+const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+const permMal = perm.filter(x => !PERMISIVAS_DEUDA.includes(x.p)).map(x => x.p + ':' + x.cmd);
+console.log(`  PERMISSIVE_POLICY_CHECK: ${permMal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(permMal)} deuda=${JSON.stringify(perm.filter(x => PERMISIVAS_DEUDA.includes(x.p)).map(x => x.p))}`);
+if (permMal.length) process.exit(1);
+console.log('── PRUEBAS 071 (Fase B P0)');
+const r071t = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: true });
+if (r071t.aborted) { console.log('RESULTADO: FALLÓ (071)'); process.exit(1); }
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -222,7 +251,9 @@ for (const row of (await c.query(`SELECT p.proname AS n, COALESCE(p.proacl::text
 console.log('── triggers:', (await c.query(`SELECT tgrelid::regclass||':'||tgname AS t FROM pg_trigger WHERE NOT tgisinternal AND tgrelid::regclass::text IN ('ordenes','pagos','cuentas_por_cobrar')`)).rows.map(x => x.t).join(', '));
 
 // ── search_path de las funciones SECURITY DEFINER de 069 (catálogo real)
-const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear_cxc_orden','registrar_ingreso_orden','abonar_cxc','registrar_pago_orden','cerrar_ruta_financiero','update_orden_atomic','cerrar_ruta_atomic','ordenes_guard_financiero'];
+const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear_cxc_orden','registrar_ingreso_orden','abonar_cxc','registrar_pago_orden','cerrar_ruta_financiero','update_orden_atomic','cerrar_ruta_atomic','ordenes_guard_financiero',
+  // 071
+  'erp_actor','erp_rol_activo','erp_usuario_id','erp_actor_nombre','erp_es_activo','erp_actor_etiqueta','update_stocks_atomic','update_productos_stock_atomic'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

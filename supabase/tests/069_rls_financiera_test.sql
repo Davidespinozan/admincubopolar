@@ -16,14 +16,23 @@
 -- ─── Fixtures ────────────────────────────────────────────────────────
 BEGIN;
 DELETE FROM pagos; DELETE FROM cuentas_por_cobrar; DELETE FROM movimientos_contables;
-DELETE FROM orden_lineas; DELETE FROM ordenes; DELETE FROM rutas; DELETE FROM clientes; DELETE FROM usuarios;
-INSERT INTO usuarios (id, nombre, email, rol, estatus) VALUES
-  (1, 'Admin T',   'admin@t',   'Admin',      'Activo'),
-  (2, 'Ventas T',  'ventas@t',  'Ventas',     'Activo'),
-  (3, 'Chofer T',  'chofer@t',  'Chofer',     'Activo'),
-  (4, 'Prod T',    'prod@t',    'Producción', 'Activo'),
-  (5, 'Inact T',   'inactivo@t','Ventas',     'Inactivo'),
-  (6, 'Chofer2 T', 'chofer2@t', 'Chofer',     'Activo');
+DELETE FROM orden_lineas; DELETE FROM ordenes; DELETE FROM rutas; DELETE FROM clientes; DELETE FROM usuarios; DELETE FROM auth.users;
+-- Desde 071 el actor se resuelve por auth_id = auth.uid(): cada perfil de
+-- prueba lleva su cuenta de Auth. (Con 069/070 solas, auth_id se ignora.)
+INSERT INTO auth.users (id, email) VALUES
+  ('10000000-0000-0000-0000-000000000001', 'admin@t'),
+  ('10000000-0000-0000-0000-000000000002', 'ventas@t'),
+  ('10000000-0000-0000-0000-000000000003', 'chofer@t'),
+  ('10000000-0000-0000-0000-000000000004', 'prod@t'),
+  ('10000000-0000-0000-0000-000000000005', 'inactivo@t'),
+  ('10000000-0000-0000-0000-000000000006', 'chofer2@t');
+INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+  (1, 'Admin T',   'admin@t',   'Admin',      'Activo',   '10000000-0000-0000-0000-000000000001'),
+  (2, 'Ventas T',  'ventas@t',  'Ventas',     'Activo',   '10000000-0000-0000-0000-000000000002'),
+  (3, 'Chofer T',  'chofer@t',  'Chofer',     'Activo',   '10000000-0000-0000-0000-000000000003'),
+  (4, 'Prod T',    'prod@t',    'Producción', 'Activo',   '10000000-0000-0000-0000-000000000004'),
+  (5, 'Inact T',   'inactivo@t','Ventas',     'Inactivo', '10000000-0000-0000-0000-000000000005'),
+  (6, 'Chofer2 T', 'chofer2@t', 'Chofer',     'Activo',   '10000000-0000-0000-0000-000000000006');
 INSERT INTO productos (sku, nombre, precio, stock) SELECT 'HPC-5K', 'Hielo Purificado Cubos 5kg', 35, 100 WHERE NOT EXISTS (SELECT 1 FROM productos WHERE sku = 'HPC-5K');
 INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (10, 'Cliente Crédito', 'XAXX010101000', 0), (11, 'Cliente Contado', 'XAXX010101000', 0);
 INSERT INTO rutas (id, folio, nombre, chofer_id, estatus, fecha) VALUES (100, 'R-100', 'Ruta T', 3, 'En progreso', CURRENT_DATE);
@@ -44,10 +53,14 @@ SELECT setval('cuentas_por_cobrar_id_seq', 1000); SELECT setval('movimientos_con
 COMMIT;
 
 -- Helper: actuar como un actor (rol JWT + email). NULL email = sin perfil.
-CREATE OR REPLACE FUNCTION t_actor(p_jwt_role TEXT, p_email TEXT) RETURNS VOID LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION t_actor(p_jwt_role TEXT, p_email TEXT) RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE v_sub UUID := (SELECT auth_id FROM usuarios WHERE lower(email) = lower(p_email));
 BEGIN
+  -- `sub` = auth_id del perfil (como un JWT real de Supabase). 'nadie@t' no
+  -- tiene perfil → sin sub → auth.uid() NULL.
   PERFORM set_config('request.jwt.claims',
-    jsonb_build_object('role', p_jwt_role, 'email', p_email)::text, true);
+    (jsonb_build_object('role', p_jwt_role, 'email', p_email)
+     || CASE WHEN v_sub IS NULL THEN '{}'::jsonb ELSE jsonb_build_object('sub', v_sub::text) END)::text, true);
 END $$;
 CREATE OR REPLACE FUNCTION t_assert(p_cond BOOLEAN, p_msg TEXT) RETURNS VOID LANGUAGE plpgsql AS $$
 BEGIN IF NOT COALESCE(p_cond, false) THEN RAISE EXCEPTION 'FAIL: %', p_msg; END IF;
