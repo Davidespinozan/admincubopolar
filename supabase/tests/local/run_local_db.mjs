@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -125,6 +125,11 @@ await c.query(`
   DROP TRIGGER IF EXISTS trg_pagos_immutable ON pagos;
   DROP TRIGGER IF EXISTS trg_ordenes_updated ON ordenes;
   DROP INDEX IF EXISTS idx_clientes_rfc;
+  -- Producción (verificado 2026-09-27): RLS DESHABILITADO en estas 4 tablas.
+  ALTER TABLE pagos DISABLE ROW LEVEL SECURITY;
+  ALTER TABLE cuentas_por_cobrar DISABLE ROW LEVEL SECURITY;
+  ALTER TABLE movimientos_contables DISABLE ROW LEVEL SECURITY;
+  ALTER TABLE mermas DISABLE ROW LEVEL SECURITY;
   ALTER TABLE cuentas_por_cobrar ADD COLUMN IF NOT EXISTS concepto TEXT DEFAULT '';
   DROP TRIGGER IF EXISTS trg_cxc_updated ON cuentas_por_cobrar;
   DROP POLICY IF EXISTS pagos_write ON pagos;
@@ -175,6 +180,37 @@ if (r.aborted) process.exit(1);
 console.log('── aplicar 069 (2/2, idempotencia)');
 r = await runFile(c, path.join(ROOT, 'supabase/069_rls_financiera.sql'), { stopOnError: true });
 if (r.aborted) process.exit(1);
+
+// ── ASERCIÓN PERMANENTE: RLS físicamente habilitado (pg_class), no solo policies.
+// Toda tabla de public debe tener relrowsecurity = true salvo deuda conocida.
+const RLS_DEUDA_CONOCIDA = ['mermas'];
+const LEDGER = ['pagos', 'cuentas_por_cobrar', 'movimientos_contables'];
+async function rlsCheck(etiqueta) {
+  const rows = (await c.query(`SELECT c.relname AS t, c.relrowsecurity AS rls,
+      (SELECT count(*)::int FROM pg_policies p WHERE p.schemaname='public' AND p.tablename=c.relname) AS pol,
+      (SELECT count(*)::int FROM information_schema.role_table_grants g WHERE g.table_schema='public' AND g.table_name=c.relname AND g.grantee='anon') AS anon
+    FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' ORDER BY 1`)).rows;
+  const sinRls = rows.filter(r => !r.rls && !RLS_DEUDA_CONOCIDA.includes(r.t)).map(r => r.t);
+  const ledgerMal = rows.filter(r => LEDGER.includes(r.t) && (!r.rls || r.pol < 2 || r.anon > 0)).map(r => `${r.t}(rls=${r.rls},pol=${r.pol},anon=${r.anon})`);
+  const ok = sinRls.length === 0 && ledgerMal.length === 0;
+  console.log(`  RLS_CHECK[${etiqueta}]: ${ok ? 'PASS' : 'FAIL'} tablas_sin_rls=${JSON.stringify(sinRls)} ledger_mal=${JSON.stringify(ledgerMal)} deuda_conocida=${JSON.stringify(rows.filter(r => RLS_DEUDA_CONOCIDA.includes(r.t)).map(r => r.t + ':rls=' + r.rls))}`);
+  return ok;
+}
+const rlsSolo069 = await rlsCheck('069 sin 070 (debe detectar el hueco de producción)');
+console.log('  detector detecta el hueco:', rlsSolo069 ? 'NO (FALLA DEL DETECTOR)' : 'SÍ');
+console.log('── pruebas con 069 SIN 070 (reproduce producción; deben fallar)');
+const r069 = await runFile(c, path.join(ROOT, 'supabase/tests/069_rls_financiera_test.sql'), { stopOnError: true });
+try { await c.query('ROLLBACK'); } catch { /* sin transacción abierta */ }
+console.log('  resultado con 069 sola:', r069.aborted ? 'FALLA (esperado: ledger escribible con RLS apagado)' : 'PASA (INESPERADO)');
+console.log('── aplicar 070 (1/2)');
+let r070 = await runFile(c, path.join(ROOT, 'supabase/070_enable_financial_rls.sql'), { stopOnError: true });
+if (r070.aborted) process.exit(1);
+console.log('── aplicar 070 (2/2, idempotencia)');
+r070 = await runFile(c, path.join(ROOT, 'supabase/070_enable_financial_rls.sql'), { stopOnError: true });
+if (r070.aborted) process.exit(1);
+const rlsOk = await rlsCheck('069 + 070');
+if (!rlsOk || !rlsSolo069 === false) { /* reportado arriba */ }
+if (!rlsOk) { console.log('RESULTADO: FALLÓ (RLS_CHECK)'); process.exit(1); }
 
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
