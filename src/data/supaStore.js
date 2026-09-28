@@ -5,9 +5,9 @@ import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, validateMarcarNoEntregada, buildNoEntregaPayload, calcReversoChangesNoEntrega, isFacturable, validateCancelacionCFDI } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
-import { buildRegistrarMermaArgs, buildMermasRutaPayload, buildMermaTransformacionArgs, mensajeErrorMerma } from './mermasLogic';
+import { buildRegistrarMermaArgs, buildMermasRutaPayload, mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion, calcCostoProduccion, buildConceptoProduccion } from './produccionLogic';
-import { validateTransformacion, buildTransformacionRow, buildInsumoChange, buildOutputChange, buildInsumoRollbackChange } from './transformacionLogic';
+import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
 import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion } from './devolucionesLogic';
 import { calcularEsperadoPorRuta, validateCierre, buildCierrePayload, buildPagosSnapshot, fechaCierreDesdeRuta } from './cierreCajaLogic';
 import {
@@ -1584,67 +1584,6 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── PRODUCCIÓN ──
-      addProduccion: async (p) => {
-        const guard = requireRol(['Admin', 'Producción']);
-        if (guard) { t()?.error(guard.error); return guard; }
-        const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_op_seq' });
-        const folio = `OP-${String(seq || 89).padStart(3, '0')}`;
-        // Tanda 11: capturamos el ID de la fila para que producirYCongelar
-        // pueda pasarlo al helper de costo de empaque (UPDATE produccion
-        // necesita ID exacto, no se puede deducir por sku+folio sin race).
-        const { data: insertedRow, error } = await supabase
-          .from('produccion')
-          .insert({ folio, turno: p.turno, maquina: p.maquina, sku: p.sku, cantidad: Number(p.cantidad) })
-          .select('id')
-          .single();
-        if (error) { t()?.error('Error al registrar producción'); return error; }
-        log('Producir', 'Producción', `${folio} — ${p.sku} x${Number(p.cantidad)}`);
-        notify('produccion', 'Producción registrada', `${folio} — ${Number(p.cantidad).toLocaleString()} ${p.sku}`, '🏭', folio);
-
-        const qty = Number(p.cantidad || 0);
-        if (qty > 0) {
-          // Siempre buscar en DB — nunca usar fallback hardcoded para SKUs
-          let empaqueSku = null;
-          const { data: prodRow, error: prodErr } = await supabase
-            .from('productos').select('empaque_sku').eq('sku', p.sku).maybeSingle();
-          if (prodErr) {
-            notify('advertencia', 'Advertencia producción', `No se pudo leer el empaque de ${p.sku}`, '⚠️', folio);
-          } else if (prodRow?.empaque_sku) {
-            empaqueSku = prodRow.empaque_sku;
-          }
-
-          if (empaqueSku) {
-            const { data: empaqueProd, error: empaqueErr } = await supabase
-              .from('productos').select('id, stock').eq('sku', empaqueSku).single();
-
-            if (!empaqueErr && empaqueProd) {
-              const stockOriginal = Number(empaqueProd.stock || 0);
-              const newStock = Math.max(0, stockOriginal - qty);
-              const { error: updateErr } = await supabase.from('productos')
-                .update({ stock: newStock }).eq('id', empaqueProd.id);
-
-              if (updateErr) {
-                notify('advertencia', 'Error empaque', `No se pudo decrementar ${empaqueSku} en producción ${folio}`, '⚠️', folio);
-              } else {
-                const { error: movErr } = await supabase.from('inventario_mov').insert({
-                  tipo: 'Salida', producto: empaqueSku, cantidad: qty,
-                  origen: `Producción ${folio}`, usuario: uname(),
-                });
-                if (movErr) {
-                  // Revertir el decremento de stock si falla el movimiento
-                  await supabase.from('productos').update({ stock: stockOriginal }).eq('id', empaqueProd.id);
-                  notify('advertencia', 'Error empaque', `No se pudo registrar movimiento de ${empaqueSku} — stock revertido`, '⚠️', folio);
-                }
-              }
-            }
-          }
-        }
-        rf();
-        // Tanda 11: el caller (producirYCongelar) usa { id, folio } para
-        // delegar al helper de costo de empaque después de meterACuartoFrio.
-        return { id: insertedRow?.id, folio };
-      },
-
       // Tanda 11: helper privado — registra el costo del empaque consumido
       // por una corrida de producción en contabilidad. Best-effort:
       //   - Si el producto no tiene empaque_sku  → { skipped: 'sin empaque' }
@@ -1732,8 +1671,7 @@ export function useSupaStore(userId, userName, userRol) {
         }
 
         // Tanda 11: registrar costo del empaque vía helper compartido (DRY).
-        // Antes esta lógica vivía inline aquí; ahora también se llama desde
-        // producirYCongelar.
+        // (producirYCongelar ya no lo usa: el costo va en registrar_produccion.)
         if (prod) {
           await a._registrarCostoProduccion({
             produccionId: id,
@@ -1840,7 +1778,7 @@ export function useSupaStore(userId, userName, userRol) {
           }
 
           // 6. Reverso de empaque (auditoría 🔴-6, Tanda 1):
-          //    addProduccion descuenta empaque del SKU producido al registrar.
+          //    registrar_produccion (076) descuenta empaque del SKU producido.
           //    Al borrar, devolvemos ese empaque a productos.stock vía RPC
           //    atómica. Best-effort: si falla, log warning + notify pero NO
           //    bloqueamos el borrado (la producción ya quedó eliminada y el
@@ -1887,199 +1825,68 @@ export function useSupaStore(userId, userName, userRol) {
         }
       },
 
-      producirYCongelar: async (p) => {
-        // Validar destino ANTES de registrar producción para evitar caso
-        // donde la fila queda en `produccion` y el empaque ya descontado,
-        // pero no entra al CF porque el cuarto fue eliminado mientras el
-        // form estaba abierto.
-        if (p?.destino) {
-          const { data: cfExiste, error: cfErr } = await supabase
-            .from('cuartos_frios').select('id').eq('id', String(p.destino)).maybeSingle();
-          if (cfErr) {
-            console.warn('[producirYCongelar] select cuarto destino:', cfErr.message);
-            t()?.error('No se pudo verificar el cuarto destino');
-            return { error: cfErr.message };
+      // Producir y congelar (mig 076): UNA sola operación atómica en el
+      // servidor. registrar_produccion crea la fila de producción, consume el
+      // empaque (sin negativos), mete el producto al cuarto, genera el kardex
+      // y registra costo + costos_historial + egreso, todo o nada. El cliente
+      // no escribe productos/inventario_mov/produccion/costos/contabilidad ni
+      // compensa: un error significa que el servidor revirtió todo.
+      // p.operacionId identifica el intento lógico (reintento = mismo UUID).
+      producirYCongelar: async (p = {}) => {
+        const guard = requireRol(['Admin', 'Producción']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        const built = buildRegistrarProduccionArgs(p);
+        if (built.error) return { error: built.error };
+        try {
+          const { data, error } = await supabase.rpc('registrar_produccion', built.args);
+          if (error) {
+            console.warn('[producirYCongelar] rpc registrar_produccion:', error.message);
+            return { error: mensajeErrorProduccion(error) };
           }
-          if (!cfExiste) {
-            const msg = `Cuarto destino ${p.destino} no existe`;
-            t()?.error(msg);
-            return { error: msg };
+          const r = interpretarResultadoProduccion(data);
+          if (!r.replay) {
+            log('Producir', 'Producción', `${r.folio} — ${r.sku} x${r.cantidad}`);
+            notify('produccion', 'Producción registrada', `${r.folio} — ${Number(r.cantidad).toLocaleString()} ${r.sku}`, '🏭', r.folio);
           }
+          rf();
+          return r;
+        } catch (e) {
+          console.error('[producirYCongelar] excepción:', e);
+          return { error: mensajeErrorProduccion(e) };
         }
-
-        const prodResult = await a.addProduccion(p);
-        // addProduccion retorna { id, folio } en éxito o un error truthy en falla.
-        // Tanda 11: distinguimos error vs éxito por presencia de `id` (los
-        // shapes de error legacy `{ error }` o un Error nativo no traen id).
-        const isErr = !prodResult || prodResult.error || prodResult.message
-          || prodResult instanceof Error || !prodResult.id;
-        if (isErr) return prodResult;
-
-        if (p.destino) {
-          const errMeter = await a.meterACuartoFrio(p.destino, p.sku, Number(p.cantidad));
-          if (errMeter) {
-            // La producción ya quedó registrada pero no entró al CF.
-            // Rollback completo (eliminar la producción) es complejo y puede
-            // confundir; admin puede meterla al CF manualmente desde Inventario.
-            console.warn('[producirYCongelar] producción ok pero meterACuartoFrio falló:', errMeter?.message || errMeter);
-            return {
-              error: errMeter?.message || errMeter?.error || 'Producción registrada pero no entró al cuarto frío',
-              partial: true,
-            };
-          }
-        }
-
-        // Tanda 11: registrar costo del empaque consumido. Best-effort:
-        // si falla, NO bloqueamos la producción (ya está en BD + cuarto
-        // frío) — solo emitimos un warning para que admin lo investigue.
-        const costoResult = await a._registrarCostoProduccion({
-          produccionId: prodResult.id,
-          folio: prodResult.folio,
-          sku: p.sku,
-          cantidad: p.cantidad,
-        });
-        if (costoResult?.error) {
-          console.warn('[producirYCongelar] costo empaque NO registrado:', costoResult.error);
-          notify('advertencia', 'Costo empaque no registrado',
-            `Producción ${prodResult.folio} OK pero el costo de empaque no se contabilizó. Avisa a admin.`,
-            '⚠️', prodResult.folio);
-          return {
-            ok: true,
-            warning: 'Producción registrada pero costo de empaque NO se contabilizó. Avisa a admin.',
-          };
-        }
-
-        return undefined;
       },
 
       // ── TRANSFORMACIÓN: insumo (barra/materia prima) → producto terminado ──
-      // Modelo híbrido (auditoría inventario 🔴-1, Tanda 1):
-      //   - INSUMO (ej. BH-50K, viene de proveedor): vive en productos.stock.
-      //     Se descuenta vía RPC update_productos_stock_atomic (mig 054)
-      //     con FOR UPDATE + RAISE en negativo.
-      //   - OUTPUT (ej. HT-TRITURADO): producto terminado, va a
-      //     cuartos_frios.stock JSONB del cuarto destino seleccionado por
-      //     el operario. Se suma vía RPC update_stocks_atomic (mig 047).
-      //   - MERMA (opcional): registrada en tabla mermas, sin descontar
-      //     stock (el descuento ya ocurrió implícitamente: input_kg vs
-      //     output_kg, la diferencia es la merma).
-      //
-      // Si el descuento del insumo OK pero la suma al CF falla, se hace
-      // rollback explícito devolviendo el insumo a productos.stock.
+      // Mig 076: UNA sola operación atómica en el servidor.
+      // registrar_transformacion descuenta el insumo de productos.stock, mete
+      // el output al cuarto destino, genera el kardex y registra la merma de
+      // proceso (072), todo o nada, sin contabilidad. Sin folio, inserts,
+      // deletes ni rollbacks en el cliente.
       addTransformacion: async (payload = {}) => {
         const guard = requireRol(['Admin', 'Producción']);
         if (guard) { t()?.error(guard.error); return guard; }
+        const built = buildRegistrarTransformacionArgs(payload);
+        if (built.error) { t()?.error(built.error); return { error: built.error }; }
         try {
-          const { input_sku, input_kg, output_sku, output_kg, cuarto_destino, notas } = payload;
-          const inputKg = Number(input_kg);
-          const outputKg = Number(output_kg);
-          const mermaKg = Math.max(0, inputKg - outputKg);
-
-          // Cargar productos involucrados + verificar cuarto destino.
-          // En paralelo para que el round-trip sea uno solo.
-          const [
-            { data: inputProd },
-            { data: outputProd },
-            { data: cuartoRow, error: cuartoErr },
-          ] = await Promise.all([
-            supabase.from('productos').select('id, sku, nombre, stock, tipo').eq('sku', input_sku || '').maybeSingle(),
-            supabase.from('productos').select('id, sku, nombre, tipo').eq('sku', output_sku || '').maybeSingle(),
-            supabase.from('cuartos_frios').select('id, nombre').eq('id', String(cuarto_destino || '')).maybeSingle(),
-          ]);
-          if (cuartoErr) {
-            console.warn('[addTransformacion] select cuarto:', cuartoErr.message);
-            t()?.error('No se pudo leer el cuarto destino');
-            return { error: cuartoErr.message };
+          const { data, error } = await supabase.rpc('registrar_transformacion', built.args);
+          if (error) {
+            const msg = mensajeErrorProduccion(error);
+            console.warn('[addTransformacion] rpc registrar_transformacion:', error.message);
+            t()?.error(msg);
+            return { error: msg };
           }
-          // Para validar el cuarto, le pasamos solo el cuarto encontrado
-          // (o array vacío si no existe) — validateTransformacion checa
-          // contra esa lista.
-          const cuartos = cuartoRow ? [cuartoRow] : [];
-
-          const validErr = validateTransformacion(payload, inputProd, outputProd, cuartos);
-          if (validErr) {
-            t()?.error(validErr.error);
-            return validErr;
+          const r = interpretarResultadoTransformacion(data);
+          if (!r.replay) {
+            await log('Transformar', 'Producción',
+              `${r.folio} — ${r.inputCantidad}× ${r.inputSku} → ${r.outputCantidad}× ${r.outputSku} (merma ${r.merma})`);
           }
-
-          const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_op_seq' });
-          const folio = `TR-${String(seq || 1).padStart(3, '0')}`;
-          const hoy = todayLocalISO();
-          const usuario = uname() || 'Sistema';
-
-          // 1. Insertar fila en `produccion` (tipo='Transformacion').
-          //    Si esto falla no hay efecto secundario que revertir.
-          const row = buildTransformacionRow({
-            folio, fecha: hoy,
-            input_sku, input_kg: inputKg,
-            output_sku, output_kg: outputKg,
-            merma_kg: mermaKg, notas,
-          });
-          const { error: insErr } = await supabase.from('produccion').insert(row);
-          if (insErr) {
-            console.warn('[addTransformacion] insert produccion:', insErr.message);
-            t()?.error('Error al registrar transformación');
-            return { error: insErr.message };
-          }
-
-          // 2. Descontar insumo de productos.stock vía RPC atómica.
-          const insumoChange = buildInsumoChange({
-            input_sku, input_kg: inputKg, output_sku, folio, usuario,
-          });
-          const { error: insumoErr } = await supabase.rpc('update_productos_stock_atomic', {
-            p_changes: [insumoChange],
-          });
-          if (insumoErr) {
-            // El insert de produccion ya quedó. Borramos la fila para
-            // mantener consistencia (no hay efectos secundarios todavía).
-            await supabase.from('produccion').delete().eq('folio', folio);
-            console.warn('[addTransformacion] descuento insumo:', insumoErr.message);
-            t()?.error(insumoErr.message || 'Error al descontar insumo');
-            return { error: insumoErr.message };
-          }
-
-          // 3. Sumar output al cuarto frío destino vía RPC atómica.
-          const outputChange = buildOutputChange({
-            cuarto_destino, output_sku, output_kg: outputKg,
-            input_sku, folio, usuario,
-            cuartoNombre: cuartoRow?.nombre,
-          });
-          const { error: outputErr } = await supabase.rpc('update_stocks_atomic', {
-            p_changes: [outputChange],
-          });
-          if (outputErr) {
-            // Rollback del insumo: devolver lo descontado en paso 2.
-            const rollback = buildInsumoRollbackChange({ input_sku, input_kg: inputKg, output_sku, folio, usuario });
-            await supabase.rpc('update_productos_stock_atomic', { p_changes: [rollback] });
-            await supabase.from('produccion').delete().eq('folio', folio);
-            console.warn('[addTransformacion] suma a CF, rollback insumo:', outputErr.message);
-            t()?.error('Error al ingresar al cuarto frío — transformación revertida');
-            return { error: outputErr.message };
-          }
-
-          // 4. Registrar merma de proceso si la hay (best-effort: si falla, la
-          //    transformación sí ocurrió y la merma puede capturarse manual).
-          //    Contrato 072: sin efecto de stock propio (el descuento ya
-          //    ocurrió al transformar); el servidor valida el folio.
-          const mermaTr = buildMermaTransformacionArgs({ input_sku, mermaKg, folio });
-          if (mermaTr.args) {
-            const { error: mermaErr } = await supabase.rpc('registrar_merma', mermaTr.args);
-            if (mermaErr) {
-              console.warn('[addTransformacion] registrar_merma (no crítico):', mermaErr.message);
-              notify('advertencia', 'Merma sin registrar',
-                `Transformación ${folio} — merma de ${mermaKg} ${input_sku} no se registró, captúrala manual.`,
-                '⚠️', folio);
-            }
-          }
-
-          await log('Transformar', 'Producción',
-            `${folio} — ${inputKg}× ${input_sku} → ${outputKg}× ${output_sku} → ${cuartoRow?.nombre || cuarto_destino} (merma ${mermaKg})`);
           rf();
-          return undefined;
+          return r;
         } catch (e) {
           console.error('[addTransformacion] excepción:', e);
-          t()?.error('Error inesperado en transformación');
-          return { error: e?.message || 'Error inesperado' };
+          const msg = mensajeErrorProduccion(e);
+          t()?.error(msg);
+          return { error: msg };
         }
       },
 

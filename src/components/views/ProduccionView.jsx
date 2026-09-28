@@ -1,5 +1,7 @@
 import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion, todayLocalISO } from './viewsCommon';
+import { useRef } from 'react';
 import { traducirError } from '../../utils/errorMessages';
+import { resolverOperacion, claveTransformacion } from '../../data/produccionAtomicaLogic';
 
 export function ProduccionView({ data, actions }) {
   const toast = useToast();
@@ -39,6 +41,9 @@ export function ProduccionView({ data, actions }) {
   const [tModal, setTModal] = useState(false);
   const [tErrors, setTErrors] = useState({});
   const [savingTrans, setSavingTrans] = useState(false);
+  // Mig 076: operacion_id del intento lógico + guard síncrono de submit.
+  const opTransRef = useRef(null);
+  const enVueloTrans = useRef(false);
   // Default cuarto = primer cuarto frío disponible (mig 057+: el output
   // de la transformación va al CF, no a productos.stock).
   const cuartoDefault = useMemo(() => {
@@ -83,7 +88,7 @@ export function ProduccionView({ data, actions }) {
   }, [tForm.input_sku, data.productos]);
 
   const saveTransformacion = async () => {
-    if (savingTrans) return;
+    if (savingTrans || enVueloTrans.current) return;
     const e = {};
     if (!tForm.input_sku)              e.input_sku       = "Selecciona el insumo";
     if (!tForm.output_sku)             e.output_sku      = "Selecciona el producto";
@@ -94,27 +99,35 @@ export function ProduccionView({ data, actions }) {
     if (!tForm.cuarto_destino)         e.cuarto_destino  = "Selecciona el cuarto destino";
     if (Object.keys(e).length) { setTErrors(e); return; }
 
+    const datos = {
+      input_sku:      tForm.input_sku,
+      input_kg:       inputKg,
+      output_sku:     tForm.output_sku,
+      output_kg:      outputKg,
+      cuarto_destino: tForm.cuarto_destino,
+      notas:          tForm.notas,
+    };
+    const op = resolverOperacion(opTransRef.current, claveTransformacion(datos));
+    opTransRef.current = op;
+    enVueloTrans.current = true;
     setSavingTrans(true);
     try {
-      const result = await actions.addTransformacion({
-        input_sku:      tForm.input_sku,
-        input_kg:       inputKg,
-        output_sku:     tForm.output_sku,
-        output_kg:      outputKg,
-        cuarto_destino: tForm.cuarto_destino,
-        notas:          tForm.notas,
-      });
+      // Una sola RPC atómica (registrar_transformacion); un error = rollback total.
+      const result = await actions.addTransformacion({ ...datos, operacionId: op.id });
       if (result?.error) {
-        // El store ya disparó toast específico; no duplicar.
+        // El store ya disparó toast específico; no duplicar. Se conserva el
+        // operacion_id: reintentar con los mismos datos no duplica.
         return;
       }
-      toast?.success(`Transformación registrada — ${outputKg}× ${tForm.output_sku} (merma ${mermaKg})`);
+      opTransRef.current = null;
+      toast?.success(`${result.replay ? 'Ya estaba registrada — ' : 'Transformación registrada — '}${result.folio}: ${result.outputCantidad}× ${result.outputSku} (merma ${result.merma})`);
       setTModal(false);
       setTForm(TFORM_DEFAULT);
       setTErrors({});
     } catch (err) {
       toast?.error(traducirError(err, "Error al registrar transformación"));
     } finally {
+      enVueloTrans.current = false;
       setSavingTrans(false);
     }
   };

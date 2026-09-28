@@ -536,6 +536,106 @@ if (r076t.aborted) { console.log('RESULTADO: FALLÓ (076)'); process.exit(1); }
   if (!ok76) { console.log('RESULTADO: FALLÓ (concurrencia 076)'); process.exit(1); }
 }
 
+// ── Frontend 076 contra la DB de paridad: payloads reales del cliente ────
+{
+  console.log('── 076 FRONTEND ↔ DB (builders del cliente, parámetros nombrados como PostgREST)');
+  const { pathToFileURL } = await import('node:url');
+  const L = await import(pathToFileURL(path.join(ROOT, 'src/data/produccionAtomicaLogic.js')).href);
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  const PRD = '76f00000-0000-0000-0000-000000000002';
+  let okF = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okF = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const limpiar = `BEGIN;
+    DELETE FROM mermas_efectos WHERE merma_id IN (SELECT id FROM mermas WHERE sku LIKE 'F76-%');
+    DELETE FROM mermas WHERE sku LIKE 'F76-%';
+    DELETE FROM costos_historial WHERE concepto LIKE '%F76-%';
+    DELETE FROM movimientos_contables WHERE concepto LIKE '%F76-%';
+    DELETE FROM inventario_mov WHERE producto LIKE 'F76-%';
+    DELETE FROM produccion WHERE sku LIKE 'F76-%';
+    DELETE FROM cuartos_frios WHERE id = 'CF-F76';
+    DELETE FROM productos WHERE sku LIKE 'F76-%';
+    DELETE FROM usuarios WHERE id = 7696; DELETE FROM auth.users WHERE id = '${PRD}';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN;
+    INSERT INTO auth.users (id, email) VALUES ('${PRD}', 'prodf76@t');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (7696, 'ProdF 76', 'prodf76@t', 'Producción', 'Activo', '${PRD}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario, empaque_sku) VALUES
+      ('F76-HIELO', 'Hielo F', 'Producto Terminado', 30, 0, 0, 'F76-BOLSA'),
+      ('F76-BOLSA', 'Bolsa F', 'Empaque', 0, 10, 2, NULL),
+      ('F76-BARRA', 'Barra F', 'Materia Prima', 0, 10, 0, NULL),
+      ('F76-TRIT', 'Trit F', 'Producto Terminado', 30, 0, 0, NULL);
+    INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-F76', 'Cuarto F76', '{}'::jsonb);
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async cl => { await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub: PRD })]); };
+  // Llamada RPC como la hace PostgREST: parámetros nombrados desde el objeto args del cliente.
+  const rpc = async (cl, fn, args) => {
+    const keys = Object.keys(args);
+    const sql = `SELECT ${fn}(${keys.map((k, i) => `${k} => $${i + 1}`).join(', ')}) AS r`;
+    try { return { data: (await cl.query(sql, keys.map(k => args[k]))).rows[0].r }; }
+    catch (e) { return { error: { message: e.message, code: e.code } }; }
+  };
+  const llamar = async (fn, args) => { await actor(a); const r = await rpc(a, fn, args); await a.query(r.error ? 'ROLLBACK' : 'COMMIT'); return r; };
+  const huella = async () => (await c.query(`SELECT concat_ws('|',
+      (SELECT count(*) FROM produccion WHERE sku LIKE 'F76-%'), (SELECT string_agg(sku || stock, ',' ORDER BY sku) FROM productos WHERE sku LIKE 'F76-%'),
+      (SELECT stock::text FROM cuartos_frios WHERE id = 'CF-F76'), (SELECT count(*) FROM inventario_mov WHERE producto LIKE 'F76-%'),
+      (SELECT count(*) FROM movimientos_contables WHERE concepto LIKE '%F76-%'), (SELECT count(*) FROM costos_historial WHERE concepto LIKE '%F76-%'),
+      (SELECT count(*) FROM mermas WHERE sku LIKE 'F76-%')) AS h`)).rows[0].h;
+
+  // 1. producción normal exitosa con el payload del frontend
+  let opP = L.resolverOperacion(null, L.claveProduccion({ turno: 'Turno 1', maquina: 'Máquina 30', sku: 'F76-HIELO', cantidad: 4, destino: 'CF-F76' }));
+  const argsP = L.buildRegistrarProduccionArgs({ operacionId: opP.id, turno: 'Turno 1', maquina: 'Máquina 30', sku: 'F76-HIELO', cantidad: 4, destino: 'CF-F76' }).args;
+  let r = await llamar('registrar_produccion', argsP);
+  const res1 = r.data && L.interpretarResultadoProduccion(r.data);
+  ok(res1 && res1.ok && /^OP-/.test(res1.folio) && res1.replay === false && Number(res1.costoTotal) === 8, `076-F1 producción exitosa con args del cliente (folio ${res1?.folio}, costo del servidor 8)`);
+  ok(await n(`SELECT stock FROM productos WHERE sku = 'F76-BOLSA'`) === 6 && await n(`SELECT (stock->>'F76-HIELO')::int FROM cuartos_frios WHERE id = 'CF-F76'`) === 4, '076-F1b empaque 10 → 6; cuarto 0 → 4');
+  // 3. reintento del mismo intento lógico (respuesta perdida) → mismo UUID → replay
+  const opP2 = L.resolverOperacion(opP, L.claveProduccion({ turno: 'Turno 1', maquina: 'Máquina 30', sku: 'F76-HIELO', cantidad: 4, destino: 'CF-F76' }));
+  const h1 = await huella();
+  r = await llamar('registrar_produccion', L.buildRegistrarProduccionArgs({ operacionId: opP2.id, turno: 'Turno 1', maquina: 'Máquina 30', sku: 'F76-HIELO', cantidad: 4, destino: 'CF-F76' }).args);
+  ok(opP2.id === opP.id && r.data && L.interpretarResultadoProduccion(r.data).replay === true && L.interpretarResultadoProduccion(r.data).folio === res1.folio, '076-F3 reintento: mismo UUID, replay con el mismo folio');
+  ok(await huella() === h1, '076-F3b reintento: cero efectos nuevos');
+  // 2. packaging insuficiente → error traducido, cero efectos, sin compensación del cliente
+  const opI = L.resolverOperacion(null, L.claveProduccion({ turno: 'T', maquina: 'M', sku: 'F76-HIELO', cantidad: 9, destino: 'CF-F76' }));
+  r = await llamar('registrar_produccion', L.buildRegistrarProduccionArgs({ operacionId: opI.id, turno: 'T', maquina: 'M', sku: 'F76-HIELO', cantidad: 9, destino: 'CF-F76' }).args);
+  ok(r.error && /Stock insuficiente de F76-BOLSA/.test(L.mensajeErrorProduccion(r.error)), `076-F2 empaque insuficiente: mensaje "${r.error ? L.mensajeErrorProduccion(r.error).slice(0, 60) : 'sin error'}"`);
+  ok(await huella() === h1, '076-F2b empaque insuficiente: cero efectos (el cliente no compensa nada)');
+  // 4. doble submit: dos llamadas simultáneas del mismo intento (mismo UUID)
+  const opD = L.resolverOperacion(null, L.claveProduccion({ turno: 'T', maquina: 'M', sku: 'F76-HIELO', cantidad: 2, destino: 'CF-F76' }));
+  const argsD = L.buildRegistrarProduccionArgs({ operacionId: opD.id, turno: 'T', maquina: 'M', sku: 'F76-HIELO', cantidad: 2, destino: 'CF-F76' }).args;
+  await actor(a); await actor(b);
+  const rA = await rpc(a, 'registrar_produccion', argsD);
+  let done = false; const pB = rpc(b, 'registrar_produccion', argsD).finally(() => { done = true; });
+  await sleep(400); const bloqueado = !done;
+  await a.query('COMMIT'); const rB = await pB; await b.query(rB.error ? 'ROLLBACK' : 'COMMIT');
+  ok(bloqueado && rA.data && rB.data && rB.data.replay === true && rB.data.id === rA.data.id, '076-F4 doble submit simultáneo: la segunda es replay del mismo id');
+  ok(await n(`SELECT count(*) FROM produccion WHERE operacion_id = $1`, [opD.id]) === 1 && await n(`SELECT stock FROM productos WHERE sku = 'F76-BOLSA'`) === 4, '076-F4b una sola producción y un solo consumo (6 → 4)');
+  // 5. transformación exitosa
+  const tD = { input_sku: 'F76-BARRA', input_kg: 6, output_sku: 'F76-TRIT', output_kg: 5, cuarto_destino: 'CF-F76', notas: 'lote F' };
+  const opT = L.resolverOperacion(null, L.claveTransformacion(tD));
+  r = await llamar('registrar_transformacion', L.buildRegistrarTransformacionArgs({ ...tD, operacionId: opT.id }).args);
+  const rt = r.data && L.interpretarResultadoTransformacion(r.data);
+  ok(rt && /^TR-/.test(rt.folio) && rt.merma === 1 && rt.replay === false, `076-F5 transformación exitosa (folio ${rt?.folio}, merma 1)`);
+  ok(await n(`SELECT stock FROM productos WHERE sku = 'F76-BARRA'`) === 4 && await n(`SELECT (stock->>'F76-TRIT')::int FROM cuartos_frios WHERE id = 'CF-F76'`) === 5 && await n(`SELECT count(*) FROM mermas WHERE sku = 'F76-BARRA'`) === 1, '076-F5b insumo 10 → 4, output 5, 1 merma de proceso');
+  // 7. reintento de transformación
+  const h2 = await huella();
+  r = await llamar('registrar_transformacion', L.buildRegistrarTransformacionArgs({ ...tD, operacionId: L.resolverOperacion(opT, L.claveTransformacion(tD)).id }).args);
+  ok(r.data && r.data.replay === true && await huella() === h2, '076-F7 reintento de transformación: replay, cero efectos nuevos');
+  // 6. input insuficiente
+  const tI = { ...tD, input_kg: 8, output_kg: 7 };
+  r = await llamar('registrar_transformacion', L.buildRegistrarTransformacionArgs({ ...tI, operacionId: L.resolverOperacion(null, L.claveTransformacion(tI)).id }).args);
+  ok(r.error && /Stock insuficiente de F76-BARRA/.test(L.mensajeErrorProduccion(r.error)) && await huella() === h2, '076-F6 insumo insuficiente: error traducido y cero efectos');
+  // 8. error de RPC (mismo UUID, datos distintos) sin compensación del cliente
+  r = await llamar('registrar_produccion', { ...argsP, p_cantidad: 5 });
+  ok(r.error && r.error.code === '23505' && /otros datos/.test(L.mensajeErrorProduccion(r.error)) && await huella() === h2, '076-F8 error de RPC: mensaje claro, cero efectos, nada que compensar');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okF) { console.log('RESULTADO: FALLÓ (frontend ↔ DB 076)'); process.exit(1); }
+}
+
 console.log('── REGRESIÓN 074 con 076 aplicada (rename_sku + produccion.empaque_sku)');
 const r074b = await runFile(c, path.join(ROOT, 'supabase/tests/074_rename_sku_test.sql'), { stopOnError: true, echo: false });
 if (r074b.aborted) { console.log('RESULTADO: FALLÓ (regresión 074 tras 076)'); process.exit(1); }

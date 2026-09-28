@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { resolverOperacion, claveProduccion, claveTransformacion } from '../data/produccionAtomicaLogic';
 import { mermasActivas } from '../data/mermasLogic';
 import { supabase } from '../lib/supabase';
 import { s, n, fmtDate, fmtPct, todayLocalISO } from '../utils/safe';
@@ -40,6 +41,12 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const [fotoMermaFile, setFotoMermaFile] = useState(null);
   const [fotoMermaPreview, setFotoMermaPreview] = useState('');
   const [guardandoMerma, setGuardandoMerma] = useState(false);
+  // Mig 076: operacion_id del intento lógico (reintento/doble click = mismo
+  // UUID) + guard síncrono contra submits paralelos antes del re-render.
+  const opProdRef = useRef(null);
+  const opTransRef = useRef(null);
+  const enVueloProd = useRef(false);
+  const enVueloTrans = useRef(false);
 
   const [toast, setToast] = useState("");
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
@@ -117,6 +124,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   };
 
   const resetFormProd = () => {
+    opProdRef.current = null;
     setForm({ turno: "Turno 1", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1", conMerma: false, mermaCantidad: "", mermaCausa: "Bolsa rota" });
     clearFotoMermaProd();
   };
@@ -291,30 +299,33 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   }, [data.productos, transForm.input_sku]);
 
   const registrarTransformacion = async () => {
-    if (guardandoTrans) return;
+    if (guardandoTrans || enVueloTrans.current) return;
     if (!transForm.input_sku || !transForm.output_sku || transInputKg <= 0 || transOutputKg <= 0) return;
     if (!transForm.cuarto_destino) {
       showToast('Selecciona el cuarto destino');
       return;
     }
+    const datos = { ...transForm, input_kg: transInputKg, output_kg: transOutputKg };
+    const op = resolverOperacion(opTransRef.current, claveTransformacion(datos));
+    opTransRef.current = op;
+    enVueloTrans.current = true;
     setGuardandoTrans(true);
     try {
-      const result = await actions.addTransformacion({
-        ...transForm,
-        input_kg: transInputKg,
-        output_kg: transOutputKg,
-      });
+      // Una sola RPC atómica; un error = el servidor revirtió todo.
+      const result = await actions.addTransformacion({ ...datos, operacionId: op.id });
       if (result?.error) {
         showToast('Error: ' + result.error);
-        return;
+        return; // se conserva el operacion_id: reintentar no duplica
       }
-      showToast(`Transformación: ${transInputKg}× ${transForm.input_sku} → ${transOutputKg}× ${transForm.output_sku}`);
+      opTransRef.current = null;
+      showToast(`${result.replay ? 'Ya estaba registrada — ' : ''}${result.folio}: ${result.inputCantidad}× ${result.inputSku} → ${result.outputCantidad}× ${result.outputSku}`);
       setTransModal(false);
       setTransForm({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", cuarto_destino: "CF-1", notas: "" });
     } catch (e) {
       console.error('Error transformación:', e);
-      showToast('Error en transformación. Verifica tu conexión.');
+      showToast('Error en transformación. Verifica tu conexión y reintenta.');
     } finally {
+      enVueloTrans.current = false;
       setGuardandoTrans(false);
     }
   };
@@ -337,7 +348,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   }, [data.productos, bolsaSku]);
 
   const registrarProduccion = async () => {
-    if (guardandoProd) return;
+    if (guardandoProd || enVueloProd.current) return;
     if (!form.cantidad || n(form.cantidad) <= 0) {
       showToast('Captura una cantidad válida');
       return;
@@ -371,29 +382,30 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       }
     }
 
-    // Sin merma: comportamiento original (atómico)
+    // Datos de negocio y operacion_id del intento lógico (mig 076).
+    const datosProd = { turno: form.turno, maquina: form.maquina, sku: form.sku, cantidad: cant, destino: form.destino };
+    const op = resolverOperacion(opProdRef.current, claveProduccion(datosProd));
+    opProdRef.current = op;
+
+    // Sin merma: una sola RPC atómica (registrar_produccion)
     if (!form.conMerma) {
+      enVueloProd.current = true;
       setGuardandoProd(true);
       try {
-        const result = await actions.producirYCongelar({
-          turno: form.turno, maquina: form.maquina, sku: form.sku,
-          cantidad: form.cantidad, destino: form.destino,
-        });
+        const result = await actions.producirYCongelar({ ...datosProd, operacionId: op.id });
         if (result?.error) {
-          if (result.partial) {
-            showToast('⚠️ Producción registrada pero NO entró al cuarto frío. Avisa al admin.');
-          } else {
-            showToast(result.error);
-          }
-          return;
+          showToast(result.error);
+          return; // se conserva el operacion_id: reintentar no duplica
         }
-        showToast(cant + " " + form.sku + " → " + cfNombre);
+        opProdRef.current = null;
+        showToast(`${result.replay ? 'Ya estaba registrada — ' : ''}${result.folio}: ${result.cantidad} ${result.sku} → ${cfNombre}`);
         setModal(false);
         resetFormProd();
       } catch (e) {
         console.error('Error registrando producción:', e);
-        showToast('Error al registrar producción. Verifica tu conexión.');
+        showToast('Error al registrar producción. Verifica tu conexión y reintenta.');
       } finally {
+        enVueloProd.current = false;
         setGuardandoProd(false);
       }
       return;
@@ -408,6 +420,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       return;
     }
 
+    enVueloProd.current = true;
     setGuardandoProd(true);
     try {
       // 1. Subir foto a Storage
@@ -428,24 +441,16 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         return;
       }
 
-      // 2. Producción + meter al cuarto frío.
-      // Si falla, NO procedemos a registrar merma (la merma descuenta del CF
-      // y si la producción no entró, el descuento de merma fallaría o
-      // descontaría de stock viejo causando inconsistencia).
-      const prodResult = await actions.producirYCongelar({
-        turno: form.turno, maquina: form.maquina, sku: form.sku,
-        cantidad: form.cantidad, destino: form.destino,
-      });
+      // 2. Producción atómica (registrar_produccion). Si falla, el servidor
+      // no dejó nada: no registramos merma (D11: son dos acciones).
+      const prodResult = await actions.producirYCongelar({ ...datosProd, operacionId: op.id });
       if (prodResult?.error) {
-        // Limpiar foto subida ya que no se va a usar
+        // Limpiar la foto subida (propia y sin ligar) ya que no se va a usar
         await supabase.storage.from('mermas').remove([filePath]);
-        if (prodResult.partial) {
-          showToast('⚠️ Producción registrada pero NO entró al cuarto frío. Avisa al admin.');
-        } else {
-          showToast(prodResult.error);
-        }
-        return;
+        showToast(prodResult.error);
+        return; // se conserva el operacion_id: reintentar no duplica
       }
+      opProdRef.current = null;
 
       // 3. Registrar merma (descuenta del CF internamente)
       const mermaErr = await actions.registrarMerma(form.sku, merma, form.mermaCausa, s(user?.nombre), filePath);
@@ -456,10 +461,11 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         return;
       }
 
-      showToast(`${cant} producidas, ${merma} mermadas → ${cfNombre}`);
+      showToast(`${prodResult.folio}: ${cant} producidas, ${merma} mermadas → ${cfNombre}`);
       setModal(false);
       resetFormProd();
     } finally {
+      enVueloProd.current = false;
       setGuardandoProd(false);
     }
   };
