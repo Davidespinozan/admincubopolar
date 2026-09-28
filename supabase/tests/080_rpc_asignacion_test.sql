@@ -186,7 +186,14 @@ UPDATE ordenes SET estatus = 'Creada', ruta_id = NULL WHERE id = 8020; UPDATE ru
 
 \echo '── 080: deuda documentada (fuera de 080)'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t80_actor('authenticated', 'ventas80@t', '80000000-0000-0000-0000-000000000002');
-SELECT t80_assert(t80_rows($q$UPDATE ordenes SET estatus = 'Asignada', ruta_id = 8001 WHERE id = 8021$q$) = 1, '080-70 Ventas aún puede poner una orden Creada en una ruta concreta por UPDATE directo (policy ventas_update + guard 069 permite ruta_id en Creada → Asignada) → residual R1b, policy/trigger, fuera de 080');
+DO $do$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = 'public.ordenes'::regclass AND tgname = 'trg_ordenes_guard_ruta') THEN
+    PERFORM t80_err($q$UPDATE ordenes SET estatus = 'Asignada', ruta_id = 8001 WHERE id = 8021$q$, '080-70 Ventas: ruta concreta por UPDATE directo rechazada (R1b cerrado por 081)', '42501');
+  ELSE
+    PERFORM t80_assert(t80_rows($q$UPDATE ordenes SET estatus = 'Asignada', ruta_id = 8001 WHERE id = 8021$q$) = 1, '080-70 Ventas aún puede poner una orden Creada en una ruta concreta por UPDATE directo (policy ventas_update + guard 069) → residual R1b, se cierra en 081');
+  END IF;
+END $do$;
 ROLLBACK;
 
 BEGIN;
