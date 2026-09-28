@@ -45,6 +45,12 @@ const getAuthenticatedProfile = async (event, deps = {}) => {
   const authUser = authData?.user;
   if (authError || !authUser) return { errorResponse: unauthorized('Invalid authorization token') };
 
+  // R5 (083): el perfil se resuelve SOLO por identidad canónica
+  // (usuarios.auth_id = uid de Auth, único por 082). Ya no existe la
+  // búsqueda por email ni la vinculación automática de auth_id: un Auth
+  // user sin perfil vinculado falla cerrado (401), aunque su email coincida
+  // con el de algún perfil. La vinculación la hace admin-create-user al
+  // dar de alta.
   let profile = null;
   if (authUser.id) {
     const { data } = await supabase
@@ -53,21 +59,6 @@ const getAuthenticatedProfile = async (event, deps = {}) => {
       .eq('auth_id', authUser.id)
       .maybeSingle();
     profile = data || null;
-  }
-
-  if (!profile && authUser.email) {
-    const normalizedEmail = String(authUser.email).trim().toLowerCase();
-    const { data } = await supabase
-      .from('usuarios')
-      .select('id, nombre, email, rol, estatus, auth_id')
-      .eq('email', normalizedEmail)
-      .maybeSingle();
-    profile = data || null;
-
-    if (profile && !profile.auth_id) {
-      await supabase.from('usuarios').update({ auth_id: authUser.id }).eq('id', profile.id);
-      profile = { ...profile, auth_id: authUser.id };
-    }
   }
 
   if (!profile) return { errorResponse: unauthorized('User profile not found') };

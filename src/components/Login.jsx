@@ -26,8 +26,9 @@ export default function LoginScreen({ onLogin }) {
         return;
       }
 
-      // Auth OK — get user profile (nombre + rol) from usuarios table
-      const { data: perfiles } = await supabase.from('usuarios').select('*').eq('email', email.trim().toLowerCase());
+      // Auth OK — perfil (nombre + rol) por identidad canónica: auth_id =
+      // uid de Auth (R5/083). El email ya no selecciona el perfil.
+      const { data: perfiles } = await supabase.from('usuarios').select('*').eq('auth_id', authData.user.id);
 
       if (perfiles && perfiles.length > 0) {
         onLogin({

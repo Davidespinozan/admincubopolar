@@ -79,15 +79,12 @@ function App() {
           if (active) setRestoring(false)
           return
         }
-        const email = session.user.email
-        if (!email) {
-          if (active) setRestoring(false)
-          return
-        }
+        // R5 (083): perfil por identidad canónica (auth_id = uid de la
+        // sesión), nunca por email.
         const { data: profile } = await supabase
           .from('usuarios')
           .select('*')
-          .eq('email', email.toLowerCase())
+          .eq('auth_id', session.user.id)
           .maybeSingle()
         const restored = buildUserFromSessionAndProfile(session, profile)
         if (restored && active) setUser(restored)
@@ -186,12 +183,9 @@ function App() {
       const byId = usuarios.find(u => String(u?.id) === String(user.id))
       if (byId) return byId
     }
-    if (user?.email) {
-      const byEmail = usuarios.find(u => (u?.email || '').toLowerCase() === String(user.email).toLowerCase())
-      if (byEmail) return byEmail
-    }
+    // R5 (083): sin selección de identidad por email.
     return null
-  }, [data?.usuarios, authUserId, user?.id, user?.email])
+  }, [data?.usuarios, authUserId, user?.id])
 
   const usuarioActualId = usuarioActual?.id || user?.id || null
 
