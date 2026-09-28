@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -713,6 +713,51 @@ await conc076();
 await fe076();
 console.log('  076 concurrencia + frontend↔DB tras 078: PASS');
 
+// ── B3 fase 1: 079 (get_my_rol / get_my_user_id delegan en la identidad 071) ──
+{
+  // Paridad con producción ANTES del cambio: los helpers legacy locales deben ser
+  // exactamente los de producción (md5 auditado read-only el 2026-09-28).
+  const PROD_LEGACY = { get_my_rol: 'a320c5fb3b2a52f55dd8ac69db4460e2', get_my_user_id: '0638c7df12545bfbd6474132f7ea5e30' };
+  const rows = (await c.query(`SELECT proname, md5(pg_get_functiondef(oid)) AS m FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('get_my_rol','get_my_user_id')`)).rows;
+  const mal = rows.filter(r => PROD_LEGACY[r.proname] !== r.m).map(r => `${r.proname}=${r.m}`);
+  console.log(`  LEGACY_PARITY_CHECK[pre-079]: ${rows.length === 2 && mal.length === 0 ? 'PASS' : 'FAIL'} ${JSON.stringify(mal)}`);
+  if (rows.length !== 2 || mal.length) process.exit(1);
+  const dep = (await c.query(`SELECT (SELECT count(*)::int FROM pg_policies WHERE schemaname='public' AND (coalesce(qual,'')||coalesce(with_check,'')) ~ 'get_my_rol\\(\\)') AS rol, (SELECT count(*)::int FROM pg_policies WHERE schemaname='public' AND (coalesce(qual,'')||coalesce(with_check,'')) ~ 'get_my_user_id\\(\\)') AS uid`)).rows[0];
+  console.log(`  dependencias locales pre-079: get_my_rol=${dep.rol} get_my_user_id=${dep.uid} (producción: 47 / 2)`);
+  if (dep.rol !== 47 || dep.uid !== 2) { console.log('RESULTADO: FALLÓ (dependencias legacy ≠ producción)'); process.exit(1); }
+}
+console.log('── aplicar 079 (1/2)');
+let r079 = await runFile(c, path.join(ROOT, 'supabase/079_identidad_canonica_legacy_helpers.sql'), { stopOnError: true });
+if (r079.aborted) process.exit(1);
+console.log('── aplicar 079 (2/2, idempotencia)');
+r079 = await runFile(c, path.join(ROOT, 'supabase/079_identidad_canonica_legacy_helpers.sql'), { stopOnError: true });
+if (r079.aborted) process.exit(1);
+if (!(await rlsCheck('tras 079 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 079)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[079]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 079 (B3 identidad fase 1)');
+const r079t = await runFile(c, path.join(ROOT, 'supabase/tests/079_identidad_legacy_test.sql'), { stopOnError: true, echo: true });
+if (r079t.aborted) { console.log('RESULTADO: FALLÓ (079)'); process.exit(1); }
+for (const [etq, f] of [['078', '078_rutas_chofer_test.sql'], ['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 079)`); process.exit(1); }
+  console.log(`  ${etq} tras 079: PASS`);
+}
+await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 079)'); process.exit(1); }
+  console.log('  071 tras 079: PASS');
+}
+console.log('── 076 concurrencia y frontend↔DB tras 079');
+await conc076();
+await fe076();
+console.log('  076 concurrencia + frontend↔DB tras 079: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -733,7 +778,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 076
   'registrar_produccion','registrar_transformacion','registrar_produccion__replay','registrar_transformacion__replay',
   // 078
-  'rutas_guard_chofer'];
+  'rutas_guard_chofer',
+  // 079
+  'get_my_rol','get_my_user_id'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

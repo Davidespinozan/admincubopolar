@@ -242,7 +242,7 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t78_actor('authenticated', 'prod78@t
 SELECT t78_assert(t78_rows($q$UPDATE rutas SET carga_confirmada_at = now(), carga_confirmada_por = 7802, estatus = 'Cargada', firma_carga = 'x' WHERE id = 7805 AND carga_confirmada_at IS NULL$q$) = 0, '078-70 Producción no tiene policy de UPDATE en rutas: la firma desde BotonFirmasPendientes sigue sin efecto (D4, fuera de 078)');
 ROLLBACK;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t78_actor('authenticated', 'inadm78@t', '78000000-0000-0000-0000-000000000007');
-SELECT t78_assert(t78_rows($q$UPDATE rutas SET nombre = nombre WHERE id = 7805$q$) = 1, '078-71 Admin INACTIVO aún escribe rutas vía admin_all (get_my_rol legacy) → deuda B3, fuera de 078');
+SELECT t78_assert(t78_rows($q$UPDATE rutas SET nombre = nombre WHERE id = 7805$q$) = (CASE WHEN pg_get_functiondef('public.get_my_rol()'::regprocedure) ~ 'erp_rol_activo' THEN 0 ELSE 1 END), '078-71 Admin INACTIVO: escribe rutas vía admin_all con get_my_rol legacy (deuda B3) o 0 filas tras 079 (identidad canónica)');
 ROLLBACK;
 
 BEGIN;

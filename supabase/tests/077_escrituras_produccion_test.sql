@@ -152,7 +152,7 @@ SELECT t77_assert(EXISTS (SELECT 1 FROM productos WHERE sku = 'P77-TRIT2') AND (
 
 \echo '── 077: deuda B3 documentada (sin cambios en esta fase)'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t77_actor('authenticated', 'inadm77@t', '77000000-0000-0000-0000-000000000007');
-SELECT t77_assert(t77_rows($q$UPDATE productos SET nombre = nombre WHERE sku = 'P77-BOLSA'$q$) = 1, '077-50 Admin INACTIVO aún escribe vía admin_all (get_my_rol legacy) → deuda B3, fuera del alcance de 077');
+SELECT t77_assert(t77_rows($q$UPDATE productos SET nombre = nombre WHERE sku = 'P77-BOLSA'$q$) = (CASE WHEN pg_get_functiondef('public.get_my_rol()'::regprocedure) ~ 'erp_rol_activo' THEN 0 ELSE 1 END), '077-50 Admin INACTIVO: escribe vía admin_all con get_my_rol legacy (deuda B3) o 0 filas tras 079 (identidad canónica)');
 ROLLBACK;
 
 BEGIN;

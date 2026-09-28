@@ -80,7 +80,7 @@ SELECT t_assert(erp_rol_activo() IS NULL AND erp_es_activo() = false AND fin_mi_
 SELECT t_actor2('authenticated', 'inactivo@t');
 SELECT t_assert(erp_rol_activo() IS NULL AND fin_mi_rol_activo() IS NULL, 'C. perfil Inactivo → sin actor');
 SELECT t_actor2('authenticated', 'inactadmin@t');
-SELECT t_assert(erp_rol_activo() IS NULL AND get_my_rol() = 'Admin', 'C bis. Admin Inactivo: sin actor en el contrato nuevo, pero get_my_rol() (email, sin estatus) sigue devolviendo Admin → deuda B3 (admin_all)');
+SELECT t_assert(erp_rol_activo() IS NULL AND get_my_rol() IS NOT DISTINCT FROM (CASE WHEN pg_get_functiondef('public.get_my_rol()'::regprocedure) ~ 'erp_rol_activo' THEN NULL ELSE 'Admin' END), 'C bis. Admin Inactivo: sin actor en el contrato nuevo; get_my_rol() devuelve Admin (legacy por email) o NULL (canónico tras 079)');
 -- JWT con el email de un perfil pero sub distinto (cuenta de Auth ajena): no hereda el perfil
 SELECT t_actor2('authenticated', 'admin@t', '00000000-0000-0000-0000-000000000099');
 SELECT t_assert(erp_rol_activo() IS NULL, 'B bis. email de Admin con sub ajeno → sin actor (no hay herencia por email)');
