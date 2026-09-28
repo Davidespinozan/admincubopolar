@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -758,6 +758,56 @@ await conc076();
 await fe076();
 console.log('  076 concurrencia + frontend↔DB tras 079: PASS');
 
+// ── B3 / R1: 080 (RPCs de asignación con actor canónico) ──────────────────
+{
+  // Paridad con producción ANTES del cambio: cuerpos (sin comentarios ni
+  // espacios) idénticos a los auditados read-only el 2026-09-28. La única
+  // diferencia conocida (asignar_ordenes_a_ruta) son líneas de comentario.
+  const PROD_BODY = { asignar_orden: '3aa67a9888d18171554940e046168447', asignar_ordenes_a_ruta: '189eea80ec0c5ddabbf400d9abf6584b', cancelar_orden_asignada: '72b1fd66cdfd3386555d30324e7fdb8d' };
+  const { createHash } = await import('node:crypto');
+  const norm = s => s.replace(/--[^\n]*/g, '').replace(/\s+/g, ' ').trim();
+  const rows = (await c.query(`SELECT proname, pg_get_functiondef(oid) AS def FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('asignar_orden','asignar_ordenes_a_ruta','cancelar_orden_asignada')`)).rows;
+  const mal = rows.filter(r => createHash('md5').update(norm(r.def.split('$function$')[1] || '')).digest('hex') !== PROD_BODY[r.proname]).map(r => r.proname);
+  console.log(`  DISPATCH_PARITY_CHECK[pre-080]: ${rows.length === 3 && mal.length === 0 ? 'PASS' : 'FAIL'} ${JSON.stringify(mal)}`);
+  if (rows.length !== 3 || mal.length) process.exit(1);
+}
+console.log('── aplicar 080 (1/2)');
+let r080 = await runFile(c, path.join(ROOT, 'supabase/080_contencion_rpc_asignacion.sql'), { stopOnError: true });
+if (r080.aborted) process.exit(1);
+console.log('── aplicar 080 (2/2, idempotencia)');
+r080 = await runFile(c, path.join(ROOT, 'supabase/080_contencion_rpc_asignacion.sql'), { stopOnError: true });
+if (r080.aborted) process.exit(1);
+if (!(await rlsCheck('tras 080 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 080)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[080]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 080 (R1 RPCs de asignación)');
+const r080t = await runFile(c, path.join(ROOT, 'supabase/tests/080_rpc_asignacion_test.sql'), { stopOnError: true, echo: true });
+if (r080t.aborted) { console.log('RESULTADO: FALLÓ (080)'); process.exit(1); }
+// Harness: las suites anteriores dejan filas con id explícito (069/071: clientes 10/11)
+// y las secuencias no avanzan; realinear antes de repetir suites que insertan sin id.
+for (const t of ['clientes', 'ordenes', 'leads', 'invoice_attempts', 'chofer_ubicaciones', 'movimientos_contables', 'auditoria', 'productos', 'rutas']) {
+  await c.query(`SELECT setval('${t}_id_seq', GREATEST((SELECT COALESCE(max(id), 0) FROM ${t}), (SELECT last_value FROM ${t}_id_seq)))`);
+}
+for (const [etq, f] of [['079', '079_identidad_legacy_test.sql'], ['078', '078_rutas_chofer_test.sql'], ['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 080)`); process.exit(1); }
+  console.log(`  ${etq} tras 080: PASS`);
+}
+await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 080)'); process.exit(1); }
+  console.log('  071 tras 080: PASS');
+}
+console.log('── 076 concurrencia y frontend↔DB tras 080');
+await conc076();
+await fe076();
+console.log('  076 concurrencia + frontend↔DB tras 080: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -780,7 +830,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 078
   'rutas_guard_chofer',
   // 079
-  'get_my_rol','get_my_user_id'];
+  'get_my_rol','get_my_user_id',
+  // 080
+  'asignar_orden','asignar_ordenes_a_ruta','cancelar_orden_asignada'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
