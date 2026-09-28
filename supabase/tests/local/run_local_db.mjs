@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -439,7 +439,7 @@ const r076t = await runFile(c, path.join(ROOT, 'supabase/tests/076_produccion_at
 if (r076t.aborted) { console.log('RESULTADO: FALLÓ (076)'); process.exit(1); }
 
 // ── 076: concurrencia real con dos conexiones ─────────────────────────────
-{
+async function conc076() {
   console.log('── 076 CONCURRENCIA (dos conexiones reales)');
   const sleep = ms => new Promise(res => setTimeout(res, ms));
   const PRD = '76c00000-0000-0000-0000-000000000002';
@@ -535,9 +535,10 @@ if (r076t.aborted) { console.log('RESULTADO: FALLÓ (076)'); process.exit(1); }
   await c.query(limpiar);
   if (!ok76) { console.log('RESULTADO: FALLÓ (concurrencia 076)'); process.exit(1); }
 }
+await conc076();
 
 // ── Frontend 076 contra la DB de paridad: payloads reales del cliente ────
-{
+async function fe076() {
   console.log('── 076 FRONTEND ↔ DB (builders del cliente, parámetros nombrados como PostgREST)');
   const { pathToFileURL } = await import('node:url');
   const L = await import(pathToFileURL(path.join(ROOT, 'src/data/produccionAtomicaLogic.js')).href);
@@ -635,6 +636,7 @@ if (r076t.aborted) { console.log('RESULTADO: FALLÓ (076)'); process.exit(1); }
   await c.query(limpiar);
   if (!okF) { console.log('RESULTADO: FALLÓ (frontend ↔ DB 076)'); process.exit(1); }
 }
+await fe076();
 
 console.log('── REGRESIÓN 074 con 076 aplicada (rename_sku + produccion.empaque_sku)');
 const r074b = await runFile(c, path.join(ROOT, 'supabase/tests/074_rename_sku_test.sql'), { stopOnError: true, echo: false });
@@ -644,6 +646,39 @@ console.log('── REGRESIÓN 072 con 076 aplicada (merma de proceso reutilizad
 const r072b = await runFile(c, path.join(ROOT, 'supabase/tests/072_mermas_test.sql'), { stopOnError: true, echo: false });
 if (r072b.aborted) { console.log('RESULTADO: FALLÓ (regresión 072 tras 076)'); process.exit(1); }
 console.log('  072 tras 076: PASS');
+
+// ── F3 etapa 3: 077 (sin escrituras directas de Producción/no Admin) ──────
+console.log('── aplicar 077 (1/2)');
+let r077 = await runFile(c, path.join(ROOT, 'supabase/077_contencion_escrituras_produccion.sql'), { stopOnError: true });
+if (r077.aborted) process.exit(1);
+console.log('── aplicar 077 (2/2, idempotencia)');
+r077 = await runFile(c, path.join(ROOT, 'supabase/077_contencion_escrituras_produccion.sql'), { stopOnError: true });
+if (r077.aborted) process.exit(1);
+if (!(await rlsCheck('tras 077 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 077)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[077]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 077 (F3-B/C/E)');
+const r077t = await runFile(c, path.join(ROOT, 'supabase/tests/077_escrituras_produccion_test.sql'), { stopOnError: true, echo: true });
+if (r077t.aborted) { console.log('RESULTADO: FALLÓ (077)'); process.exit(1); }
+for (const [etq, f] of [['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 077)`); process.exit(1); }
+  console.log(`  ${etq} tras 077: PASS`);
+}
+await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 077)'); process.exit(1); }
+  console.log('  071 tras 077: PASS');
+}
+console.log('── 076 concurrencia y frontend↔DB tras 077');
+await conc076();
+await fe076();
+console.log('  076 concurrencia + frontend↔DB tras 077: PASS');
 
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
