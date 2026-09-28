@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -853,6 +853,50 @@ console.log('── 076 concurrencia y frontend↔DB tras 081');
 await conc076();
 await fe076();
 console.log('  076 concurrencia + frontend↔DB tras 081: PASS');
+
+// ── B3 / R3 + R4: 082 (confirmar_produccion sin EXECUTE; auth_id único) ──
+{
+  const cp = (await c.query(`SELECT md5(pg_get_functiondef(oid)) AS m, has_function_privilege('authenticated', oid, 'EXECUTE') AS x_auth FROM pg_proc WHERE oid='public.confirmar_produccion(bigint,bigint)'::regprocedure`)).rows[0];
+  const idx = (await c.query(`SELECT string_agg(indexname, ',' ORDER BY indexname) AS i FROM pg_indexes WHERE schemaname='public' AND tablename='usuarios'`)).rows[0].i;
+  const con = (await c.query(`SELECT count(*)::int AS n FROM pg_constraint WHERE conrelid='public.usuarios'::regclass AND conname='usuarios_auth_id_key'`)).rows[0].n;
+  const ok = cp && cp.m === '406cf50b7a01973bde25b4dcdf0316f9' && cp.x_auth === true && idx === 'idx_usuarios_auth_id,idx_usuarios_visibles,usuarios_email_key,usuarios_pkey' && con === 0;
+  console.log(`  R3R4_PARITY_CHECK[pre-082]: ${ok ? 'PASS' : 'FAIL'} cp=${JSON.stringify(cp)} idx=${idx} con=${con}`);
+  if (!ok) process.exit(1);
+}
+console.log('── aplicar 082 (1/2)');
+let r082 = await runFile(c, path.join(ROOT, 'supabase/082_r3_r4_confirmar_produccion_auth_id.sql'), { stopOnError: true });
+if (r082.aborted) process.exit(1);
+console.log('── aplicar 082 (2/2, idempotencia)');
+r082 = await runFile(c, path.join(ROOT, 'supabase/082_r3_r4_confirmar_produccion_auth_id.sql'), { stopOnError: true });
+if (r082.aborted) process.exit(1);
+if (!(await rlsCheck('tras 082 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 082)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[082]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 082 (R3 confirmar_produccion + R4 auth_id único)');
+const r082t = await runFile(c, path.join(ROOT, 'supabase/tests/082_r3_r4_test.sql'), { stopOnError: true, echo: true });
+if (r082t.aborted) { console.log('RESULTADO: FALLÓ (082)'); process.exit(1); }
+for (const t of ['clientes', 'ordenes', 'leads', 'invoice_attempts', 'chofer_ubicaciones', 'movimientos_contables', 'auditoria', 'productos', 'rutas', 'pagos']) {
+  await c.query(`SELECT setval('${t}_id_seq', GREATEST((SELECT COALESCE(max(id), 0) FROM ${t}), (SELECT last_value FROM ${t}_id_seq)))`);
+}
+for (const [etq, f] of [['081', '081_ruta_id_ordenes_test.sql'], ['080', '080_rpc_asignacion_test.sql'], ['079', '079_identidad_legacy_test.sql'], ['078', '078_rutas_chofer_test.sql'], ['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 082)`); process.exit(1); }
+  console.log(`  ${etq} tras 082: PASS`);
+}
+await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 082)'); process.exit(1); }
+  console.log('  071 tras 082: PASS');
+}
+console.log('── 076 concurrencia y frontend↔DB tras 082');
+await conc076();
+await fe076();
+console.log('  076 concurrencia + frontend↔DB tras 082: PASS');
 
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
