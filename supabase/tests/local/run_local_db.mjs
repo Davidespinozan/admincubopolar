@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -680,6 +680,39 @@ await conc076();
 await fe076();
 console.log('  076 concurrencia + frontend↔DB tras 077: PASS');
 
+// ── F3 etapa 4: 078 (F3-D: Chofer solo columnas/transiciones de su flujo) ──
+console.log('── aplicar 078 (1/2)');
+let r078 = await runFile(c, path.join(ROOT, 'supabase/078_contencion_rutas_chofer.sql'), { stopOnError: true });
+if (r078.aborted) process.exit(1);
+console.log('── aplicar 078 (2/2, idempotencia)');
+r078 = await runFile(c, path.join(ROOT, 'supabase/078_contencion_rutas_chofer.sql'), { stopOnError: true });
+if (r078.aborted) process.exit(1);
+if (!(await rlsCheck('tras 078 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 078)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[078]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 078 (F3-D)');
+const r078t = await runFile(c, path.join(ROOT, 'supabase/tests/078_rutas_chofer_test.sql'), { stopOnError: true, echo: true });
+if (r078t.aborted) { console.log('RESULTADO: FALLÓ (078)'); process.exit(1); }
+for (const [etq, f] of [['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 078)`); process.exit(1); }
+  console.log(`  ${etq} tras 078: PASS`);
+}
+await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 078)'); process.exit(1); }
+  console.log('  071 tras 078: PASS');
+}
+console.log('── 076 concurrencia y frontend↔DB tras 078');
+await conc076();
+await fe076();
+console.log('  076 concurrencia + frontend↔DB tras 078: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -698,7 +731,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 074
   'rename_sku',
   // 076
-  'registrar_produccion','registrar_transformacion','registrar_produccion__replay','registrar_transformacion__replay'];
+  'registrar_produccion','registrar_transformacion','registrar_produccion__replay','registrar_transformacion__replay',
+  // 078
+  'rutas_guard_chofer'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
