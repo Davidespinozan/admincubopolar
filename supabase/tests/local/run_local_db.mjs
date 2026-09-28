@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -399,6 +399,24 @@ if (!(await rlsCheck('tras 074 (sin deuda)', []))) { console.log('RESULTADO: FAL
 console.log('── PRUEBAS 074 (F1)');
 const r074t = await runFile(c, path.join(ROOT, 'supabase/tests/074_rename_sku_test.sql'), { stopOnError: true, echo: true });
 if (r074t.aborted) { console.log('RESULTADO: FALLÓ (074)'); process.exit(1); }
+
+// ── F3 etapa 1: 075 (cuartos_frios y precios_esp sin escrituras legacy) ───
+console.log('── aplicar 075 (1/2)');
+let r075 = await runFile(c, path.join(ROOT, 'supabase/075_contencion_cuartos_precios.sql'), { stopOnError: true });
+if (r075.aborted) process.exit(1);
+console.log('── aplicar 075 (2/2, idempotencia)');
+r075 = await runFile(c, path.join(ROOT, 'supabase/075_contencion_cuartos_precios.sql'), { stopOnError: true });
+if (r075.aborted) process.exit(1);
+if (!(await rlsCheck('tras 075 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 075)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[075]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 075 (F3 etapa 1)');
+const r075t = await runFile(c, path.join(ROOT, 'supabase/tests/075_cuartos_precios_test.sql'), { stopOnError: true, echo: true });
+if (r075t.aborted) { console.log('RESULTADO: FALLÓ (075)'); process.exit(1); }
 
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
