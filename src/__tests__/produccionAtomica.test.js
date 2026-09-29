@@ -194,7 +194,7 @@ describe('auditoría de callers (compuerta 077): escrituras directas restantes',
   it('inventario_mov: solo los ajustes manuales de Admin', () => {
     expect(escrituras('inventario_mov')).toEqual(['ajustarExistenciaManual:insert', 'ajustarStockCuarto:insert']);
   });
-  it('produccion: solo Admin (edición/borrado) y el helper de costo del flujo confirmarProduccion (sin UI)', () => {
-    expect(escrituras('produccion')).toEqual(['_registrarCostoProduccion:update', 'deleteProduccion:delete', 'updateProduccion:update']);
+  it('produccion: solo Admin (edición/borrado); sin helper de costo desde 085', () => {
+    expect(escrituras('produccion')).toEqual(['deleteProduccion:delete', 'updateProduccion:update']);
   });
 });

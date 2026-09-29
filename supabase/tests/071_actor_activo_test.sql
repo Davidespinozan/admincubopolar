@@ -155,23 +155,26 @@ RESET ROLE;
 SELECT t_assert((SELECT (stock->>'HPC-5K')::int = 20 FROM cuartos_frios WHERE id = 'CF-T') AND (SELECT stock = 100 FROM productos WHERE sku = 'HPC-5K') AND (SELECT count(*) = 0 FROM inventario_mov), '13-15. stock y kardex intactos tras intentos no autorizados');
 
 -- 16/18/19. Chofer legítimo: merma en ruta descuenta; atribución = actor real aunque el cliente mande otro nombre
+CREATE OR REPLACE FUNCTION t_contenido() RETURNS BOOLEAN LANGUAGE sql STABLE AS $$ SELECT pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]' $$;
+GRANT EXECUTE ON FUNCTION t_contenido() TO anon, authenticated, service_role;
 SELECT t_actor2('authenticated', 'chofer@t'); SET LOCAL ROLE authenticated;
-SELECT update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":-5,"tipo":"Merma","origen":"Merma ruta","usuario":"Admin T"}]'::jsonb);
+-- 085: contenido → el Chofer ya no ejecuta el RPC genérico (42501); antes, descuento legítimo.
+DO $$ BEGIN IF t_contenido() THEN BEGIN PERFORM update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":-5,"tipo":"Merma","origen":"Merma ruta","usuario":"Admin T"}]'::jsonb); RAISE EXCEPTION 'FAIL: Chofer movió stock con el RPC genérico (085)'; EXCEPTION WHEN OTHERS THEN IF SQLERRM LIKE 'FAIL:%' THEN RAISE; END IF; RAISE NOTICE '16 denied (085): %', SQLERRM; END; ELSE PERFORM update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":-5,"tipo":"Merma","origen":"Merma ruta","usuario":"Admin T"}]'::jsonb); END IF; END $$;
 RESET ROLE;
-SELECT t_assert((SELECT (stock->>'HPC-5K')::int = 15 FROM cuartos_frios WHERE id = 'CF-T'), '16. Chofer: merma descuenta 5');
-SELECT t_assert((SELECT usuario = 'Chofer T' AND cantidad = 5 AND tipo = 'Merma' FROM inventario_mov ORDER BY id DESC LIMIT 1), '18/19. kardex registra al actor real (Chofer T), no "Admin T" del cliente');
+SELECT t_assert((SELECT (stock->>'HPC-5K')::int = CASE WHEN t_contenido() THEN 20 ELSE 15 END FROM cuartos_frios WHERE id = 'CF-T'), '16. Chofer: merma descuenta 5 (o 42501 tras 085)');
+SELECT t_assert(t_contenido() OR (SELECT usuario = 'Chofer T' AND cantidad = 5 AND tipo = 'Merma' FROM inventario_mov ORDER BY id DESC LIMIT 1), '18/19. kardex registra al actor real (Chofer T), no "Admin T" del cliente');
 -- 17. stock no negativo
 SELECT t_actor2('authenticated', 'chofer@t'); SET LOCAL ROLE authenticated;
 DO $$ BEGIN PERFORM update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":-500}]'::jsonb); RAISE EXCEPTION 'FAIL: stock negativo aceptado'; EXCEPTION WHEN OTHERS THEN IF SQLERRM LIKE 'FAIL:%' THEN RAISE; END IF; RAISE NOTICE '17 denied: %', SQLERRM; END $$;
 RESET ROLE;
-SELECT t_assert((SELECT (stock->>'HPC-5K')::int = 15 FROM cuartos_frios WHERE id = 'CF-T'), '17. stock no puede ir a negativo');
+SELECT t_assert((SELECT (stock->>'HPC-5K')::int = CASE WHEN t_contenido() THEN 20 ELSE 15 END FROM cuartos_frios WHERE id = 'CF-T'), '17. stock no puede ir a negativo');
 -- 24. Producción: entrada a cuarto + traspaso a productos
 SELECT t_actor2('authenticated', 'prod@t'); SET LOCAL ROLE authenticated;
-SELECT update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":10,"tipo":"Entrada","origen":"Producción"}]'::jsonb);
+DO $$ BEGIN IF t_contenido() THEN BEGIN PERFORM update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":10,"tipo":"Entrada","origen":"Producción"}]'::jsonb); RAISE EXCEPTION 'FAIL: Producción movió stock con el RPC genérico (085)'; EXCEPTION WHEN OTHERS THEN IF SQLERRM LIKE 'FAIL:%' THEN RAISE; END IF; RAISE NOTICE '24 denied (085): %', SQLERRM; END; ELSE PERFORM update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":10,"tipo":"Entrada","origen":"Producción"}]'::jsonb); END IF; END $$;
 SELECT update_productos_stock_atomic('[{"sku":"HPC-5K","delta":-3,"tipo":"Salida","origen":"Transformación"}]'::jsonb);
 RESET ROLE;
-SELECT t_assert((SELECT (stock->>'HPC-5K')::int = 25 FROM cuartos_frios WHERE id = 'CF-T') AND (SELECT stock = 97 FROM productos WHERE sku = 'HPC-5K'), '24. Producción: cuarto +10, productos -3');
-SELECT t_assert((SELECT bool_and(usuario = 'Prod T') FROM (SELECT usuario FROM inventario_mov ORDER BY id DESC LIMIT 2) x), '24. atribución Producción real');
+SELECT t_assert((SELECT (stock->>'HPC-5K')::int = CASE WHEN t_contenido() THEN 20 ELSE 25 END FROM cuartos_frios WHERE id = 'CF-T') AND (SELECT stock = 97 FROM productos WHERE sku = 'HPC-5K'), '24. Producción: cuarto +10 (o 42501 tras 085), productos -3');
+SELECT t_assert((SELECT bool_and(usuario = 'Prod T') FROM (SELECT usuario FROM inventario_mov ORDER BY id DESC LIMIT CASE WHEN t_contenido() THEN 1 ELSE 2 END) x), '24. atribución Producción real');
 -- I. Almacén Bolsas: entrada de empaques
 SELECT t_actor2('authenticated', 'bolsas@t'); SET LOCAL ROLE authenticated;
 SELECT update_productos_stock_atomic('[{"sku":"EMP-5","delta":100,"tipo":"Entrada","origen":"Compra bolsas"}]'::jsonb);
@@ -183,13 +186,13 @@ SELECT t_assert((SELECT stock = 150 FROM productos WHERE sku = 'EMP-5') AND (SEL
 SELECT t_actor2('authenticated', 'admin@t'); SET LOCAL ROLE authenticated;
 SELECT update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":5,"tipo":"Entrada","origen":"Reverso merma"}]'::jsonb);
 RESET ROLE;
-SELECT t_assert((SELECT (stock->>'HPC-5K')::int = 30 FROM cuartos_frios WHERE id = 'CF-T') AND (SELECT usuario = 'Admin T' FROM inventario_mov ORDER BY id DESC LIMIT 1), 'H. Admin: entrada y atribución real');
+SELECT t_assert((SELECT (stock->>'HPC-5K')::int = CASE WHEN t_contenido() THEN 25 ELSE 30 END FROM cuartos_frios WHERE id = 'CF-T') AND (SELECT usuario = 'Admin T' FROM inventario_mov ORDER BY id DESC LIMIT 1), 'H. Admin: entrada y atribución real');
 -- Anidado: cerrar_ruta_atomic (Admin) → update_stocks_atomic en contexto rpc conserva auth.uid()
 INSERT INTO rutas (id, folio, nombre, chofer_id, estatus, fecha) VALUES (100, 'R-T', 'Ruta T', 3, 'En progreso', CURRENT_DATE);
 SELECT t_actor2('authenticated', 'admin@t'); SET LOCAL ROLE authenticated;
 SELECT cerrar_ruta_atomic(100, '{"HPC-5K": 2}'::jsonb, 'CF-T', '[]'::jsonb, 0, 0, 'Admin T');
 RESET ROLE;
-SELECT t_assert((SELECT (stock->>'HPC-5K')::int = 32 FROM cuartos_frios WHERE id = 'CF-T') AND (SELECT usuario = 'Admin T' FROM inventario_mov ORDER BY id DESC LIMIT 1) AND (SELECT estatus = 'Cerrada' FROM rutas WHERE id = 100), 'anidado: cerrar_ruta_atomic devuelve stock con actor real');
+SELECT t_assert((SELECT (stock->>'HPC-5K')::int = CASE WHEN t_contenido() THEN 27 ELSE 32 END FROM cuartos_frios WHERE id = 'CF-T') AND (SELECT usuario = 'Admin T' FROM inventario_mov ORDER BY id DESC LIMIT 1) AND (SELECT estatus = 'Cerrada' FROM rutas WHERE id = 100), 'anidado: cerrar_ruta_atomic devuelve stock con actor real');
 -- service_role (backend): permitido y etiquetado explícitamente
 SELECT t_actor2('service_role', NULL); SET LOCAL ROLE service_role;
 SELECT update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":1,"origen":"backend","usuario":"Admin T"}]'::jsonb);

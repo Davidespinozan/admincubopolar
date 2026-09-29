@@ -191,16 +191,25 @@ SELECT t78_err($q$UPDATE rutas SET estatus = 'Programada' WHERE id = 7801$q$, '0
 SELECT t78_err($q$UPDATE rutas SET carga_confirmada_at = now(), carga_confirmada_por = 7801, estatus = 'Cargada', firma_carga = 'x', firma_excepcion = false WHERE id = 7801 AND carga_confirmada_at IS NULL$q$, '078-34 firma atribuida a otro usuario rechazada', '42501');
 SELECT t78_err($q$UPDATE rutas SET carga_confirmada_por = 7804, estatus = 'Cargada', firma_carga = 'x', firma_excepcion = false WHERE id = 7801$q$, '078-35 firma sin carga_confirmada_at rechazada', '42501');
 SELECT t78_err($q$UPDATE rutas SET carga_confirmada_at = now(), carga_confirmada_por = 7804, estatus = 'Cargada', firma_carga = 'x', firma_excepcion = false, carga_real = '{"P78-HIELO": 61}' WHERE id = 7801$q$, '078-36 firma + cambio de carga_real rechazada entera', '42501');
--- firmarCarga en el celular del chofer (claim + descuento de stock con la RPC 071)
-SELECT t78_assert(t78_rows($q$UPDATE rutas SET carga_confirmada_at = now(), carga_confirmada_por = 7804, estatus = 'Cargada', firma_carga = 'data:image/png;base64,QQ==', firma_excepcion = false WHERE id = 7801 AND carga_confirmada_at IS NULL$q$) = 1, '078-37 firmar carga: Pendiente firma → Cargada (claim)');
-SELECT update_stocks_atomic('[{"cuarto_id":"CF-78","sku":"P78-HIELO","delta":-60,"tipo":"Salida","origen":"Carga ruta R-7801","usuario":"Chofer A78"}]'::jsonb);
--- compensación del cliente si fallara el descuento: limpia la firma propia
-SELECT t78_assert(t78_rows($q$UPDATE rutas SET carga_confirmada_at = NULL, carga_confirmada_por = NULL, firma_carga = NULL, firma_excepcion = false, firma_excepcion_motivo = NULL, estatus = 'Pendiente firma' WHERE id = 7801$q$) = 1, '078-38 compensación: Cargada → Pendiente firma limpiando la firma');
-SELECT update_stocks_atomic('[{"cuarto_id":"CF-78","sku":"P78-HIELO","delta":60,"tipo":"Entrada","origen":"Reversión carga R-7801","usuario":"Chofer A78"}]'::jsonb);
-SELECT t78_err($q$UPDATE rutas SET carga_confirmada_at = NULL, carga_confirmada_por = NULL, firma_carga = NULL, firma_excepcion = false, firma_excepcion_motivo = NULL, estatus = 'Pendiente firma', carga_real = '{"P78-HIELO": 1}' WHERE id = 7801$q$, '078-39 compensación con otras columnas rechazada', '42501');
--- firma por excepción (30 min sin Producción)
-SELECT t78_assert(t78_rows($q$UPDATE rutas SET carga_confirmada_at = now(), carga_confirmada_por = 7804, estatus = 'Cargada', firma_excepcion = true, firma_excepcion_motivo = 'Producción sin celular', firma_carga = NULL WHERE id = 7801 AND carga_confirmada_at IS NULL$q$) = 1, '078-40 firmar por excepción: Pendiente firma → Cargada');
-SELECT update_stocks_atomic('[{"cuarto_id":"CF-78","sku":"P78-HIELO","delta":-60,"tipo":"Salida","origen":"Carga ruta R-7801","usuario":"Chofer A78"}]'::jsonb);
+-- firmarCarga: antes de 085 = claim directo + RPC genérico + compensación; tras 085
+-- (guard con app.carga_ctx y RPC genérico solo Admin) = únicamente confirmar_carga_ruta.
+DO $do$ BEGIN
+  IF pg_get_functiondef('public.rutas_guard_chofer()'::regprocedure) ~ 'app\.carga_ctx' THEN
+    PERFORM t78_err($q$UPDATE rutas SET carga_confirmada_at = now(), carga_confirmada_por = 7804, estatus = 'Cargada', firma_carga = 'data:image/png;base64,QQ==', firma_excepcion = false WHERE id = 7801 AND carga_confirmada_at IS NULL$q$, '078-37 (085) claim directo Pendiente firma → Cargada rechazado: solo confirmar_carga_ruta', '42501');
+    PERFORM t78_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-78","sku":"P78-HIELO","delta":-60,"tipo":"Salida","origen":"Carga ruta R-7801"}]'::jsonb)$q$, '078-37b (085) Chofer sin RPC genérico', '42501');
+    PERFORM confirmar_carga_ruta('78000000-0000-0000-0000-00000000c001', 7801, NULL, true, 'Producción sin celular');
+    PERFORM t78_assert((SELECT estatus = 'Cargada' AND firma_excepcion AND carga_confirmada_por::text = '7804' FROM rutas WHERE id = 7801) AND (SELECT (stock ->> 'P78-HIELO')::int = 40 FROM cuartos_frios WHERE id = 'CF-78'), '078-40 (085) carga confirmada por contrato: Cargada, 100 → 40');
+    PERFORM t78_err($q$UPDATE rutas SET carga_confirmada_at = NULL, carga_confirmada_por = NULL, firma_carga = NULL, firma_excepcion = false, firma_excepcion_motivo = NULL, estatus = 'Pendiente firma' WHERE id = 7801$q$, '078-38 (085) la compensación Cargada → Pendiente firma ya no existe', '42501');
+  ELSE
+    PERFORM t78_assert(t78_rows($q$UPDATE rutas SET carga_confirmada_at = now(), carga_confirmada_por = 7804, estatus = 'Cargada', firma_carga = 'data:image/png;base64,QQ==', firma_excepcion = false WHERE id = 7801 AND carga_confirmada_at IS NULL$q$) = 1, '078-37 firmar carga: Pendiente firma → Cargada (claim)');
+    PERFORM update_stocks_atomic('[{"cuarto_id":"CF-78","sku":"P78-HIELO","delta":-60,"tipo":"Salida","origen":"Carga ruta R-7801","usuario":"Chofer A78"}]'::jsonb);
+    PERFORM t78_assert(t78_rows($q$UPDATE rutas SET carga_confirmada_at = NULL, carga_confirmada_por = NULL, firma_carga = NULL, firma_excepcion = false, firma_excepcion_motivo = NULL, estatus = 'Pendiente firma' WHERE id = 7801$q$) = 1, '078-38 compensación: Cargada → Pendiente firma limpiando la firma');
+    PERFORM update_stocks_atomic('[{"cuarto_id":"CF-78","sku":"P78-HIELO","delta":60,"tipo":"Entrada","origen":"Reversión carga R-7801","usuario":"Chofer A78"}]'::jsonb);
+    PERFORM t78_err($q$UPDATE rutas SET carga_confirmada_at = NULL, carga_confirmada_por = NULL, firma_carga = NULL, firma_excepcion = false, firma_excepcion_motivo = NULL, estatus = 'Pendiente firma', carga_real = '{"P78-HIELO": 1}' WHERE id = 7801$q$, '078-39 compensación con otras columnas rechazada', '42501');
+    PERFORM t78_assert(t78_rows($q$UPDATE rutas SET carga_confirmada_at = now(), carga_confirmada_por = 7804, estatus = 'Cargada', firma_excepcion = true, firma_excepcion_motivo = 'Producción sin celular', firma_carga = NULL WHERE id = 7801 AND carga_confirmada_at IS NULL$q$) = 1, '078-40 firmar por excepción: Pendiente firma → Cargada');
+    PERFORM update_stocks_atomic('[{"cuarto_id":"CF-78","sku":"P78-HIELO","delta":-60,"tipo":"Salida","origen":"Carga ruta R-7801","usuario":"Chofer A78"}]'::jsonb);
+  END IF;
+END $do$;
 SELECT t78_assert(t78_rows($q$UPDATE rutas SET carga_confirmada_at = now(), carga_confirmada_por = 7804, estatus = 'Cargada', firma_carga = 'x', firma_excepcion = false WHERE id = 7801 AND carga_confirmada_at IS NULL$q$) = 0, '078-41 doble firma: el claim del cliente no encuentra fila');
 SELECT t78_err($q$UPDATE rutas SET carga_confirmada_at = now(), firma_excepcion_motivo = 'otro' WHERE id = 7801$q$, '078-42 cargada: no puede reescribir la firma', '42501');
 SELECT t78_err($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 7801$q$, '078-43 cargada: Cargada → Cerrada rechazado (salta En progreso)', '42501');
@@ -218,7 +227,7 @@ SELECT t78_err($q$UPDATE rutas SET fecha_fin = CURRENT_DATE - 5 WHERE id = 7801$
 COMMIT;
 SELECT t78_assert((SELECT estatus = 'Cerrada' AND fecha_fin::date = CURRENT_DATE AND carga_real = '{"P78-HIELO": 60}'::jsonb AND carga_autorizada = '{"P78-HIELO": 50}'::jsonb AND extra_autorizado = '{"P78-HIELO": 10}'::jsonb
   AND carga_confirmada_por::text = '7804' AND firma_excepcion AND firma_carga IS NULL AND folio = 'R-7801' AND chofer_id = 7804 AND COALESCE(total_cobrado, 0) = 0 FROM rutas WHERE id = 7801), '078-53 ruta cerrada con exactamente los datos del flujo; columnas de Admin intactas');
-SELECT t78_assert((SELECT (stock ->> 'P78-HIELO')::int = 40 FROM cuartos_frios WHERE id = 'CF-78') AND (SELECT count(*) = 3 FROM inventario_mov WHERE producto = 'P78-HIELO' AND usuario = 'Chofer A78'), '078-54 stock: 100 − 60 + 60 − 60 = 40 con kardex atribuido al chofer real');
+SELECT t78_assert((SELECT (stock ->> 'P78-HIELO')::int = 40 FROM cuartos_frios WHERE id = 'CF-78') AND (SELECT count(*) = CASE WHEN pg_get_functiondef('public.rutas_guard_chofer()'::regprocedure) ~ 'app\.carga_ctx' THEN 1 ELSE 3 END FROM inventario_mov WHERE producto = 'P78-HIELO' AND usuario = 'Chofer A78'), '078-54 stock 40 con kardex atribuido al chofer real (3 filas antes de 085; 1 por contrato)');
 
 \echo '── 078: Admin y contratos del servidor intactos'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t78_actor('authenticated', 'admin78@t', '78000000-0000-0000-0000-000000000001');

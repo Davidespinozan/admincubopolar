@@ -204,22 +204,6 @@ export function validateFirmarCarga(rutaId, firmaBase64, opciones = {}) {
   return null;
 }
 
-/**
- * Determina si una ruta puede ser firmada.
- * Refleja exactamente los checks de firmarCarga (líneas 1648-1666 en supaStore.js):
- * - ruta existe
- * - carga_confirmada_at no truthy (cubre firma normal y excepción previas)
- * - carga_real existe y tiene al menos un SKU
- * @param {object|null} ruta
- * @returns {{ ok: true, cargaReal: object } | { ok: false, razon: string }}
- */
-export function puedeFirmarRuta(ruta) {
-  if (!ruta) return { ok: false, razon: 'No encontrada' };
-  if (ruta.carga_confirmada_at) return { ok: false, razon: 'Ya confirmada' };
-  const cargaReal = (ruta.carga_real && typeof ruta.carga_real === 'object') ? ruta.carga_real : {};
-  if (Object.keys(cargaReal).length === 0) return { ok: false, razon: 'Sin carga' };
-  return { ok: true, cargaReal };
-}
 
 /**
  * Verifica si cargaReal excede la suma de carga_autorizada + extra_autorizado.
@@ -243,53 +227,6 @@ export function excedeAutorizacion(cargaReal, autorizada, extra) {
   return null;
 }
 
-/**
- * Calcula los `changes` para descontar inventario de cuartos fríos al cargar
- * una ruta, distribuyendo entre los cuartos en orden y respetando el stock
- * disponible por SKU. Si algún SKU no tiene suficiente stock total, lo
- * acumula en `faltantes` (con cantidad restante por descontar).
- *
- * @param {Record<string, number>} cargaReal — { sku: cantidadACargar }
- * @param {Array<{id, stock: Record<string, number>}>} cuartos — ordenados por prioridad
- * @param {{folio: string, usuario: string, origenSuffix?: string}} contexto
- * @returns {{ changes: Array, faltantes: Array<{sku, falta}> }}
- */
-export function calcularChangesInventario(cargaReal, cuartos, contexto = {}) {
-  const folio = contexto.folio || '';
-  const usuario = contexto.usuario || 'Sistema';
-  const origenSuffix = contexto.origenSuffix || '';
-  const origen = `Carga ruta ${folio}${origenSuffix}`;
-
-  const changes = [];
-  const faltantes = [];
-
-  for (const [sku, qtyNeeded] of Object.entries(cargaReal || {})) {
-    let remaining = Number(qtyNeeded);
-    if (remaining <= 0) continue;
-    for (const cf of (cuartos || [])) {
-      if (remaining <= 0) break;
-      const stockObj = (cf?.stock && typeof cf.stock === 'object') ? cf.stock : {};
-      const available = Number(stockObj[sku] || 0);
-      if (available > 0) {
-        const toTake = Math.min(available, remaining);
-        remaining -= toTake;
-        changes.push({
-          cuarto_id: cf.id,
-          sku,
-          delta: -toTake,
-          tipo: 'Salida',
-          origen,
-          usuario,
-        });
-      }
-    }
-    if (remaining > 0) {
-      faltantes.push({ sku, falta: remaining });
-    }
-  }
-
-  return { changes, faltantes };
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers para cerrarRutaCompleta
@@ -342,49 +279,3 @@ export function agruparMermasPorSku(mermas) {
   return result;
 }
 
-/**
- * Calcula la devolución al cuarto frío para rutas legacy (creadas antes del
- * modelo "carga real" donde el inventario se descontaba al autorizar).
- *
- * Para cada SKU en `carga`, devuelto = cargado - entregado - mermado.
- * Solo se incluyen SKUs con sobrante > 0 (negativos y ceros se omiten).
- *
- * Refleja exactamente las líneas 2991-3009 de cerrarRutaCompleta. NO se
- * llama si la ruta es moderna — el caller decide eso vía select previo.
- *
- * @param {Record<string, number>|null|undefined} carga
- * @param {Array<{items: Array<{sku, cant, qty?}>}>|null|undefined} entregas
- * @param {Array<{sku, cant}>|null|undefined} mermas
- * @returns {Record<string, number>}  // solo SKUs con sobrante positivo
- */
-export function calcDevolucionLegacy(carga, entregas, mermas) {
-  const result = {};
-  if (!carga || typeof carga !== 'object') return result;
-
-  // Sumar entregado por SKU
-  const entregadoPorSku = {};
-  for (const e of (entregas || [])) {
-    for (const it of (e?.items || [])) {
-      const sku = it?.sku;
-      if (!sku) continue;
-      const cant = Number(it?.cant ?? it?.qty);
-      const safe = Number.isFinite(cant) ? cant : 0;
-      entregadoPorSku[sku] = (entregadoPorSku[sku] || 0) + safe;
-    }
-  }
-
-  // Sumar mermado por SKU
-  const mermaPorSku = agruparMermasPorSku(mermas);
-
-  // Calcular sobrante por SKU
-  for (const [sku, cargado] of Object.entries(carga)) {
-    const c = Number(cargado);
-    if (!Number.isFinite(c)) continue;
-    const entregado = entregadoPorSku[sku] || 0;
-    const merma = mermaPorSku[sku] || 0;
-    const sobrante = c - entregado - merma;
-    if (sobrante > 0) result[sku] = sobrante;
-  }
-
-  return result;
-}

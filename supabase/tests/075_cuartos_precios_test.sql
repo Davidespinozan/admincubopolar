@@ -62,11 +62,12 @@ SELECT t75_assert(t75_rows($q$UPDATE cuartos_frios SET nombre = 'x', capacidad =
 SELECT t75_assert(t75_rows($q$UPDATE cuartos_frios SET stock = stock - 'C75-B' WHERE id = 'CF-C75'$q$) = 0, '075-12 Chofer: llaves de stock no modificables');
 SELECT t75_err($q$INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-C75X', 'x', '{}'::jsonb)$q$, '075-13 Chofer: INSERT de cuarto denegado', '42501');
 SELECT t75_assert(t75_cuarto() = (SELECT v FROM t75_ids WHERE k = 'h0'), '075-14 Chofer: cuarto sin cambios');
-SELECT update_stocks_atomic('[{"cuarto_id":"CF-C75","sku":"C75-A","delta":-2,"tipo":"Salida","origen":"Carga 75"}]'::jsonb);
-SELECT t75_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-C75","sku":"C75-A","delta":-999}]'::jsonb)$q$, '075-15 Chofer vía RPC: negativo rechazado', 'P0001');
+-- 085: contenido → el Chofer ya no ejecuta el RPC genérico (42501).
+DO $$ BEGIN IF pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]' THEN PERFORM t75_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-C75","sku":"C75-A","delta":-2,"tipo":"Salida","origen":"Carga 75"}]'::jsonb)$q$, '075-14b (085) Chofer sin RPC genérico', '42501'); ELSE PERFORM update_stocks_atomic('[{"cuarto_id":"CF-C75","sku":"C75-A","delta":-2,"tipo":"Salida","origen":"Carga 75"}]'::jsonb); END IF; END $$;
+SELECT t75_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-C75","sku":"C75-A","delta":-999}]'::jsonb)$q$, '075-15 Chofer vía RPC: negativo rechazado (o 42501 tras 085)', 'P0001|42501');
 COMMIT;
-SELECT t75_assert((SELECT (stock ->> 'C75-A')::int = 8 FROM cuartos_frios WHERE id = 'CF-C75'), '075-16 Chofer vía update_stocks_atomic: descuento legítimo aplicado (10 → 8)');
-SELECT t75_assert((SELECT count(*) = 1 AND bool_and(usuario = 'Chofer 75' AND cantidad = 2 AND tipo = 'Salida') FROM inventario_mov WHERE producto = 'C75-A'), '075-17 kardex generado por la RPC con el actor real');
+SELECT t75_assert((SELECT (stock ->> 'C75-A')::int = CASE WHEN pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]' THEN 10 ELSE 8 END FROM cuartos_frios WHERE id = 'CF-C75'), '075-16 Chofer vía update_stocks_atomic: descuento aplicado (10 → 8) o denegado (085)');
+SELECT t75_assert((SELECT count(*) = CASE WHEN pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]' THEN 0 ELSE 1 END AND COALESCE(bool_and(usuario = 'Chofer 75' AND cantidad = 2 AND tipo = 'Salida'), true) FROM inventario_mov WHERE producto = 'C75-A'), '075-17 kardex generado por la RPC con el actor real (ninguno tras 085)');
 INSERT INTO t75_ids VALUES ('h1', t75_cuarto()) ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v;
 
 \echo '── 075: Producción'
@@ -74,9 +75,9 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t75_actor('prod75@t', '75000000-0000
 SELECT t75_err($q$INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-C75P', 'x', '{"C75-A": 5000}'::jsonb)$q$, '075-20 Producción: INSERT de cuarto denegado', '42501');
 SELECT t75_assert(t75_rows($q$UPDATE cuartos_frios SET stock = '{"C75-A": 9999}'::jsonb WHERE id = 'CF-C75'$q$) = 0, '075-21 Producción: escritura directa de stock no afecta filas');
 SELECT t75_assert(t75_cuarto() = (SELECT v FROM t75_ids WHERE k = 'h1'), '075-22 Producción: cuarto sin cambios');
-SELECT update_stocks_atomic('[{"cuarto_id":"CF-C75","sku":"C75-A","delta":3,"tipo":"Entrada","origen":"Producción 75"}]'::jsonb);
+DO $$ BEGIN IF pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]' THEN PERFORM t75_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-C75","sku":"C75-A","delta":3,"tipo":"Entrada","origen":"Producción 75"}]'::jsonb)$q$, '075-22b (085) Producción sin RPC genérico', '42501'); ELSE PERFORM update_stocks_atomic('[{"cuarto_id":"CF-C75","sku":"C75-A","delta":3,"tipo":"Entrada","origen":"Producción 75"}]'::jsonb); END IF; END $$;
 COMMIT;
-SELECT t75_assert((SELECT (stock ->> 'C75-A')::int = 11 FROM cuartos_frios WHERE id = 'CF-C75') AND (SELECT count(*) = 1 FROM inventario_mov WHERE producto = 'C75-A' AND usuario = 'Prod 75'), '075-23 Producción vía update_stocks_atomic: entrada legítima con kardex');
+SELECT t75_assert((SELECT (stock ->> 'C75-A')::int = CASE WHEN pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]' THEN 10 ELSE 11 END FROM cuartos_frios WHERE id = 'CF-C75') AND (SELECT count(*) = CASE WHEN pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]' THEN 0 ELSE 1 END FROM inventario_mov WHERE producto = 'C75-A' AND usuario = 'Prod 75'), '075-23 Producción vía update_stocks_atomic: entrada (o denegada tras 085)');
 
 \echo '── 075: Admin'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t75_actor('admin75@t', '75000000-0000-0000-0000-000000000001');

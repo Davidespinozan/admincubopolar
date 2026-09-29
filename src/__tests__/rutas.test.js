@@ -8,12 +8,9 @@ import {
   calcTotalesCobro,
   validateConfirmarCarga,
   validateFirmarCarga,
-  puedeFirmarRuta,
   excedeAutorizacion,
-  calcularChangesInventario,
   clasificarEntregas,
   agruparMermasPorSku,
-  calcDevolucionLegacy,
 } from '../data/rutasLogic';
 
 // ─── formatDevolucion ─────────────────────────────────────────
@@ -199,35 +196,6 @@ describe('validateFirmarCarga', () => {
   });
 });
 
-// ─── puedeFirmarRuta ───────────────────────────────────────────
-describe('puedeFirmarRuta', () => {
-  it('rechaza si ruta es null', () => {
-    expect(puedeFirmarRuta(null)).toEqual({ ok: false, razon: 'No encontrada' });
-  });
-
-  it('rechaza si carga_confirmada_at ya está set (firma o excepción previa)', () => {
-    const ruta = { id: 1, carga_confirmada_at: '2026-05-01T10:00:00Z', carga_real: { 'HC-5K': 10 } };
-    expect(puedeFirmarRuta(ruta)).toEqual({ ok: false, razon: 'Ya confirmada' });
-  });
-
-  it('rechaza si carga_real es null', () => {
-    const ruta = { id: 1, carga_confirmada_at: null, carga_real: null };
-    expect(puedeFirmarRuta(ruta)).toEqual({ ok: false, razon: 'Sin carga' });
-  });
-
-  it('rechaza si carga_real es objeto vacío', () => {
-    const ruta = { id: 1, carga_confirmada_at: null, carga_real: {} };
-    expect(puedeFirmarRuta(ruta)).toEqual({ ok: false, razon: 'Sin carga' });
-  });
-
-  it('OK si ruta no confirmada con carga_real válida — devuelve cargaReal', () => {
-    const ruta = { id: 1, carga_confirmada_at: null, carga_real: { 'HC-5K': 10, 'HC-25K': 5 } };
-    const r = puedeFirmarRuta(ruta);
-    expect(r.ok).toBe(true);
-    expect(r.cargaReal).toEqual({ 'HC-5K': 10, 'HC-25K': 5 });
-  });
-});
-
 // ─── excedeAutorizacion ────────────────────────────────────────
 describe('excedeAutorizacion', () => {
   it('null si carga dentro de autorizada (sin extra)', () => {
@@ -257,86 +225,6 @@ describe('excedeAutorizacion', () => {
   it('devuelve el primer SKU que exceda (early return)', () => {
     const r = excedeAutorizacion({ 'A': 1, 'B': 100, 'C': 1 }, { 'A': 5, 'B': 5, 'C': 5 }, {});
     expect(r.sku).toBe('B');
-  });
-});
-
-// ─── calcularChangesInventario ─────────────────────────────────
-describe('calcularChangesInventario', () => {
-  it('1 SKU, 1 cuarto con stock suficiente: 1 change, 0 faltantes', () => {
-    const cargaReal = { 'HC-5K': 10 };
-    const cuartos = [{ id: 'CF-1', stock: { 'HC-5K': 50 } }];
-    const r = calcularChangesInventario(cargaReal, cuartos, { folio: 'R-001', usuario: 'Chofer' });
-    expect(r.faltantes).toEqual([]);
-    expect(r.changes).toHaveLength(1);
-    expect(r.changes[0]).toMatchObject({
-      cuarto_id: 'CF-1',
-      sku: 'HC-5K',
-      delta: -10,
-      tipo: 'Salida',
-      origen: 'Carga ruta R-001',
-      usuario: 'Chofer',
-    });
-  });
-
-  it('1 SKU, distribución entre 2 cuartos cuando primer cuarto no tiene suficiente', () => {
-    const cargaReal = { 'HC-5K': 30 };
-    const cuartos = [
-      { id: 'CF-1', stock: { 'HC-5K': 20 } },
-      { id: 'CF-2', stock: { 'HC-5K': 50 } },
-    ];
-    const r = calcularChangesInventario(cargaReal, cuartos, { folio: 'R-002', usuario: 'Chofer' });
-    expect(r.faltantes).toEqual([]);
-    expect(r.changes).toHaveLength(2);
-    expect(r.changes[0].delta).toBe(-20); // primero agota CF-1
-    expect(r.changes[1].delta).toBe(-10); // luego saca el resto de CF-2
-  });
-
-  it('stock insuficiente en todos los cuartos: faltantes con remaining', () => {
-    const cargaReal = { 'HC-5K': 100 };
-    const cuartos = [
-      { id: 'CF-1', stock: { 'HC-5K': 30 } },
-      { id: 'CF-2', stock: { 'HC-5K': 20 } },
-    ];
-    const r = calcularChangesInventario(cargaReal, cuartos, { folio: 'R-003', usuario: 'Chofer' });
-    expect(r.faltantes).toEqual([{ sku: 'HC-5K', falta: 50 }]);
-    expect(r.changes).toHaveLength(2);
-  });
-
-  it('SKU en cargaReal pero no en stock de ningún cuarto: faltante completo', () => {
-    const cargaReal = { 'NUEVO': 5 };
-    const cuartos = [{ id: 'CF-1', stock: { 'HC-5K': 100 } }];
-    const r = calcularChangesInventario(cargaReal, cuartos, { folio: 'R-004', usuario: 'Chofer' });
-    expect(r.changes).toEqual([]);
-    expect(r.faltantes).toEqual([{ sku: 'NUEVO', falta: 5 }]);
-  });
-
-  it('múltiples SKUs simultáneos con stock suficiente', () => {
-    const cargaReal = { 'HC-5K': 10, 'HC-25K': 5 };
-    const cuartos = [{ id: 'CF-1', stock: { 'HC-5K': 50, 'HC-25K': 50 } }];
-    const r = calcularChangesInventario(cargaReal, cuartos, { folio: 'R-005', usuario: 'Chofer' });
-    expect(r.faltantes).toEqual([]);
-    expect(r.changes).toHaveLength(2);
-    expect(r.changes.map(c => c.sku).sort()).toEqual(['HC-25K', 'HC-5K']);
-  });
-
-  it('aplica origenSuffix al campo origen', () => {
-    const cargaReal = { 'HC-5K': 10 };
-    const cuartos = [{ id: 'CF-1', stock: { 'HC-5K': 50 } }];
-    const r = calcularChangesInventario(cargaReal, cuartos, {
-      folio: 'R-006',
-      usuario: 'Sistema',
-      origenSuffix: ' (sin firma)',
-    });
-    expect(r.changes[0].origen).toBe('Carga ruta R-006 (sin firma)');
-    expect(r.changes[0].usuario).toBe('Sistema');
-  });
-
-  it('cantidad 0 o negativa se omite (no genera changes ni faltantes)', () => {
-    const cargaReal = { 'HC-5K': 0, 'HC-25K': -5 };
-    const cuartos = [{ id: 'CF-1', stock: { 'HC-5K': 50, 'HC-25K': 50 } }];
-    const r = calcularChangesInventario(cargaReal, cuartos, { folio: 'R-007', usuario: 'X' });
-    expect(r.changes).toEqual([]);
-    expect(r.faltantes).toEqual([]);
   });
 });
 
@@ -438,83 +326,3 @@ describe('agruparMermasPorSku', () => {
   });
 });
 
-// ─── calcDevolucionLegacy ──────────────────────────────────────
-describe('calcDevolucionLegacy', () => {
-  it('carga vacía o null → {}', () => {
-    expect(calcDevolucionLegacy({}, [], [])).toEqual({});
-    expect(calcDevolucionLegacy(null, [], [])).toEqual({});
-  });
-
-  it('SKU cargado pero no entregado ni mermado → devuelve todo', () => {
-    const r = calcDevolucionLegacy({ 'HC-5K': 100 }, [], []);
-    expect(r).toEqual({ 'HC-5K': 100 });
-  });
-
-  it('SKU completamente entregado → no aparece en output', () => {
-    const r = calcDevolucionLegacy(
-      { 'HC-5K': 100 },
-      [{ items: [{ sku: 'HC-5K', cant: 100 }] }],
-      []
-    );
-    expect(r).toEqual({});
-  });
-
-  it('SKU con sobrante negativo (entregaron + mermaron más) → omitido', () => {
-    const r = calcDevolucionLegacy(
-      { 'HC-5K': 50 },
-      [{ items: [{ sku: 'HC-5K', cant: 60 }] }],
-      [{ sku: 'HC-5K', cant: 5 }]
-    );
-    expect(r).toEqual({});
-  });
-
-  it('múltiples entregas con mismo SKU → suma correcta', () => {
-    const r = calcDevolucionLegacy(
-      { 'HC-5K': 100 },
-      [
-        { items: [{ sku: 'HC-5K', cant: 30 }] },
-        { items: [{ sku: 'HC-5K', cant: 25 }] },
-        { items: [{ sku: 'HC-5K', cant: 15 }] },
-      ],
-      [{ sku: 'HC-5K', cant: 10 }]
-    );
-    // 100 - (30+25+15) - 10 = 20
-    expect(r).toEqual({ 'HC-5K': 20 });
-  });
-
-  it('mezcla compleja con múltiples SKUs y items', () => {
-    const r = calcDevolucionLegacy(
-      { 'HC-5K': 100, 'HC-25K': 50, 'HC-10K': 30, 'HC-1K': 10 },
-      [
-        { items: [{ sku: 'HC-5K', cant: 60 }, { sku: 'HC-25K', cant: 20 }] },
-        { items: [{ sku: 'HC-5K', cant: 20 }, { sku: 'HC-10K', cant: 30 }] },
-      ],
-      [{ sku: 'HC-25K', cant: 10 }]
-    );
-    // HC-5K:  100 - 80 - 0  = 20  (devuelve)
-    // HC-25K: 50  - 20 - 10 = 20  (devuelve)
-    // HC-10K: 30  - 30 - 0  = 0   (omitido)
-    // HC-1K:  10  - 0  - 0  = 10  (devuelve, no se entregó nada)
-    expect(r).toEqual({ 'HC-5K': 20, 'HC-25K': 20, 'HC-1K': 10 });
-  });
-
-  it('items con cant en formato qty (compat con shape viejo)', () => {
-    const r = calcDevolucionLegacy(
-      { 'HC-5K': 50 },
-      [{ items: [{ sku: 'HC-5K', qty: 30 }] }],
-      []
-    );
-    // 50 - 30 = 20
-    expect(r).toEqual({ 'HC-5K': 20 });
-  });
-
-  it('items sin sku se ignoran', () => {
-    const r = calcDevolucionLegacy(
-      { 'HC-5K': 50 },
-      [{ items: [{ cant: 30 }, { sku: 'HC-5K', cant: 10 }] }],
-      []
-    );
-    // 50 - 10 = 40 (el item sin sku no se cuenta)
-    expect(r).toEqual({ 'HC-5K': 40 });
-  });
-});

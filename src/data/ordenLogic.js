@@ -278,65 +278,7 @@ export function validateMarcarNoEntregada(orden, motivo) {
   return null;
 }
 
-/**
- * Construye el payload UPDATE para marcar una orden como No entregada.
- *
- * @param {string}  motivo
- * @param {boolean} reagendar
- * @param {Date}    [now=new Date()]  inyectable para tests
- * @returns {Object} payload listo para .update()
- */
-export function buildNoEntregaPayload(motivo, reagendar, now = new Date()) {
-  return {
-    estatus: 'No entregada',
-    motivo_no_entrega: String(motivo || '').trim(),
-    fecha_no_entrega: now.toISOString(),
-    reagendada: !!reagendar,
-  };
-}
 
-/**
- * Calcula la distribución FIFO inverso para devolver al cuarto frío el
- * stock de las líneas de una orden no entregada. Multi-SKU, multi-cuarto.
- *
- * Como el stock fue descontado al firmar la carga de la ruta y la
- * mercancía vuelve física al almacén, se devuelve al primer cuarto activo
- * (en orden de id) hasta que el delta para cada SKU complete su cantidad.
- * Cada change tiene delta POSITIVO (es entrada al cuarto).
- *
- * @param {Array}  lineas   — [{ sku, cantidad }, ...] de la orden
- * @param {Array}  cuartos  — [{ id, stock?: { sku: qty } }, ...] activos
- * @param {string} usuario  — quien dispara la devolución (audit)
- * @param {string} ordenRef — folio o "ID N" para el campo origen
- * @returns {{ changes: Array }}  changes: lista para update_stocks_atomic
- */
-export function calcReversoChangesNoEntrega(lineas, cuartos, usuario, ordenRef) {
-  const changes = [];
-  const cuartosLista = Array.isArray(cuartos) ? cuartos : [];
-  const user = String(usuario || 'Chofer');
-  const ref = String(ordenRef || 'orden');
-
-  if (!Array.isArray(lineas)) return { changes };
-
-  // Si no hay cuartos, no hay donde devolver — caller debe manejar el caso
-  if (cuartosLista.length === 0) return { changes };
-  const cuartoDestino = cuartosLista[0];
-
-  for (const l of lineas) {
-    const sku = String(l?.sku || '');
-    const qty = Number(l?.cantidad || 0);
-    if (!sku || qty <= 0) continue;
-    changes.push({
-      cuarto_id: cuartoDestino.id,
-      sku,
-      delta: qty,
-      tipo: 'Devolución no entregada',
-      origen: `No entregada ${ref}`,
-      usuario: user,
-    });
-  }
-  return { changes };
-}
 
 /**
  * Valida si la transición de estatus es legal.

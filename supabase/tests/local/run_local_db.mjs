@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -979,6 +979,7 @@ async function conc084() {
     DELETE FROM orden_lineas WHERE orden_id IN (8490, 8491); DELETE FROM ordenes WHERE id IN (8490, 8491);
     DELETE FROM rutas WHERE id IN (8490, 8491); DELETE FROM clientes WHERE id = 8495;
     DELETE FROM cuartos_frios WHERE id IN ('CF-C84A', 'CF-C84B'); DELETE FROM productos WHERE sku LIKE 'C84-%';
+    UPDATE cuartos_frios SET stock = stock - 'C84-A' WHERE stock ? 'C84-A'; -- la no-entrega devuelve al primer cuarto por id
     DELETE FROM usuarios WHERE id IN (8492, 8493); DELETE FROM auth.users WHERE id IN ('${CH}', '${PR}');
     COMMIT;`;
   await c.query(limpiar);
@@ -1082,6 +1083,7 @@ async function fe084() {
     DELETE FROM orden_lineas WHERE orden_id = 8480; DELETE FROM ordenes WHERE id = 8480;
     DELETE FROM rutas WHERE id IN (8480, 8481); DELETE FROM clientes WHERE id = 8485;
     DELETE FROM cuartos_frios WHERE id IN ('CF-F84A', 'CF-F84B'); DELETE FROM productos WHERE sku LIKE 'F84-%';
+    UPDATE cuartos_frios SET stock = stock - 'F84-A' WHERE stock ? 'F84-A'; -- la no-entrega devuelve al primer cuarto por id
     DELETE FROM usuarios WHERE id BETWEEN 8482 AND 8485; DELETE FROM auth.users WHERE id IN ('${CHA}', '${CHB}', '${PR}', '${AD}');
     COMMIT;`;
   await c.query(limpiar);
@@ -1186,6 +1188,52 @@ console.log('── 076 concurrencia y frontend↔DB tras 084');
 await conc076();
 await fe076();
 console.log('  076 concurrencia + frontend↔DB tras 084: PASS');
+
+// ── R2 contención: 085 (RPC genérico solo Admin; contratos con primitivo interno; guard de carga) ──
+{
+  const PROD = { update_stocks_atomic: '9bfe3e6327d081a39f467279ef654868', registrar_produccion: '0619e6b3e29f9448263a4bd81f8359c1', registrar_transformacion: '9ad0fa675fe265bfd4f2ff81e6440eb7', cerrar_ruta_atomic: '738311ca2ea45af585328996b9e425bd', rutas_guard_chofer: 'd62cb42dadf2ec9519ae740eb2f6d28d', confirmar_carga_ruta: 'd2bc238a501c6699c2410d3573c2a35b', stock_mov_cuarto: '3591d07446854c4a682cd41f88489ec6' };
+  const rows = (await c.query(`SELECT proname, md5(pg_get_functiondef(oid)) AS m FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname = ANY($1)`, [Object.keys(PROD)])).rows;
+  const mal = rows.filter(r => PROD[r.proname] !== r.m).map(r => `${r.proname}=${r.m}`);
+  console.log(`  STOCK_PARITY_CHECK[pre-085]: ${rows.length === 7 && mal.length === 0 ? 'PASS' : 'FAIL'} ${JSON.stringify(mal)}`);
+  if (rows.length !== 7 || mal.length) process.exit(1);
+}
+console.log('── aplicar 085 (1/2)');
+let r085 = await runFile(c, path.join(ROOT, 'supabase/085_contencion_stock_generico.sql'), { stopOnError: true });
+if (r085.aborted) process.exit(1);
+console.log('── aplicar 085 (2/2, idempotencia)');
+r085 = await runFile(c, path.join(ROOT, 'supabase/085_contencion_stock_generico.sql'), { stopOnError: true });
+if (r085.aborted) process.exit(1);
+if (!(await rlsCheck('tras 085 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 085)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[085]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 085 (R2 contención)');
+const r085t = await runFile(c, path.join(ROOT, 'supabase/tests/085_contencion_stock_test.sql'), { stopOnError: true, echo: true });
+if (r085t.aborted) { console.log('RESULTADO: FALLÓ (085)'); process.exit(1); }
+for (const t of ['clientes', 'ordenes', 'leads', 'invoice_attempts', 'chofer_ubicaciones', 'movimientos_contables', 'auditoria', 'productos', 'rutas', 'pagos', 'inventario_mov']) {
+  await c.query(`SELECT setval('${t}_id_seq', GREATEST((SELECT COALESCE(max(id), 0) FROM ${t}), (SELECT last_value FROM ${t}_id_seq)))`);
+}
+for (const [etq, f] of [['084', '084_contratos_stock_test.sql'], ['083', '083_self_read_auth_id_test.sql'], ['082', '082_r3_r4_test.sql'], ['081', '081_ruta_id_ordenes_test.sql'], ['080', '080_rpc_asignacion_test.sql'], ['079', '079_identidad_legacy_test.sql'], ['078', '078_rutas_chofer_test.sql'], ['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 085)`); process.exit(1); }
+  console.log(`  ${etq} tras 085: PASS`);
+}
+await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 085)'); process.exit(1); }
+  console.log('  071 tras 085: PASS');
+}
+console.log('── 084 concurrencia + frontend↔DB tras 085');
+await conc084();
+await fe084();
+console.log('── 076 concurrencia y frontend↔DB tras 085');
+await conc076();
+await fe076();
+console.log('  concurrencia + frontend↔DB (076 y 084) tras 085: PASS');
 
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));

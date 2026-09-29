@@ -117,7 +117,7 @@ describe('auditoría estática del cutover (R2 fase 2A)', () => {
     expect(tr).not.toMatch(/update_stocks_atomic/);
     expect(tr).not.toMatch(/delta:/);
   });
-  it('inventario de llamadores restantes de update_stocks_atomic (ninguno en flujo normal de Chofer o Producción)', () => {
+  it('inventario de llamadores restantes de update_stocks_atomic (solo Admin)', () => {
     const lines = store.split('\n');
     let fn = '';
     const callers = new Set();
@@ -128,11 +128,7 @@ describe('auditoría estática del cutover (R2 fase 2A)', () => {
     }
     expect([...callers].sort()).toEqual([
       'cancelarRutaConDevolucion', // Admin (requireRol Admin)
-      'cerrarRutaCompleta',        // Chofer, SOLO rama legacy (rutas sin carga_confirmada_at)
-      'confirmarCargaRuta',        // DEAD: ninguna pantalla la llama
-      'confirmarProduccion',       // DEAD: ninguna pantalla la llama; RPC revocada (082)
       'deleteProduccion',          // Admin
-      'meterACuartoFrio',          // DEAD: ninguna pantalla la llama
       'registrarDevolucion',       // Admin (requireAdmin)
     ]);
   });
@@ -155,9 +151,9 @@ describe('auditoría estática del cutover (R2 fase 2A)', () => {
     const inv = sinComentarios(src('../components/views/InventarioView.jsx'));
     expect(inv).toMatch(/traspasoEntreUbicaciones\(\{ \.\.\.traspasoForm, operacionId: op\.id \}\)/);
   });
-  it('el cierre legacy sigue clasificado: rama solo para rutas sin carga confirmada', () => {
+  it('085: el cierre ya no tiene rama legacy de devolución ni referencia a carga_confirmada_at', () => {
     const b = accion(store, 'cerrarRutaCompleta');
-    expect(b).toMatch(/esLegacy = !rutaInfo\?\.carga_confirmada_at/);
-    expect(b).toMatch(/if \(esLegacy && carga/);
+    expect(b).not.toMatch(/esLegacy|calcDevolucionLegacy|update_stocks_atomic/);
+    for (const dead of ['confirmarCargaRuta', 'meterACuartoFrio', 'confirmarProduccion', '_registrarCostoProduccion']) expect(accion(store, dead)).toBeNull();
   });
 });

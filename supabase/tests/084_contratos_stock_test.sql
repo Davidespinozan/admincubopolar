@@ -15,6 +15,7 @@ DELETE FROM ordenes WHERE id BETWEEN 8420 AND 8429;
 DELETE FROM rutas WHERE id BETWEEN 8401 AND 8419;
 DELETE FROM clientes WHERE id = 8410;
 DELETE FROM cuartos_frios WHERE id LIKE 'CF-84%';
+UPDATE cuartos_frios SET stock = stock - 'P84-A' - 'P84-B' - 'P84-C' WHERE stock ?| ARRAY['P84-A', 'P84-B', 'P84-C']; -- la no-entrega devuelve al primer cuarto por id
 DELETE FROM productos WHERE sku LIKE 'P84-%';
 DELETE FROM usuarios WHERE id BETWEEN 8401 AND 8419;
 DELETE FROM auth.users WHERE id::text LIKE '84000000-%';
@@ -103,9 +104,15 @@ SELECT t84_assert((SELECT bool_and(prosecdef AND array_to_string(proconfig, ';')
   AND (SELECT count(*) = 4 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('confirmar_carga_ruta', 'registrar_no_entrega', 'salida_cuarto_manual', 'traspaso_cuartos')), '084-03 4 contratos: SECURITY DEFINER, search_path fijo, EXECUTE solo authenticated/service_role');
 SELECT t84_assert((SELECT bool_and(prosecdef AND array_to_string(proconfig, ';') = 'search_path=public, pg_temp' AND NOT has_function_privilege('authenticated', oid, 'EXECUTE') AND NOT has_function_privilege('anon', oid, 'EXECUTE')) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('stock_op_replay', 'stock_mov_cuarto')), '084-04 helpers internos sin EXECUTE para la API');
 SELECT t84_assert((SELECT bool_and(pg_get_functiondef(oid) !~ 'update_stocks_atomic|fin_marcar_ctx|get_my_|auth\.jwt|email') FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('confirmar_carga_ruta', 'registrar_no_entrega', 'salida_cuarto_manual', 'traspaso_cuartos', 'stock_mov_cuarto', 'stock_op_replay')), '084-05 sin llamada anidada al RPC genérico, sin fin_ctx ni identidad legacy');
-SELECT t84_assert((SELECT md5(pg_get_functiondef(oid)) = '9bfe3e6327d081a39f467279ef654868' FROM pg_proc WHERE oid = 'public.update_stocks_atomic(jsonb)'::regprocedure)
-  AND (SELECT md5(pg_get_functiondef(oid)) = 'd62cb42dadf2ec9519ae740eb2f6d28d' FROM pg_proc WHERE oid = 'public.rutas_guard_chofer()'::regprocedure)
-  AND (SELECT md5(pg_get_functiondef(oid)) = '99fb6cfe4933dc702e3531669b0c6ec3' FROM pg_proc WHERE oid = 'public.ordenes_guard_financiero()'::regprocedure), '084-06 update_stocks_atomic, guard 078 y guard 069 sin cambios (md5 de producción)');
+-- 084-06: en fase 084 el RPC genérico y el guard 078 conservan el md5 de
+-- producción; tras 085 (contención) cambian a propósito y se verifica que el
+-- genérico exige Admin y el guard la marca app.carga_ctx. El guard 069 no cambia.
+SELECT t84_assert((SELECT md5(pg_get_functiondef(oid)) = '99fb6cfe4933dc702e3531669b0c6ec3' FROM pg_proc WHERE oid = 'public.ordenes_guard_financiero()'::regprocedure)
+  AND CASE WHEN pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]'
+    THEN pg_get_functiondef('public.rutas_guard_chofer()'::regprocedure) ~ 'app\.carga_ctx'
+    ELSE (SELECT md5(pg_get_functiondef(oid)) = '9bfe3e6327d081a39f467279ef654868' FROM pg_proc WHERE oid = 'public.update_stocks_atomic(jsonb)'::regprocedure)
+     AND (SELECT md5(pg_get_functiondef(oid)) = 'd62cb42dadf2ec9519ae740eb2f6d28d' FROM pg_proc WHERE oid = 'public.rutas_guard_chofer()'::regprocedure) END,
+  '084-06 guard 069 sin cambios; RPC genérico y guard 078 con md5 de producción (084) o contenidos (085)');
 INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Entrada', 'P84-C', 1, 'legacy insert 84', 'sql');
 SELECT t84_assert((SELECT cuarto_id IS NULL AND ruta_id IS NULL AND operacion_id IS NULL FROM inventario_mov WHERE origen = 'legacy insert 84'), '084-07 INSERT legacy sin columnas nuevas sigue funcionando (fila no estructurada)');
 DELETE FROM inventario_mov WHERE origen = 'legacy insert 84';
@@ -233,7 +240,13 @@ SELECT t84_assert((SELECT count(*) = 7 FROM stock_operaciones WHERE operacion_id
 \echo '── 084: 078 y el flujo viejo siguen vigentes'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t84_actor('authenticated', 'chofera84@t', '84000000-0000-0000-0000-000000000003');
 SELECT t84_err($q$UPDATE rutas SET carga_autorizada = '{"P84-A": 999}' WHERE id = 8401$q$, '084-80 078: Chofer sigue sin tocar carga_autorizada', '42501');
-SELECT t84_assert((SELECT update_stocks_atomic('[{"cuarto_id":"CF-84C","sku":"P84-A","delta":-1}]'::jsonb) ->> 'actor') = 'Chofer A84', '084-82 update_stocks_atomic sin cambios: el Chofer aún puede usarlo (contención en fase 3)');
+DO $do$ BEGIN
+  IF pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]' THEN
+    PERFORM t84_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-84C","sku":"P84-A","delta":-1}]'::jsonb)$q$, '084-82 (085) el Chofer ya no puede usar update_stocks_atomic', '42501');
+  ELSE
+    PERFORM t84_assert((SELECT update_stocks_atomic('[{"cuarto_id":"CF-84C","sku":"P84-A","delta":-1}]'::jsonb) ->> 'actor') = 'Chofer A84', '084-82 update_stocks_atomic sin cambios: el Chofer aún puede usarlo (contención en fase 3)');
+  END IF;
+END $do$;
 ROLLBACK;
 
 BEGIN;
@@ -244,6 +257,7 @@ DELETE FROM ordenes WHERE id BETWEEN 8420 AND 8429;
 DELETE FROM rutas WHERE id BETWEEN 8401 AND 8419;
 DELETE FROM clientes WHERE id = 8410;
 DELETE FROM cuartos_frios WHERE id LIKE 'CF-84%';
+UPDATE cuartos_frios SET stock = stock - 'P84-A' - 'P84-B' - 'P84-C' WHERE stock ?| ARRAY['P84-A', 'P84-B', 'P84-C']; -- la no-entrega devuelve al primer cuarto por id
 DELETE FROM productos WHERE sku LIKE 'P84-%';
 DELETE FROM usuarios WHERE id BETWEEN 8401 AND 8419;
 DELETE FROM auth.users WHERE id::text LIKE '84000000-%';

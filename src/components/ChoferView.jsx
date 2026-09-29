@@ -801,7 +801,6 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           choferNombre: s(user?.nombre),
           entregas,
           mermas,
-          carga: cargaTotal,
           cobros: cobrosPorMetodo,
         });
         // cerrarRutaCompleta returns the error object on failure instead of throwing

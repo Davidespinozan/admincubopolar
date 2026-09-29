@@ -6,7 +6,7 @@ import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
 import { buildRegistrarMermaArgs, buildMermasRutaPayload, mensajeErrorMerma } from './mermasLogic';
-import { buildUpdateFieldsProduccion, calcReversoChangesProduccion, calcCostoProduccion, buildConceptoProduccion } from './produccionLogic';
+import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
 import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
 import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion } from './devolucionesLogic';
@@ -15,8 +15,6 @@ import {
   validateConfirmarCarga,
   validateFirmarCarga,
   excedeAutorizacion,
-  calcularChangesInventario,
-  calcDevolucionLegacy,
   validateEdicionRuta,
   validateCancelacionRuta,
   buildCancelacionChanges,
@@ -681,7 +679,7 @@ export function useSupaStore(userId, userName, userRol) {
       }
     };
 
-    const a = actionsRef.current = {
+    actionsRef.current = {
 
       // ── CLIENTES ──
       addCliente: async (c) => {
@@ -1525,108 +1523,6 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── PRODUCCIÓN ──
-      // Tanda 11: helper privado — registra el costo del empaque consumido
-      // por una corrida de producción en contabilidad. Best-effort:
-      //   - Si el producto no tiene empaque_sku  → { skipped: 'sin empaque' }
-      //   - Si el empaque tiene costo_unitario 0 → { skipped: 'costo 0' }
-      //   - Si algún SELECT/INSERT falla         → { error } (NO lanza)
-      // El caller decide si mostrar warning o ignorar.
-      //
-      // Centraliza la lógica que antes estaba inline en confirmarProduccion
-      // y la habilita para producirYCongelar (Tanda 11). DRY.
-      _registrarCostoProduccion: async ({ produccionId, folio, sku, cantidad }) => {
-        try {
-          const cant = Number(cantidad || 0);
-          if (!sku || cant <= 0) return { skipped: 'sku/cantidad inválidos' };
-
-          // 1. Empaque del producto producido.
-          const { data: producto, error: errProd } = await supabase
-            .from('productos').select('empaque_sku').eq('sku', sku).maybeSingle();
-          if (errProd) return { error: errProd.message };
-          const empaqueSku = producto?.empaque_sku;
-          if (!empaqueSku) return { skipped: 'sin empaque' };
-
-          // 2. Costo unitario del empaque.
-          const { data: empaque, error: errEmp } = await supabase
-            .from('productos').select('costo_unitario').eq('sku', empaqueSku).maybeSingle();
-          if (errEmp) return { error: errEmp.message };
-          const costoUnitario = Number(empaque?.costo_unitario || 0);
-          const costoTotal = calcCostoProduccion(cant, costoUnitario);
-          if (costoTotal <= 0) return { skipped: 'costo 0' };
-
-          const hoy = todayLocalISO();
-          const periodo = hoy.slice(0, 7);
-          const concepto = buildConceptoProduccion(folio, produccionId, cant, sku, empaqueSku);
-
-          // 3. UPDATE produccion (costo computado por fila).
-          if (produccionId) {
-            const { error: errUpd } = await supabase
-              .from('produccion')
-              .update({ costo_empaque: costoUnitario, costo_total: costoTotal })
-              .eq('id', produccionId);
-            if (errUpd) return { error: errUpd.message };
-          }
-
-          // 4. costos_historial (auditoría granular).
-          const { error: errHist } = await supabase.from('costos_historial').insert({
-            tipo: 'Producción',
-            categoria: 'Costo de Ventas',
-            concepto, monto: costoTotal, periodo, fecha: hoy,
-          });
-          if (errHist) return { error: errHist.message };
-
-          // 5. movimientos_contables (egreso para estado de resultados).
-          //    usuario_id para auditoría; si uid() no resuelve, NULL.
-          const { error: errMov } = await supabase.from('movimientos_contables').insert({
-            fecha: hoy, tipo: 'Egreso', categoria: 'Costo de Ventas',
-            concepto, monto: costoTotal,
-            usuario_id: uid() || null,
-          });
-          if (errMov) return { error: errMov.message };
-
-          return { ok: true, costoTotal, empaqueSku };
-        } catch (e) {
-          return { error: e?.message || 'Error inesperado al registrar costo' };
-        }
-      },
-
-      confirmarProduccion: async (id) => {
-        // Obtener datos de la producción antes de confirmar
-        const { data: prod } = await supabase.from('produccion').select('*').eq('id', id).single();
-
-        // Confirmar en backend (actualiza productos.stock)
-        const { error } = await supabase.rpc('confirmar_produccion', { p_produccion_id: id, p_usuario_id: uid() });
-        if (error) { t()?.error('Error al confirmar producción'); return error; }
-
-        // Añadir el producto al cuarto frío para que esté disponible en rutas
-        if (prod) {
-          const qty = Number(prod.cantidad || 0);
-          if (qty > 0 && prod.sku) {
-            const { data: cfsConf } = await supabase.from('cuartos_frios').select('id').order('id').limit(1);
-            if (cfsConf && cfsConf.length > 0) {
-              await supabase.rpc('update_stocks_atomic', {
-                p_changes: [{ cuarto_id: cfsConf[0].id, sku: prod.sku, delta: qty, tipo: 'Entrada', origen: `Producción ${prod.folio || id}`, usuario: uname() }],
-              });
-            }
-          }
-        }
-
-        // Tanda 11: registrar costo del empaque vía helper compartido (DRY).
-        // (producirYCongelar ya no lo usa: el costo va en registrar_produccion.)
-        if (prod) {
-          await a._registrarCostoProduccion({
-            produccionId: id,
-            folio: prod.folio,
-            sku: prod.sku,
-            cantidad: prod.cantidad,
-          });
-        }
-
-        log('Confirmar', 'Producción', `ID ${id}`);
-        notify('produccion', 'Producción confirmada', `Orden ${prod?.folio || id} confirmada`, '✅', prod?.folio || String(id));
-        rf();
-      },
-
       updateProduccion: async (id, fields) => {
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
@@ -1937,58 +1833,6 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── CUARTOS FRÍOS — STOCK (JSONB) ──
-      // Estos 3 helpers usan la RPC `update_stocks_atomic` (migración 047)
-      // para garantizar atomicidad: FOR UPDATE bloquea la fila del CF, y
-      // RAISE EXCEPTION aborta todo si el descuento dejaría stock negativo.
-      // El RPC también inserta inventario_mov en la misma transacción, por
-      // lo que ya no necesitamos rollback manual del stock JSONB.
-      meterACuartoFrio: async (cfId, sku, cantidad, opciones = {}) => {
-        // Producción puede meter (vía producirYCongelar). Admin también.
-        const guard = requireRol(['Admin', 'Producción']);
-        if (guard) { t()?.error(guard.error); return guard; }
-        try {
-          const qty = Number(cantidad);
-          if (!cfId) return { error: 'Cuarto frío requerido' };
-          if (!sku) return { error: 'SKU requerido' };
-          if (!Number.isFinite(qty) || qty <= 0) return { message: 'Cantidad inválida' };
-
-          // Guard explícito: si el cuarto no existe, mensaje claro antes de
-          // que la RPC haga UPDATE de 0 filas en silencio.
-          const { data: cuarto, error: cfErr } = await supabase
-            .from('cuartos_frios').select('id, nombre').eq('id', String(cfId)).maybeSingle();
-          if (cfErr) { t()?.error('Error al leer cuarto frío'); return { error: cfErr.message }; }
-          if (!cuarto) {
-            const msg = `Cuarto frío ${cfId} no existe`;
-            t()?.error(msg);
-            return { error: msg };
-          }
-
-          const change = {
-            cuarto_id: String(cfId),
-            sku: String(sku),
-            delta: qty,
-            tipo: opciones.tipo || 'Entrada',
-            origen: opciones.origen || `Entrada a ${cuarto.nombre || cfId}`,
-            usuario: opciones.usuario || uname() || 'Sistema',
-          };
-
-          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', { p_changes: [change] });
-          if (rpcErr) {
-            console.warn('[meterACuartoFrio] rpc update_stocks_atomic:', rpcErr.message);
-            t()?.error(rpcErr.message || 'Error al meter al cuarto frío');
-            return { error: rpcErr.message };
-          }
-
-          log('Entrada CF', 'Cuartos Fríos', `${qty}×${sku} → ${cfId}`);
-          rf();
-          return undefined;
-        } catch (e) {
-          console.error('[meterACuartoFrio] excepción:', e);
-          t()?.error('Error inesperado al meter al cuarto frío');
-          return { error: e?.message || 'Error inesperado' };
-        }
-      },
-
       sacarDeCuartoFrio: async (cfId, sku, cantidad, motivo, opciones = {}) => {
         // R2 fase 2A (084): salida manual vía salida_cuarto_manual. El servidor
         // valida cuarto, SKU, cantidad, stock y motivo (rechaza motivos de
@@ -2277,111 +2121,6 @@ export function useSupaStore(userId, userName, userRol) {
         log('Autorizar', 'Rutas', `${folio} — ${r.nombre} — Autorizado: ${cargaTxt}`);
         rf();
         return { id: newRuta?.id, folio };
-      },
-
-      confirmarCargaRuta: async (rutaId, cargaReal) => {
-        // cargaReal: { "HC-25K": 80, "HC-5K": 50, ... } — lo que el chofer realmente cargó
-        const inputErr = validateConfirmarCarga(rutaId, cargaReal);
-        if (inputErr) {
-          t()?.error('Datos de carga inválidos');
-          return new Error(inputErr.error);
-        }
-
-        // Obtener la ruta para validar
-        const { data: ruta, error: rutaErr } = await supabase
-          .from('rutas')
-          .select('id, folio, estatus, carga_autorizada, extra_autorizado, carga_confirmada_at')
-          .eq('id', rutaId)
-          .single();
-        if (rutaErr || !ruta) {
-          t()?.error('Ruta no encontrada');
-          return rutaErr || new Error('Ruta no encontrada');
-        }
-
-        if (ruta.carga_confirmada_at) {
-          t()?.error('Esta ruta ya tiene carga confirmada');
-          return new Error('Carga ya confirmada');
-        }
-
-        if (ruta.estatus === 'Cerrada' || ruta.estatus === 'Completada') {
-          t()?.error('No se puede cargar una ruta cerrada');
-          return new Error('Ruta cerrada');
-        }
-
-        // Validar que cargaReal no excede carga_autorizada + extra_autorizado
-        const exceso = excedeAutorizacion(cargaReal, ruta.carga_autorizada, ruta.extra_autorizado);
-        if (exceso) {
-          t()?.error(`No puedes cargar ${exceso.qty} de ${exceso.sku}. Máximo autorizado: ${exceso.max}`);
-          return new Error(`Excede autorización: ${exceso.sku}`);
-        }
-
-        // Obtener cuartos fríos para calcular distribución del descuento
-        const { data: cuartos, error: cfErr } = await supabase
-          .from('cuartos_frios').select('id, stock').order('id');
-        if (cfErr) {
-          t()?.error('Error al consultar cuartos fríos');
-          return cfErr;
-        }
-        if (!cuartos || cuartos.length === 0) {
-          t()?.error('No hay cuartos fríos configurados');
-          return new Error('Sin cuartos fríos');
-        }
-
-        // Calcular cambios distribuyendo el descuento entre cuartos fríos
-        const { changes, faltantes } = calcularChangesInventario(cargaReal, cuartos, {
-          folio: ruta.folio,
-          usuario: uname() || 'Chofer',
-        });
-        if (faltantes.length > 0) {
-          const f = faltantes[0];
-          const qtyNeeded = Number(cargaReal[f.sku]);
-          t()?.error(`Inventario insuficiente para cargar ${qtyNeeded} de ${f.sku}`);
-          return new Error(`Stock insuficiente: ${f.sku}`);
-        }
-
-        // Claim atómico ANTES de descontar inventario: solo un dispositivo
-        // pasa este UPDATE (carga_confirmada_at IS NULL). Cierra el TOCTOU
-        // del check anterior, que era reproducible con dos dispositivos
-        // del mismo chofer enviando confirmación al mismo tiempo.
-        const estatusOriginal = ruta.estatus;
-        const { data: claim, error: claimErr } = await supabase.from('rutas').update({
-          carga_real: cargaReal,
-          carga_confirmada_at: new Date().toISOString(),
-          carga_confirmada_por: uid(),
-          estatus: 'Cargada',
-        }).eq('id', rutaId).is('carga_confirmada_at', null).select('id');
-        if (claimErr) {
-          t()?.error('No se pudo confirmar la carga');
-          return claimErr;
-        }
-        if (!claim || claim.length === 0) {
-          t()?.error('Esta ruta ya fue confirmada por otro dispositivo');
-          return new Error('Carga ya confirmada (claim race)');
-        }
-
-        // Aplicar descuentos atómicamente. Si falla, revertir el claim
-        // para que la ruta vuelva a estar disponible para confirmar.
-        if (changes.length > 0) {
-          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
-            p_changes: changes,
-          });
-          if (rpcErr) {
-            await supabase.from('rutas').update({
-              carga_real: null,
-              carga_confirmada_at: null,
-              carga_confirmada_por: null,
-              estatus: estatusOriginal,
-            }).eq('id', rutaId);
-            t()?.error('Error al descontar inventario');
-            return rpcErr;
-          }
-        }
-
-        await checkStockBajo(Object.keys(cargaReal));
-        const cargaTxt = Object.entries(cargaReal).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '—';
-        await log('Confirmar carga', 'Rutas', `${ruta.folio} — ${cargaTxt}`);
-        rf();
-        return null;
       },
 
       solicitarFirmaCarga: async (rutaId, cargaReal) => {
@@ -4052,7 +3791,7 @@ export function useSupaStore(userId, userName, userRol) {
 
       // ── CERRAR RUTA COMPLETA (chofer) ──
       cerrarRutaCompleta: async (reporte) => {
-        const { rutaId, choferNombre, entregas, mermas: mermasArr, cobros, carga } = reporte;
+        const { rutaId, choferNombre, entregas, mermas: mermasArr, cobros } = reporte;
         const hoy = todayLocalISO();
         try {
           // P1 Fase A: toda la sección financiera (órdenes entregadas, ventas
@@ -4102,38 +3841,9 @@ export function useSupaStore(userId, userName, userRol) {
             await checkStockBajo(mermasArr.map(m => m.sku));
           }
 
-          // Fase 18: detectar si la ruta es legacy (creada antes del modelo "carga real").
-          // Las legacy descontaron inventario al autorizar, así que el cierre debe devolver
-          // sobrante al CF como antes. Las nuevas no descontaron al autorizar — descontaron
-          // al confirmar carga — así que NO se devuelve nada aquí (el sobrante físico se
-          // registra manualmente como entrada al CF cuando el chofer regresa al almacén).
-          let esLegacy = false;
-          if (rutaId) {
-            const { data: rutaInfo } = await supabase
-              .from('rutas').select('carga_confirmada_at').eq('id', rutaId).single();
-            esLegacy = !rutaInfo?.carga_confirmada_at;
-          }
-
-          if (esLegacy && carga && typeof carga === 'object') {
-            // ── COMPORTAMIENTO LEGACY (rutas viejas que descontaron al autorizar) ──
-            const devueltoPorSku = calcDevolucionLegacy(carga, entregas, mermasArr);
-            if (Object.keys(devueltoPorSku).length > 0) {
-              const { data: cfs, error: cfErr } = await supabase.from('cuartos_frios').select('id').limit(1);
-              if (cfErr) throw cfErr;
-              const cfId = cfs?.[0]?.id;
-              if (!cfId) throw new Error('No hay cuarto frío para devolver inventario');
-              const changes = Object.entries(devueltoPorSku).map(([sku, qty]) => ({
-                cuarto_id: cfId, sku, delta: qty,
-                tipo: 'Entrada', origen: `Devolución ruta ${choferNombre} (legacy)`,
-                usuario: choferNombre || uname(),
-              }));
-              const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', { p_changes: changes });
-              if (rpcErr) throw rpcErr;
-              const devTxt = Object.entries(devueltoPorSku).map(([sku, qty]) => `${qty}×${sku}`).join(', ');
-              await log('Devolución legacy', 'Rutas', `${choferNombre} devolvió: ${devTxt}`);
-            }
-          }
-
+          // 085: la rama legacy (rutas sin carga_confirmada_at → devolución del
+          // sobrante con update_stocks_atomic) se eliminó: no tenía objetivo en
+          // producción y habría sumado al cuarto un sobrante nunca descontado.
           if (rutaId) {
             const { error: rutaErr } = await supabase.from('rutas').update({
               estatus: 'Cerrada',
