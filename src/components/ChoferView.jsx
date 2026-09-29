@@ -8,6 +8,7 @@ import { compressImage } from '../utils/compressImage';
 import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
 import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
 import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas } from '../data/colaOfflineLogic';
+import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from '../data/stockContratosLogic';
 import { useColaOffline } from '../data/useColaOffline';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { useBodyScrollLock } from './ui/Modal';
@@ -30,6 +31,10 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [tiempoEsperaSegs, setTiempoEsperaSegs] = useState(0);
   const firmaCanvasRef = useRef(null);
   const firmaContextRef = useRef(null);
+  // R2 (084): operacion_id por intento lógico — mismo UUID mientras se
+  // reintenta la misma firma / la misma no-entrega; nuevo si cambian los datos.
+  const opFirmaRef = useRef(null);
+  const opNoEntregaRef = useRef(null);
   const [firmaDibujando, setFirmaDibujando] = useState(false);
   const [firmaTienePuntos, setFirmaTienePuntos] = useState(false);
   const [mapaVisible, setMapaVisible] = useState(false);
@@ -130,7 +135,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       return err || null;
     },
     [TIPOS_MUTACION.NO_ENTREGA]: async (p) => {
-      const r = await actions.marcarNoEntregada?.(p.ordenId, p.motivo, p.reagendar);
+      // El operacion_id viaja en el payload encolado: cada replay del mismo
+      // evento reutiliza el mismo UUID (084 lo hace idempotente).
+      const r = await actions.marcarNoEntregada?.(p.ordenId, p.motivo, p.reagendar, { operacionId: p.operacionId });
       return (r && r.error) ? r : null;
     },
     // Nota: TIPOS_MUTACION.MERMA no se encola desde ruta — la merma de
@@ -470,14 +477,18 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     setEnviandoFirma(true);
     try {
       if (esExcepcion) {
+        const op = resolverOperacion(opFirmaRef.current, claveCarga({ rutaId: miRutaActiva.id, excepcion: true, motivo: motivoExcepcion.trim() }));
+        opFirmaRef.current = op;
         const result = await actions.firmarCarga?.(miRutaActiva.id, null, {
           excepcion: true,
           motivoExcepcion: motivoExcepcion.trim(),
+          operacionId: op.id,
         });
         if (result && result.message) {
           showToast('Error: ' + result.message);
           return;
         }
+        opFirmaRef.current = null;
         showToast('Carga registrada (sin firma, con justificación)');
         setExcepcionModal(false);
         setMotivoExcepcion('');
@@ -485,11 +496,14 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       }
 
       const firmaBase64 = canvas.toDataURL('image/png');
-      const result = await actions.firmarCarga?.(miRutaActiva.id, firmaBase64);
+      const op = resolverOperacion(opFirmaRef.current, claveCarga({ rutaId: miRutaActiva.id, excepcion: false }));
+      opFirmaRef.current = op;
+      const result = await actions.firmarCarga?.(miRutaActiva.id, firmaBase64, { operacionId: op.id });
       if (result && result.message) {
         showToast('Error: ' + result.message);
         return;
       }
+      opFirmaRef.current = null;
       showToast('Firma registrada. Inventario descontado.');
       setFirmaModal(false);
       setFirmaTienePuntos(false);
@@ -641,20 +655,25 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           ordenId: noEntregaModal.id,
           motivo: motivoFinal,
           reagendar: noEntregaForm.reagendar,
+          operacionId: nuevoOperacionId(),
         });
         showToast('Sin señal — se marcará no entregada al reconectar');
         setNoEntregaModal(null);
         return;
       }
+      const op = resolverOperacion(opNoEntregaRef.current, claveNoEntrega({ ordenId: noEntregaModal.id, motivo: motivoFinal, reagendar: noEntregaForm.reagendar }));
+      opNoEntregaRef.current = op;
       const result = await actions.marcarNoEntregada?.(
         noEntregaModal.id,
         motivoFinal,
-        noEntregaForm.reagendar
+        noEntregaForm.reagendar,
+        { operacionId: op.id }
       );
       if (result && result.error) {
         showToast('Error: ' + result.error);
         return;
       }
+      opNoEntregaRef.current = null;
       showToast(noEntregaForm.reagendar
         ? 'Marcada como no entregada (reagendar)'
         : 'Marcada como no entregada');

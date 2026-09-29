@@ -40,6 +40,19 @@ const TIPOS_VALIDOS = new Set<string>(Object.values(TIPOS_MUTACION));
 
 export const MAX_INTENTOS = 5;
 
+/** UUID v4 para el operacion_id de un evento encolado (084). */
+export function uuidOperacion(): string {
+  const c = (globalThis as { crypto?: Crypto }).crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  const b = new Uint8Array(16);
+  if (c && typeof c.getRandomValues === 'function') c.getRandomValues(b);
+  else for (let i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  const h = Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+}
+
 export const claveColaRuta = (rutaId: string | number): string => `cola_offline_ruta_${rutaId}`;
 
 /**
@@ -57,13 +70,16 @@ export function encolar(
     throw new Error(`Tipo de mutación desconocido: ${tipo}`);
   }
   const base = Array.isArray(cola) ? cola : [];
+  // R2 (084): cada evento encolado lleva su operacion_id desde el momento de
+  // encolar; cada replay del mismo evento reutiliza el mismo UUID.
+  const conOperacion: MutacionPayload = payload.operacionId ? payload : { ...payload, operacionId: uuidOperacion() };
   const maxSeq = base.reduce((mx, m) => {
     const seq = Number(String(m?.id || '').split('-')[1]);
     return Number.isFinite(seq) ? Math.max(mx, seq) : mx;
   }, 0);
   return [
     ...base,
-    { id: `${ahora}-${maxSeq + 1}`, tipo, payload, creadaEn: ahora, intentos: 0 },
+    { id: `${ahora}-${maxSeq + 1}`, tipo, payload: conOperacion, creadaEn: ahora, intentos: 0 },
   ];
 }
 

@@ -24,7 +24,9 @@ describe('encolar', () => {
     expect(cola[0].tipo).toBe('entrega');
     expect(cola[0].intentos).toBe(0);
     expect(cola[0].creadaEn).toBe(T);
-    expect(cola[0].payload).toEqual({ ordenId: 7, metodoPago: 'Efectivo' });
+    // R2 (084): el payload conserva sus campos y gana un operacion_id estable
+    expect(cola[0].payload).toMatchObject({ ordenId: 7, metodoPago: 'Efectivo' });
+    expect(cola[0].payload.operacionId).toMatch(/^[0-9a-f-]{36}$/);
   });
 
   it('mantiene orden FIFO y genera ids únicos aunque sea el mismo ms', () => {

@@ -1,4 +1,3 @@
-/* global process */
 // r5EmailIdentity.test.js — R5 (083): el email no identifica ni vincula
 // perfiles. getAuthenticatedProfile resuelve SOLO por usuarios.auth_id; un
 // Auth user cuyo email coincide con un perfil sin vincular no obtiene perfil,

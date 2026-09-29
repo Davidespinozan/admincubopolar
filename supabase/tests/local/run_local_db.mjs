@@ -1068,6 +1068,106 @@ async function conc084() {
 }
 await conc084();
 
+async function fe084() {
+  console.log('── 084 FRONTEND ↔ DB (builders de stockContratosLogic, parámetros nombrados como PostgREST)');
+  const { pathToFileURL } = await import('node:url');
+  const L = await import(pathToFileURL(path.join(ROOT, 'src/data/stockContratosLogic.js')).href);
+  const CHA = '84f00000-0000-0000-0000-000000000001', CHB = '84f00000-0000-0000-0000-000000000002', PR = '84f00000-0000-0000-0000-000000000003', AD = '84f00000-0000-0000-0000-000000000004';
+  let okF = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okF = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const limpiar = `BEGIN;
+    DELETE FROM inventario_mov WHERE producto LIKE 'F84-%';
+    DELETE FROM stock_operaciones WHERE operacion_id::text LIKE '84f%' OR ruta_id IN (8480, 8481) OR orden_id = 8480;
+    DELETE FROM orden_lineas WHERE orden_id = 8480; DELETE FROM ordenes WHERE id = 8480;
+    DELETE FROM rutas WHERE id IN (8480, 8481); DELETE FROM clientes WHERE id = 8485;
+    DELETE FROM cuartos_frios WHERE id IN ('CF-F84A', 'CF-F84B'); DELETE FROM productos WHERE sku LIKE 'F84-%';
+    DELETE FROM usuarios WHERE id BETWEEN 8482 AND 8485; DELETE FROM auth.users WHERE id IN ('${CHA}', '${CHB}', '${PR}', '${AD}');
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN;
+    INSERT INTO auth.users (id, email) VALUES ('${CHA}', 'chofera84f@t'), ('${CHB}', 'choferb84f@t'), ('${PR}', 'prod84f@t'), ('${AD}', 'admin84f@t');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (8482, 'ChoferA F84', 'chofera84f@t', 'Chofer', 'Activo', '${CHA}'), (8483, 'ChoferB F84', 'choferb84f@t', 'Chofer', 'Activo', '${CHB}'), (8484, 'Prod F84', 'prod84f@t', 'Producción', 'Activo', '${PR}'), (8485, 'Admin F84', 'admin84f@t', 'Admin', 'Activo', '${AD}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('F84-A', 'Hielo F84', 'Producto Terminado', 30, 0);
+    INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-F84A', 'Cuarto F84A', '{"F84-A": 3}'::jsonb), ('CF-F84B', 'Cuarto F84B', '{"F84-A": 10}'::jsonb);
+    INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (8485, 'Cliente F84', 'XAXX010101000', 0);
+    INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, fecha, carga_autorizada, extra_autorizado, carga_real, carga_solicitada_at) VALUES
+      (8480, 'R-8480', 'Ruta F84 A', 8482, 'ChoferA F84', 'Pendiente firma', CURRENT_DATE, '{"F84-A": 5}', '{}', '{"F84-A": 5}', now()),
+      (8481, 'R-8481', 'Ruta F84 B', 8483, 'ChoferB F84', 'Pendiente firma', CURRENT_DATE, '{"F84-A": 20}', '{}', '{"F84-A": 20}', now());
+    INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, ruta_id) VALUES
+      (8480, 'OV-8480', 8485, 'Cliente F84', '2×F84-A', 60, 'Asignada', 'Efectivo', 'Contado', 8485, 8480);
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) VALUES (8480, 'F84-A', 2, 30, 60);
+    COMMIT;`);
+  const como = async (sub, fn) => {
+    await c.query('BEGIN'); await c.query('SET LOCAL ROLE authenticated');
+    await c.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+    try { const r = await fn(); await c.query('COMMIT'); return { ok: true, data: r }; }
+    catch (e) { await c.query('ROLLBACK'); return { ok: false, msg: e.message, code: e.code }; }
+  };
+  const rpc = async (name, args) => {
+    const keys = Object.keys(args);
+    const sql = `SELECT ${name}(${keys.map((k, i) => `${k} => $${i + 1}`).join(', ')}) AS r`;
+    return (await c.query(sql, keys.map(k => args[k]))).rows[0].r;
+  };
+  const cf = async (id) => n(`SELECT COALESCE((stock->>'F84-A')::int, 0) FROM cuartos_frios WHERE id = $1`, [id]);
+
+  // Carga: mismo intento lógico → mismo UUID (resolverOperacion), replay en el reintento
+  const c1 = L.resolverOperacion(null, L.claveCarga({ rutaId: 8480, excepcion: false }));
+  const c1b = L.resolverOperacion(c1, L.claveCarga({ rutaId: 8480, excepcion: false }));
+  ok(c1.id === c1b.id, '084-F1 mismo intento de firma → mismo operacion_id');
+  const args1 = L.buildConfirmarCargaArgs({ operacionId: c1.id, rutaId: 8480, firma: 'data:image/png;base64,QQ==' }).args;
+  ok(args1 && Object.keys(args1).join() === 'p_operacion_id,p_ruta_id,p_firma,p_excepcion,p_motivo', '084-F2 confirmar_carga_ruta: nombres de parámetros exactos');
+  let r = await como(CHB, () => rpc('confirmar_carga_ruta', args1));
+  ok(!r.ok && r.code === '42501', '084-F3 chofer ajeno: denegado');
+  r = await como(CHA, () => rpc('confirmar_carga_ruta', args1));
+  ok(r.ok && r.data.replay === false && r.data.actor === 'ChoferA F84', '084-F4 chofer dueño: carga confirmada (firmante = actor)');
+  const rr = await como(CHA, () => rpc('confirmar_carga_ruta', args1));
+  ok(rr.ok && rr.data.replay === true && await cf('CF-F84A') === 0 && await cf('CF-F84B') === 8, '084-F5 reintento con el mismo UUID = replay; FIFO 3 de A + 2 de B, una sola vez');
+  const msg = L.mensajeErrorStock({ message: 'Inventario insuficiente para cargar 20 de F84-A (faltan 12)' });
+  ok(/Inventario insuficiente/.test(msg), '084-F6 mensaje de stock insuficiente traducido');
+  const c2 = L.resolverOperacion(null, L.claveCarga({ rutaId: 8481, excepcion: true, motivo: 'Sin celular' }));
+  const args2 = L.buildConfirmarCargaArgs({ operacionId: c2.id, rutaId: 8481, excepcion: true, motivo: 'Sin celular' }).args;
+  r = await como(PR, () => rpc('confirmar_carga_ruta', args2));
+  ok(!r.ok && /Inventario insuficiente/.test(r.msg || ''), '084-F7 Producción firma ruta B: 20 con 8 disponibles → rechazo total');
+  await c.query(`UPDATE rutas SET carga_real = '{"F84-A": 4}', carga_autorizada = '{"F84-A": 4}' WHERE id = 8481`);
+  r = await como(PR, () => rpc('confirmar_carga_ruta', args2));
+  ok(r.ok && r.data.excepcion === true && r.data.actor === 'Prod F84' && await cf('CF-F84B') === 4, '084-F8 Producción firma (excepción) en su propia sesión: D4 funcional');
+  ok(await n(`SELECT count(*) FROM rutas WHERE id = 8481 AND estatus = 'Cargada' AND carga_confirmada_por::text = '8484'`) === 1, '084-F9 firmante registrado = Producción');
+
+  // No-entrega con operacion_id encolado (misma id en cada replay)
+  const nArgs = L.buildNoEntregaArgs({ operacionId: '84f10000-0000-0000-0000-000000000001', ordenId: 8480, motivo: 'Local cerrado', reagendar: true }).args;
+  ok(Object.keys(nArgs).join() === 'p_operacion_id,p_orden_id,p_motivo,p_reagendar', '084-F10 registrar_no_entrega: nombres de parámetros exactos');
+  r = await como(CHB, () => rpc('registrar_no_entrega', nArgs));
+  ok(!r.ok && r.code === '42501', '084-F11 chofer ajeno: no-entrega denegada');
+  const primero = (await c.query(`SELECT id FROM cuartos_frios ORDER BY id LIMIT 1`)).rows[0].id;
+  const p0 = await cf(primero);
+  r = await como(CHA, () => rpc('registrar_no_entrega', nArgs));
+  const r2 = await como(CHA, () => rpc('registrar_no_entrega', nArgs));
+  ok(r.ok && r.data.replay === false && r2.ok && r2.data.replay === true && await cf(primero) === p0 + 2, `084-F12 replay de cola offline: una sola devolución (+2 en el primer cuarto ${primero})`);
+  const r3 = await como(CHA, () => rpc('registrar_no_entrega', L.buildNoEntregaArgs({ operacionId: '84f10000-0000-0000-0000-000000000002', ordenId: 8480, motivo: 'Local cerrado', reagendar: true }).args));
+  ok(!r3.ok && /ya está No entregada/.test(r3.msg || ''), '084-F13 otro UUID sobre la misma orden: rechazado');
+
+  // Salida manual y traspaso (Producción y Admin)
+  const sArgs = L.buildSalidaManualArgs({ operacionId: '84f20000-0000-0000-0000-000000000001', cuartoId: 'CF-F84B', sku: 'F84-A', cantidad: 1, motivo: 'Venta directa' }).args;
+  ok(L.buildSalidaManualArgs({ operacionId: 'x', cuartoId: 'CF-F84B', sku: 'F84-A', cantidad: 1, motivo: 'Carga a ruta' }).error !== undefined, '084-F14 builder rechaza motivo de ruta (mismo criterio que el servidor)');
+  r = await como(PR, () => rpc('salida_cuarto_manual', { ...sArgs, p_motivo: 'Carga a ruta' }));
+  ok(!r.ok && /firmar la carga/.test(r.msg || ''), '084-F15 servidor rechaza motivo de ruta aunque el cliente lo mande');
+  r = await como(PR, () => rpc('salida_cuarto_manual', sArgs));
+  const rs = await como(PR, () => rpc('salida_cuarto_manual', sArgs));
+  ok(r.ok && rs.ok && rs.data.replay === true && await cf('CF-F84B') === 3, '084-F16 salida manual Producción + reintento = 1 salida (4 → 3)');
+  const tArgs = L.buildTraspasoArgs({ operacionId: '84f30000-0000-0000-0000-000000000001', origen: 'CF-F84B', destino: 'CF-F84A', sku: 'F84-A', cantidad: 2 }).args;
+  const a0 = await cf('CF-F84A'), b0 = await cf('CF-F84B');
+  r = await como(AD, () => rpc('traspaso_cuartos', tArgs));
+  const rt = await como(AD, () => rpc('traspaso_cuartos', tArgs));
+  ok(r.ok && rt.ok && rt.data.replay === true && await cf('CF-F84B') === b0 - 2 && await cf('CF-F84A') === a0 + 2, '084-F17 traspaso Admin + reintento = 1 traspaso');
+  ok(await n(`SELECT count(*) FROM inventario_mov WHERE operacion_id = '84f30000-0000-0000-0000-000000000001'`) === 2, '084-F18 traspaso: 2 kardex bajo una operación');
+  ok(await n(`SELECT count(*) FROM inventario_mov WHERE producto = 'F84-A' AND operacion_id IS NULL`) === 0, '084-F19 ningún kardex nuevo sin operación');
+  await c.query(limpiar);
+  if (!okF) { console.log('RESULTADO: FALLÓ (084 frontend↔DB)'); process.exit(1); }
+  console.log('  084 frontend↔DB: PASS');
+}
+await fe084();
+
 for (const t of ['clientes', 'ordenes', 'leads', 'invoice_attempts', 'chofer_ubicaciones', 'movimientos_contables', 'auditoria', 'productos', 'rutas', 'pagos', 'inventario_mov']) {
   await c.query(`SELECT setval('${t}_id_seq', GREATEST((SELECT COALESCE(max(id), 0) FROM ${t}), (SELECT last_value FROM ${t}_id_seq)))`);
 }

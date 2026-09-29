@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolverOperacion, claveProduccion, claveTransformacion } from '../data/produccionAtomicaLogic';
+import { claveSalida, claveTraspaso, MOTIVOS_SALIDA_MANUAL } from '../data/stockContratosLogic';
 import { mermasActivas } from '../data/mermasLogic';
 import { supabase } from '../lib/supabase';
 import { s, n, fmtDate, fmtPct, todayLocalISO } from '../utils/safe';
@@ -28,7 +29,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const [guardandoProd, setGuardandoProd] = useState(false);
   const [tForm, setTForm] = useState({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
   const [haciendoTraspaso, setHaciendoTraspaso] = useState(false);
-  const [sacarForm, setSacarForm] = useState({ sku: "", cantidad: "", motivo: "Carga a ruta" });
+  const [sacarForm, setSacarForm] = useState({ sku: "", cantidad: "", motivo: "" }); // R2 (084): sin motivo por defecto; la carga de ruta ya no es una salida manual
   const [haciendoSalida, setHaciendoSalida] = useState(false);
 
   // Simulated pending cargas from chofers (vacío — no usar mock data con SKUs hardcodeados)
@@ -45,6 +46,8 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   // UUID) + guard síncrono contra submits paralelos antes del re-render.
   const opProdRef = useRef(null);
   const opTransRef = useRef(null);
+  const opSalidaRef = useRef(null);   // R2 (084)
+  const opTraspasoRef = useRef(null); // R2 (084)
   const enVueloProd = useRef(false);
   const enVueloTrans = useRef(false);
 
@@ -477,7 +480,14 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     const destinoN = cuartos.find(cf => s(cf.id) === tForm.destino)?.nombre || tForm.destino;
     setHaciendoTraspaso(true);
     try {
-      if (actions.traspasoEntreUbicaciones) await actions.traspasoEntreUbicaciones(tForm);
+      const op = resolverOperacion(opTraspasoRef.current, claveTraspaso(tForm));
+      opTraspasoRef.current = op;
+      const r = actions.traspasoEntreUbicaciones ? await actions.traspasoEntreUbicaciones({ ...tForm, operacionId: op.id }) : null;
+      if (r && (r.error || r.message)) {
+        showToast('Error: ' + (r.error || r.message));
+        return;
+      }
+      opTraspasoRef.current = null;
       showToast(tForm.cantidad + " " + tForm.sku + ": " + origenN + " → " + destinoN);
       setTraspasoModal(false);
       setTForm({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
@@ -492,14 +502,22 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const hacerSalida = async () => {
     if (haciendoSalida) return;
     if (!sacarForm.cantidad || n(sacarForm.cantidad) <= 0 || !sacarModal) return;
+    if (!s(sacarForm.motivo)) { showToast('Selecciona el motivo'); return; }
     setHaciendoSalida(true);
     try {
-      if (actions.sacarDeCuartoFrio) {
-        await actions.sacarDeCuartoFrio(sacarModal.cfId, sacarForm.sku, sacarForm.cantidad, sacarForm.motivo);
+      const op = resolverOperacion(opSalidaRef.current, claveSalida({ cuartoId: sacarModal.cfId, sku: sacarForm.sku, cantidad: sacarForm.cantidad, motivo: sacarForm.motivo }));
+      opSalidaRef.current = op;
+      const r = actions.sacarDeCuartoFrio
+        ? await actions.sacarDeCuartoFrio(sacarModal.cfId, sacarForm.sku, sacarForm.cantidad, sacarForm.motivo, { operacionId: op.id })
+        : null;
+      if (r && (r.error || r.message)) {
+        showToast('Error: ' + (r.error || r.message));
+        return;
       }
+      opSalidaRef.current = null;
       showToast("Salida: " + sacarForm.cantidad + " " + sacarForm.sku + " de " + sacarModal.cfNombre);
       setSacarModal(null);
-      setSacarForm({ sku: "", cantidad: "", motivo: "Carga a ruta" });
+      setSacarForm({ sku: "", cantidad: "", motivo: "" });
     } catch (e) {
       console.error('Error en salida:', e);
       showToast('Error al sacar del congelador. Verifica tu conexión.');
@@ -742,7 +760,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   <div className="px-4 pb-3"><div className="bg-slate-50 rounded-lg p-3 text-center"><p className="text-sm text-slate-400">Vacío</p></div></div>
                 )}
                 <div className="border-t border-slate-100">
-                  <button onClick={() => { setSacarModal({ cfId: s(cf.id), cfNombre: s(cf.nombre) }); setSacarForm({ sku: "", cantidad: "", motivo: "Carga a ruta" }); }}
+                  <button onClick={() => { setSacarModal({ cfId: s(cf.id), cfNombre: s(cf.nombre) }); setSacarForm({ sku: "", cantidad: "", motivo: "" }); }}
                     className="w-full py-3 text-xs font-bold text-amber-600 active:bg-amber-50">
                     − Sacar hielo (carga a ruta / otro)
                   </button>
@@ -1030,7 +1048,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Motivo</label>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {["Carga a ruta", "Venta directa", "Merma", "Otro"].map(m => (
+                  {MOTIVOS_SALIDA_MANUAL.map(m => (
                     <button key={m} onClick={() => setSacarForm(f => ({ ...f, motivo: m }))}
                       className={`py-2 rounded-xl text-xs font-semibold border-2 ${sacarForm.motivo === m ? "border-amber-500 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-500"}`}>
                       {m}
@@ -1039,7 +1057,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 </div>
               </div>
             </div>
-            <button onClick={hacerSalida} disabled={haciendoSalida || !sacarForm.cantidad || n(sacarForm.cantidad) <= 0}
+            <button onClick={hacerSalida} disabled={haciendoSalida || !sacarForm.cantidad || n(sacarForm.cantidad) <= 0 || !s(sacarForm.motivo)}
               className="w-full py-3.5 bg-amber-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40 disabled:cursor-not-allowed">
               {haciendoSalida ? 'Sacando…' : 'Sacar del congelador'}
             </button>

@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { s, n } from '../utils/safe';
+import { resolverOperacion, claveCarga } from '../data/stockContratosLogic';
 import { useToast } from './views/viewsCommon';
 import { useBodyScrollLock } from './ui/Modal';
 
@@ -20,6 +21,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
 
   const canvasRef = useRef(null);
   const ctxRef = useRef(null);
+  const opFirmaRef = useRef(null); // R2 (084): mismo operacion_id por ruta mientras se reintenta
   const dropdownRef = useRef(null);
   const triggerRef = useRef(null);
 
@@ -162,11 +164,16 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
     setFirmando(true);
     try {
       const firmaBase64 = canvas.toDataURL('image/png');
-      const result = await actions.firmarCarga?.(rutaSeleccionada.id, firmaBase64);
+      // Producción/Admin firma con SU sesión: el contrato registra al actor
+      // autenticado como firmante (084); no se envía identidad del chofer.
+      const op = resolverOperacion(opFirmaRef.current, claveCarga({ rutaId: rutaSeleccionada.id, excepcion: false }));
+      opFirmaRef.current = op;
+      const result = await actions.firmarCarga?.(rutaSeleccionada.id, firmaBase64, { operacionId: op.id });
       if (result && result.message) {
         toast?.error('Error: ' + result.message);
         return;
       }
+      opFirmaRef.current = null;
       setRutaSeleccionada(null);
       setFirmaTienePuntos(false);
     } catch (e) {

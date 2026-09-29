@@ -3,17 +3,17 @@ import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
-import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, validateMarcarNoEntregada, buildNoEntregaPayload, calcReversoChangesNoEntrega, isFacturable, validateCancelacionCFDI } from './ordenLogic';
+import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
 import { buildRegistrarMermaArgs, buildMermasRutaPayload, mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion, calcCostoProduccion, buildConceptoProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
+import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
 import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion } from './devolucionesLogic';
 import { calcularEsperadoPorRuta, validateCierre, buildCierrePayload, buildPagosSnapshot, fechaCierreDesdeRuta } from './cierreCajaLogic';
 import {
   validateConfirmarCarga,
   validateFirmarCarga,
-  puedeFirmarRuta,
   excedeAutorizacion,
   calcularChangesInventario,
   calcDevolucionLegacy,
@@ -1380,94 +1380,38 @@ export function useSupaStore(userId, userName, userRol) {
       // aceptable: nadie consulta cuarto durante ruta activa.
       // Trazabilidad de qué regresa físicamente:
       //   SELECT * FROM ordenes WHERE estatus='No entregada' AND ruta_id=X.
-      marcarNoEntregada: async (ordenId, motivo, reagendar = false) => {
+      marcarNoEntregada: async (ordenId, motivo, reagendar = false, opciones = {}) => {
+        // R2 fase 2A (084): registrar_no_entrega hace en UNA transacción la
+        // devolución de las líneas de la orden al cuarto (cantidades y destino
+        // los deriva el servidor), el kardex estructurado y la transición a
+        // 'No entregada'. Idempotente por operacion_id (la cola offline lo
+        // conserva entre reintentos). Sin RPC genérico ni reverso en el cliente.
+        // opciones: { operacionId }
         try {
-          if (!ordenId) return { error: 'Orden requerida' };
+          const built = buildNoEntregaArgs({
+            operacionId: opciones.operacionId || nuevoOperacionId(),
+            ordenId,
+            motivo,
+            reagendar: reagendar === true,
+          });
+          if (built.error) { t()?.error(built.error); return { error: built.error }; }
 
-          // 1. Leer orden + líneas
-          const { data: orden, error: errOrd } = await supabase
-            .from('ordenes')
-            .select('id, folio, estatus, ruta_id')
-            .eq('id', ordenId)
-            .single();
-          if (errOrd || !orden) {
-            return { error: errOrd?.message || 'Orden no encontrada' };
+          const { data, error } = await supabase.rpc('registrar_no_entrega', built.args);
+          if (error) {
+            const msg = mensajeErrorStock(error);
+            console.warn('[marcarNoEntregada] rpc registrar_no_entrega:', error.message);
+            t()?.error(msg);
+            return { error: msg };
           }
-
-          // 2. Validación pura (FSM + motivo)
-          const validErr = validateMarcarNoEntregada(orden, motivo);
-          if (validErr) {
-            t()?.error(validErr.error);
-            return validErr;
+          const res = interpretarResultadoStock(data);
+          if (!res.replay) {
+            const cantTxt = (res.devuelto || []).length > 0
+              ? res.devuelto.map(d => `${d.cantidad}×${d.sku}`).join(', ')
+              : 'sin líneas';
+            await log('No entregada', 'Órdenes',
+              `${res.folio || `ID ${ordenId}`} — ${s(motivo)}${reagendar ? ' (reagendar)' : ''} — devuelto: ${cantTxt}`
+            );
           }
-
-          const folio = s(orden.folio) || `ID ${ordenId}`;
-
-          // 3. Leer líneas para devolver stock
-          const { data: lineas, error: errLin } = await supabase
-            .from('orden_lineas')
-            .select('sku, cantidad')
-            .eq('orden_id', ordenId);
-          if (errLin) {
-            console.warn('[marcarNoEntregada] select orden_lineas:', errLin.message);
-            t()?.error('No se pudieron leer las líneas de la orden');
-            return { error: errLin.message };
-          }
-
-          // 4. Calcular reverso (devolución al primer cuarto activo)
-          const { data: cuartos, error: errCfs } = await supabase
-            .from('cuartos_frios')
-            .select('id, nombre, stock')
-            .order('id');
-          if (errCfs) {
-            t()?.error('No se pudieron leer cuartos fríos');
-            return { error: errCfs.message };
-          }
-          const { changes } = calcReversoChangesNoEntrega(
-            lineas || [],
-            cuartos || [],
-            uname() || 'Chofer',
-            folio
-          );
-
-          // 5. Aplicar reverso (entrada al cuarto). Si no hay líneas o el
-          // total es 0, simplemente saltamos sin RPC.
-          if (changes.length > 0) {
-            const { error: errRpc } = await supabase.rpc('update_stocks_atomic', {
-              p_changes: changes,
-            });
-            if (errRpc) {
-              console.warn('[marcarNoEntregada] rpc update_stocks_atomic:', errRpc.message);
-              t()?.error('No se pudo devolver el stock — orden NO marcada');
-              return { error: 'No se pudo devolver el stock — orden NO marcada. ' + (errRpc.message || '') };
-            }
-          }
-
-          // 6. UPDATE orden (estatus + tracking)
-          const payload = buildNoEntregaPayload(motivo, reagendar);
-          const { error: errUpd } = await supabase
-            .from('ordenes')
-            .update(payload)
-            .eq('id', ordenId);
-          if (errUpd) {
-            // Best-effort revert del stock para no dejar discrepancia
-            if (changes.length > 0) {
-              const reverse = changes.map(c => ({ ...c, delta: -c.delta, tipo: 'Rollback no entregada', origen: `Rollback ${folio}` }));
-              await supabase.rpc('update_stocks_atomic', { p_changes: reverse });
-            }
-            console.warn('[marcarNoEntregada] update orden:', errUpd.message);
-            t()?.error('No se pudo marcar como No entregada — stock revertido');
-            return { error: errUpd.message };
-          }
-
-          // 7. Audit
-          const cantTxt = changes.length > 0
-            ? changes.map(c => `${c.delta}×${c.sku}`).join(', ')
-            : 'sin líneas';
-          await log('No entregada', 'Órdenes',
-            `${folio} — ${s(motivo)}${reagendar ? ' (reagendar)' : ''} — devuelto: ${cantTxt}`
-          );
-
           rf();
           return undefined;
         } catch (e) {
@@ -1476,9 +1420,6 @@ export function useSupaStore(userId, userName, userRol) {
           return { error: e?.message || 'Error inesperado' };
         }
       },
-
-      // Edita orden en estatus 'Creada': UPDATE campos top-level + reemplazo
-      // de líneas (DELETE + INSERT). Recalcula total desde las líneas nuevas.
       updateOrden: async (ordenId, payload = {}) => {
         const guard = requireRol(['Admin', 'Ventas']);
         if (guard) { t()?.error(guard.error); return guard; }
@@ -2049,34 +1990,31 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       sacarDeCuartoFrio: async (cfId, sku, cantidad, motivo, opciones = {}) => {
-        // Standalone (Producción) saca del CF; Admin desde Inventario también.
+        // R2 fase 2A (084): salida manual vía salida_cuarto_manual. El servidor
+        // valida cuarto, SKU, cantidad, stock y motivo (rechaza motivos de
+        // carga a ruta: eso lo firma confirmar_carga_ruta). Sin RPC genérico.
+        // opciones: { operacionId }
         const guard = requireRol(['Admin', 'Producción']);
         if (guard) { t()?.error(guard.error); return guard; }
         try {
-          const qty = Number(cantidad);
-          if (!cfId) return { error: 'Cuarto frío requerido' };
-          if (!sku) return { error: 'SKU requerido' };
-          if (!Number.isFinite(qty) || qty <= 0) return { message: 'Cantidad inválida' };
+          const built = buildSalidaManualArgs({
+            operacionId: opciones.operacionId || nuevoOperacionId(),
+            cuartoId: cfId,
+            sku,
+            cantidad,
+            motivo,
+          });
+          if (built.error) { t()?.error(built.error); return { error: built.error, message: built.error }; }
 
-          // RAISE EXCEPTION del RPC ya cubre stock insuficiente (migración 047).
-
-          const change = {
-            cuarto_id: String(cfId),
-            sku: String(sku),
-            delta: -qty,
-            tipo: opciones.tipo || 'Salida',
-            origen: motivo || opciones.origen || String(cfId),
-            usuario: opciones.usuario || uname() || 'Sistema',
-          };
-
-          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', { p_changes: [change] });
-          if (rpcErr) {
-            console.warn('[sacarDeCuartoFrio] rpc update_stocks_atomic:', rpcErr.message);
-            t()?.error(rpcErr.message || 'Error al sacar del cuarto frío');
-            return { error: rpcErr.message, message: rpcErr.message };
+          const { data, error } = await supabase.rpc('salida_cuarto_manual', built.args);
+          if (error) {
+            const msg = mensajeErrorStock(error);
+            console.warn('[sacarDeCuartoFrio] rpc salida_cuarto_manual:', error.message);
+            t()?.error(msg);
+            return { error: msg, message: msg };
           }
-
-          log('Salida CF', 'Cuartos Fríos', `${qty}×${sku} de ${cfId} — ${motivo || 'Sin motivo'}`);
+          const res = interpretarResultadoStock(data);
+          if (!res.replay) log('Salida CF', 'Cuartos Fríos', `${built.args.p_cantidad}×${built.args.p_sku} de ${built.args.p_cuarto_id} — ${built.args.p_motivo}`);
           rf();
           return undefined;
         } catch (e) {
@@ -2086,57 +2024,31 @@ export function useSupaStore(userId, userName, userRol) {
         }
       },
 
-      traspasoEntreUbicaciones: async ({ origen, destino, sku, cantidad }, opciones = {}) => {
-        // Standalone (Producción) y Admin pueden mover entre cuartos.
+      traspasoEntreUbicaciones: async ({ origen, destino, sku, cantidad, operacionId } = {}, opciones = {}) => {
+        // R2 fase 2A (084): traspaso_cuartos mueve origen − / destino + con dos
+        // filas de kardex bajo UNA operación, en una transacción del servidor.
+        // El cliente ya no muta cuartos por separado ni usa el RPC genérico.
         const guard = requireRol(['Admin', 'Producción']);
         if (guard) { t()?.error(guard.error); return guard; }
         try {
-          const qty = Number(cantidad);
-          if (!Number.isFinite(qty) || qty <= 0) return { message: 'Cantidad inválida' };
-          if (!origen || !destino) return { message: 'Origen y destino requeridos' };
-          if (String(origen) === String(destino)) return { message: 'Origen y destino deben ser diferentes' };
-          if (!sku) return { message: 'SKU requerido' };
+          const built = buildTraspasoArgs({
+            operacionId: operacionId || opciones.operacionId || nuevoOperacionId(),
+            origen,
+            destino,
+            sku,
+            cantidad,
+          });
+          if (built.error) { t()?.error(built.error); return { error: built.error, message: built.error }; }
 
-          // Validar existencia de ambos cuartos antes del RPC para mensajes claros.
-          const { data: cuartos, error: cfErr } = await supabase
-            .from('cuartos_frios').select('id, nombre').in('id', [String(origen), String(destino)]);
-          if (cfErr) { t()?.error('Error al leer cuartos fríos'); return { error: cfErr.message }; }
-          const cuartoOrigen = (cuartos || []).find(c => String(c.id) === String(origen));
-          const cuartoDestino = (cuartos || []).find(c => String(c.id) === String(destino));
-          if (!cuartoOrigen) { const msg = `Cuarto origen ${origen} no existe`; t()?.error(msg); return { error: msg }; }
-          if (!cuartoDestino) { const msg = `Cuarto destino ${destino} no existe`; t()?.error(msg); return { error: msg }; }
-
-          // Salida y entrada en el mismo array → atomicidad por la transacción
-          // del plpgsql del RPC. Si la salida hace RAISE (stock insuficiente),
-          // ninguna fila de inventario_mov se inserta y stock no se modifica.
-          const usuario = opciones.usuario || uname() || 'Sistema';
-          const changes = [
-            {
-              cuarto_id: String(origen),
-              sku: String(sku),
-              delta: -qty,
-              tipo: 'Traspaso salida',
-              origen: `${origen} → ${destino}`,
-              usuario,
-            },
-            {
-              cuarto_id: String(destino),
-              sku: String(sku),
-              delta: qty,
-              tipo: 'Traspaso entrada',
-              origen: `${origen} → ${destino}`,
-              usuario,
-            },
-          ];
-
-          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', { p_changes: changes });
-          if (rpcErr) {
-            console.warn('[traspasoEntreUbicaciones] rpc update_stocks_atomic:', rpcErr.message);
-            t()?.error(rpcErr.message || 'Error en traspaso');
-            return { error: rpcErr.message };
+          const { data, error } = await supabase.rpc('traspaso_cuartos', built.args);
+          if (error) {
+            const msg = mensajeErrorStock(error);
+            console.warn('[traspasoEntreUbicaciones] rpc traspaso_cuartos:', error.message);
+            t()?.error(msg);
+            return { error: msg, message: msg };
           }
-
-          log('Traspaso', 'Cuartos Fríos', `${qty}×${sku} de ${origen} → ${destino}`);
+          const res = interpretarResultadoStock(data);
+          if (!res.replay) log('Traspaso', 'Cuartos Fríos', `${built.args.p_cantidad}×${built.args.p_sku} de ${built.args.p_origen} → ${built.args.p_destino}`);
           rf();
           return undefined;
         } catch (e) {
@@ -2520,117 +2432,46 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       firmarCarga: async (rutaId, firmaBase64, opciones = {}) => {
-        // Producción/Admin firma la carga. Esto sí descuenta inventario.
-        // opciones: { excepcion: bool, motivoExcepcion: string }
+        // R2 fase 2A (084): un solo contrato del servidor hace TODO — valida
+        // ruta/estado/autorización, asigna cuartos (FIFO por id), descuenta,
+        // escribe kardex estructurado, firma y pasa a Cargada en UNA
+        // transacción. El firmante es el actor autenticado (Chofer dueño en su
+        // celular, o Producción/Admin en su propio dispositivo). Sin cálculo de
+        // cuartos en el cliente, sin UPDATE directo de rutas, sin RPC genérico
+        // y sin compensación: un error significa que no se aplicó nada.
+        // opciones: { excepcion, motivoExcepcion, operacionId }
         const inputErr = validateFirmarCarga(rutaId, firmaBase64, opciones);
         if (inputErr) {
-          // Mensajes específicos al usuario según qué falló
           if (inputErr.error === 'Sin ruta') t()?.error('Ruta inválida');
           else if (inputErr.error === 'Sin firma') t()?.error('Firma requerida');
           else if (inputErr.error === 'Sin justificación') t()?.error('Justificación requerida para carga sin firma');
           return new Error(inputErr.error);
         }
-
-        const { data: ruta, error: rutaErr } = await supabase
-          .from('rutas')
-          .select('id, folio, estatus, carga_real, carga_confirmada_at')
-          .eq('id', rutaId)
-          .single();
-        if (rutaErr || !ruta) {
-          t()?.error('Ruta no encontrada');
-          return rutaErr || new Error('No encontrada');
-        }
-
-        const checkRuta = puedeFirmarRuta(ruta);
-        if (!checkRuta.ok) {
-          if (checkRuta.razon === 'Ya confirmada') t()?.error('Carga ya confirmada anteriormente');
-          else if (checkRuta.razon === 'Sin carga') t()?.error('No hay carga real registrada');
-          return new Error(checkRuta.razon);
-        }
-        const cargaReal = checkRuta.cargaReal;
-
-        // Descontar inventario de cuartos fríos
-        const { data: cuartos, error: cfErr } = await supabase
-          .from('cuartos_frios').select('id, stock').order('id');
-        if (cfErr) {
-          t()?.error('Error al consultar cuartos fríos');
-          return cfErr;
-        }
-        if (!cuartos || cuartos.length === 0) {
-          t()?.error('No hay cuartos fríos');
-          return new Error('Sin cuartos fríos');
-        }
-
-        const { changes, faltantes } = calcularChangesInventario(cargaReal, cuartos, {
-          folio: ruta.folio,
-          usuario: uname() || 'Sistema',
-          origenSuffix: opciones.excepcion ? ' (sin firma)' : '',
+        const built = buildConfirmarCargaArgs({
+          operacionId: opciones.operacionId || nuevoOperacionId(),
+          rutaId,
+          firma: firmaBase64,
+          excepcion: opciones.excepcion === true,
+          motivo: opciones.motivoExcepcion,
         });
-        if (faltantes.length > 0) {
-          const f = faltantes[0];
-          t()?.error(`Inventario insuficiente: ${f.sku}`);
-          return new Error(`Stock insuficiente: ${f.sku}`);
-        }
+        if (built.error) { t()?.error(built.error); return new Error(built.error); }
 
-        // Claim atómico de la firma ANTES de descontar inventario:
-        // solo un firmante (Producción/Admin) pasa el UPDATE con
-        // carga_confirmada_at IS NULL. Cierra el TOCTOU del check
-        // puedeFirmarRuta arriba.
-        const estatusOriginal = ruta.estatus;
-        const updateData = {
-          carga_confirmada_at: new Date().toISOString(),
-          carga_confirmada_por: uid(),
-          estatus: 'Cargada',
-        };
-        if (opciones.excepcion) {
-          updateData.firma_excepcion = true;
-          updateData.firma_excepcion_motivo = s(opciones.motivoExcepcion).trim();
-          updateData.firma_carga = null;
-        } else {
-          updateData.firma_carga = firmaBase64;
-          updateData.firma_excepcion = false;
+        const { data, error } = await supabase.rpc('confirmar_carga_ruta', built.args);
+        if (error) {
+          const msg = mensajeErrorStock(error);
+          t()?.error(msg);
+          return { error: msg, message: msg, code: error.code };
         }
-
-        const { data: claim, error: claimErr } = await supabase
-          .from('rutas')
-          .update(updateData)
-          .eq('id', rutaId)
-          .is('carga_confirmada_at', null)
-          .select('id');
-        if (claimErr) {
-          t()?.error('No se pudo registrar firma');
-          return claimErr;
+        const res = interpretarResultadoStock(data);
+        const cargaSkus = Object.keys(res.carga || {});
+        if (cargaSkus.length > 0) await checkStockBajo(cargaSkus);
+        if (!res.replay) {
+          const tipo = res.excepcion ? 'Carga sin firma' : 'Firma carga';
+          const detalle = res.excepcion
+            ? `${res.folio || rutaId} — Excepción: ${s(opciones.motivoExcepcion)}`
+            : `${res.folio || rutaId} — Firmado`;
+          await log(tipo, 'Rutas', detalle);
         }
-        if (!claim || claim.length === 0) {
-          t()?.error('Esta carga ya fue firmada por otro dispositivo');
-          return new Error('Carga ya firmada (claim race)');
-        }
-
-        // Descontar inventario. Si falla, revertir el claim de firma.
-        if (changes.length > 0) {
-          const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
-            p_changes: changes,
-          });
-          if (rpcErr) {
-            await supabase.from('rutas').update({
-              carga_confirmada_at: null,
-              carga_confirmada_por: null,
-              firma_carga: null,
-              firma_excepcion: false,
-              firma_excepcion_motivo: null,
-              estatus: estatusOriginal,
-            }).eq('id', rutaId);
-            t()?.error('Error al descontar inventario');
-            return rpcErr;
-          }
-        }
-
-        await checkStockBajo(Object.keys(cargaReal));
-        const tipo = opciones.excepcion ? 'Carga sin firma' : 'Firma carga';
-        const detalle = opciones.excepcion
-          ? `${ruta.folio} — Excepción: ${opciones.motivoExcepcion}`
-          : `${ruta.folio} — Firmado`;
-        await log(tipo, 'Rutas', detalle);
         rf();
         return null;
       },

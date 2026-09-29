@@ -1,3 +1,5 @@
+import { useRef } from 'react';
+import { resolverOperacion, claveTraspaso } from '../../data/stockContratosLogic';
 import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtPct, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { traducirError } from '../../utils/errorMessages';
@@ -8,6 +10,7 @@ export function InventarioView({ data, actions }) {
   const [pageExist, setPageExist] = useState(0);
   const [traspasoModal, setTraspasoModal] = useState(false);
   const [traspasoForm, setTraspasoForm] = useState({origen:"",destino:"",sku:"",cantidad:""});
+  const opTraspasoRef = useRef(null); // R2 (084): mismo operacion_id mientras se reintenta el mismo traspaso
   const [traspasoErrors, setTraspasoErrors] = useState({});
   const [cfModal, setCfModal] = useState(null);
   const [cfForm, setCfForm] = useState({nombre:"",temp:"-10",capacidad_tarimas:""});
@@ -61,9 +64,11 @@ export function InventarioView({ data, actions }) {
     if (Object.keys(e).length) { setTraspasoErrors(e); return; }
     setTraspasando(true);
     try {
-      if (actions.traspasoEntreUbicaciones) {
-        await actions.traspasoEntreUbicaciones(traspasoForm);
-      }
+      const op = resolverOperacion(opTraspasoRef.current, claveTraspaso(traspasoForm));
+      opTraspasoRef.current = op;
+      const r = actions.traspasoEntreUbicaciones ? await actions.traspasoEntreUbicaciones({ ...traspasoForm, operacionId: op.id }) : null;
+      if (r && (r.error || r.message)) { toast?.error(r.error || r.message); return; }
+      opTraspasoRef.current = null;
       toast?.success(traspasoForm.cantidad + " " + traspasoForm.sku + " de " + traspasoForm.origen + " a " + traspasoForm.destino);
       setTraspasoModal(false); setTraspasoForm({origen:"",destino:"",sku:"",cantidad:""}); setTraspasoErrors({});
     } finally {
