@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -940,6 +940,153 @@ await conc076();
 await fe076();
 console.log('  076 concurrencia + frontend↔DB tras 083: PASS');
 
+// ── R2 fase 1: 084 (contratos de stock aditivos) ─────────────────────────
+{
+  const cp = (await c.query(`SELECT md5(pg_get_functiondef(oid)) AS m FROM pg_proc WHERE oid='public.update_stocks_atomic(jsonb)'::regprocedure`)).rows[0];
+  const cols = (await c.query(`SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema='public' AND table_name='inventario_mov' AND column_name IN ('cuarto_id','ruta_id','operacion_id')`)).rows[0].n;
+  const tbl = (await c.query(`SELECT count(*)::int AS n FROM pg_class WHERE relname='stock_operaciones'`)).rows[0].n;
+  const ok = cp && cp.m === '9bfe3e6327d081a39f467279ef654868' && cols === 0 && tbl === 0;
+  console.log(`  STOCK_PARITY_CHECK[pre-084]: ${ok ? 'PASS' : 'FAIL'} usa=${cp?.m} cols=${cols} tbl=${tbl}`);
+  if (!ok) process.exit(1);
+}
+console.log('── aplicar 084 (1/2)');
+let r084 = await runFile(c, path.join(ROOT, 'supabase/084_contratos_stock_ruta.sql'), { stopOnError: true });
+if (r084.aborted) process.exit(1);
+console.log('── aplicar 084 (2/2, idempotencia)');
+r084 = await runFile(c, path.join(ROOT, 'supabase/084_contratos_stock_ruta.sql'), { stopOnError: true });
+if (r084.aborted) process.exit(1);
+if (!(await rlsCheck('tras 084 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 084)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[084]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 084 (R2 fase 1)');
+const r084t = await runFile(c, path.join(ROOT, 'supabase/tests/084_contratos_stock_test.sql'), { stopOnError: true, echo: true });
+if (r084t.aborted) { console.log('RESULTADO: FALLÓ (084)'); process.exit(1); }
+
+async function conc084() {
+  console.log('── 084 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  const CH = '84c00000-0000-0000-0000-000000000001', PR = '84c00000-0000-0000-0000-000000000002';
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const limpiar = `BEGIN;
+    DELETE FROM inventario_mov WHERE producto LIKE 'C84-%';
+    DELETE FROM stock_operaciones WHERE operacion_id::text LIKE '84c%';
+    DELETE FROM orden_lineas WHERE orden_id IN (8490, 8491); DELETE FROM ordenes WHERE id IN (8490, 8491);
+    DELETE FROM rutas WHERE id IN (8490, 8491); DELETE FROM clientes WHERE id = 8495;
+    DELETE FROM cuartos_frios WHERE id IN ('CF-C84A', 'CF-C84B'); DELETE FROM productos WHERE sku LIKE 'C84-%';
+    DELETE FROM usuarios WHERE id IN (8492, 8493); DELETE FROM auth.users WHERE id IN ('${CH}', '${PR}');
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN;
+    INSERT INTO auth.users (id, email) VALUES ('${CH}', 'choferc84@t'), ('${PR}', 'prodc84@t');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (8492, 'ChoferC 84', 'choferc84@t', 'Chofer', 'Activo', '${CH}'), (8493, 'ProdC 84', 'prodc84@t', 'Producción', 'Activo', '${PR}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('C84-A', 'Hielo C84', 'Producto Terminado', 30, 0);
+    INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-C84A', 'Cuarto C84A', '{"C84-A": 10}'::jsonb), ('CF-C84B', 'Cuarto C84B', '{"C84-A": 10}'::jsonb);
+    INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (8495, 'Cliente C84', 'XAXX010101000', 0);
+    INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, fecha, carga_autorizada, extra_autorizado, carga_real, carga_solicitada_at) VALUES
+      (8490, 'R-8490', 'Ruta C84', 8492, 'ChoferC 84', 'Pendiente firma', CURRENT_DATE, '{"C84-A": 4}', '{}', '{"C84-A": 4}', now());
+    INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, ruta_id) VALUES
+      (8490, 'OV-8490', 8495, 'Cliente C84', '2×C84-A', 60, 'Asignada', 'Efectivo', 'Contado', 8492, 8490);
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) VALUES (8490, 'C84-A', 2, 30, 60);
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const carrera = async (sub, sqlA, paramsA, sqlB, paramsB) => {
+    await actor(a, sub); await actor(b, sub);
+    const ra = (await a.query(sqlA, paramsA)).rows[0];
+    let done = false;
+    const pB = b.query(sqlB, paramsB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, msg: e.message, code: e.code })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query('COMMIT');
+    const rb = await pB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const cf = async (id) => n(`SELECT COALESCE((stock->>'C84-A')::int, 0) FROM cuartos_frios WHERE id = $1`, [id]);
+  const kardex = async (op) => n(`SELECT count(*) FROM inventario_mov WHERE operacion_id = $1`, [op]);
+  const CARGA = `SELECT confirmar_carga_ruta($1::uuid, 8490, 'firma') AS r`;
+  const NOENT = `SELECT registrar_no_entrega($1::uuid, 8490, 'Local cerrado') AS r`;
+  const SAL = `SELECT salida_cuarto_manual($1::uuid, 'CF-C84B', 'C84-A', $2::int, 'Venta mostrador') AS r`;
+  const TR = `SELECT traspaso_cuartos($1::uuid, 'CF-C84A', 'CF-C84B', 'C84-A', $2::int) AS r`;
+
+  // C1: misma carga, mismo operacion_id, simultánea
+  const O1 = '84c10000-0000-0000-0000-000000000001';
+  let r = await carrera(CH, CARGA, [O1], CARGA, [O1]);
+  ok(r.bloqueado, '084-C1a la segunda firma con el mismo operacion_id espera a la primera');
+  ok(r.rb.ok && r.rb.row.r.replay === true, '084-C1b la segunda es replay');
+  ok(await cf('CF-C84A') === 6 && await kardex(O1) === 1 && await n(`SELECT count(*) FROM stock_operaciones WHERE ruta_id = 8490`) === 1, '084-C1c exactamente 1 descuento (10 → 6), 1 kardex, 1 operación');
+  ok(await n(`SELECT count(*) FROM rutas WHERE id = 8490 AND estatus = 'Cargada' AND carga_confirmada_por::text = '8492'`) === 1, '084-C1d ruta Cargada una sola vez, firmante = chofer');
+  // C2: otra operación sobre la ruta ya confirmada
+  const O2 = '84c10000-0000-0000-0000-000000000002';
+  await actor(a, CH);
+  const c2 = await a.query(CARGA, [O2]).then(() => ({ ok: true }), e => ({ ok: false, code: e.code, msg: e.message }));
+  await a.query('ROLLBACK');
+  ok(!c2.ok && /ya tiene carga confirmada/.test(c2.msg || ''), `084-C2 otro operacion_id sobre ruta confirmada → rechazado sin descontar (${(c2.msg || 'OK').slice(0, 60)})`);
+  ok(await cf('CF-C84A') === 6 && await kardex(O2) === 0, '084-C2b stock y kardex intactos');
+  // C3: no-entrega simultánea misma orden, mismo op
+  const O3 = '84c20000-0000-0000-0000-000000000001';
+  r = await carrera(CH, NOENT, [O3], NOENT, [O3]);
+  ok(r.bloqueado && r.rb.ok && r.rb.row.r.replay === true, '084-C3a la segunda no-entrega es replay');
+  ok(await kardex(O3) === 1 && await n(`SELECT count(*) FROM ordenes WHERE id = 8490 AND estatus = 'No entregada'`) === 1, '084-C3b exactamente 1 devolución y 1 transición');
+  // C4: no-entrega con otro op sobre orden ya procesada
+  const O4 = '84c20000-0000-0000-0000-000000000002';
+  await actor(a, CH);
+  const c4 = await a.query(NOENT, [O4]).then(() => ({ ok: true }), e => ({ ok: false, msg: e.message }));
+  await a.query('ROLLBACK');
+  ok(!c4.ok && /ya está No entregada/.test(c4.msg || '') && await kardex(O4) === 0, '084-C4 otro operacion_id sobre orden No entregada → sin doble devolución');
+  // C5: salida manual mismo op simultánea (Producción)
+  const O5 = '84c30000-0000-0000-0000-000000000001';
+  const b0 = await cf('CF-C84B');
+  r = await carrera(PR, SAL, [O5, 3], SAL, [O5, 3]);
+  ok(r.bloqueado && r.rb.ok && r.rb.row.r.replay === true && await cf('CF-C84B') === b0 - 3 && await kardex(O5) === 1, '084-C5 salida manual: mismo op simultáneo = 1 salida, 1 kardex');
+  // C6: traspaso mismo op simultáneo
+  const O6 = '84c40000-0000-0000-0000-000000000001';
+  const a0 = await cf('CF-C84A'), b1 = await cf('CF-C84B');
+  r = await carrera(PR, TR, [O6, 2], TR, [O6, 2]);
+  ok(r.bloqueado && r.rb.ok && r.rb.row.r.replay === true && await cf('CF-C84A') === a0 - 2 && await cf('CF-C84B') === b1 + 2 && await kardex(O6) === 2, '084-C6 traspaso: mismo op simultáneo = 1 traspaso (2 kardex)');
+  // C7: dos salidas distintas compitiendo por el mismo cuarto/SKU (disponible = b1+2; 6 + 6)
+  const disp = await cf('CF-C84B');
+  const O7 = '84c30000-0000-0000-0000-000000000007', O8 = '84c30000-0000-0000-0000-000000000008';
+  const q = Math.ceil(disp / 2) + 1; // q + q > disp
+  r = await carrera(PR, SAL, [O7, q], SAL, [O8, q]);
+  ok(r.bloqueado, '084-C7a la segunda salida espera el lock del cuarto');
+  ok(!r.rb.ok && /Stock insuficiente/.test(r.rb.msg || ''), `084-C7b la segunda falla tras releer (${(r.rb.msg || 'OK').slice(0, 50)})`);
+  ok(await cf('CF-C84B') === disp - q && await kardex(O8) === 0 && await n(`SELECT count(*) FROM stock_operaciones WHERE operacion_id = $1`, [O8]) === 0, '084-C7c nunca negativo, sin doble consumo, la fallida no deja rastro');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (084 concurrencia)'); process.exit(1); }
+  console.log('  084 concurrencia: PASS');
+}
+await conc084();
+
+for (const t of ['clientes', 'ordenes', 'leads', 'invoice_attempts', 'chofer_ubicaciones', 'movimientos_contables', 'auditoria', 'productos', 'rutas', 'pagos', 'inventario_mov']) {
+  await c.query(`SELECT setval('${t}_id_seq', GREATEST((SELECT COALESCE(max(id), 0) FROM ${t}), (SELECT last_value FROM ${t}_id_seq)))`);
+}
+for (const [etq, f] of [['083', '083_self_read_auth_id_test.sql'], ['082', '082_r3_r4_test.sql'], ['081', '081_ruta_id_ordenes_test.sql'], ['080', '080_rpc_asignacion_test.sql'], ['079', '079_identidad_legacy_test.sql'], ['078', '078_rutas_chofer_test.sql'], ['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 084)`); process.exit(1); }
+  console.log(`  ${etq} tras 084: PASS`);
+}
+await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 084)'); process.exit(1); }
+  console.log('  071 tras 084: PASS');
+}
+console.log('── 076 concurrencia y frontend↔DB tras 084');
+await conc076();
+await fe076();
+console.log('  076 concurrencia + frontend↔DB tras 084: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -966,7 +1113,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 080
   'asignar_orden','asignar_ordenes_a_ruta','cancelar_orden_asignada',
   // 081
-  'ordenes_guard_ruta'];
+  'ordenes_guard_ruta',
+  // 084
+  'stock_op_replay','stock_mov_cuarto','confirmar_carga_ruta','registrar_no_entrega','salida_cuarto_manual','traspaso_cuartos'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
