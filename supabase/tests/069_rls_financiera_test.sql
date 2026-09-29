@@ -245,11 +245,35 @@ SELECT t_assert((SELECT COUNT(*) = 2 FROM orden_lineas WHERE orden_id > 1000), '
 SELECT t_assert((SELECT estatus = 'Entregada' FROM ordenes WHERE id = 200) AND (SELECT estatus = 'Entregada' FROM ordenes WHERE id = 201), 'O. órdenes marcadas Entregada');
 -- invariante I1 en todas las órdenes
 SELECT t_assert(NOT EXISTS (SELECT 1 FROM ordenes o JOIN pagos p ON p.orden_id = o.id GROUP BY o.id, o.total HAVING SUM(p.monto) > o.total + 0.01), 'I1. SUM(pagos) <= total en todas las órdenes');
--- reintento del cierre: la ruta sigue abierta (el JS la cierra después) → segundo cierre financiero no duplica
-SELECT t_actor('authenticated', 'chofer@t'); SET LOCAL ROLE authenticated;
-SELECT cerrar_ruta_financiero(100, '[{"ordenId":200,"pago":"Efectivo"},{"ordenId":202,"pago":"QR / Link de pago"}]'::jsonb, 3, 'Chofer T');
-RESET ROLE;
-SELECT t_assert((SELECT COUNT(*) = 1 FROM pagos WHERE orden_id = 200) AND (SELECT COUNT(*) = 1 FROM pagos WHERE orden_id = 202), 'O. re-cierre no duplica pagos');
+-- reintento del cierre: la ruta sigue abierta (el JS la cierra después) → segundo cierre financiero no duplica.
+-- Antes de 086: un subconjunto del payload se procesa sin duplicar pagos.
+-- Con 086 (evento por ruta + huella): otra petición lógica tras el cierre se
+-- rechaza (22023) y la petición original idéntica es replay sin efectos.
+DO $do$
+DECLARE v_state TEXT; v_r JSONB;
+BEGIN
+  PERFORM t_actor('authenticated', 'chofer@t'); SET LOCAL ROLE authenticated;
+  IF to_regclass('public.cierres_financieros_ruta') IS NOT NULL THEN
+    BEGIN
+      PERFORM cerrar_ruta_financiero(100, '[{"ordenId":200,"pago":"Efectivo"},{"ordenId":202,"pago":"QR / Link de pago"}]'::jsonb, 3, 'Chofer T');
+    EXCEPTION WHEN OTHERS THEN v_state := SQLSTATE;
+    END;
+    IF v_state IS DISTINCT FROM '22023' THEN RAISE EXCEPTION 'FAIL: O. (086) re-cierre con otra petición debía dar 22023, dio %', COALESCE(v_state, 'sin error'); END IF;
+    v_r := cerrar_ruta_financiero(100, $j$[
+      {"ordenId":200,"pago":"Efectivo"},
+      {"ordenId":201,"pago":"Crédito"},
+      {"ordenId":202,"pago":"QR / Link de pago"},
+      {"express":true,"cliente":"Público en general","pago":"Tarjeta","items":[{"sku":"HPC-5K","cant":2,"precio":35}]},
+      {"express":true,"clienteId":10,"cliente":"Cliente Crédito","pago":"Crédito","items":[{"sku":"HPC-5K","cant":1,"precio":35}]}
+    ]$j$::jsonb, 3, 'Chofer T');
+    IF (v_r ->> 'replay') IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'FAIL: O. (086) re-cierre idéntico debía ser replay'; END IF;
+    RAISE NOTICE 'OK: O. (086) re-cierre: otra petición → 22023; petición idéntica → replay';
+  ELSE
+    PERFORM cerrar_ruta_financiero(100, '[{"ordenId":200,"pago":"Efectivo"},{"ordenId":202,"pago":"QR / Link de pago"}]'::jsonb, 3, 'Chofer T');
+  END IF;
+  RESET ROLE;
+END $do$;
+SELECT t_assert((SELECT COUNT(*) = 1 FROM pagos WHERE orden_id = 200) AND (SELECT COUNT(*) = 1 FROM pagos WHERE orden_id = 202) AND (SELECT COUNT(*) = 2 FROM ordenes WHERE ruta_id = 100 AND id > 1000), 'O. re-cierre no duplica pagos ni ventas exprés');
 ROLLBACK;
 
 -- O bis. failure path: entrega de orden cancelada aborta TODO (ningún estado parcial)

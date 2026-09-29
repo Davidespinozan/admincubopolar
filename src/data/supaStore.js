@@ -9,6 +9,11 @@ import { buildRegistrarMermaArgs, buildMermasRutaPayload, mensajeErrorMerma } fr
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
 import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
+import {
+  normalizarEntregasCierre, claveCierreFinanciero, buildCerrarFinancieroArgs, interpretarCierreFinanciero,
+  mensajeErrorCierreFinanciero, leerOperacionCierre, guardarOperacionCierre, borrarOperacionCierre,
+  resolverOperacion as resolverOperacionCierre,
+} from './cierreFinancieroLogic';
 import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion } from './devolucionesLogic';
 import { calcularEsperadoPorRuta, validateCierre, buildCierrePayload, buildPagosSnapshot, fechaCierreDesdeRuta } from './cierreCajaLogic';
 import {
@@ -3797,30 +3802,34 @@ export function useSupaStore(userId, userName, userRol) {
           // P1 Fase A: toda la sección financiera (órdenes entregadas, ventas
           // exprés, pagos, CxC, saldos e ingresos) ocurre en UNA transacción
           // en el servidor (cerrar_ruta_financiero). Usa ordenes.total del
-          // servidor y nunca cobra más que el pendiente (P0-1). Ya no hay
-          // rollback por DELETE de historia financiera.
-          const entregasPayload = (entregas || []).map(e => ({
-            ordenId: e?.ordenId || null,
-            express: Boolean(e?.express) || !e?.ordenId,
-            pago: s(e?.pago) || null,
-            referencia: s(e?.referencia) || null,
-            clienteId: e?.clienteId || null,
-            cliente: s(e?.cliente) || null,
-            factura: e?.factura === true,
-            items: (e?.items || []).map(it => ({
-              sku: it.sku,
-              cant: Number(it.cant || it.qty || 0),
-              precio: Number(it.precio || 0),
-            })),
-          }));
-          const { data: finRes, error: finErr } = await supabase.rpc('cerrar_ruta_financiero', {
-            p_ruta_id: rutaId || null,
-            p_entregas: entregasPayload,
-            p_usuario_id: uid(),
-            p_usuario_nombre: choferNombre || uname(),
+          // servidor y nunca cobra más que el pendiente (P0-1).
+          // F4 (086): el cierre financiero es UNA operación lógica con UN
+          // operacion_id estable, persistido por ruta en localStorage: un
+          // timeout, una respuesta perdida, una recarga o un reintento
+          // reutilizan el mismo UUID y el servidor devuelve el resultado
+          // almacenado sin repetir ventas exprés, pagos ni CxC. Cambiar las
+          // entregas cambia la clave y por tanto el UUID. Se borra solo cuando
+          // el cierre completo (financiero + mermas + ruta) confirmó.
+          if (!rutaId) throw new Error('No se puede cerrar la ruta sin ruta activa');
+          const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+          const entregasPayload = normalizarEntregasCierre(entregas);
+          const opCierre = resolverOperacionCierre(leerOperacionCierre(storage, rutaId), claveCierreFinanciero(rutaId, entregasPayload));
+          guardarOperacionCierre(storage, rutaId, opCierre);
+          const built = buildCerrarFinancieroArgs({
+            operacionId: opCierre.id,
+            rutaId,
+            entregas: entregasPayload,
+            usuarioId: uid(),
+            usuarioNombre: choferNombre || uname(),
           });
-          if (finErr) throw finErr;
-          if (Array.isArray(finRes?.saltadas) && finRes.saltadas.length > 0) {
+          if (built.error) throw new Error(built.error);
+          const { data: finData, error: finErr } = await supabase.rpc('cerrar_ruta_financiero', built.args);
+          if (finErr) throw new Error(mensajeErrorCierreFinanciero(finErr));
+          const finRes = interpretarCierreFinanciero(finData);
+          if (finRes.replay) {
+            await log('Cierre Ruta', 'Rutas', `Cierre financiero de la ruta ${rutaId} ya registrado (reintento): sin efectos repetidos`);
+          }
+          if (finRes.saltadas.length > 0) {
             await log('Cierre Ruta', 'Rutas', `Cobros omitidos (ya pagadas): ${finRes.saltadas.map(x => x.folio || x.orden_id).join(', ')}`);
           }
 
@@ -3844,22 +3853,26 @@ export function useSupaStore(userId, userName, userRol) {
           // 085: la rama legacy (rutas sin carga_confirmada_at → devolución del
           // sobrante con update_stocks_atomic) se eliminó: no tenía objetivo en
           // producción y habría sumado al cuarto un sobrante nunca descontado.
-          if (rutaId) {
+          {
             const { error: rutaErr } = await supabase.from('rutas').update({
               estatus: 'Cerrada',
               fecha_fin: hoy,
             }).eq('id', rutaId);
             if (rutaErr) throw rutaErr;
           }
+          // Cierre completo confirmado: el UUID del cierre financiero ya no
+          // hace falta (un cierre nuevo de otra ruta usa el suyo).
+          borrarOperacionCierre(storage, rutaId);
 
           await log('Cierre Ruta', 'Rutas', `Chofer: ${choferNombre}, Entregas: ${(entregas || []).length}, Mermas: ${(mermasArr || []).length}, Efectivo: $${cobros?.Efectivo || 0}`);
           notify('venta', 'Ruta cerrada', `${choferNombre} cerró ruta — ${(entregas || []).length} entregas, $${(cobros?.Efectivo || 0).toLocaleString()} efectivo`, '🚛', String(rutaId));
           rf();
         } catch (err) {
-          // Lo financiero (069) y las mermas (072) son atómicos e idempotentes
-          // en el servidor: no hay compensación por REST. Un reintento del
-          // cierre salta cobros ya aplicados y mermas ya registradas.
-          t()?.error('No se pudo cerrar la ruta correctamente');
+          // Lo financiero (086, por operación) y las mermas (072, por ruta)
+          // son atómicos e idempotentes en el servidor: no hay compensación
+          // por REST. Un reintento del cierre devuelve el resultado almacenado
+          // del cierre financiero y salta mermas ya registradas.
+          t()?.error(err?.message || 'No se pudo cerrar la ruta correctamente');
           return err;
         }
       },

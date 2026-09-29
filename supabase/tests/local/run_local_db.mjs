@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -1213,27 +1213,247 @@ if (!(await rlsCheck('tras 085 (sin deuda)', []))) { console.log('RESULTADO: FAL
 console.log('── PRUEBAS 085 (R2 contención)');
 const r085t = await runFile(c, path.join(ROOT, 'supabase/tests/085_contencion_stock_test.sql'), { stopOnError: true, echo: true });
 if (r085t.aborted) { console.log('RESULTADO: FALLÓ (085)'); process.exit(1); }
+
+// ═══ 086 — F4: cierre financiero idempotente ═══
+async function pre086Retry() {
+  // Evidencia del bug ANTES de 086: el mismo cierre dos veces duplica las
+  // ventas exprés; un payload cambiado agrega una tercera. Solo se imprime.
+  console.log('── PRE-086 RETRY MATRIX (comportamiento actual, estado 085)');
+  const CH = '86a00000-0000-0000-0000-000000000001';
+  const limpiar = `BEGIN;
+    DELETE FROM pagos WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id = 8680 OR id = 8680);
+    DELETE FROM movimientos_contables WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id = 8680 OR id = 8680);
+    DELETE FROM cuentas_por_cobrar WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id = 8680 OR id = 8680);
+    DELETE FROM orden_lineas WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id = 8680 OR id = 8680);
+    DELETE FROM ordenes WHERE ruta_id = 8680 OR id = 8680; DELETE FROM rutas WHERE id = 8680; DELETE FROM clientes WHERE id = 8685;
+    DELETE FROM productos WHERE sku = 'A86-A'; DELETE FROM usuarios WHERE id = 8682; DELETE FROM auth.users WHERE id = '${CH}';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN;
+    INSERT INTO auth.users (id, email) VALUES ('${CH}', 'chofera86@t');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (8682, 'ChoferA 86', 'chofera86@t', 'Chofer', 'Activo', '${CH}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('A86-A', 'Hielo A86', 'Producto Terminado', 30, 0);
+    INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (8685, 'Cliente A86', 'XAXX010101000', 0);
+    INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, fecha, carga, carga_autorizada, extra_autorizado, carga_real) VALUES
+      (8680, 'R-8680', 'Ruta A86', 8682, 'ChoferA 86', 'En progreso', CURRENT_DATE, '{"A86-A": 5}', '{"A86-A": 5}', '{}', '{"A86-A": 5}');
+    INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, ruta_id) VALUES
+      (8680, 'OV-8680', 8685, 'Cliente A86', '1×A86-A', 30, 'Asignada', 'Efectivo', 'Contado', 8682, 8680);
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) VALUES (8680, 'A86-A', 1, 30, 30);
+    COMMIT;`);
+  const P = JSON.stringify([{ ordenId: 8680, pago: 'Efectivo' }, { express: true, cliente: 'Público en general', pago: 'Efectivo', items: [{ sku: 'A86-A', cant: 2, precio: 35 }] }]);
+  const P2 = JSON.stringify([{ ordenId: 8680, pago: 'Efectivo' }, { express: true, cliente: 'Público en general', pago: 'Efectivo', items: [{ sku: 'A86-A', cant: 3, precio: 35 }] }]);
+  const cerrar = async (payload) => {
+    await c.query('BEGIN'); await c.query('SET LOCAL ROLE authenticated');
+    await c.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub: CH })]);
+    try { await c.query(`SELECT cerrar_ruta_financiero(8680, $1::jsonb, 8682, 'ChoferA 86')`, [payload]); await c.query('COMMIT'); return 'ok'; }
+    catch (e) { await c.query('ROLLBACK'); return e.code + ' ' + e.message; }
+  };
+  const fp = async () => (await c.query(`SELECT (SELECT count(*) FROM ordenes WHERE ruta_id = 8680 AND id <> 8680) AS express, (SELECT count(*) FROM orden_lineas l JOIN ordenes o ON o.id = l.orden_id WHERE o.ruta_id = 8680 AND o.id <> 8680) AS lineas, (SELECT count(*) FROM pagos p JOIN ordenes o ON o.id = p.orden_id WHERE o.ruta_id = 8680) AS pagos, (SELECT count(*) FROM movimientos_contables m JOIN ordenes o ON o.id = m.orden_id WHERE o.ruta_id = 8680) AS movs, (SELECT count(*) FROM pagos WHERE orden_id = 8680) AS pago_normal`)).rows[0];
+  const r1 = await cerrar(P); const f1 = await fp();
+  const r2 = await cerrar(P); const f2 = await fp();
+  const r3 = await cerrar(P2); const f3 = await fp();
+  console.log(`  1ª llamada: ${r1} → ${JSON.stringify(f1)}`);
+  console.log(`  2ª llamada idéntica (respuesta perdida / doble tap): ${r2} → ${JSON.stringify(f2)}`);
+  console.log(`  3ª llamada con exprés cambiada: ${r3} → ${JSON.stringify(f3)}`);
+  console.log(`  PRE_086_RETRY_MATRIX: express_tras_2_llamadas=${f2.express} (esperado_con_bug=2) pagos_normal=${f2.pago_normal} (idempotente=1) express_tras_3=${f3.express}`);
+  await c.query(limpiar);
+  return { f1, f2, f3 };
+}
+const pre086 = await pre086Retry();
+{
+  const PROD_FIN = '012999bf9fd180300f8d5ebd3e77d978';
+  const rows = (await c.query(`SELECT pg_get_function_identity_arguments(oid) AS a, md5(pg_get_functiondef(oid)) AS m FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname = 'cerrar_ruta_financiero'`)).rows;
+  const tabla = (await c.query(`SELECT to_regclass('public.cierres_financieros_ruta') AS t`)).rows[0].t;
+  const ok = rows.length === 1 && rows[0].m === PROD_FIN && tabla === null && Number(pre086.f2.express) === 2 && Number(pre086.f2.pago_normal) === 1;
+  console.log(`  FIN_PARITY_CHECK[pre-086]: ${ok ? 'PASS' : 'FAIL'} sobrecargas=${rows.length} md5=${rows[0]?.m} tabla=${tabla} bug_reproducido=${Number(pre086.f2.express) === 2}`);
+  if (!ok) process.exit(1);
+}
+console.log('── aplicar 086 (1/2)');
+let r086 = await runFile(c, path.join(ROOT, 'supabase/086_cierre_financiero_idempotente.sql'), { stopOnError: true });
+if (r086.aborted) process.exit(1);
+console.log('── aplicar 086 (2/2, idempotencia)');
+r086 = await runFile(c, path.join(ROOT, 'supabase/086_cierre_financiero_idempotente.sql'), { stopOnError: true });
+if (r086.aborted) process.exit(1);
+if (!(await rlsCheck('tras 086 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 086)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[086]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 086 (F4 cierre financiero idempotente)');
+const r086t = await runFile(c, path.join(ROOT, 'supabase/tests/086_cierre_financiero_test.sql'), { stopOnError: true, echo: true });
+if (r086t.aborted) { console.log('RESULTADO: FALLÓ (086)'); process.exit(1); }
+
+async function conc086() {
+  console.log('── 086 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  const CH = '86c00000-0000-0000-0000-000000000001', CH2 = '86c00000-0000-0000-0000-000000000002', CH3 = '86c00000-0000-0000-0000-000000000003';
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const limpiar = `BEGIN;
+    DELETE FROM cierres_financieros_ruta WHERE ruta_id IN (8690, 8691, 8692);
+    DELETE FROM pagos WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id IN (8690, 8691, 8692));
+    DELETE FROM movimientos_contables WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id IN (8690, 8691, 8692));
+    DELETE FROM cuentas_por_cobrar WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id IN (8690, 8691, 8692));
+    DELETE FROM orden_lineas WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id IN (8690, 8691, 8692));
+    DELETE FROM ordenes WHERE ruta_id IN (8690, 8691, 8692); DELETE FROM rutas WHERE id IN (8690, 8691, 8692); DELETE FROM clientes WHERE id = 8695;
+    DELETE FROM productos WHERE sku = 'C86-A'; DELETE FROM usuarios WHERE id IN (8692, 8693, 8694); DELETE FROM auth.users WHERE id IN ('${CH}', '${CH2}', '${CH3}');
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN;
+    INSERT INTO auth.users (id, email) VALUES ('${CH}', 'choferc86@t'), ('${CH2}', 'choferc86b@t'), ('${CH3}', 'choferc86c@t');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (8692, 'ChoferC 86', 'choferc86@t', 'Chofer', 'Activo', '${CH}'), (8693, 'ChoferC 86 b', 'choferc86b@t', 'Chofer', 'Activo', '${CH2}'), (8694, 'ChoferC 86 c', 'choferc86c@t', 'Chofer', 'Activo', '${CH3}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('C86-A', 'Hielo C86', 'Producto Terminado', 30, 0);
+    INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (8695, 'Cliente C86', 'XAXX010101000', 0);
+    INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, fecha, carga, carga_autorizada, extra_autorizado, carga_real) VALUES
+      (8690, 'R-8690', 'Ruta C86 a', 8692, 'ChoferC 86', 'En progreso', CURRENT_DATE, '{"C86-A": 5}', '{"C86-A": 5}', '{}', '{"C86-A": 5}'),
+      (8691, 'R-8691', 'Ruta C86 b', 8693, 'ChoferC 86 b', 'En progreso', CURRENT_DATE, '{"C86-A": 5}', '{"C86-A": 5}', '{}', '{"C86-A": 5}'),
+      (8692, 'R-8692', 'Ruta C86 c', 8694, 'ChoferC 86 c', 'En progreso', CURRENT_DATE, '{"C86-A": 5}', '{"C86-A": 5}', '{}', '{"C86-A": 5}');
+    INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, ruta_id) VALUES
+      (8690, 'OV-8690', 8695, 'Cliente C86', '1×C86-A', 30, 'Asignada', 'Efectivo', 'Contado', 8692, 8690),
+      (8691, 'OV-8691', 8695, 'Cliente C86', '1×C86-A', 30, 'Asignada', 'Efectivo', 'Contado', 8692, 8691),
+      (8692, 'OV-8692', 8695, 'Cliente C86', '1×C86-A', 30, 'Asignada', 'Efectivo', 'Contado', 8692, 8692);
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) VALUES (8690, 'C86-A', 1, 30, 30), (8691, 'C86-A', 1, 30, 30), (8692, 'C86-A', 1, 30, 30);
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const carrera = async (sub, sqlA, paramsA, sqlB, paramsB) => {
+    await actor(a, sub); await actor(b, sub);
+    const ra = (await a.query(sqlA, paramsA)).rows[0];
+    let done = false;
+    const pB = b.query(sqlB, paramsB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, msg: e.message, code: e.code })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query('COMMIT');
+    const rb = await pB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const pay = (ordenId, cant) => JSON.stringify([{ ordenId, pago: 'Efectivo' }, { express: true, cliente: 'Público en general', pago: 'Efectivo', items: [{ sku: 'C86-A', cant, precio: 35 }] }]);
+  const SQL = `SELECT cerrar_ruta_financiero($1::uuid, $2::bigint, $3::jsonb, NULL, 'ChoferC 86') AS r`;
+  const fp = async (ruta) => (await c.query(`SELECT (SELECT count(*) FROM ordenes WHERE ruta_id = $1 AND id NOT IN (8690, 8691, 8692)) AS express, (SELECT count(*) FROM orden_lineas l JOIN ordenes o ON o.id = l.orden_id WHERE o.ruta_id = $1 AND o.id NOT IN (8690, 8691, 8692)) AS lineas, (SELECT count(*) FROM pagos p JOIN ordenes o ON o.id = p.orden_id WHERE o.ruta_id = $1) AS pagos, (SELECT count(*) FROM movimientos_contables m JOIN ordenes o ON o.id = m.orden_id WHERE o.ruta_id = $1) AS movs, (SELECT count(*) FROM cierres_financieros_ruta WHERE ruta_id = $1) AS cierres`, [ruta])).rows[0];
+  // C1: misma operación simultánea
+  const O1 = '86c10000-0000-0000-0000-000000000001';
+  let r = await carrera(CH, SQL, [O1, 8690, pay(8690, 2)], SQL, [O1, 8690, pay(8690, 2)]);
+  ok(r.bloqueado, '086-C1a la segunda llamada con la misma operación espera el lock de la ruta');
+  ok(r.rb.ok && r.rb.row.r.replay === true, '086-C1b la segunda es replay');
+  let f = await fp(8690);
+  ok(Number(f.express) === 1 && Number(f.lineas) === 1 && Number(f.pagos) === 2 && Number(f.movs) === 2 && Number(f.cierres) === 1, `086-C1c exactamente 1 exprés, 1 línea, 2 pagos (normal + exprés), 2 ingresos, 1 evento (${JSON.stringify(f)})`);
+  // C2: otra operación, misma petición, simultánea
+  r = await carrera(CH2, SQL, ['86c10000-0000-0000-0000-000000000002', 8691, pay(8691, 2)], SQL, ['86c10000-0000-0000-0000-000000000003', 8691, pay(8691, 2)]);
+  ok(r.bloqueado && r.rb.ok && r.rb.row.r.replay === true, '086-C2a otra operación con la misma petición: espera y es replay');
+  f = await fp(8691);
+  ok(Number(f.express) === 1 && Number(f.cierres) === 1, '086-C2b un solo efecto, un solo evento');
+  // C3: otra operación, otra petición, simultánea
+  r = await carrera(CH3, SQL, ['86c10000-0000-0000-0000-000000000004', 8692, pay(8692, 2)], SQL, ['86c10000-0000-0000-0000-000000000005', 8692, pay(8692, 3)]);
+  ok(r.bloqueado && !r.rb.ok && r.rb.code === '22023', `086-C3a otra operación con otra petición: espera y se rechaza (${r.rb.code})`);
+  f = await fp(8692);
+  ok(Number(f.express) === 1 && Number(f.pagos) === 2 && Number(f.cierres) === 1, '086-C3b el ganador dejó exactamente un cierre; el perdedor nada');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (086 concurrencia)'); process.exit(1); }
+}
+await conc086();
+
+async function fe086() {
+  console.log('── 086 FRONTEND ↔ DB (cierreFinancieroLogic: clave, UUID estable, parámetros nombrados como PostgREST)');
+  const { pathToFileURL } = await import('node:url');
+  const L = await import(pathToFileURL(path.join(ROOT, 'src/data/cierreFinancieroLogic.js')).href);
+  const CH = '86f00000-0000-0000-0000-000000000001';
+  let okF = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okF = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const limpiar = `BEGIN;
+    DELETE FROM cierres_financieros_ruta WHERE ruta_id = 8670;
+    DELETE FROM pagos WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id = 8670);
+    DELETE FROM movimientos_contables WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id = 8670);
+    DELETE FROM cuentas_por_cobrar WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id = 8670);
+    DELETE FROM orden_lineas WHERE orden_id IN (SELECT id FROM ordenes WHERE ruta_id = 8670);
+    DELETE FROM ordenes WHERE ruta_id = 8670; DELETE FROM rutas WHERE id = 8670; DELETE FROM clientes WHERE id = 8675;
+    DELETE FROM productos WHERE sku = 'F86-A'; DELETE FROM usuarios WHERE id = 8672; DELETE FROM auth.users WHERE id = '${CH}';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN;
+    INSERT INTO auth.users (id, email) VALUES ('${CH}', 'choferf86@t');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (8672, 'ChoferF 86', 'choferf86@t', 'Chofer', 'Activo', '${CH}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('F86-A', 'Hielo F86', 'Producto Terminado', 30, 0);
+    INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (8675, 'Cliente F86', 'XAXX010101000', 0);
+    INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, fecha, carga, carga_autorizada, extra_autorizado, carga_real) VALUES
+      (8670, 'R-8670', 'Ruta F86', 8672, 'ChoferF 86', 'En progreso', CURRENT_DATE, '{"F86-A": 5}', '{"F86-A": 5}', '{}', '{"F86-A": 5}');
+    INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, ruta_id) VALUES
+      (8670, 'OV-8670', 8675, 'Cliente F86', '1×F86-A', 30, 'Asignada', 'Efectivo', 'Contado', 8672, 8670);
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) VALUES (8670, 'F86-A', 1, 30, 30);
+    COMMIT;`);
+  const storage = (() => { const m = new Map(); return { getItem: k => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v), removeItem: k => m.delete(k) }; })();
+  const rpc = async (args) => {
+    await c.query('BEGIN'); await c.query('SET LOCAL ROLE authenticated');
+    await c.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub: CH })]);
+    try {
+      const r = (await c.query(`SELECT cerrar_ruta_financiero(p_operacion_id => $1::uuid, p_ruta_id => $2::bigint, p_entregas => $3::jsonb, p_usuario_id => $4::bigint, p_usuario_nombre => $5::text) AS r`,
+        [args.p_operacion_id, args.p_ruta_id, JSON.stringify(args.p_entregas), args.p_usuario_id, args.p_usuario_nombre])).rows[0].r;
+      await c.query('COMMIT'); return { data: r };
+    } catch (e) { await c.query('ROLLBACK'); return { error: e }; }
+  };
+  // 1) cierre desde la UI: entregas + exprés → payload + clave + UUID persistido
+  const entregasUI = [{ ordenId: 8670, folio: 'OV-8670', items: [{ sku: 'F86-A', cant: 1 }], total: 30, pago: 'Efectivo' },
+    { express: true, cliente: 'Público en general', pago: 'Tarjeta', referencia: 'TPV-9', items: [{ sku: 'F86-A', cant: 2, precio: 35 }] }];
+  const payload = L.normalizarEntregasCierre(entregasUI);
+  const op1 = L.resolverOperacion(L.leerOperacionCierre(storage, 8670), L.claveCierreFinanciero(8670, payload));
+  L.guardarOperacionCierre(storage, 8670, op1);
+  const b1 = L.buildCerrarFinancieroArgs({ operacionId: op1.id, rutaId: 8670, entregas: payload, usuarioId: 8672, usuarioNombre: 'ChoferF 86' });
+  const r1 = await rpc(b1.args);
+  ok(!r1.error && L.interpretarCierreFinanciero(r1.data).replay === false && r1.data.ventas_express === 1, '086-F1 cierre desde los builders del cliente: PASS, 1 exprés');
+  ok(r1.data.huella && r1.data.operacion_id === op1.id, '086-F2 el servidor devuelve la operación del cliente y su huella');
+  // 2) respuesta perdida + recarga: el UUID se relee del storage y el payload llega reordenado
+  const payload2 = L.normalizarEntregasCierre([entregasUI[1], { ...entregasUI[0], referencia: '' }]);
+  const op2 = L.resolverOperacion(L.leerOperacionCierre(storage, 8670), L.claveCierreFinanciero(8670, payload2));
+  ok(op2.id === op1.id, '086-F3 misma petición lógica reordenada → mismo UUID tras recarga');
+  const r2 = await rpc(L.buildCerrarFinancieroArgs({ operacionId: op2.id, rutaId: 8670, entregas: payload2, usuarioId: 8672, usuarioNombre: 'ChoferF 86' }).args);
+  ok(!r2.error && L.interpretarCierreFinanciero(r2.data).replay === true, '086-F4 reintento: replay sin efectos');
+  ok(await n(`SELECT count(*) FROM ordenes WHERE ruta_id = 8670 AND id <> 8670`) === 1 && await n(`SELECT count(*) FROM pagos p JOIN ordenes o ON o.id = p.orden_id WHERE o.ruta_id = 8670`) === 2, '086-F5 sigue habiendo 1 exprés y 2 pagos');
+  // 3) el chofer agrega una venta y reintenta: UUID nuevo, el servidor rechaza sin efectos y el mensaje es claro
+  const payload3 = L.normalizarEntregasCierre([...entregasUI, { express: true, pago: 'Efectivo', items: [{ sku: 'F86-A', cant: 1, precio: 35 }] }]);
+  const op3 = L.resolverOperacion(L.leerOperacionCierre(storage, 8670), L.claveCierreFinanciero(8670, payload3));
+  ok(op3.id !== op1.id, '086-F6 otra petición lógica → UUID nuevo');
+  const r3 = await rpc(L.buildCerrarFinancieroArgs({ operacionId: op3.id, rutaId: 8670, entregas: payload3, usuarioId: 8672, usuarioNombre: 'ChoferF 86' }).args);
+  ok(r3.error && r3.error.code === '22023' && /administrador/.test(L.mensajeErrorCierreFinanciero(r3.error)), '086-F7 rechazo 22023 traducido; sin efectos');
+  ok(await n(`SELECT count(*) FROM ordenes WHERE ruta_id = 8670 AND id <> 8670`) === 1, '086-F8 sin segunda venta exprés');
+  // 4) UUID perdido por completo (storage vacío) + misma petición → replay por huella
+  L.borrarOperacionCierre(storage, 8670);
+  const op4 = L.resolverOperacion(L.leerOperacionCierre(storage, 8670), L.claveCierreFinanciero(8670, payload));
+  ok(op4.id !== op1.id, '086-F9 storage vacío → UUID nuevo');
+  const r4 = await rpc(L.buildCerrarFinancieroArgs({ operacionId: op4.id, rutaId: 8670, entregas: payload, usuarioId: 8672, usuarioNombre: 'ChoferF 86' }).args);
+  ok(!r4.error && r4.data.replay === true && r4.data.operacion_original === op1.id, '086-F10 el servidor reconoce la misma petición por su huella: replay');
+  await c.query(limpiar);
+  if (!okF) { console.log('RESULTADO: FALLÓ (086 frontend↔DB)'); process.exit(1); }
+}
+await fe086();
 for (const t of ['clientes', 'ordenes', 'leads', 'invoice_attempts', 'chofer_ubicaciones', 'movimientos_contables', 'auditoria', 'productos', 'rutas', 'pagos', 'inventario_mov']) {
   await c.query(`SELECT setval('${t}_id_seq', GREATEST((SELECT COALESCE(max(id), 0) FROM ${t}), (SELECT last_value FROM ${t}_id_seq)))`);
 }
-for (const [etq, f] of [['084', '084_contratos_stock_test.sql'], ['083', '083_self_read_auth_id_test.sql'], ['082', '082_r3_r4_test.sql'], ['081', '081_ruta_id_ordenes_test.sql'], ['080', '080_rpc_asignacion_test.sql'], ['079', '079_identidad_legacy_test.sql'], ['078', '078_rutas_chofer_test.sql'], ['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
+for (const [etq, f] of [['085', '085_contencion_stock_test.sql'], ['084', '084_contratos_stock_test.sql'], ['083', '083_self_read_auth_id_test.sql'], ['082', '082_r3_r4_test.sql'], ['081', '081_ruta_id_ordenes_test.sql'], ['080', '080_rpc_asignacion_test.sql'], ['079', '079_identidad_legacy_test.sql'], ['078', '078_rutas_chofer_test.sql'], ['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
   const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
-  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 085)`); process.exit(1); }
-  console.log(`  ${etq} tras 085: PASS`);
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 086)`); process.exit(1); }
+  console.log(`  ${etq} tras 086: PASS`);
 }
 await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
 {
   const rr = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
-  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 085)'); process.exit(1); }
-  console.log('  071 tras 085: PASS');
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 086)'); process.exit(1); }
+  console.log('  071 tras 086: PASS');
 }
-console.log('── 084 concurrencia + frontend↔DB tras 085');
+console.log('── 084 concurrencia + frontend↔DB tras 086');
 await conc084();
 await fe084();
-console.log('── 076 concurrencia y frontend↔DB tras 085');
+console.log('── 076 concurrencia y frontend↔DB tras 086');
 await conc076();
 await fe076();
-console.log('  concurrencia + frontend↔DB (076 y 084) tras 085: PASS');
+console.log('  concurrencia + frontend↔DB (076 y 084) tras 086: PASS');
 
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
@@ -1272,13 +1492,13 @@ const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proc
   FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname='public' AND p.proname = ANY($1) ORDER BY p.proname`, [F069])).rows;
 console.log('── SEARCH_PATH (pg_proc real)');
-let spOk = sp.length === F069.length;
+let spOk = new Set(sp.map(f => f.proname)).size === F069.length;
 for (const f of sp) {
   const ok = f.prosecdef && f.cfg === 'search_path=public, pg_temp';
   if (!ok) spOk = false;
   console.log(`  ${f.proname.padEnd(26)} secdef=${f.prosecdef} ${f.cfg || 'SIN search_path'} PUBLIC=${f.pub} anon=${f.anon} auth=${f.auth}`);
 }
-console.log('  SEARCH_PATH_CHECK:', spOk ? 'PASS' : 'FAIL', `(${sp.filter(f=>f.cfg==='search_path=public, pg_temp').length}/${F069.length})`);
+console.log('  SEARCH_PATH_CHECK:', spOk ? 'PASS' : 'FAIL', `(${sp.filter(f=>f.cfg==='search_path=public, pg_temp').length}/${sp.length} definiciones, ${new Set(sp.map(f => f.proname)).size}/${F069.length} nombres)`);
 // ── referencias no calificadas: cada identificador usado como tabla o función
 //    debe resolverse en public o pg_catalog (nunca en otro schema).
 const objs = (await c.query(`SELECT n.nspname, c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','pg_catalog')
