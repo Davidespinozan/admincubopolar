@@ -10,6 +10,7 @@ import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
 import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas } from '../data/colaOfflineLogic';
 import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from '../data/stockContratosLogic';
 import { useColaOffline } from '../data/useColaOffline';
+import { conteoInicial, diferenciasConteo, totalesBalance, mensajeNoEntrega } from '../data/inventarioRutaLogic';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { useBodyScrollLock } from './ui/Modal';
 import { EmptyState } from './ui/Skeleton';
@@ -60,6 +61,12 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [folioNota, setFolioNota] = useState("");
   const [rutaCerrada, setRutaCerrada] = useState(false);
   const [cerrandoRuta, setCerrandoRuta] = useState(false);
+  // 087: cierre en dos pasos contra el servidor — balance canónico del
+  // camión y conteo físico (el cliente no calcula la devolución).
+  const [preparandoCierre, setPreparandoCierre] = useState(false);
+  const [balanceCierre, setBalanceCierre] = useState(null);
+  const [conteoForm, setConteoForm] = useState({});
+  const [faltanteCierre, setFaltanteCierre] = useState(null);
   const [enviandoFirma, setEnviandoFirma] = useState(false);
   const [noEntregaModal, setNoEntregaModal] = useState(null); // orden o null
   const [noEntregaForm, setNoEntregaForm] = useState({ motivo: MOTIVOS_NO_ENTREGA[0], otroMotivo: '', reagendar: true });
@@ -180,6 +187,18 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }
     return t;
   }, [productos, cargaAutorizada, extraAutorizado]);
+
+  // 087: lo que realmente se subió al camión (carga_real, lo que el contrato
+  // descontó de los cuartos). Guía local; el servidor calcula el balance.
+  const cargaReal = useMemo(() => {
+    const src = (miRutaActiva && (miRutaActiva.carga_real || miRutaActiva.cargaReal)) || {};
+    const t = {};
+    for (const p of productos) {
+      const sku = s(p.sku);
+      t[sku] = n(src[sku]);
+    }
+    return t;
+  }, [productos, miRutaActiva]);
 
   // My route orders — only orders assigned to routes for THIS chofer
   const misOrdenes = useMemo(() => {
@@ -416,10 +435,10 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     const t = {};
     for (const p of productos) {
       const sku = s(p.sku);
-      t[sku] = (cargaTotal[sku] || 0) - (entregadoTotal[sku] || 0) - (mermaTotal[sku] || 0);
+      t[sku] = (cargaReal[sku] || 0) - (entregadoTotal[sku] || 0) - (mermaTotal[sku] || 0);
     }
     return t;
-  }, [productos, cargaTotal, entregadoTotal, mermaTotal]);
+  }, [productos, cargaReal, entregadoTotal, mermaTotal]);
 
   // ── ACTIONS ──
   const solicitarFirma = async () => {
@@ -674,9 +693,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         return;
       }
       opNoEntregaRef.current = null;
-      showToast(noEntregaForm.reagendar
-        ? 'Marcada como no entregada (reagendar)'
-        : 'Marcada como no entregada');
+      showToast(mensajeNoEntrega(noEntregaForm.reagendar));
       setNoEntregaModal(null);
     } finally {
       setMarcandoNoEntrega(false);
@@ -727,28 +744,29 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     if (registrandoMerma) return;
     if (!mForm.cant || n(mForm.cant) <= 0 || !fotoMerma) return;
     // Validar que no exceda stock disponible
-    const disponibleSku = restante[mForm.sku] || 0;
+    // Con el cierre preparado, el tope es el balance del servidor (faltante
+    // del conteo); antes, la guía local del camión.
+    const disponibleSku = balanceCierre
+      ? n((balanceCierre.find(b => b.sku === s(mForm.sku)) || {}).restante)
+      : (restante[mForm.sku] || 0);
     if (n(mForm.cant) > disponibleSku) {
       showToast(`Solo tienes ${disponibleSku} disponibles de ${mForm.sku}`, "error");
       return;
     }
     setRegistrandoMerma(true);
     try {
-      // Tanda 23 fix: la merma de ruta es SOLO local hasta el cierre.
-      // Antes se llamaba también actions.registrarMerma aquí, y
-      // cerrarRutaCompleta volvía a insertarla → doble fila en `mermas`
-      // y doble descuento de cuartos fríos por el mismo evento físico.
-      // El cierre es el único camino: inserta con ruta_id, descuenta
-      // stock una vez y registra el egreso contable.
+      // La merma de ruta es local hasta el cierre: prepararCierreRuta la
+      // registra en un lote idempotente (087: descuenta del camión, no de
+      // cuartos fríos, y registra el egreso). `registrada` evita reenviarla.
       setMermas(prev => {
-        const nuevaMerma = { ...mForm, id: Date.now(), cant: n(mForm.cant), foto: fotoMerma, hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) };
+        const nuevaMerma = { ...mForm, id: Date.now(), cant: n(mForm.cant), foto: fotoMerma, registrada: false, hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) };
         const updated = [...prev, nuevaMerma];
         if (miRutaActiva?.id) {
           localStorage.setItem('mermas_ruta_' + miRutaActiva.id, JSON.stringify(updated));
         }
         return updated;
       });
-      showToast("Merma registrada — se reporta al cerrar la ruta");
+      showToast(balanceCierre ? "Merma lista — vuelve a registrar ventas y mermas para actualizar el conteo" : "Merma registrada — se reporta al cerrar la ruta");
       setMermaModal(false);
       setFotoMerma(null);
       setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" });
@@ -757,12 +775,24 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }
   };
 
-  const cerrarRuta = async () => {
-    if (cerrandoRuta || rutaCerrada) return;
+  const marcarMermasRegistradas = (ids) => {
+    if (!ids || ids.length === 0) return;
+    const set = new Set(ids.map(String));
+    setMermas(prev => {
+      const updated = prev.map(m => set.has(String(m.id)) ? { ...m, registrada: true } : m);
+      if (miRutaActiva?.id) {
+        try { localStorage.setItem('mermas_ruta_' + miRutaActiva.id, JSON.stringify(updated)); } catch { /* sin espacio */ }
+      }
+      return updated;
+    });
+  };
 
+  // Paso 1 del cierre (087): ventas/cobros (086) + mermas pendientes → el
+  // servidor devuelve el balance canónico del camión para contar.
+  const prepararCierre = async () => {
+    if (preparandoCierre || rutaCerrada) return;
     // Tanda 22: el cierre necesita conexión y cola sincronizada — las
-    // no-entregas encoladas NO viajan en cerrarRutaCompleta, y cerrar
-    // con mutaciones pendientes dejaría el reporte incompleto.
+    // no-entregas encoladas deben llegar antes de calcular el balance.
     if (!online) {
       showToast('Sin señal — busca conexión para cerrar la ruta');
       return;
@@ -775,39 +805,41 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         return;
       }
     }
-
-    // Validar que no haya inventario negativo (entregó más de lo que cargó)
-    for (const p of productos) {
-      const sku = s(p.sku);
-      const carga = cargaTotal[sku] || 0;
-      if (carga <= 0) continue;
-      const dev = carga - (entregadoTotal[sku] || 0) - (mermaTotal[sku] || 0);
-      if (dev < 0) {
-        showToast(`Error: ${s(p.nombre)} tiene ${Math.abs(dev)} unidades de más (entregó más de lo cargado)`);
+    setPreparandoCierre(true);
+    try {
+      const res = await actions.prepararCierreRuta?.({
+        rutaId: miRutaActiva?.id,
+        choferNombre: s(user?.nombre),
+        entregas,
+        mermas,
+      });
+      if (!res) return;
+      if (res.mermasRegistradas) marcarMermasRegistradas(res.mermasRegistradas);
+      if (res.error) {
+        showToast('No se pudo preparar el cierre: ' + res.error);
         return;
       }
+      setBalanceCierre(res.balance || []);
+      setConteoForm(conteoInicial(res.balance || []));
+      setFaltanteCierre(null);
+      showToast('Cuenta lo que regresa en el camión y confirma');
+    } finally {
+      setPreparandoCierre(false);
     }
+  };
 
+  // Paso 2 del cierre (087): conteo físico → el servidor valida contra el
+  // balance, devuelve a los cuartos de origen y cierra la ruta.
+  const cerrarRuta = async () => {
+    if (cerrandoRuta || rutaCerrada || !balanceCierre) return;
     setCerrandoRuta(true);
-
-    // Save complete route report to store
     try {
-      if (actions.cerrarRutaCompleta) {
-        const cobrosPorMetodo = {};
-        for (const e of entregas) cobrosPorMetodo[e.pago] = (cobrosPorMetodo[e.pago]||0) + n(e.total);
-        const result = await actions.cerrarRutaCompleta({
-          rutaId: miRutaActiva?.id,
-          choferId: user?.id,
-          choferNombre: s(user?.nombre),
-          entregas,
-          mermas,
-          cobros: cobrosPorMetodo,
-        });
-        // cerrarRutaCompleta returns the error object on failure instead of throwing
-        if (result && result.message) {
-          showToast("No se pudo cerrar la ruta: " + result.message);
-          return;
-        }
+      const res = await actions.finalizarInventarioRuta?.(miRutaActiva?.id, conteoForm);
+      if (!res) return;
+      if (res.error) {
+        setFaltanteCierre(res.faltante || null);
+        showToast(res.error);
+        return;
       }
       if (miRutaActiva?.id) {
         localStorage.removeItem('mermas_ruta_' + miRutaActiva.id);
@@ -815,12 +847,18 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       }
       limpiarCola();
       setRutaCerrada(true);
-      showToast("Reporte enviado ✓");
+      showToast("Ruta cerrada ✓");
     } catch {
       showToast("No se pudo cerrar la ruta");
     } finally {
       setCerrandoRuta(false);
     }
+  };
+
+  const abrirMermaFaltante = (sku, cant) => {
+    setMForm({ sku, cant: String(cant), causa: "Faltante al contar" });
+    setFotoMerma(null);
+    setMermaModal(true);
   };
 
   // ═══ STEP 1: CARGAR (chofer marca cuánto cargó realmente) ═══
@@ -1531,8 +1569,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
 
   // ═══ STEP 3: CIERRE ═══
   if (step === "cierre") {
-    const devuelto = {};
-    for (const p of productos) { const sku = s(p.sku); devuelto[sku] = (cargaTotal[sku]||0) - (entregadoTotal[sku]||0) - (mermaTotal[sku]||0); }
+    const difConteo = balanceCierre ? diferenciasConteo(balanceCierre, conteoForm) : { faltante: {}, sobrante: {} };
+    const totBal = totalesBalance(balanceCierre || []);
+    const mermasSinRegistrar = mermas.filter(m => !m.registrada).length;
     const cobrosPorMetodo = {};
     for (const e of entregas) cobrosPorMetodo[e.pago] = (cobrosPorMetodo[e.pago]||0) + n(e.total);
 
@@ -1548,26 +1587,50 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         </div>
         <div className="px-4 pt-4 space-y-4">
           <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Cuadre de bolsas</h3>
-            <div className="grid grid-cols-5 gap-1 text-[10px] font-bold text-slate-400 uppercase mb-1"><span>Producto</span><span className="text-center">Cargó</span><span className="text-center">Entregó</span><span className="text-center">Merma</span><span className="text-center">Devuelve</span></div>
-            {productos.filter(p => cargaTotal[s(p.sku)] > 0).map(p => { const sku = s(p.sku); return (
-              <div key={sku} className="grid grid-cols-5 gap-1 text-sm items-center py-1">
-                <span className="font-semibold text-slate-700 text-xs">{s(p.nombre)}</span>
-                <span className="text-center text-slate-500">{cargaTotal[sku]}</span>
-                <span className="text-center text-slate-500">{entregadoTotal[sku]||0}</span>
-                <span className={`text-center ${(mermaTotal[sku]||0)>0?"text-amber-600 font-semibold":"text-slate-500"}`}>{mermaTotal[sku]||0}</span>
-                <span className={`text-center font-bold ${devuelto[sku]===0?"text-emerald-600":devuelto[sku]>0?"text-blue-600":"text-red-600"}`}>{devuelto[sku]}</span>
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Inventario del camión</h3>
+            {!balanceCierre ? (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500">Primero registra ventas, cobros{mermasSinRegistrar > 0 ? ` y ${mermasSinRegistrar} ${mermasSinRegistrar === 1 ? 'merma' : 'mermas'}` : ''}. El sistema calcula lo que debe regresar en el camión.</p>
+                <button onClick={prepararCierre} disabled={preparandoCierre || rutaCerrada} className="w-full py-3.5 bg-cyan-700 text-white font-bold rounded-[18px] text-sm min-h-[48px] active:scale-[0.98] transition-transform disabled:opacity-50">{preparandoCierre ? 'Registrando…' : 'Registrar ventas y mermas'}</button>
               </div>
-            );})}
-            {(() => { const totalCarga = Object.values(cargaTotal).reduce((a,b)=>a+b,0); const totalEntr = Object.values(entregadoTotal).reduce((a,b)=>a+b,0); const totalMerma = Object.values(mermaTotal).reduce((a,b)=>a+b,0); const totalDev = Object.values(devuelto).reduce((a,b)=>a+b,0); return (
-              <div className="grid grid-cols-5 gap-1 text-xs items-center py-1.5 border-t border-slate-200 mt-1 font-bold text-slate-700">
-                <span>Total</span>
-                <span className="text-center">{totalCarga}</span>
-                <span className="text-center">{totalEntr}</span>
-                <span className="text-center text-amber-600">{totalMerma}</span>
-                <span className={`text-center ${totalDev===0?"text-emerald-600":totalDev>0?"text-blue-600":"text-red-600"}`}>{totalDev}</span>
+            ) : (
+              <div>
+                <div className="grid grid-cols-5 gap-1 text-[10px] font-bold text-slate-400 uppercase mb-1"><span>Producto</span><span className="text-center">Cargó</span><span className="text-center">Entregó</span><span className="text-center">Merma</span><span className="text-center">Contado</span></div>
+                {balanceCierre.map(b => {
+                  const prod = productos.find(p => s(p.sku) === b.sku);
+                  const falta = difConteo.faltante[b.sku] || 0;
+                  const sobra = difConteo.sobrante[b.sku] || 0;
+                  return (
+                    <div key={b.sku} className="grid grid-cols-5 gap-1 text-sm items-center py-1">
+                      <span className="font-semibold text-slate-700 text-xs">{prod ? s(prod.nombre) : b.sku}<span className="block text-[10px] text-slate-400 font-normal">debe regresar {b.restante}</span></span>
+                      <span className="text-center text-slate-500">{b.cargado}</span>
+                      <span className="text-center text-slate-500">{b.entregado}</span>
+                      <span className={`text-center ${b.merma > 0 ? "text-amber-600 font-semibold" : "text-slate-500"}`}>{b.merma}</span>
+                      <input type="number" inputMode="numeric" min="0" value={conteoForm[b.sku] ?? ''} disabled={rutaCerrada}
+                        onChange={e => { setConteoForm(f => ({ ...f, [b.sku]: e.target.value })); setFaltanteCierre(null); }}
+                        className={`w-full min-h-[40px] px-1 py-1.5 border rounded-lg text-base text-center ${falta > 0 || sobra > 0 ? 'border-red-300 text-red-700' : 'border-slate-200'}`} />
+                    </div>
+                  );
+                })}
+                <div className="grid grid-cols-5 gap-1 text-xs items-center py-1.5 border-t border-slate-200 mt-1 font-bold text-slate-700">
+                  <span>Total</span><span className="text-center">{totBal.cargado}</span><span className="text-center">{totBal.entregado}</span><span className="text-center text-amber-600">{totBal.merma}</span><span className="text-center">{totBal.restante}</span>
+                </div>
+                {(Object.keys(difConteo.faltante).length > 0 || faltanteCierre) && (
+                  <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
+                    <p className="text-xs text-red-700 font-bold">Falta producto según el sistema. Vuelve a contar o registra la merma (causa y foto):</p>
+                    {Object.entries(faltanteCierre || difConteo.faltante).map(([sku, q]) => (
+                      <button key={sku} onClick={() => abrirMermaFaltante(sku, q)} className="w-full text-left text-xs px-3 py-2 bg-white border border-red-200 rounded-lg min-h-[40px] font-semibold text-red-700">Registrar merma de {q}× {sku}</button>
+                    ))}
+                    {mermasSinRegistrar > 0 && (
+                      <button onClick={prepararCierre} disabled={preparandoCierre} className="w-full py-2.5 bg-cyan-700 text-white font-bold rounded-lg text-xs min-h-[40px] disabled:opacity-50">{preparandoCierre ? 'Registrando…' : 'Registrar mermas y actualizar'}</button>
+                    )}
+                  </div>
+                )}
+                {Object.keys(difConteo.sobrante).length > 0 && (
+                  <p className="mt-2 text-xs text-red-600 font-semibold">El conteo supera lo que debe traer el camión: {Object.entries(difConteo.sobrante).map(([sku, q]) => `${q}× ${sku}`).join(', ')}. Vuelve a contar.</p>
+                )}
               </div>
-            );})()}
+            )}
           </div>
           <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Cobros</h3>
@@ -1591,13 +1654,13 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           {pendientes.length > 0 && <div className="bg-red-50 rounded-xl p-3 border border-red-200"><p className="text-xs text-red-600 font-bold">⚠ {pendientes.length} órdenes sin entregar</p></div>}
 
           {!rutaCerrada ? (
-            <button onClick={cerrarRuta} disabled={cerrandoRuta} className="w-full py-4 bg-slate-900 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:opacity-50">{cerrandoRuta ? 'Enviando reporte...' : 'Cerrar ruta y enviar reporte'}</button>
+            <button onClick={cerrarRuta} disabled={cerrandoRuta || !balanceCierre || Object.keys(difConteo.faltante).length > 0 || Object.keys(difConteo.sobrante).length > 0} className="w-full py-4 bg-slate-900 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:opacity-50">{cerrandoRuta ? 'Cerrando ruta…' : (balanceCierre ? 'Confirmar devolución y cerrar ruta' : 'Registra ventas y mermas para contar')}</button>
           ) : (
             <div className="text-center space-y-4">
               <div className="bg-emerald-50/90 border border-emerald-200 rounded-[24px] p-5">
                 <p className="text-2xl mb-2">✓</p>
-                <p className="text-base font-bold text-emerald-700">Reporte enviado</p>
-                <p className="text-xs text-emerald-600 mt-1">Ruta cerrada correctamente</p>
+                <p className="text-base font-bold text-emerald-700">Ruta cerrada</p>
+                <p className="text-xs text-emerald-600 mt-1">La devolución quedó registrada en el cuarto frío</p>
               </div>
               <button onClick={onLogout} className="w-full py-4 bg-slate-900 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98] transition-transform">Cerrar sesión</button>
             </div>

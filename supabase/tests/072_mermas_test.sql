@@ -12,6 +12,10 @@ BEGIN;
 DELETE FROM mermas_efectos; DELETE FROM mermas;
 DELETE FROM storage.objects WHERE bucket_id = 'mermas';
 DELETE FROM produccion WHERE folio LIKE 'TR-72%';
+DO $$ BEGIN IF to_regclass('public.stock_operaciones') IS NOT NULL THEN
+  DELETE FROM inventario_mov WHERE producto LIKE 'M72-%' AND (ruta_id BETWEEN 7200 AND 7299 OR referencia LIKE 'carga_ruta/R-72%');
+  DELETE FROM stock_operaciones WHERE ruta_id BETWEEN 7200 AND 7299;
+END IF; END $$;
 DELETE FROM rutas WHERE id BETWEEN 7200 AND 7299;
 DELETE FROM cuartos_frios WHERE id LIKE 'CF-72%';
 DELETE FROM productos WHERE sku LIKE 'M72-%';
@@ -72,6 +76,21 @@ BEGIN
   END IF;
   RAISE NOTICE 'OK: % [% %]', p_msg, v_state, left(v_err, 80);
 END $$;
+CREATE OR REPLACE FUNCTION t_p087() RETURNS BOOLEAN LANGUAGE sql STABLE AS $$ SELECT to_regprocedure('public.finalizar_inventario_ruta(uuid,bigint,jsonb)') IS NOT NULL $$;
+GRANT EXECUTE ON FUNCTION t_p087() TO anon, authenticated, service_role;
+-- 087: la merma de ruta consume el inventario del camión; la ruta 7201 necesita
+-- una carga estructurada (fixture como superusuario, sin tocar cuartos).
+CREATE OR REPLACE FUNCTION t72_carga_7201() RETURNS VOID LANGUAGE plpgsql AS $f$
+BEGIN
+  IF NOT t_p087() THEN RETURN; END IF;
+  INSERT INTO stock_operaciones (operacion_id, tipo, clave, actor_id, actor, ruta_id, resultado)
+  VALUES ('72000000-0000-0000-0000-0000000c7201', 'carga_ruta', 'carga|7201|firma', 102, 'Chofer 72', 7201,
+          '{"asignacion": [{"cuarto_id": "CF-72A", "sku": "M72-A", "cantidad": 10}, {"cuarto_id": "CF-72A", "sku": "M72-B", "cantidad": 5}]}');
+  INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario, referencia, cuarto_id, ruta_id, operacion_id) VALUES
+    ('Salida', 'M72-A', 10, 'Carga ruta R-7201', 'Chofer 72', 'carga_ruta/R-7201', 'CF-72A', 7201, '72000000-0000-0000-0000-0000000c7201'),
+    ('Salida', 'M72-B', 5, 'Carga ruta R-7201', 'Chofer 72', 'carga_ruta/R-7201', 'CF-72A', 7201, '72000000-0000-0000-0000-0000000c7201');
+  UPDATE rutas SET carga_confirmada_at = now(), carga_real = '{"M72-A": 10, "M72-B": 5}' WHERE id = 7201;
+END $f$;
 -- Filas afectadas por un DML (para DELETE/UPDATE filtrados por RLS).
 CREATE OR REPLACE FUNCTION t72_rows(p_sql TEXT) RETURNS BIGINT LANGUAGE plpgsql AS $$
 DECLARE n BIGINT; BEGIN EXECUTE p_sql; GET DIAGNOSTICS n = ROW_COUNT; RETURN n; END $$;
@@ -90,8 +109,8 @@ SELECT t72_assert((SELECT count(*) = 2 AND bool_and(privilege_type::text = 'SELE
 SELECT t72_assert(NOT has_sequence_privilege('anon', 'mermas_id_seq', 'USAGE') AND NOT has_sequence_privilege('authenticated', 'mermas_id_seq', 'USAGE') AND NOT has_sequence_privilege('authenticated', 'mermas_efectos_id_seq', 'USAGE'), 'B1-36c secuencias sin USAGE para anon/authenticated');
 SELECT t72_assert((SELECT bool_and(NOT has_function_privilege('anon', p.oid, 'EXECUTE') AND NOT has_function_privilege('public', p.oid, 'EXECUTE') AND has_function_privilege('authenticated', p.oid, 'EXECUTE'))
   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname IN ('registrar_merma', 'registrar_mermas_ruta', 'revertir_merma', 'erp_foto_merma_en_uso')), 'B1-36d RPC: sin EXECUTE para PUBLIC/anon, sí authenticated');
-SELECT t72_assert((SELECT count(*) = 4 AND bool_and(p.prosecdef AND array_to_string(p.proconfig, ';') = 'search_path=public, pg_temp')
-  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname IN ('registrar_merma', 'registrar_mermas_ruta', 'revertir_merma', 'erp_foto_merma_en_uso')), 'B1-37 SECURITY DEFINER nuevos con search_path = public, pg_temp');
+SELECT t72_assert((SELECT count(*) = CASE WHEN t_p087() THEN 5 ELSE 4 END AND bool_and(p.prosecdef AND array_to_string(p.proconfig, ';') = 'search_path=public, pg_temp')
+  FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname = 'public' AND p.proname IN ('registrar_merma', 'registrar_mermas_ruta', 'revertir_merma', 'erp_foto_merma_en_uso')), 'B1-37 SECURITY DEFINER nuevos con search_path = public, pg_temp (087: + lote con operación)');
 SELECT t72_assert((SELECT bool_and(array_to_string(p.proconfig, ';') = 'search_path=public, pg_temp') FROM pg_proc p WHERE p.proname IN ('mermas_guard_inmutable', 'mermas_efectos_guard')), 'B1-37b triggers de inmutabilidad con search_path fijo');
 SELECT t72_assert(NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('mermas', 'mermas_efectos') AND (qual = 'true' OR with_check = 'true' OR cmd <> 'SELECT')), 'B1-36e policies de mermas: solo SELECT, ninguna USING/CHECK true');
 SELECT t72_assert(NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'mermas_authenticated_update'), 'B1-36f Storage: sin policy UPDATE en el bucket mermas');
@@ -261,24 +280,31 @@ SELECT t72_assert(t72_stock('CF-72A', 'M72-A') = 8 AND t72_stock('CF-72B', 'M72-
   AND (SELECT count(*) FROM inventario_mov WHERE tipo = 'Reverso merma' AND referencia = 'MERMA-' || (SELECT v FROM t72_ids WHERE k = 'p1')) = 2, 'B1-27b stock/kardex restaurados una sola vez');
 SELECT t72_err($q$UPDATE mermas SET estatus = 'Activa', revertida_at = NULL WHERE id = (SELECT v FROM t72_ids WHERE k = 'p1')$q$, 'B1-27c guard: Revertida es terminal', '42501');
 
+SELECT t72_carga_7201();
 \echo '── B1-32 flujo de ruta (Chofer, lote atómico e idempotente)'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t72_actor('authenticated', '72000000-0000-0000-0000-000000000002');
 INSERT INTO t72_ids (k, j) VALUES ('ruta', registrar_mermas_ruta(7201,
   '[{"sku":"M72-A","cant":3,"causa":"Bolsa rota","foto":"data:image/jpeg;base64,AAAA"},{"sku":"M72-B","cant":2,"causa":"Hielo derretido"}]'::jsonb));
 INSERT INTO t72_ids (k, j) VALUES ('ruta_retry', registrar_mermas_ruta(7201, '[{"sku":"M72-A","cant":3,"causa":"Bolsa rota"}]'::jsonb));
-SELECT t72_err($q$SELECT registrar_mermas_ruta(7203, '[{"sku":"M72-B","cant":1},{"sku":"M72-A","cant":999}]'::jsonb)$q$, 'B1-32a lote con una merma imposible: falla completo', '%Stock insuficiente%');
+SELECT t72_err($q$SELECT registrar_mermas_ruta(7203, '[{"sku":"M72-B","cant":1},{"sku":"M72-A","cant":999}]'::jsonb)$q$, 'B1-32a lote con una merma imposible: falla completo', CASE WHEN t_p087() THEN '22023' ELSE '%Stock insuficiente%' END);
 SELECT t72_err($q$SELECT registrar_mermas_ruta(7203, '[{"sku":"M72-B","cant":1.5}]'::jsonb)$q$, 'B1-32b cantidad no entera rechazada', '22023');
 SELECT t72_assert(t72_count('SELECT count(*) FROM mermas') = 2, 'B1-32c Chofer ve solo sus mermas (no la de Producción)');
 COMMIT;
 SELECT t72_assert((SELECT NOT (j ->> 'skipped')::boolean AND jsonb_array_length(j -> 'registradas') = 2 FROM t72_ids WHERE k = 'ruta'), 'B1-32d lote de ruta registra 2 mermas');
 SELECT t72_assert((SELECT (j ->> 'skipped')::boolean FROM t72_ids WHERE k = 'ruta_retry') AND (SELECT count(*) FROM mermas WHERE ruta_id = 7201) = 2, 'B1-32e reintento del cierre: idempotente, sin duplicados');
-SELECT t72_assert((SELECT count(*) FROM mermas WHERE ruta_id = 7203) = 0 AND t72_stock('CF-72A', 'M72-B') = 2, 'B1-32f lote fallido sin efectos (ni la merma válida del lote)');
+SELECT t72_assert((SELECT count(*) FROM mermas WHERE ruta_id = 7203) = 0 AND t72_stock('CF-72A', 'M72-B') = CASE WHEN t_p087() THEN 4 ELSE 2 END, 'B1-32f lote fallido sin efectos (ni la merma válida del lote)');
 SELECT t72_assert((SELECT bool_and(usuario_id = 102 AND origen = 'Ruta Chofer 72' AND estatus = 'Activa') FROM mermas WHERE ruta_id = 7201), 'B1-32g ruta: usuario_id = chofer real, origen derivado de la ruta');
-SELECT t72_assert(t72_stock('CF-72A', 'M72-A') = 5 AND t72_stock('CF-72A', 'M72-B') = 2, 'B1-32h ruta: stock descontado');
+SELECT t72_assert(t72_stock('CF-72A', 'M72-A') = CASE WHEN t_p087() THEN 8 ELSE 5 END AND t72_stock('CF-72A', 'M72-B') = CASE WHEN t_p087() THEN 4 ELSE 2 END, 'B1-32h ruta: stock descontado (087: del camión, los cuartos no cambian)');
 SELECT t72_assert((SELECT foto_url LIKE 'data:image/jpeg;base64,%' FROM mermas WHERE ruta_id = 7201 AND sku = 'M72-A'), 'B1-31g ruta: foto data URL del chofer aceptada');
 SELECT t72_assert((SELECT count(*) = 1 AND bool_and(mc.concepto = 'Merma ruta Chofer 72: 3× M72-A (Hielo A) — Bolsa rota' AND mc.monto = 30)
   FROM mermas m JOIN movimientos_contables mc ON mc.id = m.mov_contable_id WHERE m.ruta_id = 7201), 'B1-32i ruta: egreso solo para el SKU con costo, ligado por id');
-SELECT t72_assert((SELECT bool_and(i.usuario = 'Chofer 72' AND i.origen = 'Merma ruta Chofer 72') FROM mermas m JOIN mermas_efectos e ON e.merma_id = m.id JOIN inventario_mov i ON i.id = e.inv_mov_id WHERE m.ruta_id = 7201), 'B1-34b kardex de ruta atribuido al chofer real');
+DO $do$ BEGIN
+  IF t_p087() THEN
+    EXECUTE $q$SELECT t72_assert((SELECT count(*) = 2 AND bool_and(i.usuario = 'Chofer 72' AND i.origen = 'Merma ruta Chofer 72' AND i.cuarto_id IS NULL AND i.ruta_id = 7201) FROM inventario_mov i WHERE i.ruta_id = 7201 AND i.referencia LIKE 'MERMA-%') AND NOT EXISTS (SELECT 1 FROM mermas_efectos e JOIN mermas mm ON mm.id = e.merma_id WHERE mm.ruta_id = 7201), 'B1-34b kardex de ruta atribuido al chofer real (087: kardex del camión, sin efectos de cuarto)')$q$;
+  ELSE
+    PERFORM t72_assert((SELECT bool_and(i.usuario = 'Chofer 72' AND i.origen = 'Merma ruta Chofer 72') FROM mermas m JOIN mermas_efectos e ON e.merma_id = m.id JOIN inventario_mov i ON i.id = e.inv_mov_id WHERE m.ruta_id = 7201), 'B1-34b kardex de ruta atribuido al chofer real');
+  END IF;
+END $do$;
 
 \echo '── B1-33 flujo de producción: merma de proceso (transformación)'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t72_actor('authenticated', '72000000-0000-0000-0000-000000000003');
@@ -295,7 +321,7 @@ SELECT t72_assert((SELECT NOT afecta_stock AND usuario_id = 103 AND mov_contable
 BEGIN; SET LOCAL ROLE authenticated; SELECT t72_actor('authenticated', '72000000-0000-0000-0000-000000000001');
 INSERT INTO t72_ids (k, j) SELECT 'rev_tr', revertir_merma((j ->> 'id')::bigint, 'transformación mal capturada') FROM t72_ids WHERE k = 'tr';
 COMMIT;
-SELECT t72_assert((SELECT (j ->> 'efectos_revertidos')::int = 0 FROM t72_ids WHERE k = 'rev_tr') AND t72_stock('CF-72A', 'M72-A') = 5, 'B1-33f reverso de merma de proceso: solo cambia estatus');
+SELECT t72_assert((SELECT (j ->> 'efectos_revertidos')::int = 0 FROM t72_ids WHERE k = 'rev_tr') AND t72_stock('CF-72A', 'M72-A') = CASE WHEN t_p087() THEN 8 ELSE 5 END, 'B1-33f reverso de merma de proceso: solo cambia estatus');
 
 \echo '── Filas legacy (como las 2 de producción): el reverso falla cerrado'
 INSERT INTO mermas (fecha, sku, cantidad, causa, origen, foto_url, usuario_id) VALUES (DATE '2026-08-22', 'M72-A', 10, 'Bolsa rota', 'Legacy', 'x/legacy.jpg', 103);
@@ -303,7 +329,7 @@ INSERT INTO t72_ids (k, v) SELECT 'legacy', max(id) FROM mermas WHERE origen = '
 BEGIN; SET LOCAL ROLE authenticated; SELECT t72_actor('authenticated', '72000000-0000-0000-0000-000000000001');
 SELECT t72_err(format('SELECT revertir_merma(%s)', (SELECT v FROM t72_ids WHERE k = 'legacy')), 'B1-L1 merma legacy sin efectos: reverso rechazado (fail closed)', '55000');
 ROLLBACK;
-SELECT t72_assert((SELECT estatus = 'Activa' AND afecta_stock FROM mermas WHERE id = (SELECT v FROM t72_ids WHERE k = 'legacy')) AND t72_stock('CF-72A', 'M72-A') = 5, 'B1-L2 fila legacy intacta y sin cambios de stock');
+SELECT t72_assert((SELECT estatus = 'Activa' AND afecta_stock FROM mermas WHERE id = (SELECT v FROM t72_ids WHERE k = 'legacy')) AND t72_stock('CF-72A', 'M72-A') = CASE WHEN t_p087() THEN 8 ELSE 5 END, 'B1-L2 fila legacy intacta y sin cambios de stock');
 
 \echo '── Lectura por rol'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t72_actor('authenticated', '72000000-0000-0000-0000-000000000003');
@@ -330,6 +356,10 @@ DELETE FROM inventario_mov WHERE referencia LIKE 'MERMA-%';
 DELETE FROM auditoria WHERE modulo = 'Mermas';
 DELETE FROM storage.objects WHERE bucket_id = 'mermas';
 DELETE FROM produccion WHERE folio LIKE 'TR-72%';
+DO $$ BEGIN IF to_regclass('public.stock_operaciones') IS NOT NULL THEN
+  DELETE FROM inventario_mov WHERE producto LIKE 'M72-%' AND (ruta_id BETWEEN 7200 AND 7299 OR referencia LIKE 'carga_ruta/R-72%');
+  DELETE FROM stock_operaciones WHERE ruta_id BETWEEN 7200 AND 7299;
+END IF; END $$;
 DELETE FROM rutas WHERE id BETWEEN 7200 AND 7299;
 DELETE FROM cuartos_frios WHERE id LIKE 'CF-72%';
 DELETE FROM productos WHERE sku LIKE 'M72-%';

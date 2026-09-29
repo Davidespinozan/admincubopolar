@@ -65,6 +65,8 @@ BEGIN
 END $$;
 CREATE OR REPLACE FUNCTION t79_rows(p_sql TEXT) RETURNS BIGINT LANGUAGE plpgsql AS $$
 DECLARE n BIGINT; BEGIN EXECUTE p_sql; GET DIAGNOSTICS n = ROW_COUNT; RETURN n; END $$;
+CREATE OR REPLACE FUNCTION t_p087() RETURNS BOOLEAN LANGUAGE sql STABLE AS $$ SELECT to_regprocedure('public.finalizar_inventario_ruta(uuid,bigint,jsonb)') IS NOT NULL $$;
+GRANT EXECUTE ON FUNCTION t_p087() TO anon, authenticated, service_role;
 CREATE OR REPLACE FUNCTION t79_count(p_sql TEXT) RETURNS BIGINT LANGUAGE plpgsql AS $$
 DECLARE n BIGINT; BEGIN EXECUTE 'SELECT count(*) FROM (' || p_sql || ') x' INTO n; RETURN n; END $$;
 CREATE OR REPLACE FUNCTION t79_huella() RETURNS TEXT LANGUAGE sql SECURITY DEFINER AS $$
@@ -152,8 +154,14 @@ SELECT t79_identidad('079-30 Chofer activo', 'Chofer', 7903);
 INSERT INTO chofer_ubicaciones (ruta_id, chofer_id, latitud, longitud, precision_m) VALUES (7901, 7903, 20.61, -103.31, 5);
 SELECT t79_assert(t79_count($q$SELECT 1 FROM chofer_ubicaciones WHERE ruta_id BETWEEN 7901 AND 7999$q$) = 2, '079-31 Chofer: inserta su GPS y solo ve el propio (chofer_insert_own / admin_or_self_read con get_my_user_id)');
 SELECT t79_err($q$INSERT INTO chofer_ubicaciones (ruta_id, chofer_id, latitud, longitud) VALUES (7902, 7909, 1, 1)$q$, '079-32 Chofer: GPS a nombre de otro chofer denegado', '42501');
-SELECT t79_assert(t79_rows($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 7901$q$) = 1, '079-33 Chofer: cierra su ruta (078 intacto)');
-SELECT t79_err($q$UPDATE rutas SET estatus = 'En progreso' WHERE id = 7901$q$, '079-34 Chofer: guard 078 sigue vigente', '42501');
+DO $do$ BEGIN
+  IF t_p087() THEN
+    PERFORM t79_err($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 7901$q$, '079-33 (087) Chofer: el cierre directo ya no existe (finalizar_inventario_ruta)', '42501');
+  ELSE
+    PERFORM t79_assert(t79_rows($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 7901$q$) = 1, '079-33 Chofer: cierra su ruta (078 intacto)');
+    PERFORM t79_err($q$UPDATE rutas SET estatus = 'En progreso' WHERE id = 7901$q$, '079-34 Chofer: guard 078 sigue vigente', '42501');
+  END IF;
+END $do$;
 SELECT t79_err($q$INSERT INTO productos (sku, nombre, precio, stock) VALUES ('P79-C', 'x', 1, 1)$q$, '079-35 Chofer: sin alta de productos', '42501');
 ROLLBACK;
 

@@ -1,11 +1,21 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { mermasActivas } from '../data/mermasLogic';
 import { Modal, FormBtn, useToast, s, n, fmtMoney } from './views/viewsCommon';
 import { reporteRutaDiaria } from '../utils/exportReports';
 
-export default function ReporteRutaModal({ ruta, data, onClose }) {
+export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
   const [notas, setNotas] = useState('');
   const toast = useToast();
+  // 087: balance canónico del camión (servidor). Si falla cerrado (ruta
+  // histórica sin carga estructurada) se muestra lo registrado, rotulado.
+  const [balance, setBalance] = useState(null);
+  useEffect(() => {
+    let vivo = true;
+    if (ruta?.id && actions?.obtenerBalanceRuta) {
+      actions.obtenerBalanceRuta(ruta.id).then(r => { if (vivo) setBalance(r && !r.error ? r.data : []); });
+    }
+    return () => { vivo = false; };
+  }, [ruta?.id, actions]);
 
   if (!ruta) return null;
 
@@ -67,7 +77,9 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
   const totalCredito = n(ruta.total_credito || ruta.totalCredito);
   const totalGeneral = totalCobrado + totalCredito;
 
-  const skusUnicos = Array.from(new Set([
+  const usarBalance = Array.isArray(balance) && balance.length > 0;
+  const balancePorSku = usarBalance ? Object.fromEntries(balance.map(b => [b.sku, b])) : {};
+  const skusUnicos = usarBalance ? balance.map(b => b.sku) : Array.from(new Set([
     ...Object.keys(carga),
     ...Object.keys(cargaAuth),
     ...Object.keys(vendidoPorSku),
@@ -79,7 +91,7 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
 
   const handleDescargarPDF = () => {
     try {
-      reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, data.usuarios || [], notas);
+      reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, data.usuarios || [], notas, balance);
     } catch (err) {
       console.error('[ReporteRuta] Error al generar PDF:', err);
       toast?.error('No se pudo generar el PDF: ' + (err?.message || err));
@@ -136,7 +148,7 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
         {/* Carga y movimiento */}
         {skusUnicos.length > 0 && (
           <div>
-            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">📦 Carga y movimiento</h4>
+            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">📦 Carga y movimiento{usarBalance ? '' : ' (registro histórico, sin balance canónico)'}</h4>
             <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50">
@@ -151,10 +163,11 @@ export default function ReporteRutaModal({ ruta, data, onClose }) {
                 <tbody className="divide-y divide-slate-100">
                   {skusUnicos.map(sku => {
                     const prod = findProd(sku);
-                    const cargado = n(carga[sku] || cargaAuth[sku]);
-                    const dev = n(devolucion[sku]);
-                    const merma = n(mermaPorSku[sku]);
-                    const vendido = n(vendidoPorSku[sku]);
+                    const bal = balancePorSku[sku];
+                    const cargado = bal ? bal.cargado : n(carga[sku] || cargaAuth[sku]);
+                    const dev = bal ? bal.devuelto : n(devolucion[sku]);
+                    const merma = bal ? bal.merma : n(mermaPorSku[sku]);
+                    const vendido = bal ? bal.entregado : n(vendidoPorSku[sku]);
                     return (
                       <tr key={sku} className="hover:bg-slate-50">
                         <td className="px-4 py-2.5">

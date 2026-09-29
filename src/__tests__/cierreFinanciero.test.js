@@ -116,13 +116,22 @@ describe('buildCerrarFinancieroArgs / interpretar / mensajes', () => {
 
 describe('auditoría estática: el store usa el contrato con operacion_id', () => {
   const src = readFileSync(fileURLToPath(new URL('../data/supaStore.js', import.meta.url)), 'utf8');
-  const cuerpo = src.slice(src.indexOf('cerrarRutaCompleta: async'), src.indexOf('// ── AUDITORÍA ──'));
-  it('cerrarRutaCompleta resuelve el UUID desde el storage, lo persiste y lo borra solo al final', () => {
-    expect(cuerpo).toMatch(/leerOperacionCierre\(/);
-    expect(cuerpo).toMatch(/guardarOperacionCierre\(/);
-    expect(cuerpo).toMatch(/buildCerrarFinancieroArgs\(/);
-    expect(cuerpo).toMatch(/rpc\('cerrar_ruta_financiero',\s*built\.args\)/);
-    expect(cuerpo.indexOf('borrarOperacionCierre(')).toBeGreaterThan(cuerpo.indexOf("estatus: 'Cerrada'"));
-    expect(cuerpo).not.toMatch(/p_ruta_id:\s*rutaId \|\| null/);
+  const cuerpo = (nombre) => {
+    const i = src.indexOf(`      ${nombre}: async`);
+    const j = src.indexOf('\n      ', src.indexOf('\n      },', i) + 1);
+    return src.slice(i, j);
+  };
+  it('prepararCierreRuta resuelve el UUID desde el storage y lo persiste; no lo borra', () => {
+    const b = cuerpo('prepararCierreRuta');
+    expect(b).toMatch(/leerOperacionCierre\(/);
+    expect(b).toMatch(/guardarOperacionCierre\(/);
+    expect(b).toMatch(/buildCerrarFinancieroArgs\(/);
+    expect(b).toMatch(/rpc\('cerrar_ruta_financiero',\s*built\.args\)/);
+    expect(b).not.toMatch(/borrarOperacionCierre\(/);
+  });
+  it('el UUID del cierre financiero se borra solo tras finalizar el inventario (087)', () => {
+    const b = cuerpo('finalizarInventarioRuta');
+    expect(b.indexOf('borrarOperacionCierre(')).toBeGreaterThan(b.indexOf("rpc('finalizar_inventario_ruta'"));
+    expect(src).not.toMatch(/cerrarRutaCompleta: async/);
   });
 });

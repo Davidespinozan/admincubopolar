@@ -60,6 +60,8 @@ BEGIN
 END $$;
 CREATE OR REPLACE FUNCTION t85_assert(p_cond BOOLEAN, p_msg TEXT) RETURNS VOID LANGUAGE plpgsql AS $$
 BEGIN IF NOT COALESCE(p_cond, false) THEN RAISE EXCEPTION 'FAIL: %', p_msg; END IF; RAISE NOTICE 'OK: %', p_msg; END $$;
+CREATE OR REPLACE FUNCTION t_p087() RETURNS BOOLEAN LANGUAGE sql STABLE AS $$ SELECT to_regprocedure('public.finalizar_inventario_ruta(uuid,bigint,jsonb)') IS NOT NULL $$;
+GRANT EXECUTE ON FUNCTION t_p087() TO anon, authenticated, service_role;
 CREATE OR REPLACE FUNCTION t85_err(p_sql TEXT, p_msg TEXT, p_state TEXT) RETURNS VOID LANGUAGE plpgsql AS $$
 DECLARE v_state TEXT; v_err TEXT;
 BEGIN
@@ -157,10 +159,10 @@ SELECT t85_err($q$SELECT registrar_produccion(gen_random_uuid(), 'T', 'M', 'P85-
 ROLLBACK;
 SELECT t85_assert(t85_cf('CF-85B', 'P85-HIELO') = 6 AND (SELECT stock = 14 FROM productos WHERE sku = 'P85-BOLSA'), '085-35 nada cambió tras el rechazo');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t85_actor('authenticated', 'admin85@t', '85000000-0000-0000-0000-000000000001');
-INSERT INTO t85_ids VALUES ('c1', cerrar_ruta_atomic(8502, '{"P85-HIELO": 3}'::jsonb, 'CF-85B', '[]'::jsonb, 0, 0, 'Admin 85')::text);
+DO $$ BEGIN IF NOT t_p087() THEN INSERT INTO t85_ids VALUES ('c1', cerrar_ruta_atomic(8502, '{"P85-HIELO": 3}'::jsonb, 'CF-85B', '[]'::jsonb, 0, 0, 'Admin 85')::text); END IF; END $$;  -- 087: retirada
 COMMIT;
-SELECT t85_assert((SELECT estatus = 'Cerrada' AND devolucion = '{"P85-HIELO": 3}'::jsonb FROM rutas WHERE id = 8502) AND t85_cf('CF-85B', 'P85-HIELO') = 9, '085-36 cerrar_ruta_atomic (Admin): cierra y devuelve stock');
-SELECT t85_assert((SELECT count(*) = 1 AND bool_and(cuarto_id = 'CF-85B' AND ruta_id = 8502 AND usuario = 'Admin 85' AND referencia = 'devolucion_ruta/R-8502' AND cantidad = 3 AND tipo = 'Entrada') FROM inventario_mov WHERE producto = 'P85-HIELO' AND origen LIKE 'Devolución ruta%'), '085-37 kardex de la devolución con cuarto, ruta y referencia; actor real');
+SELECT t85_assert(CASE WHEN t_p087() THEN to_regprocedure('public.cerrar_ruta_atomic(bigint,jsonb,text,jsonb,numeric,numeric,text)') IS NULL AND t85_cf('CF-85B', 'P85-HIELO') = 6 AND (SELECT estatus <> 'Cerrada' FROM rutas WHERE id = 8502) ELSE (SELECT estatus = 'Cerrada' AND devolucion = '{"P85-HIELO": 3}'::jsonb FROM rutas WHERE id = 8502) AND t85_cf('CF-85B', 'P85-HIELO') = 9 END, '085-36 cerrar_ruta_atomic (Admin): cierra y devuelve stock (087: cerrar_ruta_atomic retirada)');
+SELECT t85_assert(CASE WHEN t_p087() THEN (SELECT count(*) = 0 FROM inventario_mov WHERE producto = 'P85-HIELO' AND origen LIKE 'Devolución ruta%%') ELSE (SELECT count(*) = 1 AND bool_and(cuarto_id = 'CF-85B' AND ruta_id = 8502 AND usuario = 'Admin 85' AND referencia = 'devolucion_ruta/R-8502' AND cantidad = 3 AND tipo = 'Entrada') FROM inventario_mov WHERE producto = 'P85-HIELO' AND origen LIKE 'Devolución ruta%') END, '085-37 kardex de la devolución con cuarto, ruta y referencia; actor real (087: cerrar_ruta_atomic retirada)');
 
 \echo '── 085: la carga solo se confirma por contrato (bypass directo denegado)'
 INSERT INTO t85_ids VALUES ('h1', t85_huella());
@@ -180,7 +182,13 @@ INSERT INTO t85_ids VALUES ('l1r', confirmar_carga_ruta('85000000-0000-0000-0000
 SELECT t85_err($q$UPDATE rutas SET carga_confirmada_at = NULL, carga_confirmada_por = NULL, firma_carga = NULL, firma_excepcion = false, firma_excepcion_motivo = NULL, estatus = 'Pendiente firma' WHERE id = 8501$q$, '085-50 compensación Cargada → Pendiente firma ya no es una transición del Chofer', '42501');
 SELECT t85_assert(t85_rows($q$UPDATE rutas SET estatus = 'En progreso' WHERE id = 8501$q$) = 1, '085-51 Cargada → En progreso sigue funcionando');
 INSERT INTO t85_ids VALUES ('n1', registrar_no_entrega('85000000-0000-0000-0000-00000000d001', 8520, 'Local cerrado')::text);
-SELECT t85_assert(t85_rows($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 8501$q$) = 1, '085-52 En progreso → Cerrada sigue funcionando');
+DO $do$ BEGIN
+  IF t_p087() THEN
+    PERFORM t85_err($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 8501$q$, '085-52 (087) En progreso → Cerrada solo por finalizar_inventario_ruta', '42501');
+  ELSE
+    PERFORM t85_assert(t85_rows($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 8501$q$) = 1, '085-52 En progreso → Cerrada sigue funcionando');
+  END IF;
+END $do$;
 COMMIT;
 SELECT t85_assert(((SELECT v FROM t85_ids WHERE k = 'l1')::jsonb ->> 'replay') = 'false' AND ((SELECT v FROM t85_ids WHERE k = 'l1r')::jsonb ->> 'replay') = 'true' AND t85_cf('CF-85A', 'P85-HIELO') = 22 AND (SELECT carga_confirmada_por::text = '8503' AND firma_carga IS NOT NULL FROM rutas WHERE id = 8501), '085-53 confirmar_carga_ruta (Chofer dueño): PASS, 30 → 22 una sola vez, firmante = actor');
 SELECT t85_assert(((SELECT v FROM t85_ids WHERE k = 'n1')::jsonb ->> 'estatus') = 'No entregada' AND (SELECT estatus = 'No entregada' FROM ordenes WHERE id = 8520), '085-54 registrar_no_entrega: PASS');
@@ -189,8 +197,8 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t85_actor('authenticated', 'prod85@t
 INSERT INTO t85_ids VALUES ('s1', salida_cuarto_manual('85000000-0000-0000-0000-00000000e001', 'CF-85A', 'P85-HIELO', 2, 'Venta directa')::text);
 INSERT INTO t85_ids VALUES ('tr1', traspaso_cuartos('85000000-0000-0000-0000-00000000f001', 'CF-85A', 'CF-85B', 'P85-HIELO', 5)::text);
 COMMIT;
-SELECT t85_assert(t85_cf('CF-85A', 'P85-HIELO') = 15 AND t85_cf('CF-85B', 'P85-HIELO') = 14, '085-56 salida_cuarto_manual y traspaso_cuartos (Producción): PASS (22 → 20 → 15; 9 → 14)');
-SELECT t85_assert((SELECT count(*) = 8 AND bool_and(cuarto_id IS NOT NULL) FROM inventario_mov WHERE producto IN ('P85-HIELO', 'P85-TRIT')) AND (SELECT count(*) = 2 AND bool_and(cuarto_id IS NULL) FROM inventario_mov WHERE producto IN ('P85-BOLSA', 'P85-BARRA')), '085-57 todo el kardex de cuartos lleva cuarto_id (8 filas); empaque/insumo de 076 siguen a nivel producto (2 filas)');
+SELECT t85_assert(t85_cf('CF-85A', 'P85-HIELO') = 15 AND t85_cf('CF-85B', 'P85-HIELO') = CASE WHEN t_p087() THEN 11 ELSE 14 END, '085-56 salida_cuarto_manual y traspaso_cuartos (Producción): PASS (22 → 20 → 15; 9 → 14)');
+SELECT t85_assert((SELECT count(*) = CASE WHEN t_p087() THEN 6 ELSE 8 END AND bool_and(cuarto_id IS NOT NULL) FROM inventario_mov WHERE producto IN ('P85-HIELO', 'P85-TRIT')) AND (SELECT count(*) = 2 AND bool_and(cuarto_id IS NULL) FROM inventario_mov WHERE producto IN ('P85-BOLSA', 'P85-BARRA')), '085-57 todo el kardex de cuartos lleva cuarto_id (8 filas); empaque/insumo de 076 siguen a nivel producto (2 filas)');
 
 BEGIN;
 DELETE FROM mermas_efectos WHERE merma_id IN (SELECT id FROM mermas WHERE sku LIKE 'P85-%');

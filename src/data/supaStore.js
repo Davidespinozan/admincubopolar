@@ -5,7 +5,7 @@ import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
-import { buildRegistrarMermaArgs, buildMermasRutaPayload, mensajeErrorMerma } from './mermasLogic';
+import { buildRegistrarMermaArgs, mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
 import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
@@ -22,8 +22,12 @@ import {
   excedeAutorizacion,
   validateEdicionRuta,
   validateCancelacionRuta,
-  buildCancelacionChanges,
 } from './rutasLogic';
+import {
+  interpretarBalance, normalizarConteo, claveMermasRuta, buildMermasRutaArgs, claveCierreInventario,
+  buildFinalizarInventarioArgs, detalleErrorInventario, mensajeErrorInventarioRuta,
+  claveStorageMermasRuta, claveStorageCierreInventario, leerOperacion, guardarOperacion, borrarOperacion,
+} from './inventarioRutaLogic';
 import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
 import { TABLAS_CORE_RT, TABLAS_SLICE_RT } from './realtimeLogic';
 
@@ -1384,11 +1388,11 @@ export function useSupaStore(userId, userName, userRol) {
       // Trazabilidad de qué regresa físicamente:
       //   SELECT * FROM ordenes WHERE estatus='No entregada' AND ruta_id=X.
       marcarNoEntregada: async (ordenId, motivo, reagendar = false, opciones = {}) => {
-        // R2 fase 2A (084): registrar_no_entrega hace en UNA transacción la
-        // devolución de las líneas de la orden al cuarto (cantidades y destino
-        // los deriva el servidor), el kardex estructurado y la transición a
-        // 'No entregada'. Idempotente por operacion_id (la cola offline lo
-        // conserva entre reintentos). Sin RPC genérico ni reverso en el cliente.
+        // 084/087: registrar_no_entrega hace en UNA transacción la transición
+        // a 'No entregada' (motivo, reagendar). Desde 087 NO toca cuartos
+        // fríos: el producto sigue en el camión y vuelve al cuarto solo con
+        // finalizar_inventario_ruta. Idempotente por operacion_id (la cola
+        // offline lo conserva entre reintentos).
         // opciones: { operacionId }
         try {
           const built = buildNoEntregaArgs({
@@ -1408,11 +1412,12 @@ export function useSupaStore(userId, userName, userRol) {
           }
           const res = interpretarResultadoStock(data);
           if (!res.replay) {
-            const cantTxt = (res.devuelto || []).length > 0
-              ? res.devuelto.map(d => `${d.cantidad}×${d.sku}`).join(', ')
-              : 'sin líneas';
+            // 087: sin movimiento de cuarto; el producto sigue en el camión
+            // hasta finalizar_inventario_ruta.
+            const lineas = Array.isArray(res.en_camion) ? res.en_camion : [];
+            const cantTxt = lineas.length > 0 ? lineas.map(d => `${d.cantidad}×${d.sku}`).join(', ') : 'sin líneas';
             await log('No entregada', 'Órdenes',
-              `${res.folio || `ID ${ordenId}`} — ${s(motivo)}${reagendar ? ' (reagendar)' : ''} — devuelto: ${cantTxt}`
+              `${res.folio || `ID ${ordenId}`} — ${s(motivo)}${reagendar ? ' (reagendar)' : ''} — sigue en el camión: ${cantTxt}`
             );
           }
           rf();
@@ -2360,23 +2365,19 @@ export function useSupaStore(userId, userName, userRol) {
         }
       },
 
-      cerrarRuta: async (rutaId, devolucion, opciones = {}) => {
-        // devolucion ahora es un objeto: {"HC-25K": 5, "HC-5K": 3, ...}
-        const devolucionObj = (typeof devolucion === 'object' && devolucion !== null)
-          ? devolucion
-          : { bolsas: devolucion || 0 };
+      // 087: cierre de ruta por Admin = el MISMO contrato canónico que el
+      // chofer. El conteo físico es observación; el servidor valida contra el
+      // balance del camión, devuelve a los cuartos de origen y cierra. Ya no
+      // existe devolución arbitraria (cerrar_ruta_atomic retirada).
+      cerrarRuta: async (rutaId, conteo, opciones = {}) => {
         const forzar = opciones?.forzar === true;
         const motivoForzado = String(opciones?.motivo || '').trim();
-
-        // Solo Admin puede cerrar ruta vía admin (auditoría rutas Tanda 3).
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
 
-        // 🟡-1 Tanda 3: validar entregas pendientes ANTES de marcar Cerrada.
-        // Si chofer aún no envió reporte (vía cerrarRutaCompleta), las
-        // entregas físicas no se procesaron contablemente. Bloquear el
-        // cierre con admin y obligar a esperar reporte; o forzar con motivo
-        // (caso edge: chofer sin celular, accidente).
+        // Órdenes sin resolver: bloquean el cierre salvo cierre forzado con
+        // motivo (chofer sin celular, accidente). Forzado → 'No entregada'
+        // sin movimiento de stock: el producto se resuelve en el conteo.
         const { data: pendientes, error: errPend } = await supabase
           .from('ordenes')
           .select('id, folio, estatus')
@@ -2387,7 +2388,6 @@ export function useSupaStore(userId, userName, userRol) {
           t()?.error('No se pudieron leer las órdenes de la ruta');
           return { error: errPend.message };
         }
-
         if (pendientes && pendientes.length > 0 && !forzar) {
           const folios = pendientes.slice(0, 3).map(o => o.folio).join(', ');
           const extra = pendientes.length > 3 ? `, +${pendientes.length - 3} más` : '';
@@ -2395,38 +2395,9 @@ export function useSupaStore(userId, userName, userRol) {
           t()?.error(msg);
           return { error: msg, pendientes: pendientes.length };
         }
-
         if (forzar && pendientes && pendientes.length > 0 && !motivoForzado) {
           return { error: 'Forzar cierre requiere motivo (chofer sin celular, accidente, etc.)' };
         }
-
-        // Obtener primer cuarto frío para regresar devolución
-        const { data: cuartos } = await supabase.from('cuartos_frios').select('id').order('id').limit(1);
-        const cuartoId = cuartos?.[0]?.id;
-        if (!cuartoId) { t()?.error('No hay cuarto frío configurado'); return { error: 'Sin cuarto frío' }; }
-
-        // Usar RPC atómica: valida que no esté ya cerrada, regresa stock, marca Cerrada
-        const { error } = await supabase.rpc('cerrar_ruta_atomic', {
-          p_ruta_id: rutaId,
-          p_devoluciones: devolucionObj,
-          p_cuarto_frio_id: cuartoId,
-          p_entregas: [],
-          p_total_cobrado: 0,
-          p_total_credito: 0,
-          p_usuario: uname() || 'Admin',
-        });
-        if (error) {
-          if (error.message?.includes('ya está cerrada')) {
-            t()?.error('Esta ruta ya fue cerrada');
-          } else {
-            t()?.error('Error al cerrar la ruta');
-          }
-          return { error: error.message };
-        }
-
-        // Si se forzó cierre con órdenes pendientes, marcarlas como
-        // 'No entregada' con motivo. NO se devuelve stock (físicamente
-        // puede estar perdido por el incidente que originó el forzado).
         let pendientesProcesadas = 0;
         if (forzar && pendientes && pendientes.length > 0) {
           const ids = pendientes.map(o => o.id);
@@ -2440,28 +2411,41 @@ export function useSupaStore(userId, userName, userRol) {
             .in('id', ids);
           if (updErr) {
             console.warn('[cerrarRuta forzado] update ordenes No entregada:', updErr.message);
-          } else {
-            pendientesProcesadas = ids.length;
+            t()?.error('No se pudieron marcar las órdenes pendientes');
+            return { error: updErr.message };
           }
+          pendientesProcesadas = ids.length;
         }
 
-        const devTxt = Object.entries(devolucionObj).filter(([_, v]) => v > 0).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || '0';
-        const detalle = forzar
-          ? `Ruta #${rutaId} — FORZADO (${motivoForzado}) — devuelto: ${devTxt} — ${pendientesProcesadas} órdenes a No entregada`
-          : `Ruta #${rutaId} — devuelto: ${devTxt}`;
-        await log(forzar ? 'Cerrar (forzado)' : 'Cerrar', 'Rutas', detalle);
-        rf();
+        // Cierre financiero (086): si el chofer ya lo registró, el servidor lo
+        // reconoce (replay o "ya registrado con otros datos"); si no, Admin lo
+        // registra sin entregas.
+        const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+        const opFin = resolverOperacionCierre(leerOperacionCierre(storage, rutaId), claveCierreFinanciero(rutaId, []));
+        guardarOperacionCierre(storage, rutaId, opFin);
+        const builtFin = buildCerrarFinancieroArgs({ operacionId: opFin.id, rutaId, entregas: [], usuarioId: uid(), usuarioNombre: uname() || 'Admin' });
+        if (builtFin.error) { t()?.error(builtFin.error); return { error: builtFin.error }; }
+        const { error: finErr } = await supabase.rpc('cerrar_ruta_financiero', builtFin.args);
+        if (finErr && !/ya tiene cierre financiero registrado/i.test(finErr.message || '')) {
+          const msg = mensajeErrorCierreFinanciero(finErr);
+          t()?.error(msg);
+          return { error: msg };
+        }
+
+        const r = await actionsRef.current.finalizarInventarioRuta(rutaId, conteo, {
+          admin: true,
+          detalle: forzar ? `FORZADO (${motivoForzado}) — ${pendientesProcesadas} órdenes a No entregada` : '',
+        });
+        if (r?.error) { t()?.error(r.error); return r; }
         return undefined;
       },
 
-      // 🟡-6 Tanda 3: cancelar una ruta con devolución de stock al cuarto.
-      //
-      // Aplica a rutas Programada/Cargada/Pendiente firma/En progreso. Si
-      // la carga ya descontó stock (estados Cargada+) se devuelve al cuarto
-      // destino vía update_stocks_atomic. Las órdenes en Asignada se
-      // liberan a Creada (sin ruta_id); las En ruta o Entregadas se quedan
-      // como están — esas son operativamente "ya pasaron" y modificarlas
-      // corrompe el histórico.
+      // Cancelar una ruta. 087: una ruta con carga confirmada ya no se
+      // cancela con devolución genérica (devolvía toda la carga_real aunque
+      // hubiera entregas): su inventario se resuelve cerrándola con el conteo
+      // canónico (finalizar_inventario_ruta devuelve a los cuartos de origen).
+      // Rutas nunca cargadas: se cancelan sin movimiento de stock y sus
+      // órdenes Asignadas se liberan a Creada.
       cancelarRutaConDevolucion: async (rutaId, motivo) => {
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
@@ -2472,7 +2456,7 @@ export function useSupaStore(userId, userName, userRol) {
 
           const { data: ruta, error: errRuta } = await supabase
             .from('rutas')
-            .select('id, folio, estatus, carga, carga_real')
+            .select('id, folio, estatus, carga_confirmada_at')
             .eq('id', rutaId)
             .maybeSingle();
           if (errRuta) {
@@ -2487,37 +2471,12 @@ export function useSupaStore(userId, userName, userRol) {
             t()?.error(validResult.error);
             return { error: validResult.error };
           }
-
-          // Si requiere devolución, calcular el cuarto destino (primer
-          // cuarto frío activo) y construir changes para update_stocks_atomic.
-          if (validResult.requiereDevolucion) {
-            const { data: cuartos, error: errCfs } = await supabase
-              .from('cuartos_frios').select('id').order('id').limit(1);
-            if (errCfs) {
-              console.warn('[cancelarRutaConDevolucion] select cuartos:', errCfs.message);
-              t()?.error('No se pudieron leer cuartos fríos');
-              return { error: errCfs.message };
-            }
-            const cuartoId = cuartos?.[0]?.id;
-            if (!cuartoId) {
-              const msg = 'No hay cuarto frío para devolver el stock';
-              t()?.error(msg);
-              return { error: msg };
-            }
-            const changes = buildCancelacionChanges(ruta, cuartoId, uname() || 'Admin');
-            if (changes.length > 0) {
-              const { error: rpcErr } = await supabase.rpc('update_stocks_atomic', {
-                p_changes: changes,
-              });
-              if (rpcErr) {
-                console.warn('[cancelarRutaConDevolucion] update_stocks_atomic:', rpcErr.message);
-                t()?.error(rpcErr.message || 'Error al devolver stock al cuarto');
-                return { error: rpcErr.message };
-              }
-            }
+          if (ruta.carga_confirmada_at) {
+            const msg = 'La ruta ya tiene carga confirmada: ciérrala con el conteo de devolución (el producto vuelve al cuarto de origen).';
+            t()?.error(msg);
+            return { error: msg };
           }
 
-          // Marcar ruta como Cancelada con metadatos (mig 059 agregó las cols)
           const { error: errUpd } = await supabase
             .from('rutas')
             .update({
@@ -2532,8 +2491,6 @@ export function useSupaStore(userId, userName, userRol) {
             return { error: errUpd.message };
           }
 
-          // Liberar órdenes Asignadas (devolver a Creada sin ruta_id).
-          // Las En ruta/Entregadas se mantienen — esas ya operaron.
           const { error: errOrd, count: liberadas } = await supabase
             .from('ordenes')
             .update({ estatus: 'Creada', ruta_id: null }, { count: 'exact' })
@@ -2541,8 +2498,6 @@ export function useSupaStore(userId, userName, userRol) {
             .eq('estatus', 'Asignada');
           if (errOrd) {
             console.warn('[cancelarRutaConDevolucion] liberar órdenes (no crítico):', errOrd.message);
-            // No abortamos: la ruta ya quedó cancelada y el stock devuelto.
-            // Admin puede limpiar las órdenes huérfanas manualmente.
             notify('advertencia', 'Órdenes pendientes de liberar',
               `Ruta ${ruta.folio} cancelada, pero algunas órdenes Asignadas no se liberaron. Revísalas.`,
               '⚠️', String(rutaId));
@@ -3037,7 +2992,8 @@ export function useSupaStore(userId, userName, userRol) {
       // kardex, el egreso contable y la merma en UNA transacción; actor y
       // atribución salen del JWT. Producción desde standalone; Admin desde
       // el shell. El chofer registra solo al cerrar ruta
-      // (registrar_mermas_ruta en cerrarRutaCompleta).
+      // (lote registrar_mermas_ruta en prepararCierreRuta; 087: descuenta del
+      // camión, no de cuartos fríos).
       registrarMerma: async (sku, cantidad, causa, origen, fotoUrl) => {
         const guard = requireRol(['Admin', 'Producción']);
         if (guard) { t()?.error(guard.error); return guard; }
@@ -3795,23 +3751,53 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── CERRAR RUTA COMPLETA (chofer) ──
-      cerrarRutaCompleta: async (reporte) => {
-        const { rutaId, choferNombre, entregas, mermas: mermasArr, cobros } = reporte;
-        const hoy = todayLocalISO();
+      // ── INVENTARIO DE RUTA (087) ──
+      // Balance canónico del camión (servidor, solo lectura): cargado,
+      // entregado, merma, devuelto y restante por SKU. Admin o chofer dueño.
+      obtenerBalanceRuta: async (rutaId) => {
         try {
-          // P1 Fase A: toda la sección financiera (órdenes entregadas, ventas
-          // exprés, pagos, CxC, saldos e ingresos) ocurre en UNA transacción
-          // en el servidor (cerrar_ruta_financiero). Usa ordenes.total del
-          // servidor y nunca cobra más que el pendiente (P0-1).
-          // F4 (086): el cierre financiero es UNA operación lógica con UN
-          // operacion_id estable, persistido por ruta en localStorage: un
-          // timeout, una respuesta perdida, una recarga o un reintento
-          // reutilizan el mismo UUID y el servidor devuelve el resultado
-          // almacenado sin repetir ventas exprés, pagos ni CxC. Cambiar las
-          // entregas cambia la clave y por tanto el UUID. Se borra solo cuando
-          // el cierre completo (financiero + mermas + ruta) confirmó.
-          if (!rutaId) throw new Error('No se puede cerrar la ruta sin ruta activa');
-          const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+          const { data, error } = await supabase.rpc('calcular_balance_ruta', { p_ruta_id: Number(rutaId) });
+          if (error) return { error: mensajeErrorInventarioRuta(error) };
+          return { data: interpretarBalance(data) };
+        } catch (e) {
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // Lote de mermas de ruta (087): atómico, idempotente por operacion_id
+      // (persistido por ruta), tope = balance del camión, sin cuartos fríos.
+      // Permite un segundo lote (faltante del conteo).
+      registrarMermasRuta: async (rutaId, mermasLote) => {
+        const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+        const key = claveStorageMermasRuta(rutaId);
+        const op = resolverOperacionCierre(leerOperacion(storage, key), claveMermasRuta(rutaId, mermasLote));
+        guardarOperacion(storage, key, op);
+        const built = buildMermasRutaArgs({ operacionId: op.id, rutaId, mermas: mermasLote });
+        if (built.error) return { error: built.error };
+        try {
+          const { data, error } = await supabase.rpc('registrar_mermas_ruta', built.args);
+          if (error) return { error: mensajeErrorInventarioRuta(error) };
+          borrarOperacion(storage, key);
+          if (data?.replay) {
+            await log('Cierre Ruta', 'Rutas', `Mermas de la ruta ${rutaId} ya registradas (reintento): no se duplicaron`);
+          }
+          return { data };
+        } catch (e) {
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // Cierre de ruta, paso 1 (087): ventas y cobros (086, idempotente por
+      // operación) + mermas aún no registradas (lote idempotente) + balance
+      // canónico para el conteo. NO cierra la ruta.
+      prepararCierreRuta: async (reporte = {}) => {
+        const { rutaId, choferNombre, entregas, mermas: mermasLocales } = reporte;
+        if (!rutaId) return { error: 'No se puede cerrar sin ruta activa' };
+        const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+        try {
+          // F4 (086): UN operacion_id por cierre financiero, persistido por
+          // ruta; un reintento devuelve el resultado almacenado sin repetir
+          // ventas exprés, pagos ni CxC.
           const entregasPayload = normalizarEntregasCierre(entregas);
           const opCierre = resolverOperacionCierre(leerOperacionCierre(storage, rutaId), claveCierreFinanciero(rutaId, entregasPayload));
           guardarOperacionCierre(storage, rutaId, opCierre);
@@ -3822,9 +3808,9 @@ export function useSupaStore(userId, userName, userRol) {
             usuarioId: uid(),
             usuarioNombre: choferNombre || uname(),
           });
-          if (built.error) throw new Error(built.error);
+          if (built.error) return { error: built.error };
           const { data: finData, error: finErr } = await supabase.rpc('cerrar_ruta_financiero', built.args);
-          if (finErr) throw new Error(mensajeErrorCierreFinanciero(finErr));
+          if (finErr) return { error: mensajeErrorCierreFinanciero(finErr) };
           const finRes = interpretarCierreFinanciero(finData);
           if (finRes.replay) {
             await log('Cierre Ruta', 'Rutas', `Cierre financiero de la ruta ${rutaId} ya registrado (reintento): sin efectos repetidos`);
@@ -3833,47 +3819,58 @@ export function useSupaStore(userId, userName, userRol) {
             await log('Cierre Ruta', 'Rutas', `Cobros omitidos (ya pagadas): ${finRes.saltadas.map(x => x.folio || x.orden_id).join(', ')}`);
           }
 
-          // Contrato 072: TODAS las mermas de la ruta en una transacción del
-          // servidor (merma + descuento FIFO con lock + kardex + egreso), o
-          // ninguna. Idempotente por ruta: un reintento del cierre no las
-          // duplica. Actor y atribución salen del JWT del chofer.
-          if (mermasArr && mermasArr.length > 0) {
-            if (!rutaId) throw new Error('No se pueden registrar mermas sin ruta');
-            const { data: mermasRes, error: mermasErr } = await supabase.rpc('registrar_mermas_ruta', {
-              p_ruta_id: rutaId,
-              p_mermas: buildMermasRutaPayload(mermasArr),
-            });
-            if (mermasErr) throw new Error(mensajeErrorMerma(mermasErr));
-            if (mermasRes?.skipped) {
-              await log('Cierre Ruta', 'Rutas', `Mermas de la ruta ${rutaId} ya registradas (reintento): no se duplicaron`);
-            }
-            await checkStockBajo(mermasArr.map(m => m.sku));
+          const pendientesMerma = (Array.isArray(mermasLocales) ? mermasLocales : []).filter(m => m && !m.registrada);
+          let mermasRegistradas = [];
+          if (pendientesMerma.length > 0) {
+            const rm = await actionsRef.current.registrarMermasRuta(rutaId, pendientesMerma);
+            if (rm.error) return { error: rm.error, financiero: true };
+            mermasRegistradas = pendientesMerma.map(m => m.id);
           }
 
-          // 085: la rama legacy (rutas sin carga_confirmada_at → devolución del
-          // sobrante con update_stocks_atomic) se eliminó: no tenía objetivo en
-          // producción y habría sumado al cuarto un sobrante nunca descontado.
-          {
-            const { error: rutaErr } = await supabase.from('rutas').update({
-              estatus: 'Cerrada',
-              fecha_fin: hoy,
-            }).eq('id', rutaId);
-            if (rutaErr) throw rutaErr;
-          }
-          // Cierre completo confirmado: el UUID del cierre financiero ya no
-          // hace falta (un cierre nuevo de otra ruta usa el suyo).
-          borrarOperacionCierre(storage, rutaId);
-
-          await log('Cierre Ruta', 'Rutas', `Chofer: ${choferNombre}, Entregas: ${(entregas || []).length}, Mermas: ${(mermasArr || []).length}, Efectivo: $${cobros?.Efectivo || 0}`);
-          notify('venta', 'Ruta cerrada', `${choferNombre} cerró ruta — ${(entregas || []).length} entregas, $${(cobros?.Efectivo || 0).toLocaleString()} efectivo`, '🚛', String(rutaId));
+          const bal = await actionsRef.current.obtenerBalanceRuta(rutaId);
           rf();
+          if (bal.error) return { error: bal.error, financiero: true, mermasRegistradas };
+          return { balance: bal.data, mermasRegistradas };
         } catch (err) {
-          // Lo financiero (086, por operación) y las mermas (072, por ruta)
-          // son atómicos e idempotentes en el servidor: no hay compensación
-          // por REST. Un reintento del cierre devuelve el resultado almacenado
-          // del cierre financiero y salta mermas ya registradas.
-          t()?.error(err?.message || 'No se pudo cerrar la ruta correctamente');
-          return err;
+          console.error('[prepararCierreRuta] excepción:', err);
+          return { error: err?.message || 'No se pudo preparar el cierre' };
+        }
+      },
+
+      // Cierre de ruta, paso 2 (087): conteo físico → el servidor valida
+      // contra el balance del camión (faltante/sobrante → rechazo con detalle,
+      // sin efectos), devuelve a los cuartos de origen, escribe la devolución
+      // y cierra la ruta. Idempotente por operacion_id (persistido por ruta).
+      finalizarInventarioRuta: async (rutaId, conteo, meta = {}) => {
+        const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+        const norm = normalizarConteo(conteo);
+        if (norm.error) return { error: norm.error };
+        const key = claveStorageCierreInventario(rutaId);
+        const op = resolverOperacionCierre(leerOperacion(storage, key), claveCierreInventario(rutaId, norm.conteo));
+        guardarOperacion(storage, key, op);
+        const built = buildFinalizarInventarioArgs({ operacionId: op.id, rutaId, conteo: norm.conteo });
+        if (built.error) return { error: built.error };
+        try {
+          const { data, error } = await supabase.rpc('finalizar_inventario_ruta', built.args);
+          if (error) {
+            const det = detalleErrorInventario(error);
+            return { error: mensajeErrorInventarioRuta(error), faltante: det.faltante, sobrante: det.sobrante };
+          }
+          // Cierre confirmado: ninguna operación de esta ruta queda pendiente.
+          borrarOperacion(storage, key);
+          borrarOperacion(storage, claveStorageMermasRuta(rutaId));
+          borrarOperacionCierre(storage, rutaId);
+          const dev = data?.devolucion && typeof data.devolucion === 'object' ? data.devolucion : {};
+          const devTxt = Object.entries(dev).map(([sku, q]) => `${q}×${sku}`).join(', ') || '0';
+          if (!data?.replay) {
+            await log(meta.admin ? 'Cerrar' : 'Cierre Ruta', 'Rutas',
+              `${data?.folio || `Ruta ${rutaId}`} — devuelto al cuarto: ${devTxt}${meta.detalle ? ` — ${meta.detalle}` : ''}`);
+            notify('venta', 'Ruta cerrada', `${data?.actor || uname() || ''} cerró ${data?.folio || 'la ruta'} — devolución ${devTxt}`, '🚛', String(rutaId));
+          }
+          rf();
+          return { data };
+        } catch (e) {
+          return { error: e?.message || 'Error inesperado' };
         }
       },
 

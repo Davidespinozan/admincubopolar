@@ -534,7 +534,7 @@ export function reporteNomina(empleados, nominas, formato = 'excel') {
  * Reporte de Ruta Diaria — formato estilo hoja física Cubopolar
  * Para una ruta específica con todas sus entregas, mermas, carga y cierre
  */
-export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, usuarios = [], notas = '') {
+export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, usuarios = [], notas = '', balance = null) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -636,7 +636,17 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, us
   }
 
   const cargaRows = [];
-  const skusUnicos = new Set([...Object.keys(carga), ...Object.keys(cargaAuth), ...Object.keys(vendidoPorSku), ...Object.keys(devolucion), ...Object.keys(mermaPorSku)]);
+  // 087: con balance canónico (servidor) la tabla sale de él: cargado,
+  // entregado, merma y devuelto durables. Sin balance (rutas históricas
+  // anteriores a 087, donde el balance falla cerrado) se muestra lo registrado.
+  const usarBalance = Array.isArray(balance) && balance.length > 0;
+  if (usarBalance) {
+    for (const b of balance) {
+      const prod = findProd(b.sku);
+      cargaRows.push([prod ? s(prod.nombre) : b.sku, b.sku, n(b.cargado), n(b.devuelto), n(b.merma), n(b.entregado)]);
+    }
+  }
+  const skusUnicos = usarBalance ? new Set() : new Set([...Object.keys(carga), ...Object.keys(cargaAuth), ...Object.keys(vendidoPorSku), ...Object.keys(devolucion), ...Object.keys(mermaPorSku)]);
   for (const sku of skusUnicos) {
     const prod = findProd(sku);
     const nombreProd = prod ? s(prod.nombre) : sku;

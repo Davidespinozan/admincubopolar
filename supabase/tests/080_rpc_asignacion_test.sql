@@ -66,6 +66,8 @@ BEGIN
 END $$;
 CREATE OR REPLACE FUNCTION t80_rows(p_sql TEXT) RETURNS BIGINT LANGUAGE plpgsql AS $$
 DECLARE n BIGINT; BEGIN EXECUTE p_sql; GET DIAGNOSTICS n = ROW_COUNT; RETURN n; END $$;
+CREATE OR REPLACE FUNCTION t_p087() RETURNS BOOLEAN LANGUAGE sql STABLE AS $$ SELECT to_regprocedure('public.finalizar_inventario_ruta(uuid,bigint,jsonb)') IS NOT NULL $$;
+GRANT EXECUTE ON FUNCTION t_p087() TO anon, authenticated, service_role;
 CREATE OR REPLACE FUNCTION t80_huella() RETURNS TEXT LANGUAGE sql SECURITY DEFINER AS $$
   SELECT md5(concat_ws('|',
     (SELECT string_agg(concat_ws(':', id, estatus, ruta_id, vendedor_id, total), ',' ORDER BY id) FROM ordenes WHERE id BETWEEN 8020 AND 8029),
@@ -154,7 +156,13 @@ SELECT t80_assert(t80_huella() = (SELECT v FROM t80_ids WHERE k = 'h0'), '080-40
 SELECT t80_assert(t80_carga(8003) = '{}'::jsonb AND t80_carga(8002) = '{"P80-HIELO": 2}'::jsonb AND t80_carga(8001) = '{}'::jsonb, '080-41 cargas de las rutas intactas tras la matriz');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t80_actor('authenticated', 'chofera80@t', '80000000-0000-0000-0000-000000000003');
 SELECT t80_err($q$UPDATE rutas SET carga = '{"P80-HIELO": 99}' WHERE id = 8001$q$, '080-42 Chofer A: carga directa sigue bloqueada por 078', '42501');
-SELECT t80_assert(t80_rows($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 8001$q$) = 1, '080-43 Chofer A: su flujo 078 sigue funcionando');
+DO $do$ BEGIN
+  IF t_p087() THEN
+    PERFORM t80_err($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 8001$q$, '080-43 (087) Chofer A: el cierre directo ya no existe (finalizar_inventario_ruta)', '42501');
+  ELSE
+    PERFORM t80_assert(t80_rows($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 8001$q$) = 1, '080-43 Chofer A: su flujo 078 sigue funcionando');
+  END IF;
+END $do$;
 ROLLBACK;
 
 \echo '── 080: Admin — despacho completo intacto'

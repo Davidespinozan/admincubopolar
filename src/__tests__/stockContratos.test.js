@@ -127,10 +127,11 @@ describe('auditoría estática del cutover (R2 fase 2A)', () => {
       if (/rpc\(\s*['"]update_stocks_atomic['"]/.test(l)) callers.add(fn);
     }
     expect([...callers].sort()).toEqual([
-      'cancelarRutaConDevolucion', // Admin (requireRol Admin)
       'deleteProduccion',          // Admin
       'registrarDevolucion',       // Admin (requireAdmin)
     ]);
+    // 087: cancelarRutaConDevolucion ya no devuelve stock (ruta cargada → cierre canónico)
+    expect(accion(store, 'cancelarRutaConDevolucion')).not.toMatch(/update_stocks_atomic|buildCancelacionChanges/);
   });
   it('acciones muertas siguen sin pantalla; flujos vivos migrados en cada pantalla', () => {
     const comps = ['../components/ChoferView.jsx', '../components/BotonFirmasPendientes.jsx', '../components/ProduccionStandaloneView.jsx', '../components/views/InventarioView.jsx', '../components/views/RutasView.jsx', '../components/views/OrdenesView.jsx', '../components/views/ProduccionView.jsx', '../components/BolsasView.jsx', '../components/VentasStandaloneView.jsx', '../components/DevolucionModal.jsx']
@@ -151,9 +152,17 @@ describe('auditoría estática del cutover (R2 fase 2A)', () => {
     const inv = sinComentarios(src('../components/views/InventarioView.jsx'));
     expect(inv).toMatch(/traspasoEntreUbicaciones\(\{ \.\.\.traspasoForm, operacionId: op\.id \}\)/);
   });
-  it('085: el cierre ya no tiene rama legacy de devolución ni referencia a carga_confirmada_at', () => {
-    const b = accion(store, 'cerrarRutaCompleta');
-    expect(b).not.toMatch(/esLegacy|calcDevolucionLegacy|update_stocks_atomic/);
+  it('085/087: el cierre no tiene devolución del cliente ni UPDATE directo de la ruta', () => {
+    expect(accion(store, 'cerrarRutaCompleta')).toBeNull();
+    const prep = accion(store, 'prepararCierreRuta');
+    const fin = accion(store, 'finalizarInventarioRuta');
+    const adm = accion(store, 'cerrarRuta');
+    for (const b of [prep, fin, adm]) {
+      expect(b).not.toMatch(/esLegacy|calcDevolucionLegacy|update_stocks_atomic|cerrar_ruta_atomic/);
+      expect(b).not.toMatch(/from\('rutas'\)\.update/);
+    }
+    expect(fin).toMatch(/rpc\('finalizar_inventario_ruta', built\.args\)/);
+    expect(adm).toMatch(/finalizarInventarioRuta\(rutaId, conteo/);
     for (const dead of ['confirmarCargaRuta', 'meterACuartoFrio', 'confirmarProduccion', '_registrarCostoProduccion']) expect(accion(store, dead)).toBeNull();
   });
 });

@@ -64,6 +64,8 @@ BEGIN
 END $$;
 CREATE OR REPLACE FUNCTION t78_rows(p_sql TEXT) RETURNS BIGINT LANGUAGE plpgsql AS $$
 DECLARE n BIGINT; BEGIN EXECUTE p_sql; GET DIAGNOSTICS n = ROW_COUNT; RETURN n; END $$;
+CREATE OR REPLACE FUNCTION t_p087() RETURNS BOOLEAN LANGUAGE sql STABLE AS $$ SELECT to_regprocedure('public.finalizar_inventario_ruta(uuid,bigint,jsonb)') IS NOT NULL $$;
+GRANT EXECUTE ON FUNCTION t_p087() TO anon, authenticated, service_role;
 -- Huella de negocio: todas las columnas de las rutas 78xx (menos updated_at), stock del cuarto,
 -- kardex y órdenes de prueba.
 CREATE OR REPLACE FUNCTION t78_huella() RETURNS TEXT LANGUAGE sql SECURITY DEFINER AS $$
@@ -221,13 +223,24 @@ SELECT t78_err($q$UPDATE rutas SET estatus = 'Completada' WHERE id = 7801$q$, '0
 SELECT t78_err($q$UPDATE rutas SET estatus = 'Cancelada', cancelada_at = now(), motivo_cancelacion = 'x' WHERE id = 7801$q$, '078-48 en ruta: cancelación rechazada (solo Admin)', '42501');
 SELECT t78_err($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE, total_cobrado = 1 WHERE id = 7801$q$, '078-49 cierre + total_cobrado rechazado entero', '42501');
 -- cerrarRutaCompleta
-SELECT t78_assert(t78_rows($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 7801$q$) = 1, '078-50 cerrar ruta: En progreso → Cerrada con fecha_fin');
-SELECT t78_err($q$UPDATE rutas SET estatus = 'En progreso' WHERE id = 7801$q$, '078-51 cerrada: reapertura rechazada', '42501');
-SELECT t78_err($q$UPDATE rutas SET fecha_fin = CURRENT_DATE - 5 WHERE id = 7801$q$, '078-52 cerrada: fecha_fin inmutable', '42501');
+DO $do$ BEGIN
+  IF t_p087() THEN
+    PERFORM t78_err($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 7801$q$, '078-50 (087) cierre directo del Chofer denegado: la ruta se cierra con finalizar_inventario_ruta', '42501');
+    -- cierre canónico: sin entregas, devuelve las 60 cargadas
+    PERFORM cerrar_ruta_financiero('78000000-0000-0000-0000-0000000f7801'::uuid, 7801, '[]'::jsonb, 7804, 'Chofer A78');
+    PERFORM t78_assert((finalizar_inventario_ruta('78000000-0000-0000-0000-0000000c7801'::uuid, 7801, '{"P78-HIELO": 60}') ->> 'estatus') = 'Cerrada', '078-50b (087) cierre canónico del Chofer: finalizar_inventario_ruta');
+    PERFORM t78_err($q$UPDATE rutas SET estatus = 'En progreso' WHERE id = 7801$q$, '078-51 cerrada: reapertura rechazada', '42501');
+    PERFORM t78_err($q$UPDATE rutas SET fecha_fin = CURRENT_DATE - 5 WHERE id = 7801$q$, '078-52 cerrada: fecha_fin inmutable', '42501');
+  ELSE
+    PERFORM t78_assert(t78_rows($q$UPDATE rutas SET estatus = 'Cerrada', fecha_fin = CURRENT_DATE WHERE id = 7801$q$) = 1, '078-50 cerrar ruta: En progreso → Cerrada con fecha_fin');
+    PERFORM t78_err($q$UPDATE rutas SET estatus = 'En progreso' WHERE id = 7801$q$, '078-51 cerrada: reapertura rechazada', '42501');
+    PERFORM t78_err($q$UPDATE rutas SET fecha_fin = CURRENT_DATE - 5 WHERE id = 7801$q$, '078-52 cerrada: fecha_fin inmutable', '42501');
+  END IF;
+END $do$;
 COMMIT;
-SELECT t78_assert((SELECT estatus = 'Cerrada' AND fecha_fin::date = CURRENT_DATE AND carga_real = '{"P78-HIELO": 60}'::jsonb AND carga_autorizada = '{"P78-HIELO": 50}'::jsonb AND extra_autorizado = '{"P78-HIELO": 10}'::jsonb
+SELECT t78_assert((SELECT estatus = 'Cerrada' AND (t_p087() OR fecha_fin::date = CURRENT_DATE) AND carga_real = '{"P78-HIELO": 60}'::jsonb AND carga_autorizada = '{"P78-HIELO": 50}'::jsonb AND extra_autorizado = '{"P78-HIELO": 10}'::jsonb
   AND carga_confirmada_por::text = '7804' AND firma_excepcion AND firma_carga IS NULL AND folio = 'R-7801' AND chofer_id = 7804 AND COALESCE(total_cobrado, 0) = 0 FROM rutas WHERE id = 7801), '078-53 ruta cerrada con exactamente los datos del flujo; columnas de Admin intactas');
-SELECT t78_assert((SELECT (stock ->> 'P78-HIELO')::int = 40 FROM cuartos_frios WHERE id = 'CF-78') AND (SELECT count(*) = CASE WHEN pg_get_functiondef('public.rutas_guard_chofer()'::regprocedure) ~ 'app\.carga_ctx' THEN 1 ELSE 3 END FROM inventario_mov WHERE producto = 'P78-HIELO' AND usuario = 'Chofer A78'), '078-54 stock 40 con kardex atribuido al chofer real (3 filas antes de 085; 1 por contrato)');
+SELECT t78_assert((SELECT (stock ->> 'P78-HIELO')::int = CASE WHEN t_p087() THEN 100 ELSE 40 END FROM cuartos_frios WHERE id = 'CF-78') AND (SELECT count(*) = CASE WHEN t_p087() THEN 2 WHEN pg_get_functiondef('public.rutas_guard_chofer()'::regprocedure) ~ 'app\.carga_ctx' THEN 1 ELSE 3 END FROM inventario_mov WHERE producto = 'P78-HIELO' AND usuario = 'Chofer A78'), '078-54 stock 40 con kardex atribuido al chofer real (3 filas antes de 085; 1 por contrato; 087: + devolución canónica de 60 → 100)');
 
 \echo '── 078: Admin y contratos del servidor intactos'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t78_actor('authenticated', 'admin78@t', '78000000-0000-0000-0000-000000000001');
@@ -236,13 +249,13 @@ SELECT t78_assert(t78_rows($q$UPDATE rutas SET chofer_id = 7804, chofer_nombre =
 SELECT t78_assert(t78_rows($q$UPDATE rutas SET chofer_id = NULL, chofer_nombre = NULL WHERE id = 7803$q$) = 1, '078-62 Admin: quita chofer');
 SELECT asignar_ordenes_a_ruta(7803, ARRAY[7820]::bigint[]);
 SELECT t78_assert(t78_rows($q$UPDATE rutas SET estatus = 'En progreso' WHERE id = 7802$q$) = 1, '078-63 Admin: Programada → En progreso (Iniciar desde RutasView)');
-SELECT cerrar_ruta_atomic(7802, '{"P78-HIELO": 3}'::jsonb, 'CF-78', '[]'::jsonb, 0, 0, 'Admin 78');
+DO $$ BEGIN IF NOT t_p087() THEN PERFORM cerrar_ruta_atomic(7802, '{"P78-HIELO": 3}'::jsonb, 'CF-78', '[]'::jsonb, 0, 0, 'Admin 78'); END IF; END $$;  -- 087: retirada
 SELECT t78_assert(t78_rows($q$UPDATE rutas SET estatus = 'Cancelada', cancelada_at = now(), motivo_cancelacion = 'Prueba 78' WHERE id = 7803$q$) = 1, '078-64 Admin: cancelación con metadatos');
 INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, carga, carga_autorizada, extra_autorizado, autorizado_at) VALUES (7806, 'R-7806', 'Ruta nueva 78', 7804, 'Chofer A78', 'Programada', '{"P78-HIELO": 2}', '{"P78-HIELO": 2}', '{}', now());
 SELECT t78_assert(t78_rows($q$DELETE FROM rutas WHERE id = 7806$q$) = 1, '078-65 Admin: alta y baja de ruta');
 SELECT t78_assert(t78_rows($q$UPDATE rutas SET estatus = 'En progreso', fecha_fin = NULL WHERE id = 7804$q$) = 1, '078-66 Admin: reabre una ruta cerrada (decisión de Admin)');
 COMMIT;
-SELECT t78_assert((SELECT estatus = 'Cerrada' AND cierre_at IS NOT NULL AND devolucion = '{"P78-HIELO": 3}'::jsonb FROM rutas WHERE id = 7802) AND (SELECT (stock ->> 'P78-HIELO')::int = 43 FROM cuartos_frios WHERE id = 'CF-78'), '078-67 cerrar_ruta_atomic (Admin) sigue cerrando y devolviendo stock');
+SELECT t78_assert(CASE WHEN t_p087() THEN to_regprocedure('public.cerrar_ruta_atomic(bigint,jsonb,text,jsonb,numeric,numeric,text)') IS NULL AND (SELECT estatus <> 'Cerrada' FROM rutas WHERE id = 7802) AND (SELECT (stock ->> 'P78-HIELO')::int = 100 FROM cuartos_frios WHERE id = 'CF-78') ELSE (SELECT estatus = 'Cerrada' AND cierre_at IS NOT NULL AND devolucion = '{"P78-HIELO": 3}'::jsonb FROM rutas WHERE id = 7802) AND (SELECT (stock ->> 'P78-HIELO')::int = 43 FROM cuartos_frios WHERE id = 'CF-78') END, '078-67 cerrar_ruta_atomic (Admin) sigue cerrando y devolviendo stock (087: cerrar_ruta_atomic retirada)');
 SELECT t78_assert((SELECT carga = '{"P78-HIELO": 5}'::jsonb FROM rutas WHERE id = 7803) AND (SELECT estatus = 'Asignada' AND ruta_id = 7803 FROM ordenes WHERE id = 7820), '078-68 asignar_ordenes_a_ruta (Admin) recalcula carga');
 SELECT t78_assert(t78_rows($q$UPDATE rutas SET carga = '{"P78-HIELO": 7}', carga_autorizada = '{"P78-HIELO": 7}' WHERE id = 7803$q$) = 1, '078-69 SQL sin JWT (service_role/cron): sin restricción');
 

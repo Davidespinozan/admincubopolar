@@ -61,6 +61,8 @@ BEGIN
 END $$;
 CREATE OR REPLACE FUNCTION t84_assert(p_cond BOOLEAN, p_msg TEXT) RETURNS VOID LANGUAGE plpgsql AS $$
 BEGIN IF NOT COALESCE(p_cond, false) THEN RAISE EXCEPTION 'FAIL: %', p_msg; END IF; RAISE NOTICE 'OK: %', p_msg; END $$;
+CREATE OR REPLACE FUNCTION t_p087() RETURNS BOOLEAN LANGUAGE sql STABLE AS $$ SELECT to_regprocedure('public.finalizar_inventario_ruta(uuid,bigint,jsonb)') IS NOT NULL $$;
+GRANT EXECUTE ON FUNCTION t_p087() TO anon, authenticated, service_role;
 CREATE OR REPLACE FUNCTION t84_err(p_sql TEXT, p_msg TEXT, p_state TEXT) RETURNS VOID LANGUAGE plpgsql AS $$
 DECLARE v_state TEXT; v_err TEXT;
 BEGIN
@@ -203,9 +205,10 @@ SELECT t84_err($q$SELECT registrar_no_entrega('84000000-0000-0000-0000-000000000
 COMMIT;
 SELECT t84_assert(((SELECT v FROM t84_ids WHERE k = 'n1r')::jsonb ->> 'replay') = 'true' AND ((SELECT v FROM t84_ids WHERE k = 'n1')::jsonb ->> 'replay') = 'false', '084-54 replay de no-entrega');
 SELECT t84_assert((SELECT estatus = 'No entregada' AND motivo_no_entrega = 'Local cerrado' AND reagendada AND fecha_no_entrega IS NOT NULL AND ruta_id = 8401 FROM ordenes WHERE id = 8420), '084-55 orden No entregada con motivo/reagendar; ruta intacta');
-SELECT t84_assert(t84_cf((SELECT v FROM t84_ids WHERE k = 'cf0'), 'P84-A') = (SELECT v::int FROM t84_ids WHERE k = 'a0') + 3 AND t84_cf((SELECT v FROM t84_ids WHERE k = 'cf0'), 'P84-B') = (SELECT v::int FROM t84_ids WHERE k = 'b0') + 1
-  AND (SELECT count(*) = 2 AND bool_and(cuarto_id = (SELECT v FROM t84_ids WHERE k = 'cf0') AND ruta_id = 8401 AND referencia = 'no_entrega/OV-8420' AND tipo = 'Devolución no entregada') FROM inventario_mov WHERE operacion_id = '84000000-0000-0000-0000-0000000000b1')
-  AND (SELECT sum(cantidad) = 4 FROM inventario_mov WHERE operacion_id = '84000000-0000-0000-0000-0000000000b1'), '084-56 devolución = líneas completas (3 P84-A + 1 P84-B) al primer cuarto por id, kardex estructurado, una sola vez');
+SELECT t84_assert(CASE WHEN t_p087() THEN t84_cf((SELECT v FROM t84_ids WHERE k = 'cf0'), 'P84-A') = (SELECT v::int FROM t84_ids WHERE k = 'a0') AND t84_cf((SELECT v FROM t84_ids WHERE k = 'cf0'), 'P84-B') = (SELECT v::int FROM t84_ids WHERE k = 'b0')
+  AND (SELECT count(*) = 0 FROM inventario_mov WHERE operacion_id = '84000000-0000-0000-0000-0000000000b1') AND ((SELECT v FROM t84_ids WHERE k = 'n1')::jsonb -> 'devuelto') = '[]'::jsonb
+  AND jsonb_array_length((SELECT v FROM t84_ids WHERE k = 'n1')::jsonb -> 'en_camion') = 2
+  ELSE t84_cf((SELECT v FROM t84_ids WHERE k = 'cf0'), 'P84-A') = (SELECT v::int FROM t84_ids WHERE k = 'a0') + 3 AND t84_cf((SELECT v FROM t84_ids WHERE k = 'cf0'), 'P84-B') = (SELECT v::int FROM t84_ids WHERE k = 'b0') + 1   AND (SELECT count(*) = 2 AND bool_and(cuarto_id = (SELECT v FROM t84_ids WHERE k = 'cf0') AND ruta_id = 8401 AND referencia = 'no_entrega/OV-8420' AND tipo = 'Devolución no entregada') FROM inventario_mov WHERE operacion_id = '84000000-0000-0000-0000-0000000000b1')   AND (SELECT sum(cantidad) = 4 FROM inventario_mov WHERE operacion_id = '84000000-0000-0000-0000-0000000000b1') END, '084-56 devolución = líneas completas (3 P84-A + 1 P84-B) al primer cuarto por id, kardex estructurado, una sola vez (087: sin cuarto, el producto sigue en el camión)');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t84_actor('authenticated', 'admin84@t', '84000000-0000-0000-0000-000000000001');
 INSERT INTO t84_ids VALUES ('n2', registrar_no_entrega('84000000-0000-0000-0000-0000000000b3', 8421, 'Cliente ausente')::text);
 COMMIT;
