@@ -271,9 +271,12 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t88_actor(5);
 SELECT t88_err($q$INSERT INTO costos_historial (tipo, categoria, concepto, monto, periodo, fecha) VALUES ('Producción', 'Costo de Ventas', 'T88', 1, '2026-09', CURRENT_DATE)$q$, '088-93 Producción: INSERT de costos_historial denegado', '42501');
 ROLLBACK;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t88_actor(1);
-SELECT t88_err($q$SELECT update_productos_stock_atomic('[{"sku":"P88-ZZ","delta":5}]')$q$, '088-94 Admin: SKU inexistente rechazado', '22023');
-SELECT t88_err($q$SELECT update_productos_stock_atomic('[{"sku":"P88-E","delta":-100000}]')$q$, '088-95 Admin: stock negativo rechazado', 'P0001');
-SELECT t88_err($q$SELECT update_productos_stock_atomic('[{"sku":"P88-E","delta":0}]')$q$, '088-96 Admin: delta 0 rechazado', '22023');
+-- 095: sin llamadores vigentes, el RPC genérico de producto ya no es ejecutable por la API.
+DO $do$ DECLARE r95 BOOLEAN := NOT has_function_privilege('authenticated', 'public.update_productos_stock_atomic(jsonb)', 'EXECUTE'); BEGIN
+  PERFORM t88_err($q$SELECT update_productos_stock_atomic('[{"sku":"P88-ZZ","delta":5}]')$q$, '088-94 Admin: SKU inexistente rechazado (o sin EXECUTE tras 095)', CASE WHEN r95 THEN '42501' ELSE '22023' END);
+  PERFORM t88_err($q$SELECT update_productos_stock_atomic('[{"sku":"P88-E","delta":-100000}]')$q$, '088-95 Admin: stock negativo rechazado (o sin EXECUTE tras 095)', CASE WHEN r95 THEN '42501' ELSE 'P0001' END);
+  PERFORM t88_err($q$SELECT update_productos_stock_atomic('[{"sku":"P88-E","delta":0}]')$q$, '088-96 Admin: delta 0 rechazado (o sin EXECUTE tras 095)', CASE WHEN r95 THEN '42501' ELSE '22023' END);
+END $do$;
 ROLLBACK;
 
 \echo '── 088: auditoría y errores'

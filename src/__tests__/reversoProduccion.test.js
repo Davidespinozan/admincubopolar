@@ -50,3 +50,16 @@ describe('093: sin borrado físico de producción', () => {
     expect(pv).toMatch(/modal === "new" \? \{ stock:/);
   });
 });
+
+describe('095: el frontend no usa salidas por RPC genérico', () => {
+  it('ningún llamador de update_productos_stock_atomic; update_stocks_atomic solo en la devolución', async () => {
+    const store = src('../data/supaStore.js');
+    expect(store).not.toMatch(/rpc\('update_productos_stock_atomic'/);
+    const llamadas = store.match(/rpc\('update_stocks_atomic'/g) || [];
+    expect(llamadas).toHaveLength(1);
+    const { calcDevolucionChanges } = await import('../data/devolucionesLogic');
+    const { changes } = calcDevolucionChanges([{ sku: 'A', cantidad: 3 }, { sku: 'B', cantidad: 0 }, { sku: 'C', cantidad: -2 }], 'CF-1', 'Admin', 'OV-1');
+    expect(changes.length).toBe(1);
+    expect(changes.every(c => c.delta > 0)).toBe(true);
+  });
+});

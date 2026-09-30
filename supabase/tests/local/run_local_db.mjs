@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -2162,6 +2162,41 @@ await fe084();
 await conc088();
 await conc092();
 console.log('  concurrencia + frontend↔DB (076, 084, 088, 092) tras 093/094: PASS');
+
+// ═══ 095 — contención del borrado de producción de clientes anteriores a 094 ═══
+{
+  const PROD = { 'update_stocks_atomic(jsonb)': '097f869a7fd0202b88b303a362dedfc0', 'update_productos_stock_atomic(jsonb)': '1cec2eb11d94a9e0779b0c1673b25fa3' };
+  const rows = (await c.query(`SELECT oid::regprocedure::text AS sig, md5(pg_get_functiondef(oid)) AS m FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('update_stocks_atomic','update_productos_stock_atomic')`)).rows;
+  const mal = Object.keys(PROD).filter(k => (rows.find(x => x.sig === k) || {}).m !== PROD[k]);
+  const ok = mal.length === 0;
+  console.log(`  CLIENTE_OBSOLETO_PARITY_CHECK[pre-095]: ${ok ? 'PASS' : 'FAIL'} ${JSON.stringify(mal)}`);
+  if (!ok) process.exit(1);
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 095 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '095_contencion_cliente_obsoleto.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+console.log('── PRUEBAS 095 (cliente anterior a 094)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/095_cliente_obsoleto_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (095)'); process.exit(1); }
+}
+await reruns090('095');
+for (const [etq, f] of [['090', '090_b4_privilegios_test.sql'], ['092', '092_empaque_entrega_test.sql'], ['093', '093_finanzas_reverso_test.sql'], ['095', '095_cliente_obsoleto_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 095)`); process.exit(1); }
+  console.log(`  ${etq} tras 095: PASS`);
+}
+console.log('── concurrencia + frontend↔DB tras 095');
+await conc093();
+await conc092();
+await conc076();
+await fe076();
+await conc084();
+await fe084();
+await conc088();
+console.log('  concurrencia + frontend↔DB (076, 084, 088, 092, 093) tras 095: PASS');
 
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));

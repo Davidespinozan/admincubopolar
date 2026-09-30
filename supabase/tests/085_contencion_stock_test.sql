@@ -134,7 +134,8 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t85_actor('authenticated', 'admin85@
 SELECT t85_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-85A","sku":"P85-FANTASMA","delta":1}]'::jsonb)$q$, '085-20 Admin: SKU desconocido rechazado', '22023');
 SELECT t85_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-85A","sku":"P85-HIELO","delta":1},{"cuarto_id":"CF-85A","sku":"P85-FANTASMA","delta":1}]'::jsonb)$q$, '085-21 Admin: lote con un SKU desconocido rechazado completo', '22023');
 SELECT t85_assert(t85_cf('CF-85A', 'P85-HIELO') = 30 AND (SELECT NOT (stock ? 'P85-FANTASMA') FROM cuartos_frios WHERE id = 'CF-85A'), '085-22 sin mutación parcial ni llave nueva');
-SELECT t85_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-85A","sku":"P85-HIELO","delta":-31}]'::jsonb)$q$, '085-23 Admin: negativo sigue rechazado', 'P0001');
+-- 095: desde la aplicación el RPC genérico solo admite entradas (42501 antes de leer existencia).
+SELECT t85_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-85A","sku":"P85-HIELO","delta":-31}]'::jsonb)$q$, '085-23 Admin: negativo sigue rechazado', CASE WHEN pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'solo se permiten entradas a cuarto' THEN '42501' ELSE 'P0001' END);
 SELECT t85_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-NO","sku":"P85-HIELO","delta":1}]'::jsonb)$q$, '085-24 Admin: cuarto inexistente sigue rechazado', 'P0001');
 SELECT t85_assert((update_stocks_atomic('[{"cuarto_id":"CF-85B","sku":"P85-HIELO","delta":4,"tipo":"Entrada","origen":"Devolución cliente 85"}]'::jsonb) ->> 'actor') = 'Admin 85' AND t85_cf('CF-85B', 'P85-HIELO') = 4, '085-25 Admin: ajuste genérico legítimo (registrarDevolucion / cancelación / reverso) funciona');
 SELECT t85_assert((SELECT cuarto_id = 'CF-85B' AND usuario = 'Admin 85' FROM inventario_mov WHERE producto = 'P85-HIELO' ORDER BY id DESC LIMIT 1), '085-26 kardex del genérico ahora lleva cuarto_id');
