@@ -157,6 +157,13 @@ export const fmtDate = (v) => {
   if (!v) return '—';
   // Already formatted? (DD/MM/YYYY or similar)
   if (typeof v === 'string' && /^\d{2}\/\d{2}/.test(v)) return v;
+  // 096: una fecha de calendario 'YYYY-MM-DD' (columna DATE) se muestra tal
+  // cual: new Date('YYYY-MM-DD') es medianoche UTC y en México daría el día
+  // anterior. Los instantes conservan su semántica de instante.
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) {
+    const [y, m, d] = v.split('-');
+    return `${d}/${m}/${y}`;
+  }
   const d = new Date(v);
   if (isNaN(d.getTime())) return s(v); // can't parse, show raw
   return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;

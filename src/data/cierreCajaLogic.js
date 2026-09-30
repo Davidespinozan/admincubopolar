@@ -49,24 +49,9 @@ export function calcularEsperadoPorRuta(pagosDeRuta) {
   return out;
 }
 
-/**
- * Construye el snapshot inmutable de pagos para auditoría retroactiva.
- *
- * @param {Array} pagosDeRuta
- * @param {Object} ordenFolioPorId — { ordenId: folio }
- * @returns {Array}
- */
-export function buildPagosSnapshot(pagosDeRuta, ordenFolioPorId = {}) {
-  if (!Array.isArray(pagosDeRuta)) return [];
-  return pagosDeRuta.map(p => ({
-    pago_id: p?.id ?? null,
-    monto: Number(p?.monto || 0),
-    metodo: String(p?.metodo_pago || p?.metodoPago || ''),
-    orden_id: p?.orden_id ?? p?.ordenId ?? null,
-    orden_folio: ordenFolioPorId[String(p?.orden_id ?? p?.ordenId ?? '')] || null,
-    fecha: p?.fecha || p?.created_at || null,
-  }));
-}
+// 096: el snapshot de pagos, el esperado autoritativo, la fecha de la caja y
+// el actor los calcula el servidor (cerrar_caja_ruta). Este módulo solo da la
+// vista previa y la validación de captura en el navegador.
 
 /**
  * Valida los datos capturados de un cierre.
@@ -116,44 +101,12 @@ export function calcDiferencia(esperado, contado) {
 }
 
 /**
- * Construye el payload INSERT para `cierres_diarios`. Calcula diferencia
- * y total automáticamente. La fecha viene del caller (puede ser fecha_fin
- * de la ruta o created_at::date como fallback).
- *
- * @param {Object} params
- * @param {Object} params.ruta              — { id, chofer_id }
- * @param {string} params.fechaCierre       — YYYY-MM-DD
- * @param {Object} params.esperado          — { efectivo, transferencia, credito, total }
- * @param {Object} params.contado           — { efectivo, transferencia }
- * @param {string} params.motivoDiferencia
- * @param {string} params.notas
- * @param {string} params.usuario           — uname() del caller
- * @param {Array}  params.pagosSnapshot
- * @returns {Object}
+ * 096: clave lógica de un intento de cierre de caja (para conservar el UUID
+ * de la operación entre reintentos con los mismos datos).
  */
-export function buildCierrePayload({ ruta, fechaCierre, esperado, contado, motivoDiferencia, notas, usuario, pagosSnapshot }) {
-  const cef = centavos(Number(contado?.efectivo || 0));
-  const ctr = centavos(Number(contado?.transferencia || 0));
-  const contadoTotal = centavos(cef + ctr);
-  const diferencia = calcDiferencia(esperado, { efectivo: cef, transferencia: ctr });
-
-  return {
-    fecha: fechaCierre,
-    ruta_id: ruta?.id ?? null,
-    chofer_id: ruta?.chofer_id ?? ruta?.choferId ?? null,
-    esperado_efectivo: centavos(Number(esperado?.efectivo || 0)),
-    esperado_transferencia: centavos(Number(esperado?.transferencia || 0)),
-    esperado_credito: centavos(Number(esperado?.credito || 0)),
-    esperado_total: centavos(Number(esperado?.total || 0)),
-    contado_efectivo: cef,
-    contado_transferencia: ctr,
-    contado_total: contadoTotal,
-    diferencia,
-    motivo_diferencia: String(motivoDiferencia || '').trim() || null,
-    cerrado_por: String(usuario || 'Admin'),
-    notas: String(notas || '').trim() || null,
-    pagos_snapshot: Array.isArray(pagosSnapshot) ? pagosSnapshot : [],
-  };
+export function claveCierreCaja({ rutaId, contadoEfectivo, contadoTransferencia, motivoDiferencia, notas }) {
+  return ['caja', String(rutaId ?? ''), centavos(Number(contadoEfectivo || 0)), centavos(Number(contadoTransferencia || 0)),
+    String(motivoDiferencia || '').trim(), String(notas || '').trim()].join('|');
 }
 
 /**
@@ -169,20 +122,5 @@ export function formatDiferencia(diferencia) {
   return { label: `Faltante $${centavos(-d).toLocaleString('es-MX')}`, color: 'rojo', signo: '-' };
 }
 
-/**
- * Determina la fecha del cierre desde la ruta. Prefiere fecha_fin (cuándo
- * se cerró la ruta), fallback a created_at::date.
- *
- * @param {Object} ruta — { fecha_fin?, fechaFin?, created_at?, createdAt? }
- * @returns {string}    — YYYY-MM-DD
- */
-export function fechaCierreDesdeRuta(ruta) {
-  const candidato = ruta?.fecha_fin || ruta?.fechaFin || ruta?.created_at || ruta?.createdAt;
-  if (!candidato) {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  }
-  const dt = new Date(candidato);
-  if (isNaN(dt.getTime())) return String(candidato).slice(0, 10);
-  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
-}
+// 096: fechaCierreDesdeRuta se retiró. La fecha de la caja la deriva el
+// servidor de rutas.fecha_fin (DATE de negocio, sin conversión de zona).

@@ -1,4 +1,5 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, useToast, todayLocalISO, PAGE_SIZE, Paginator } from './viewsCommon';
+import { diasEntre } from '../../utils/fechas';
 import { esMermaActiva, puedeRevertirMerma } from '../../data/mermasLogic';
 
 export function MermasView({ data, actions }) {
@@ -284,8 +285,8 @@ export function MermasView({ data, actions }) {
         const info = productosBySku[s(borrarModal.sku)];
         const costo = info?.costo || 0;
         const total = n(borrarModal.cantidad) * costo;
-        const fechaMerma = new Date(s(borrarModal.fecha));
-        const dias = Math.floor((Date.now() - fechaMerma.getTime()) / (1000 * 60 * 60 * 24));
+        // 096: fecha de la merma es DATE de negocio; días de calendario.
+        const dias = diasEntre(s(borrarModal.fecha));
         const esVieja = Number.isFinite(dias) && dias > 30;
         return (
           <div className="space-y-3">

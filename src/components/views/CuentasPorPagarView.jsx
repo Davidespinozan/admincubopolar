@@ -1,4 +1,5 @@
 import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { diaNegocio, mesNegocio } from '../../utils/fechas';
 
 const CATEGORIAS_CXP = ['Proveedores', 'Servicios', 'Renta', 'Otro'];
 const METODOS_PAGO = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta'];
@@ -36,13 +37,9 @@ export function CuentasPorPagarView({ data, actions }) {
     [cxpPendientes]
   );
   const pagadoEsteMes = useMemo(() => {
-    const hoy = new Date();
-    const mes = hoy.getMonth();
-    const anio = hoy.getFullYear();
-    return (data.pagosProveedores || []).filter(p => {
-      const f = new Date(s(p.fecha));
-      return f.getMonth() === mes && f.getFullYear() === anio;
-    }).reduce((s, p) => s + n(p.monto), 0);
+    // 096: p.fecha es DATE de negocio; se compara el mes como calendario.
+    const mes = mesNegocio();
+    return (data.pagosProveedores || []).filter(p => mesNegocio(s(p.fecha)) === mes).reduce((s, p) => s + n(p.monto), 0);
   }, [data.pagosProveedores]);
 
   const openNew = () => { setForm(empty); setErrors({}); setModal('new'); };
@@ -167,7 +164,7 @@ export function CuentasPorPagarView({ data, actions }) {
         )}
         {paginatedPendientes.map(cxp => {
           const pctPagado = n(cxp.montoOriginal) > 0 ? (n(cxp.montoPagado) / n(cxp.montoOriginal)) * 100 : 0;
-          const vencida = cxp.fechaVencimiento && new Date(cxp.fechaVencimiento) < new Date();
+          const vencida = !!cxp.fechaVencimiento && diaNegocio(s(cxp.fechaVencimiento)) < diaNegocio();
           return (
             <div key={cxp.id} className={`bg-white rounded-xl p-4 border ${vencida ? 'border-red-300 bg-red-50' : 'border-slate-100'}`}>
               <div className="flex justify-between items-start gap-2 mb-2">

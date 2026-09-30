@@ -1,6 +1,7 @@
-import { useState, useMemo, StatusBadge, PageHeader, Modal, FormBtn, EmptyState, s, n, eqId, fmtDate, fmtMoney, todayLocalISO } from './viewsCommon';
+import { useState, useMemo, StatusBadge, PageHeader, Modal, FormBtn, EmptyState, s, n, eqId, fmtDate, fmtMoney } from './viewsCommon';
 import { useEffect } from 'react';
 import { calcularEsperadoPorRuta, formatDiferencia } from '../../data/cierreCajaLogic';
+import { diaNegocio } from '../../utils/fechas';
 import CierreCajaModal from '../CierreCajaModal';
 
 export function ConciliacionView({ data, actions }) {
@@ -9,12 +10,13 @@ export function ConciliacionView({ data, actions }) {
   const [detalleCierre, setDetalleCierre] = useState(null);
 
   // Filtros histórico
+  // 096: "hoy" es el día de negocio (America/Mazatlan), no el del navegador.
+  const hoyStr = useMemo(() => diaNegocio(), []);
   const hace30 = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return todayLocalISO(d);
-  }, []);
-  const hoyStr = useMemo(() => todayLocalISO(), []);
+    const [y, m, d] = hoyStr.split('-').map(Number);
+    const t = new Date(Date.UTC(y, m - 1, d - 30));
+    return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+  }, [hoyStr]);
   const [fechaInicio, setFechaInicio] = useState(hace30);
   const [fechaFin, setFechaFin] = useState(hoyStr);
   const [filtroChofer, setFiltroChofer] = useState('');
@@ -25,32 +27,28 @@ export function ConciliacionView({ data, actions }) {
     return map;
   }, [data?.usuarios]);
 
-  // Cierres existentes indexados por ruta_id+fecha
   const cierres = data?.cierresDiarios || [];
-  const cierresIdx = useMemo(() => {
-    const idx = {};
-    for (const c of cierres) {
-      const key = `${String(c.rutaId || c.ruta_id)}|${s(c.fecha).slice(0, 10)}`;
-      idx[key] = c;
-    }
-    return idx;
-  }, [cierres]);
 
-  // Rutas elegibles para cierre: Completada o Cerrada y SIN cierre todavía
-  const rutasPendientes = useMemo(() => {
-    const lista = (data?.rutas || []).filter(r => {
-      const est = s(r.estatus);
-      return est === 'Completada' || est === 'Cerrada';
-    });
-    return lista
-      .map(r => {
-        const fechaCierre = (r.fechaFin || r.fecha_fin || r.createdAt || r.created_at || '').slice(0, 10);
-        const key = `${String(r.id)}|${fechaCierre}`;
-        return { ...r, fechaCierre, yaCerrada: !!cierresIdx[key] };
-      })
-      .filter(r => !r.yaCerrada)
-      .sort((a, b) => String(b.fechaCierre).localeCompare(String(a.fechaCierre)));
-  }, [data?.rutas, cierresIdx]);
+  // 096: rutas pendientes de caja según el servidor (la ruta tiene o no su
+  // caja). No se deriva ninguna fecha en el navegador para decidirlo.
+  const [pendientesSrv, setPendientesSrv] = useState({ filas: [], error: null });
+  const refrescoCaja = `${cierres.length}|${cierres[0]?.id || 0}|${(data?.rutas || []).map(r => `${r.id}:${s(r.estatus)}`).join(',')}`;
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      const r = await actions?.obtenerRutasPendientesCaja?.();
+      if (!vivo) return;
+      if (!r || r.error) setPendientesSrv({ filas: [], error: r?.error || 'No disponible' });
+      else setPendientesSrv({ filas: r.data, error: null });
+    })();
+    return () => { vivo = false; };
+  }, [actions, refrescoCaja]);
+  const rutasPendientes = useMemo(() => (pendientesSrv.filas || []).map(r => ({
+    ...r,
+    choferId: r.chofer_id,
+    choferNombre: r.chofer_nombre,
+    fechaCierre: r.fecha_fin || null,  // DATE de negocio tal cual (el servidor fija la caja con este dato)
+  })), [pendientesSrv.filas]);
 
   // Pagos pre-indexados por ruta para mostrar el esperado en cada card
   const pagosPorRuta = useMemo(() => {
@@ -141,6 +139,9 @@ export function ConciliacionView({ data, actions }) {
       </div>
 
       {/* TAB: PENDIENTES */}
+      {tab === 'pendientes' && pendientesSrv.error && (
+        <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2 mb-3">No se pudieron cargar las rutas pendientes: {pendientesSrv.error}</p>
+      )}
       {tab === 'pendientes' && (
         rutasPendientes.length === 0 ? (
           <EmptyState
@@ -162,7 +163,7 @@ export function ConciliacionView({ data, actions }) {
                         <span className="font-mono text-xs text-blue-600">{s(r.folio)}</span>
                         <StatusBadge status={r.estatus} />
                       </div>
-                      <p className="text-xs text-slate-500 mt-0.5">{choferNombre} · {fmtDate(r.fechaCierre)}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{choferNombre} · {r.fechaCierre ? `Cierre de ruta ${fmtDate(r.fechaCierre)}` : 'Sin fecha de cierre registrada (no se puede cerrar caja)'}</p>
                     </div>
                     <button onClick={() => setCierreRuta(r)}
                       className="flex-shrink-0 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold rounded-xl transition-colors min-h-[40px]">

@@ -2,11 +2,12 @@
 // Agrega los pendientes reales del negocio y cada tarjeta enruta al
 // módulo donde se resuelven. La lógica vive en data/bandejaLogic.js.
 import { useMemo } from 'react';
+import { diaNegocio } from '../../utils/fechas';
 import { construirBandeja } from '../../data/bandejaLogic';
-import { todayLocalISO, s } from '../../utils/safe';
+import { s } from '../../utils/safe';
 
 export function BandejaView({ data, user, onNavigate }) {
-  const tareas = useMemo(() => construirBandeja(data, todayLocalISO()), [data]);
+  const tareas = useMemo(() => construirBandeja(data, diaNegocio()), [data]);
   const urgentes = tareas.filter(t => t.prioridad === 'alta');
   const normales = tareas.filter(t => t.prioridad === 'media');
 

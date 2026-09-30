@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense, Component } from 'react';
+import { diaNegocio } from '../utils/fechas';
 import { Icons } from './ui/Icons';
 import { useConfirm, useBodyScrollLock } from './ui/Modal';
 import { useToast } from './ui/Toast';
@@ -11,7 +12,6 @@ import { traducirError } from '../utils/errorMessages';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
-import { todayLocalISO } from '../utils/safe';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
 const ClientesView      = lazy(() => import('./views/ClientesView.jsx').then(m => ({ default: m.ClientesView })));
@@ -285,7 +285,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   // Tanda 24: badge de "Mi bandeja" en el menú — solo cuenta urgentes
   // (prioridad alta) para que el número signifique "atiende ahora".
   const urgentesBandeja = useMemo(
-    () => contarUrgentes(construirBandeja(data, todayLocalISO())),
+    () => contarUrgentes(construirBandeja(data, diaNegocio())),
     [data]
   );
   const alertasActivas = useMemo(() => {

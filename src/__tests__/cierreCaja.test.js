@@ -1,17 +1,15 @@
 // cierreCaja.test.js
-// Tests para clasificarMetodo + calcularEsperadoPorRuta + buildPagosSnapshot
-// + validateCierre + calcDiferencia + buildCierrePayload + formatDiferencia +
-// fechaCierreDesdeRuta. Lógica pura sin Supabase.
+// Tests para clasificarMetodo + calcularEsperadoPorRuta + validateCierre +
+// calcDiferencia + formatDiferencia + claveCierreCaja (096: la fecha, el
+// esperado autoritativo y el snapshot los calcula el servidor).
 import { describe, it, expect } from 'vitest';
 import {
   clasificarMetodo,
   calcularEsperadoPorRuta,
-  buildPagosSnapshot,
   validateCierre,
   calcDiferencia,
-  buildCierrePayload,
   formatDiferencia,
-  fechaCierreDesdeRuta,
+  claveCierreCaja,
 } from '../data/cierreCajaLogic';
 
 // ─── clasificarMetodo ─────────────────────────────────────────
@@ -113,35 +111,6 @@ describe('calcularEsperadoPorRuta', () => {
   });
 });
 
-// ─── buildPagosSnapshot ───────────────────────────────────────
-describe('buildPagosSnapshot', () => {
-  it('shape correcto incluyendo orden_folio', () => {
-    const pagos = [
-      { id: 1, monto: 100, metodo_pago: 'Efectivo', orden_id: 5, fecha: '2026-05-01' },
-    ];
-    const folios = { '5': 'OV-100' };
-    const snap = buildPagosSnapshot(pagos, folios);
-    expect(snap).toEqual([{
-      pago_id: 1,
-      monto: 100,
-      metodo: 'Efectivo',
-      orden_id: 5,
-      orden_folio: 'OV-100',
-      fecha: '2026-05-01',
-    }]);
-  });
-
-  it('orden_folio es null si no hay match', () => {
-    const snap = buildPagosSnapshot([{ id: 1, monto: 100, metodo_pago: 'Efectivo', orden_id: 99 }], {});
-    expect(snap[0].orden_folio).toBeNull();
-  });
-
-  it('lista null/undefined → []', () => {
-    expect(buildPagosSnapshot(null)).toEqual([]);
-    expect(buildPagosSnapshot(undefined)).toEqual([]);
-  });
-});
-
 // ─── validateCierre ───────────────────────────────────────────
 describe('validateCierre', () => {
   const esp = { efectivo: 500, transferencia: 200 }; // esperado total = 700
@@ -235,73 +204,6 @@ describe('calcDiferencia', () => {
   });
 });
 
-// ─── buildCierrePayload ───────────────────────────────────────
-describe('buildCierrePayload', () => {
-  const base = {
-    ruta: { id: 42, chofer_id: 7 },
-    fechaCierre: '2026-05-01',
-    esperado: { efectivo: 500, transferencia: 200, credito: 100, total: 800 },
-    contado: { efectivo: 500, transferencia: 200 },
-    motivoDiferencia: '',
-    notas: '',
-    usuario: 'Santiago',
-    pagosSnapshot: [{ pago_id: 1, monto: 500 }],
-  };
-
-  it('shape correcto cuando cuadrado', () => {
-    const p = buildCierrePayload(base);
-    expect(p).toEqual({
-      fecha: '2026-05-01',
-      ruta_id: 42,
-      chofer_id: 7,
-      esperado_efectivo: 500,
-      esperado_transferencia: 200,
-      esperado_credito: 100,
-      esperado_total: 800,
-      contado_efectivo: 500,
-      contado_transferencia: 200,
-      contado_total: 700,
-      diferencia: 0,
-      motivo_diferencia: null,
-      cerrado_por: 'Santiago',
-      notas: null,
-      pagos_snapshot: [{ pago_id: 1, monto: 500 }],
-    });
-  });
-
-  it('diferencia se calcula automáticamente (sobrante)', () => {
-    const p = buildCierrePayload({ ...base, contado: { efectivo: 600, transferencia: 200 } });
-    expect(p.diferencia).toBe(100);
-    expect(p.contado_total).toBe(800);
-  });
-
-  it('diferencia se calcula automáticamente (faltante)', () => {
-    const p = buildCierrePayload({ ...base, contado: { efectivo: 450, transferencia: 200 } });
-    expect(p.diferencia).toBe(-50);
-  });
-
-  it('motivo y notas se trimean; vacíos → null', () => {
-    const p1 = buildCierrePayload({ ...base, motivoDiferencia: '  Faltante en cambio  ', notas: '' });
-    expect(p1.motivo_diferencia).toBe('Faltante en cambio');
-    expect(p1.notas).toBeNull();
-  });
-
-  it('default usuario "Admin" si vacío', () => {
-    const p = buildCierrePayload({ ...base, usuario: null });
-    expect(p.cerrado_por).toBe('Admin');
-  });
-
-  it('chofer_id acepta camelCase también', () => {
-    const p = buildCierrePayload({ ...base, ruta: { id: 1, choferId: 9 } });
-    expect(p.chofer_id).toBe(9);
-  });
-
-  it('pagos_snapshot vacío si no es array', () => {
-    const p = buildCierrePayload({ ...base, pagosSnapshot: null });
-    expect(p.pagos_snapshot).toEqual([]);
-  });
-});
-
 // ─── formatDiferencia ─────────────────────────────────────────
 describe('formatDiferencia', () => {
   it('0 → Cuadrado verde', () => {
@@ -328,30 +230,17 @@ describe('formatDiferencia', () => {
   });
 });
 
-// ─── fechaCierreDesdeRuta ─────────────────────────────────────
-describe('fechaCierreDesdeRuta', () => {
-  it('prefiere fecha_fin (snake)', () => {
-    const r = fechaCierreDesdeRuta({ fecha_fin: '2026-05-15T18:30:00Z', created_at: '2026-05-10T08:00:00Z' });
-    expect(r).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+// ─── 096: claveCierreCaja / fecha de la caja en el servidor ─────
+describe('claveCierreCaja', () => {
+  it('mismos datos → misma clave (el reintento conserva el UUID); otro conteo → otra clave', () => {
+    const a = claveCierreCaja({ rutaId: 5, contadoEfectivo: 100, contadoTransferencia: 80, motivoDiferencia: ' ', notas: 'x ' });
+    expect(claveCierreCaja({ rutaId: 5, contadoEfectivo: '100', contadoTransferencia: 80.0, motivoDiferencia: '', notas: 'x' })).toBe(a);
+    expect(claveCierreCaja({ rutaId: 5, contadoEfectivo: 90, contadoTransferencia: 80 })).not.toBe(a);
   });
-
-  it('prefiere fechaFin (camel)', () => {
-    const r = fechaCierreDesdeRuta({ fechaFin: '2026-04-20T10:00:00Z' });
-    expect(r).toMatch(/^2026-04-20$/);
-  });
-
-  it('fallback a created_at si no hay fecha_fin', () => {
-    const r = fechaCierreDesdeRuta({ created_at: '2026-03-15T12:00:00Z' });
-    expect(r).toMatch(/^2026-03-15$/);
-  });
-
-  it('fallback a hoy local si no hay nada', () => {
-    const r = fechaCierreDesdeRuta({});
-    expect(r).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-  });
-
-  it('formato YYYY-MM-DD siempre', () => {
-    const r = fechaCierreDesdeRuta({ fecha_fin: '2026-01-05' });
-    expect(r).toBe('2026-01-05');
+  it('la lógica de caja ya no deriva fechas ni arma el INSERT', async () => {
+    const m = await import('../data/cierreCajaLogic');
+    expect(m.fechaCierreDesdeRuta).toBeUndefined();
+    expect(m.buildCierrePayload).toBeUndefined();
+    expect(m.buildPagosSnapshot).toBeUndefined();
   });
 });

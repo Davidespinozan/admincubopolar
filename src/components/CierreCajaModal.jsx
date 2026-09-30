@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { s, n, fmtMoney } from '../utils/safe';
 import { useToast } from './ui/Toast';
-import { calcularEsperadoPorRuta, calcDiferencia, formatDiferencia } from '../data/cierreCajaLogic';
+import { calcularEsperadoPorRuta, calcDiferencia, formatDiferencia, claveCierreCaja } from '../data/cierreCajaLogic';
+import { resolverOperacion } from '../data/produccionAtomicaLogic';
 
 // Modal de captura de cierre de caja por ruta. El caller pasa la ruta
 // (Completada o Cerrada) ya seleccionada.
@@ -14,6 +15,9 @@ export default function CierreCajaModal({ open, ruta, data, actions, onClose, on
   const [notas, setNotas] = useState('');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
+  // 096: un UUID por intento lógico de cierre; un reintento con los mismos
+  // datos (respuesta perdida) reutiliza el UUID y el servidor responde replay.
+  const opRef = useRef(null);
 
   // Pagos asociados a la ruta (filtrados localmente del store).
   const pagosDeRuta = useMemo(() => {
@@ -63,17 +67,21 @@ export default function CierreCajaModal({ open, ruta, data, actions, onClose, on
     setErrors({});
     setSaving(true);
     try {
-      const result = await actions.cerrarCajaRuta?.({
+      const datos = {
         rutaId: ruta.id,
         contadoEfectivo: contado.efectivo,
         contadoTransferencia: contado.transferencia,
         motivoDiferencia: motivoDiferencia.trim() || null,
         notas: notas.trim() || null,
-      });
+      };
+      const op = resolverOperacion(opRef.current, claveCierreCaja(datos));
+      opRef.current = op;
+      const result = await actions.cerrarCajaRuta?.({ ...datos, operacionId: op.id });
       if (result?.error) {
         toast?.error(result.error);
         return;
       }
+      opRef.current = null;
       toast?.success(diferencia === 0 ? 'Caja cuadrada ✓' : `Cierre registrado (${dif.label.toLowerCase()})`);
       onSuccess?.(result?.cierreId);
       onClose?.();

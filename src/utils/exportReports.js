@@ -3,6 +3,7 @@
  * CuboPolar ERP
  */
 import * as XLSX from 'xlsx';
+import { diaNegocio } from './fechas';
 import { mermasActivas } from '../data/mermasLogic';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -70,7 +71,7 @@ export function exportToExcel(data, filename, sheetName = 'Datos', options = {})
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
   // Descargar
-  const today = new Date().toISOString().slice(0, 10);
+  const today = diaNegocio();
   XLSX.writeFile(wb, `${filename}_${today}.xlsx`);
 }
 
@@ -100,7 +101,7 @@ export function exportMultiSheetExcel(sheets, filename) {
     XLSX.utils.book_append_sheet(wb, ws, sheet.name.slice(0, 31)); // Excel limit 31 chars
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = diaNegocio();
   XLSX.writeFile(wb, `${filename}_${today}.xlsx`);
 }
 
@@ -211,7 +212,7 @@ export function exportToPDF(data, filename, options = {}) {
   });
 
   // Descargar
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = diaNegocio();
   doc.save(`${filename}_${todayStr}.pdf`);
 }
 
@@ -563,7 +564,7 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, us
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.text(`Folio: ${s(ruta.folio)}`, pageWidth - 14, 15, { align: 'right' });
-  const fechaFormat = ruta.fecha_fin || ruta.cierre_at || ruta.fecha || new Date().toISOString().slice(0, 10);
+  const fechaFormat = ruta.fecha_fin || ruta.cierre_at || ruta.fecha || diaNegocio();
   const fechaShort = fechaFormat.slice(0, 10);
   doc.text(`Fecha: ${fechaShort}`, pageWidth - 14, 21, { align: 'right' });
 

@@ -124,7 +124,7 @@ SELECT t90_assert((
   ) = (
   SELECT string_agg(x, ',' ORDER BY x) FROM (
     SELECT t || ':' || op AS x FROM (VALUES
-      ('auditoria','INSERT'), ('camiones','INSERT'), ('camiones','UPDATE'), ('chofer_ubicaciones','INSERT'), ('cierres_diarios','INSERT'),
+      ('auditoria','INSERT'), ('camiones','INSERT'), ('camiones','UPDATE'), ('chofer_ubicaciones','INSERT'),
       ('clientes','INSERT'), ('clientes','UPDATE'), ('clientes','DELETE'), ('comodatos','INSERT'), ('comodatos','UPDATE'), ('comodatos','DELETE'),
       ('configuracion_empresa','UPDATE'), ('costos_fijos','INSERT'), ('costos_fijos','UPDATE'), ('costos_fijos','DELETE'), ('costos_historial','INSERT'),
       ('cuartos_frios','INSERT'), ('cuartos_frios','UPDATE'), ('cuartos_frios','DELETE'),
@@ -140,7 +140,9 @@ SELECT t90_assert((
     SELECT 'cuentas_por_cobrar:' || op FROM (VALUES ('UPDATE'), ('DELETE')) v(op)
      WHERE has_table_privilege('authenticated', 'cuentas_por_cobrar', 'UPDATE')
     UNION ALL  -- 094 retira el DELETE de produccion (se revierte, no se borra)
-    SELECT 'produccion:DELETE' WHERE NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_productos_guard_stock')) s
+    SELECT 'produccion:DELETE' WHERE NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_productos_guard_stock')
+    UNION ALL  -- 097 retira el INSERT REST de caja (cerrar_caja_ruta)
+    SELECT 'cierres_diarios:INSERT' WHERE has_table_privilege('authenticated', 'cierres_diarios', 'INSERT')) s
   ), '090-07 DML de authenticated = exactamente el mapa de llamadores del frontend (pagos sin DML; CxC sin DML tras 091)');
 SELECT t90_assert(NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'S'
   AND (has_sequence_privilege('authenticated', c.oid, 'SELECT') OR has_sequence_privilege('authenticated', c.oid, 'UPDATE')

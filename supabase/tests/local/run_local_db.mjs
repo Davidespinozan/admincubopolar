@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -2198,6 +2198,111 @@ await fe084();
 await conc088();
 console.log('  concurrencia + frontend↔DB (076, 084, 088, 092, 093) tras 095: PASS');
 
+// ═══ 096/097 — día de negocio canónico (Mazatlán) y caja por contrato ═══
+{
+  const PROD = { 'fin_hoy()': 'a1a0a76f10d72a0d463273d6e83ab8a0', 'reporte_financiero(date,date)': '1889882877a4f005815f4da4873a529c' };
+  const rows = (await c.query(`SELECT oid::regprocedure::text AS sig, md5(pg_get_functiondef(oid)) AS m FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('fin_hoy','reporte_financiero')`)).rows;
+  const mal = Object.keys(PROD).filter(k => (rows.find(x => x.sig === k) || {}).m !== PROD[k]);
+  const nuevo = (await c.query(`SELECT to_regprocedure('public.cerrar_caja_ruta(uuid,bigint,numeric,numeric,text,text)') IS NULL AS a`)).rows[0].a;
+  const ok = mal.length === 0 && nuevo;
+  console.log(`  DIA_NEGOCIO_PARITY_CHECK[pre-096]: ${ok ? 'PASS' : 'FAIL'} ${JSON.stringify(mal)}`);
+  if (!ok) process.exit(1);
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 096 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '096_dia_negocio_caja.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 096 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 096)'); process.exit(1); }
+console.log('── PRUEBAS 096 (antes de 097: el frontend anterior aún inserta caja por REST)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/096_dia_negocio_caja_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (096)'); process.exit(1); }
+}
+await reruns090('096');
+for (const [etq, f] of [['090', '090_b4_privilegios_test.sql'], ['092', '092_empaque_entrega_test.sql'], ['093', '093_finanzas_reverso_test.sql'], ['095', '095_cliente_obsoleto_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 096)`); process.exit(1); }
+  console.log(`  ${etq} tras 096: PASS`);
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 097 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '097_contencion_caja.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+console.log('── PRUEBAS 096 (tras 097)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/096_dia_negocio_caja_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (096 tras 097)'); process.exit(1); }
+}
+await reruns090('097');
+for (const [etq, f] of [['090', '090_b4_privilegios_test.sql'], ['092', '092_empaque_entrega_test.sql'], ['093', '093_finanzas_reverso_test.sql'], ['095', '095_cliente_obsoleto_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 097)`); process.exit(1); }
+  console.log(`  ${etq} tras 097: PASS`);
+}
+async function conc096() {
+  console.log('── 096 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const SUB = (k) => '96c00000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM cierres_diarios WHERE ruta_id BETWEEN 9661 AND 9669; DELETE FROM auditoria WHERE detalle LIKE 'R-966%';
+    DELETE FROM rutas WHERE id BETWEEN 9661 AND 9669;
+    DELETE FROM usuarios WHERE id BETWEEN 9661 AND 9669; DELETE FROM auth.users WHERE id::text LIKE '96c00000-%';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) SELECT ('96c00000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'c' || k || '@t96c' FROM generate_series(1, 2) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (9661, 'AdminC96-1', 'c1@t96c', 'Admin', 'Activo', '${SUB(1)}'), (9662, 'AdminC96-2', 'c2@t96c', 'Admin', 'Activo', '${SUB(2)}');
+    INSERT INTO rutas (id, folio, nombre, estatus, fecha, fecha_fin, carga, carga_autorizada, extra_autorizado, carga_real) VALUES
+      (9661, 'R-9661', 'C96 A', 'Cerrada', '2026-09-29', '2026-09-29', '{}', '{}', '{}', '{}'),
+      (9662, 'R-9662', 'C96 B', 'Cerrada', '2026-09-29', '2026-09-29', '{}', '{}', '{}', '{}');
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const carrera = async (subA, sqlA, pA, subB, sqlB, pB) => {
+    await actor(a, subA); await actor(b, subB);
+    const ra = await a.query(sqlA, pA).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(sqlB, pB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const CAJA = `SELECT cerrar_caja_ruta($1::uuid, $2::bigint, 0, 0) AS r`;
+  let r = await carrera(SUB(1), CAJA, ['96c10000-0000-0000-0000-000000000001', 9661], SUB(2), CAJA, ['96c10000-0000-0000-0000-000000000002', 9661]);
+  ok(r.ra.ok && r.bloqueado && !r.rb.ok && /ya tiene cierre/.test(r.rb.msg || ''), `096-C1 dos cierres simultáneos (dos navegadores) de la misma ruta: el segundo espera y se rechaza (${r.rb.code || 'ok'})`);
+  ok(await n(`SELECT count(*) FROM cierres_diarios WHERE ruta_id = 9661`) === 1, '096-C1b una sola caja');
+  r = await carrera(SUB(1), CAJA, ['96c10000-0000-0000-0000-000000000003', 9662], SUB(1), CAJA, ['96c10000-0000-0000-0000-000000000003', 9662]);
+  ok(r.ra.ok && r.bloqueado && r.rb.ok && r.rb.row.r.replay === true, '096-C2 mismo cierre (mismo UUID) simultáneo: la segunda es replay');
+  ok(await n(`SELECT count(*) FROM cierres_diarios WHERE ruta_id = 9662`) === 1 && await n(`SELECT count(*) FROM auditoria WHERE detalle LIKE 'R-9662%'`) === 1, '096-C2b una caja y una auditoría');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (096 concurrencia)'); process.exit(1); }
+}
+await conc096();
+console.log('── concurrencia + frontend↔DB tras 096/097');
+await conc086();
+await fe086();
+await conc087();
+await fe087();
+await conc088();
+await conc092();
+await conc093();
+await conc076();
+await fe076();
+console.log('  concurrencia + frontend↔DB (076, 086, 087, 088, 092, 093) tras 096/097: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -2237,7 +2342,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 092
   'conciliacion_empaque',
   // 093
-  'revertir_produccion','ajustar_existencia','reporte_financiero','fin_egreso_no_efectivo','productos_existencia_inicial'];
+  'revertir_produccion','ajustar_existencia','reporte_financiero','fin_egreso_no_efectivo','productos_existencia_inicial',
+  // 096
+  'cerrar_caja_ruta','rutas_pendientes_caja'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

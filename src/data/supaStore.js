@@ -15,7 +15,6 @@ import {
   resolverOperacion as resolverOperacionCierre,
 } from './cierreFinancieroLogic';
 import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion, calcReembolsoEfectivo } from './devolucionesLogic';
-import { calcularEsperadoPorRuta, validateCierre, buildCierrePayload, buildPagosSnapshot, fechaCierreDesdeRuta } from './cierreCajaLogic';
 import {
   validateConfirmarCarga,
   validateFirmarCarga,
@@ -2966,131 +2965,49 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── CIERRE DE CAJA POR RUTA ──
-      // Registra el corte de caja oficial de una ruta. Compara contado
-      // físico (capturado por admin) vs esperado del sistema (suma de
-      // pagos.metodo_pago de las órdenes de la ruta).
-      // UNIQUE(fecha, ruta_id) impide cerrar dos veces la misma ruta.
+      // 096: la caja se cierra con el contrato del servidor cerrar_caja_ruta:
+      // una caja por ruta (UNIQUE(ruta_id)), fecha = rutas.fecha_fin (día de
+      // negocio, sin conversión de zona), esperado, snapshot de pagos y actor
+      // calculados en el servidor, idempotente por operación. El navegador
+      // solo envía el conteo físico, el motivo y las notas.
       cerrarCajaRuta: async (payload = {}) => {
         const guard = requireAdmin();
         if (guard) { t()?.error(guard.error); return guard; }
-
-        const { rutaId, contadoEfectivo, contadoTransferencia, motivoDiferencia, notas } = payload;
+        const { rutaId, contadoEfectivo, contadoTransferencia, motivoDiferencia, notas, operacionId } = payload;
         try {
           if (!rutaId) return { error: 'Ruta requerida' };
-
-          // 1. SELECT ruta + verificar estatus terminal y que no haya cierre previo
-          const { data: ruta, error: errRuta } = await supabase
-            .from('rutas')
-            .select('id, folio, chofer_id, estatus, fecha_fin, created_at')
-            .eq('id', rutaId)
-            .single();
-          if (errRuta || !ruta) {
-            return { error: errRuta?.message || 'Ruta no encontrada' };
-          }
-          const estTerminales = ['Completada', 'Cerrada'];
-          if (!estTerminales.includes(s(ruta.estatus))) {
-            const msg = `Solo se cierra caja de rutas Completadas o Cerradas (estatus actual: ${s(ruta.estatus)})`;
-            t()?.error(msg);
-            return { error: msg };
-          }
-
-          const fechaCierre = fechaCierreDesdeRuta(ruta);
-
-          // 2. Verificar que NO haya cierre previo (defensa adicional al UNIQUE)
-          const { data: prev, error: errPrev } = await supabase
-            .from('cierres_diarios')
-            .select('id')
-            .eq('ruta_id', rutaId)
-            .eq('fecha', fechaCierre)
-            .maybeSingle();
-          if (errPrev) {
-            console.warn('[cerrarCajaRuta] check cierre previo:', errPrev.message);
-          } else if (prev) {
-            const msg = 'Esta ruta ya tiene cierre de caja registrado para esta fecha';
-            t()?.error(msg);
-            return { error: msg };
-          }
-
-          // 3. SELECT órdenes de la ruta + pagos asociados
-          const { data: ordenesRuta, error: errOrd } = await supabase
-            .from('ordenes')
-            .select('id, folio')
-            .eq('ruta_id', rutaId);
-          if (errOrd) {
-            t()?.error('No se pudieron leer órdenes de la ruta');
-            return { error: errOrd.message };
-          }
-          const ordenIds = (ordenesRuta || []).map(o => o.id);
-          const ordenFolioPorId = Object.fromEntries((ordenesRuta || []).map(o => [String(o.id), s(o.folio)]));
-
-          let pagosDeRuta = [];
-          if (ordenIds.length > 0) {
-            const { data: pagos, error: errPag } = await supabase
-              .from('pagos')
-              .select('id, monto, metodo_pago, orden_id, fecha, created_at')
-              .in('orden_id', ordenIds);
-            if (errPag) {
-              t()?.error('No se pudieron leer pagos de la ruta');
-              return { error: errPag.message };
-            }
-            pagosDeRuta = pagos || [];
-          }
-
-          // 4. Calcular esperado (puro)
-          const esperado = calcularEsperadoPorRuta(pagosDeRuta);
-          const contado = {
-            efectivo: Number(contadoEfectivo || 0),
-            transferencia: Number(contadoTransferencia || 0),
-          };
-
-          // 5. Validar (puro)
-          const validErr = validateCierre({ esperado, contado, motivoDiferencia });
-          if (validErr) {
-            t()?.error(validErr.error);
-            return validErr;
-          }
-
-          // 6. Construir payload + snapshot
-          const pagosSnapshot = buildPagosSnapshot(pagosDeRuta, ordenFolioPorId);
-          const insertPayload = buildCierrePayload({
-            ruta,
-            fechaCierre,
-            esperado,
-            contado,
-            motivoDiferencia,
-            notas,
-            usuario: uname() || 'Admin',
-            pagosSnapshot,
+          const { data, error } = await supabase.rpc('cerrar_caja_ruta', {
+            p_operacion_id: operacionId || nuevoOperacionId(),
+            p_ruta_id: Number(rutaId),
+            p_contado_efectivo: centavos(Number(contadoEfectivo || 0)),
+            p_contado_transferencia: centavos(Number(contadoTransferencia || 0)),
+            p_motivo_diferencia: s(motivoDiferencia).trim() || null,
+            p_notas: s(notas).trim() || null,
           });
-
-          // 7. INSERT
-          const { data: cierreRow, error: errIns } = await supabase
-            .from('cierres_diarios')
-            .insert(insertPayload)
-            .select('id, diferencia')
-            .single();
-          if (errIns || !cierreRow) {
-            // 23505 = unique violation (otra invocación ganó la carrera)
-            if (errIns?.code === '23505') {
-              return { error: 'Esta ruta ya tiene cierre de caja registrado para esta fecha' };
-            }
-            console.warn('[cerrarCajaRuta] insert:', errIns?.message);
-            t()?.error('No se pudo registrar el cierre');
-            return { error: errIns?.message || 'Error al registrar cierre' };
+          if (error) {
+            const msg = error.message || 'No se pudo registrar el cierre';
+            t()?.error(msg);
+            return { error: msg };
           }
-
-          // 8. Audit
-          const dif = Number(cierreRow.diferencia || 0);
-          const difTxt = dif === 0 ? 'cuadrado' : dif > 0 ? `sobrante $${dif}` : `faltante $${Math.abs(dif)}`;
-          await log('Cierre caja', 'Conciliación',
-            `${s(ruta.folio) || `Ruta ${rutaId}`} (${fechaCierre}) — ${difTxt}${motivoDiferencia ? ` — ${s(motivoDiferencia)}` : ''}`
-          );
-
           rf();
-          return { cierreId: cierreRow.id, diferencia: dif };
+          return { cierreId: data?.cierre_id, diferencia: Number(data?.diferencia || 0), fecha: data?.fecha, replay: data?.replay === true };
         } catch (e) {
           console.error('[cerrarCajaRuta] excepción:', e);
           t()?.error('Error inesperado al cerrar caja');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // 096: rutas pendientes de caja según la identidad durable (la ruta tiene
+      // o no su caja), calculadas en el servidor; sin fechas del navegador.
+      obtenerRutasPendientesCaja: async () => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        try {
+          const { data, error } = await supabase.rpc('rutas_pendientes_caja');
+          if (error) return { error: error.message };
+          return { data: Array.isArray(data) ? data : [] };
+        } catch (e) {
           return { error: e?.message || 'Error inesperado' };
         }
       },
