@@ -851,7 +851,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 <div className={`p-3 rounded-xl ${n(form.cantidad) > stockBolsa ? "bg-red-50" : "bg-blue-50"}`}>
                   <p className="text-xs font-semibold">Consume: {form.cantidad || 0} bolsas {bolsaSku}</p>
                   <p className={`text-xs mt-0.5 ${n(form.cantidad) > stockBolsa ? "text-red-600 font-bold" : "text-slate-500"}`}>
-                    Disponibles: {stockBolsa.toLocaleString()}{n(form.cantidad) > stockBolsa ? " — INSUFICIENTE" : ""}
+                    Disponibles (total empresa): {stockBolsa.toLocaleString()}{n(form.cantidad) > stockBolsa ? " — INSUFICIENTE" : ""}
                   </p>
                 </div>
               ) : form.sku ? (

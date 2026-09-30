@@ -3,6 +3,7 @@ import { s, n, todayLocalISO } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
 import { useBodyScrollLock } from './ui/Modal';
 import { resolverOperacion } from '../data/produccionAtomicaLogic';
+import { clasificarMovEmpaque, resumenDiaEmpaque } from '../data/empaqueLogic';
 
 const BOLSAS_SHELL = "min-h-dvh w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
@@ -33,7 +34,9 @@ export default function BolsasView({ user, data, actions, onLogout }) {
         const prod = empaques.find(e => s(e.sku) === sku);
         return {
           id: m.id,
-          tipo: s(m.tipo).toLowerCase() === 'entrada' ? 'entrada' : 'salida',
+          // 092: 'entrada' (llegó, suma al total), 'entrega' (a Producción, no
+          // resta) u otro movimiento (consumo de producción, historia previa).
+          tipo: clasificarMovEmpaque(m),
           sku,
           nombre: prod ? s(prod.nombre) : '',
           cantidad: Math.abs(n(m.cantidad)),
@@ -44,16 +47,10 @@ export default function BolsasView({ user, data, actions, onLogout }) {
       .sort((a, b) => b.id - a.id);
   }, [data.inventarioMov, empaqueSKUs, empaques]);
 
-  const movHoy = useMemo(() => {
-    const r = {};
-    for (const e of empaques) r[s(e.sku)] = { entradas: 0, salidas: 0 };
-    for (const h of historial) {
-      if (!r[h.sku]) r[h.sku] = { entradas: 0, salidas: 0 };
-      if (h.tipo === "entrada") r[h.sku].entradas += h.cantidad;
-      else r[h.sku].salidas += h.cantidad;
-    }
-    return r;
-  }, [historial, empaques]);
+  const movHoy = useMemo(
+    () => resumenDiaEmpaque(data.inventarioMov, empaques.map(e => s(e.sku)), todayLocalISO()),
+    [data.inventarioMov, empaques],
+  );
 
   const registrar = async () => {
     if (registrando) return;
@@ -87,7 +84,9 @@ export default function BolsasView({ user, data, actions, onLogout }) {
       // El historial se actualiza automáticamente via realtime desde inventarioMov
       // NOTA: movimientoBolsa no retorna estado de error — un 4xx/5xx de Supabase
       // pasa silencioso. Ver docs/STANDALONE_DEUDA_TECNICA.md.
-      showToast((esEntrada ? "+" : "-") + form.cantidad + " " + form.sku + (form.esCredito ? " (crédito)" : ""));
+      showToast(esEntrada
+        ? "+" + form.cantidad + " " + form.sku + (form.esCredito ? " (crédito)" : "")
+        : form.cantidad + " " + form.sku + " entregadas a Producción");
       setModal(null);
       setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
     } catch (e) {
@@ -112,7 +111,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
           <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs">Salir</button>
         </div>
         <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
-          <p className="text-sm text-amber-100">Registro táctico de entradas, salidas y presión de inventario de empaque.</p>
+          <p className="text-sm text-amber-100">Registra lo que llega y lo que entregas a Producción. El inventario es el total de la empresa: baja cuando Producción usa las bolsas.</p>
         </div>
       </div>
 
@@ -124,7 +123,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
           />
         )}
         {empaques.map(p => {
-          const mov = movHoy[s(p.sku)] || { entradas: 0, salidas: 0 };
+          const mov = movHoy[s(p.sku)] || { entradas: 0, entregas: 0 };
           return (
             <div key={p.id} className="rounded-[24px] border border-stone-200/80 bg-white/78 p-5 shadow-[0_14px_28px_rgba(35,24,13,0.06)]">
               <div className="flex items-center justify-between mb-2">
@@ -137,11 +136,11 @@ export default function BolsasView({ user, data, actions, onLogout }) {
                 </div>
               </div>
               <p className="text-4xl font-extrabold text-slate-800">{n(p.stock).toLocaleString()}</p>
-              <p className="text-xs text-slate-500 mt-1">en almacén</p>
-              {(mov.entradas > 0 || mov.salidas > 0) && (
+              <p className="text-xs text-slate-500 mt-1">total de la empresa (almacén + Producción sin usar)</p>
+              {(mov.entradas > 0 || mov.entregas > 0) && (
                 <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {mov.entradas > 0 && <div className="bg-emerald-50 rounded-xl p-2.5"><p className="text-xs text-emerald-600">Entradas hoy</p><p className="text-lg font-extrabold text-emerald-700">+{mov.entradas.toLocaleString()}</p></div>}
-                  {mov.salidas > 0 && <div className="bg-red-50 rounded-xl p-2.5"><p className="text-xs text-red-500">Salidas hoy</p><p className="text-lg font-extrabold text-red-600">-{mov.salidas.toLocaleString()}</p></div>}
+                  {mov.entregas > 0 && <div className="bg-amber-50 rounded-xl p-2.5"><p className="text-xs text-amber-600">Entregadas a Producción hoy</p><p className="text-lg font-extrabold text-amber-700">{mov.entregas.toLocaleString()}</p></div>}
                 </div>
               )}
               {n(p.stock) < 200 && (
@@ -160,7 +159,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
           </button>
           <button onClick={() => { setModal("salida"); setForm({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false }); }}
             className="rounded-[22px] bg-red-500 py-5 text-base font-extrabold text-white shadow-[0_16px_28px_rgba(239,68,68,0.16)] transition-transform active:scale-[0.98]">
-            − Entregué a prod.
+            → Entregué a Producción
           </button>
         </div>
 
@@ -169,14 +168,14 @@ export default function BolsasView({ user, data, actions, onLogout }) {
             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Movimientos de hoy</h3>
             <div className="space-y-2">
               {historial.map(h => (
-                <div key={h.id} className={`rounded-[20px] p-3 border ${h.tipo === "entrada" ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+                <div key={h.id} className={`rounded-[20px] p-3 border ${h.tipo === "entrada" ? "bg-emerald-50 border-emerald-200" : h.tipo === "entrega" ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200"}`}>
                   <div className="flex justify-between items-center">
-                    <span className={`text-sm font-bold ${h.tipo === "entrada" ? "text-emerald-600" : "text-red-600"}`}>
-                      {h.tipo === "entrada" ? "+" : "-"}{h.cantidad.toLocaleString()} {h.nombre ? `${h.nombre} (${h.sku})` : h.sku}
+                    <span className={`text-sm font-bold ${h.tipo === "entrada" ? "text-emerald-600" : h.tipo === "entrega" ? "text-amber-700" : "text-red-600"}`}>
+                      {h.tipo === "entrada" ? "+" : h.tipo === "entrega" ? "→ " : "-"}{h.cantidad.toLocaleString()} {h.nombre ? `${h.nombre} (${h.sku})` : h.sku}
                     </span>
                     <span className="text-xs text-slate-400">{h.hora}</span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">{h.motivo}</p>
+                  <p className="text-xs text-slate-500 mt-1">{h.tipo === "entrega" ? "Entregadas a Producción (no descuenta el total)" : h.motivo}</p>
                 </div>
               ))}
             </div>
@@ -192,6 +191,9 @@ export default function BolsasView({ user, data, actions, onLogout }) {
             <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">
               {modal === "entrada" ? "¿Cuántas llegaron?" : "¿Cuántas entregaste a producción?"}
             </h3>
+            {modal === "salida" && (
+              <p className="text-xs text-slate-500 -mt-2 mb-3">Queda registrada la entrega a Producción. No descuenta el total de la empresa: las bolsas se descuentan cuando Producción registra lo que produjo.</p>
+            )}
             <div className="space-y-3">
               <div>
                 <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de bolsa</label>
@@ -200,7 +202,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
                     <button key={p.sku} onClick={() => setForm(f => ({ ...f, sku: s(p.sku) }))}
                       className={`py-3 px-3 rounded-xl text-sm font-semibold border-2 ${form.sku === s(p.sku) ? (modal === "entrada" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-red-500 bg-red-50 text-red-700") : "border-slate-200 text-slate-600"}`}>
                       {s(p.nombre)}
-                      <p className="text-xs text-slate-400 mt-0.5">Hay: {n(p.stock).toLocaleString()}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">Total empresa: {n(p.stock).toLocaleString()}</p>
                     </button>
                   ))}
                 </div>
@@ -246,14 +248,14 @@ export default function BolsasView({ user, data, actions, onLogout }) {
 
               {modal === "salida" && form.cantidad && n(form.cantidad) > stockActual(form.sku) && (
                 <div className="bg-red-50 rounded-xl p-3">
-                  <p className="text-xs text-red-600 font-bold">⚠ No hay tantas — solo hay {stockActual(form.sku).toLocaleString()}</p>
+                  <p className="text-xs text-red-600 font-bold">⚠ No hay tantas — el total de la empresa es {stockActual(form.sku).toLocaleString()}</p>
                 </div>
               )}
             </div>
             <button onClick={registrar}
               disabled={registrando || !form.cantidad || n(form.cantidad) <= 0 || (modal === "salida" && n(form.cantidad) > stockActual(form.sku)) || (modal === "entrada" && !(n(form.costo) > 0))}
-              className={`w-full py-4 text-white font-bold rounded-xl text-base mt-4 disabled:opacity-40 disabled:cursor-not-allowed ${modal === "entrada" ? "bg-emerald-600" : "bg-red-500"}`}>
-              {registrando ? "Registrando…" : modal === "entrada" ? "✓ Registrar entrada" : "✓ Registrar salida"}
+              className={`w-full py-4 text-white font-bold rounded-xl text-base mt-4 disabled:opacity-40 disabled:cursor-not-allowed ${modal === "entrada" ? "bg-emerald-600" : "bg-amber-600"}`}>
+              {registrando ? "Registrando…" : modal === "entrada" ? "✓ Registrar entrada" : "✓ Registrar entrega"}
             </button>
           </div>
         </div>

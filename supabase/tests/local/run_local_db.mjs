@@ -502,7 +502,9 @@ async function conc076() {
   ok(await n(`SELECT count(*) FROM produccion WHERE operacion_id = $1`, [OP1]) === 1, '076-C1c exactamente 1 produccion');
   ok(await st('C76-BOLSA') === 7 && await cf('C76-HIELO') === 3, '076-C1d exactamente 1 consumo de empaque (10 → 7) y 1 entrada (0 → 3)');
   ok(await n(`SELECT count(*) FROM inventario_mov WHERE producto IN ('C76-BOLSA', 'C76-HIELO')`) === 2, '076-C1e exactamente 1 juego de kardex (2 filas)');
-  ok(await n(`SELECT count(*) FROM movimientos_contables WHERE concepto LIKE '%C76-HIELO%'`) === 1 && await n(`SELECT count(*) FROM costos_historial WHERE concepto LIKE '%C76-HIELO%'`) === 1, '076-C1f exactamente 1 egreso y 1 costos_historial');
+  // 092: la producción ya no crea Egreso (solo costos_historial).
+  const EG76 = (await c.query(`SELECT to_regprocedure('public.conciliacion_empaque()') IS NULL AS x`)).rows[0].x ? 1 : 0;
+  ok(await n(`SELECT count(*) FROM movimientos_contables WHERE concepto LIKE '%C76-HIELO%'`) === EG76 && await n(`SELECT count(*) FROM costos_historial WHERE concepto LIKE '%C76-HIELO%'`) === 1, `076-C1f exactamente ${EG76} egreso y 1 costos_historial`);
 
   // C2: mismo operacion_id con datos distintos, simultáneo
   const OP2 = '76c10000-0000-0000-0000-000000000002';
@@ -518,7 +520,7 @@ async function conc076() {
   ok(!r.rb.ok && /Stock insuficiente/.test(r.rb.msg || ''), `076-C3b la segunda falla por stock tras releer (${(r.rb.msg || 'OK').slice(0, 50)})`);
   ok(await n(`SELECT count(*) FROM produccion WHERE operacion_id = $1`, [OP4]) === 0, '076-C3c la operación fallida no deja fila de produccion');
   ok(await st('C76-BOLSA') === 1 && await cf('C76-HIELO') === 9, '076-C3d empaque 5 → 1 (nunca negativo, sin doble consumo); cuarto 5 → 9');
-  ok(await n(`SELECT count(*) FROM movimientos_contables WHERE concepto LIKE '%C76-HIELO%'`) === egresos0 + 1, '076-C3e un solo egreso nuevo (el de la operación exitosa)');
+  ok(await n(`SELECT count(*) FROM movimientos_contables WHERE concepto LIKE '%C76-HIELO%'`) === egresos0 + EG76, '076-C3e egresos nuevos solo de la operación exitosa (ninguno tras 092)');
 
   // C4: mismo operacion_id simultáneo (transformación)
   const OT1 = '76c20000-0000-0000-0000-000000000001';
@@ -1916,6 +1918,118 @@ await fe087();
 await conc088();
 console.log('  concurrencia + frontend↔DB (076, 084, 086, 087 y 088) tras 090/091: PASS');
 
+// ═══ 092 — semántica de empaque (Modelo A) ═══
+{
+  const PROD = {
+    'registrar_salida_empaque(uuid,text,integer)': '12f6bd9e69f93eef047f371b301d4669',
+    'registrar_produccion(uuid,text,text,text,integer,text)': 'c7765ff42dc42c74707650b181cbf742',
+    'registrar_recepcion_compra(uuid,text,integer,numeric,text,boolean)': '2f1ccd52b2c71fd41afd8d766084bdfd',
+  };
+  const rows = (await c.query(`SELECT oid::regprocedure::text AS sig, md5(pg_get_functiondef(oid)) AS m FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('registrar_salida_empaque','registrar_produccion','registrar_recepcion_compra')`)).rows;
+  const mal = Object.keys(PROD).filter(k => (rows.find(x => x.sig === k) || {}).m !== PROD[k]);
+  const nuevo = (await c.query(`SELECT to_regprocedure('public.conciliacion_empaque()') IS NULL AS a`)).rows[0].a;
+  const ok = mal.length === 0 && nuevo;
+  console.log(`  EMPAQUE_PARITY_CHECK[pre-092]: ${ok ? 'PASS' : 'FAIL'} ${JSON.stringify(mal)}`);
+  if (!ok) process.exit(1);
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 092 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '092_empaque_entrega_produccion.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 092 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 092)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[092]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 092 (empaque: entrega vs consumo)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/092_empaque_entrega_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (092)'); process.exit(1); }
+}
+await reruns090('092');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/090_b4_privilegios_test.sql'), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (090 tras 092)'); process.exit(1); }
+  console.log('  090 tras 092: PASS');
+}
+async function conc092() {
+  console.log('── 092 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const SUB = (k) => '92c00000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN;
+    DELETE FROM costos_historial WHERE concepto LIKE '%C92-%';
+    DELETE FROM inventario_mov WHERE producto LIKE 'C92-%';
+    DELETE FROM produccion WHERE sku LIKE 'C92-%';
+    DELETE FROM stock_operaciones WHERE operacion_id::text LIKE '92c%';
+    DELETE FROM cuartos_frios WHERE id = 'CF-C92';
+    DELETE FROM productos WHERE sku LIKE 'C92-%';
+    DELETE FROM usuarios WHERE id BETWEEN 9261 AND 9269; DELETE FROM auth.users WHERE id::text LIKE '92c00000-%';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN;
+    INSERT INTO auth.users (id, email) SELECT ('92c00000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'c' || k || '@t92c' FROM generate_series(1, 3) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (9261, 'ProdC92-1', 'c1@t92c', 'Producción', 'Activo', '${SUB(1)}'), (9262, 'ProdC92-2', 'c2@t92c', 'Producción', 'Activo', '${SUB(2)}'),
+      (9263, 'BolsasC92', 'c3@t92c', 'Almacén Bolsas', 'Activo', '${SUB(3)}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario, empaque_sku) VALUES
+      ('C92-E', 'Bolsa C92', 'Empaque', 0, 100, 1, NULL), ('C92-H', 'Hielo C92', 'Producto Terminado', 30, 0, 0, 'C92-E');
+    INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-C92', 'Cuarto C92', '{}'::jsonb);
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const carrera = async (subA, sqlA, pA, subB, sqlB, pB) => {
+    await actor(a, subA); await actor(b, subB);
+    const ra = await a.query(sqlA, pA).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(sqlB, pB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const PRODQ = `SELECT registrar_produccion($1::uuid, 'Turno 1', 'Máquina C92', 'C92-H', $2::int, 'CF-C92') AS r`;
+  // C1: dos producciones distintas de 60 contra un total de 100
+  let r = await carrera(SUB(1), PRODQ, ['92c10000-0000-0000-0000-000000000001', 60], SUB(2), PRODQ, ['92c10000-0000-0000-0000-000000000002', 60]);
+  ok(r.ra.ok && r.bloqueado && !r.rb.ok && /Stock insuficiente/.test(r.rb.msg || ''), `092-C1a producción 60 + producción 60 (total 100): la segunda espera y se rechaza (${r.rb.code || 'ok'})`);
+  ok(await n(`SELECT stock FROM productos WHERE sku = 'C92-E'`) === 40 && await n(`SELECT count(*) FROM produccion WHERE sku = 'C92-H'`) === 1, '092-C1b sin sobreconsumo: total 40, una sola producción');
+  // C2: misma producción (mismo UUID) simultánea
+  r = await carrera(SUB(1), PRODQ, ['92c10000-0000-0000-0000-000000000003', 10], SUB(2), PRODQ, ['92c10000-0000-0000-0000-000000000003', 10]);
+  ok(r.ra.ok && r.rb.ok && r.rb.row.r.replay === true, '092-C2a misma producción simultánea: la segunda es replay');
+  ok(await n(`SELECT stock FROM productos WHERE sku = 'C92-E'`) === 30 && await n(`SELECT count(*) FROM produccion WHERE operacion_id = '92c10000-0000-0000-0000-000000000003'`) === 1, '092-C2b un solo consumo (40 → 30)');
+  // C3: misma entrega a Producción simultánea
+  const ENT = `SELECT registrar_salida_empaque($1::uuid, 'C92-E', 25) AS r`;
+  r = await carrera(SUB(3), ENT, ['92c20000-0000-0000-0000-000000000001'], SUB(3), ENT, ['92c20000-0000-0000-0000-000000000001']);
+  ok(r.ra.ok && r.bloqueado && r.rb.ok && r.rb.row.r.replay === true, '092-C3a misma entrega simultánea: la segunda espera y es replay');
+  ok(await n(`SELECT count(*) FROM inventario_mov WHERE operacion_id = '92c20000-0000-0000-0000-000000000001' AND tipo = 'Entrega a Producción'`) === 1
+    && await n(`SELECT stock FROM productos WHERE sku = 'C92-E'`) === 30, '092-C3b un solo evento de entrega; el total no cambia (30)');
+  // C4: entrega y producción simultáneas: la entrega no bloquea ni descuenta
+  r = await carrera(SUB(3), ENT, ['92c20000-0000-0000-0000-000000000002'], SUB(1), PRODQ, ['92c10000-0000-0000-0000-000000000004', 30]);
+  ok(r.ra.ok && r.rb.ok && !r.bloqueado, '092-C4a entrega y producción simultáneas: ninguna espera a la otra');
+  ok(await n(`SELECT stock FROM productos WHERE sku = 'C92-E'`) === 0, '092-C4b solo la producción consume (30 → 0)');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (092 concurrencia)'); process.exit(1); }
+}
+await conc092();
+console.log('── concurrencia + frontend↔DB tras 092');
+await conc076();
+await fe076();
+await conc084();
+await fe084();
+await conc088();
+console.log('  concurrencia + frontend↔DB (076, 084, 088) tras 092: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -1951,7 +2065,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   'precio_canonico','lineas_canonicas','fin_validar_credito','fin_actor_id','fin_orden_operable','productos_stock_interno',
   'crear_orden','registrar_recepcion_compra','registrar_salida_empaque','clientes_guard_financiero','auditoria_actor','error_log_actor',
   // 090
-  'nextval','b4_ruta_con_historia','anular_cxc_orden','ajustar_cxc_devolucion'];
+  'nextval','b4_ruta_con_historia','anular_cxc_orden','ajustar_cxc_devolucion',
+  // 092
+  'conciliacion_empaque'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

@@ -125,14 +125,15 @@ COMMIT;
 INSERT INTO t76_ids SELECT 'p1_id', (t76_j('p1') ->> 'id');
 SELECT t76_assert((SELECT folio ~ '^OP-[0-9]{3,}$' AND operacion_id = '76000000-0000-0000-0000-00000000a001' AND tipo = 'Produccion' AND estatus = 'Confirmada'
   AND turno = 'Turno 1' AND maquina = 'Máquina 30' AND cantidad = 8 AND cuarto_id = 'CF-76' AND empaque_sku = 'P76-BOLSA' AND empaque_cantidad = 8
-  AND costo_empaque = 2.5 AND costo_total = 20 AND mov_contable_id IS NOT NULL FROM produccion WHERE id = (SELECT v::bigint FROM t76_ids WHERE k = 'p1_id')), '076-21 fila de producción completa (folio del servidor, referencias D8, costo)');
+  AND costo_empaque = 2.5 AND costo_total = 20 AND (mov_contable_id IS NOT NULL OR to_regprocedure('public.conciliacion_empaque()') IS NOT NULL) FROM produccion WHERE id = (SELECT v::bigint FROM t76_ids WHERE k = 'p1_id')), '076-21 fila de producción completa (folio del servidor, referencias D8, costo)');
 SELECT t76_assert(t76_stock('P76-BOLSA') = 12, '076-22 empaque descontado exacto (20 → 12)');
 SELECT t76_assert(t76_cf('P76-HIELO') = 8, '076-23 producto terminado en el cuarto (0 → 8)');
 SELECT t76_assert((SELECT count(*) = 1 FROM inventario_mov WHERE producto = 'P76-BOLSA' AND tipo = 'Salida' AND cantidad = 8 AND usuario = 'Prod 76' AND origen = 'Producción ' || (t76_j('p1') ->> 'folio')), '076-24 kardex del empaque por el contrato seguro, actor real');
 SELECT t76_assert((SELECT count(*) = 1 FROM inventario_mov WHERE producto = 'P76-HIELO' AND tipo = 'Entrada' AND cantidad = 8 AND usuario = 'Prod 76'), '076-25 kardex de la entrada al cuarto, actor real');
-SELECT t76_assert((SELECT count(*) = 1 AND bool_and(tipo = 'Egreso' AND categoria = 'Costo de Ventas' AND monto = 20 AND usuario_id = 7602 AND referencia = 'PROD-' || (SELECT v FROM t76_ids WHERE k = 'p1_id')
-  AND concepto = 'Producción ' || (t76_j('p1') ->> 'folio') || ': 8× P76-HIELO (empaque: P76-BOLSA)') FROM movimientos_contables WHERE concepto LIKE '%P76-HIELO%'), '076-26 egreso Costo de Ventas exacto, referencia PROD-<id>');
-SELECT t76_assert((SELECT count(*) = 1 AND bool_and(tipo = 'Producción' AND categoria = 'Costo de Ventas' AND monto = 20 AND movimiento_id = (SELECT mov_contable_id FROM produccion WHERE id = (SELECT v::bigint FROM t76_ids WHERE k = 'p1_id'))
+-- 092: la producción ya no crea Egreso en movimientos_contables (solo costos_historial).
+SELECT t76_assert(CASE WHEN to_regprocedure('public.conciliacion_empaque()') IS NOT NULL THEN NOT EXISTS (SELECT 1 FROM movimientos_contables WHERE concepto LIKE '%P76-HIELO%') ELSE (SELECT count(*) = 1 AND bool_and(tipo = 'Egreso' AND categoria = 'Costo de Ventas' AND monto = 20 AND usuario_id = 7602 AND referencia = 'PROD-' || (SELECT v FROM t76_ids WHERE k = 'p1_id')
+  AND concepto = 'Producción ' || (t76_j('p1') ->> 'folio') || ': 8× P76-HIELO (empaque: P76-BOLSA)') FROM movimientos_contables WHERE concepto LIKE '%P76-HIELO%') END, '076-26 egreso Costo de Ventas exacto, referencia PROD-<id> (tras 092: ningún Egreso)');
+SELECT t76_assert((SELECT count(*) = 1 AND bool_and(tipo = 'Producción' AND categoria = 'Costo de Ventas' AND monto = 20 AND movimiento_id IS NOT DISTINCT FROM (SELECT mov_contable_id FROM produccion WHERE id = (SELECT v::bigint FROM t76_ids WHERE k = 'p1_id'))
   AND referencia = 'PROD-' || (SELECT v FROM t76_ids WHERE k = 'p1_id') AND periodo = to_char(fin_hoy(), 'YYYY-MM')) FROM costos_historial WHERE concepto LIKE '%P76-HIELO%'), '076-27 costos_historial ligado al egreso');
 SELECT t76_assert((t76_j('p1') ->> 'actor') = 'Prod 76' AND NOT (t76_j('p1') ->> 'replay')::boolean, '076-28 resultado: actor real, no replay');
 INSERT INTO t76_ids VALUES ('h1', t76_huella());

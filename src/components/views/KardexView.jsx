@@ -41,7 +41,7 @@ export function KardexView({ data }) {
           className="border border-slate-200 rounded-xl px-3 py-3 md:py-2.5 text-sm text-slate-600 bg-white focus:outline-none focus:border-slate-400 min-h-[44px]"
         >
           <option value="">Todos los tipos</option>
-          {["Entrada", "Salida", "Traspaso", "Devolución", "Merma"].map(t => <option key={t}>{t}</option>)}
+          {["Entrada", "Salida", "Entrega a Producción", "Traspaso", "Devolución", "Merma"].map(t => <option key={t}>{t}</option>)}
         </select>
       </div>
 

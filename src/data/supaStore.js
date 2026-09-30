@@ -3535,7 +3535,8 @@ export function useSupaStore(userId, userName, userRol) {
             return { error: res.error.message };
           }
           if (!res.data?.replay) {
-            log(tipo === 'Entrada' ? (esCredito ? 'Compra crédito' : 'Compra') : 'Salida', 'Almacén Bolsas',
+            // 092: la "salida" es una entrega a Producción (traslado); no descuenta el total.
+            log(tipo === 'Entrada' ? (esCredito ? 'Compra crédito' : 'Compra') : 'Entrega a Producción', 'Almacén Bolsas',
               `${sku} x${qty} — ${tipo === 'Entrada' ? `$${centavos(Number(costo))}${proveedor ? ' — ' + proveedor : ''}` : (motivo || 'Producción')}`);
           }
           rf();
@@ -3543,6 +3544,24 @@ export function useSupaStore(userId, userName, userRol) {
         } catch (e) {
           console.error('[movimientoBolsa] excepción:', e);
           t()?.error('Error inesperado al registrar movimiento');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // 092: control "Salió a Producción vs Usó Producción" calculado en el
+      // servidor desde fuentes independientes (eventos de entrega canónicos vs
+      // consumo del contrato de producción). Solo lectura; Admin y Almacén Bolsas.
+      obtenerConciliacionEmpaque: async () => {
+        const guard = requireRol(['Admin', 'Almacén Bolsas']);
+        if (guard) return guard;
+        try {
+          const { data: filas, error } = await supabase.rpc('conciliacion_empaque');
+          if (error) {
+            console.warn('[obtenerConciliacionEmpaque] rpc:', error.message);
+            return { error: error.message };
+          }
+          return { data: Array.isArray(filas) ? filas : [] };
+        } catch (e) {
           return { error: e?.message || 'Error inesperado' };
         }
       },

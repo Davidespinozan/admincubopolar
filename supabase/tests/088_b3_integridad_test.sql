@@ -223,7 +223,8 @@ SELECT t88_err($q$SELECT registrar_recepcion_compra(gen_random_uuid(), 'P88-E', 
 INSERT INTO t88_ids VALUES ('se1', registrar_salida_empaque('88000000-0000-0000-0000-00000000c003', 'P88-E', 30)::text);
 SELECT t88_err($q$SELECT registrar_salida_empaque(gen_random_uuid(), 'P88-E', 100000)$q$, '088-80 salida mayor al stock rechazada', 'P0001', '%Stock insuficiente%');
 COMMIT;
-SELECT t88_assert((SELECT stock = 10 + 100 - 30 FROM productos WHERE sku = 'P88-E')
+-- 092: la entrega a Producción ya no descuenta el total de la empresa.
+SELECT t88_assert((SELECT stock = 10 + 100 - CASE WHEN to_regprocedure('public.conciliacion_empaque()') IS NOT NULL THEN 0 ELSE 30 END FROM productos WHERE sku = 'P88-E')
   AND (SELECT count(*) = 1 AND bool_and(tipo = 'Egreso' AND categoria = 'Proveedores' AND monto = 250.50 AND usuario_id = 8806) FROM movimientos_contables WHERE referencia = 'recepcion_compra/88000000-0000-0000-0000-00000000c001')
   AND (SELECT count(*) = 0 FROM cuentas_por_pagar WHERE referencia = 'recepcion_compra/88000000-0000-0000-0000-00000000c001')
   AND (SELECT count(*) = 1 AND bool_and(usuario = 'Bolsas 88') FROM inventario_mov WHERE operacion_id = '88000000-0000-0000-0000-00000000c001'), '088-70 compra de contado: stock +100, exactamente un egreso de proveedor por 250.50, actor canónico');
