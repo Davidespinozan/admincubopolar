@@ -103,7 +103,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -1234,7 +1234,7 @@ async function pre086Retry() {
   await c.query(`BEGIN;
     INSERT INTO auth.users (id, email) VALUES ('${CH}', 'chofera86@t');
     INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (8682, 'ChoferA 86', 'chofera86@t', 'Chofer', 'Activo', '${CH}');
-    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('A86-A', 'Hielo A86', 'Producto Terminado', 30, 0);
+    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('A86-A', 'Hielo A86', 'Producto Terminado', 35, 0);
     INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (8685, 'Cliente A86', 'XAXX010101000', 0);
     INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, fecha, carga, carga_autorizada, extra_autorizado, carga_real) VALUES
       (8680, 'R-8680', 'Ruta A86', 8682, 'ChoferA 86', 'En progreso', CURRENT_DATE, '{"A86-A": 5}', '{"A86-A": 5}', '{}', '{"A86-A": 5}');
@@ -1307,7 +1307,7 @@ async function conc086() {
   await c.query(`BEGIN;
     INSERT INTO auth.users (id, email) VALUES ('${CH}', 'choferc86@t'), ('${CH2}', 'choferc86b@t'), ('${CH3}', 'choferc86c@t');
     INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (8692, 'ChoferC 86', 'choferc86@t', 'Chofer', 'Activo', '${CH}'), (8693, 'ChoferC 86 b', 'choferc86b@t', 'Chofer', 'Activo', '${CH2}'), (8694, 'ChoferC 86 c', 'choferc86c@t', 'Chofer', 'Activo', '${CH3}');
-    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('C86-A', 'Hielo C86', 'Producto Terminado', 30, 0);
+    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('C86-A', 'Hielo C86', 'Producto Terminado', 35, 0);
     INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (8695, 'Cliente C86', 'XAXX010101000', 0);
     INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, fecha, carga, carga_autorizada, extra_autorizado, carga_real) VALUES
       (8690, 'R-8690', 'Ruta C86 a', 8692, 'ChoferC 86', 'En progreso', CURRENT_DATE, '{"C86-A": 5}', '{"C86-A": 5}', '{}', '{"C86-A": 5}'),
@@ -1383,7 +1383,7 @@ async function fe086() {
   await c.query(`BEGIN;
     INSERT INTO auth.users (id, email) VALUES ('${CH}', 'choferf86@t');
     INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (8672, 'ChoferF 86', 'choferf86@t', 'Chofer', 'Activo', '${CH}');
-    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('F86-A', 'Hielo F86', 'Producto Terminado', 30, 0);
+    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('F86-A', 'Hielo F86', 'Producto Terminado', 35, 0);
     INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (8675, 'Cliente F86', 'XAXX010101000', 0);
     INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, fecha, carga, carga_autorizada, extra_autorizado, carga_real) VALUES
       (8670, 'R-8670', 'Ruta F86', 8672, 'ChoferF 86', 'En progreso', CURRENT_DATE, '{"F86-A": 5}', '{"F86-A": 5}', '{}', '{"F86-A": 5}');
@@ -1665,19 +1665,140 @@ async function fe087() {
   if (!okF) { console.log('RESULTADO: FALLÓ (087 frontend↔DB)'); process.exit(1); }
 }
 await fe087();
+
+// ═══ 088/089 — B3: autorización e integridad financiera ═══
+{
+  const PROD = {
+    'update_orden_atomic': null, 'crear_cxc_orden': 'e394bc62507c807f2ad4e13de82ebca8', 'registrar_pago_orden': 'f91e62d711f2bd9895cbc24da707b37e',
+    'registrar_ingreso_orden': 'a113836cce033d8103e802f2fc4fd0be', 'abonar_cxc': '46dc11821395834782f4c60d7624645e',
+  };
+  const rows = (await c.query(`SELECT proname, md5(pg_get_functiondef(oid)) AS m FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname = ANY($1)`, [Object.keys(PROD)])).rows;
+  const mal = rows.filter(r => PROD[r.proname] && PROD[r.proname] !== r.m).map(r => `${r.proname}=${r.m}`);
+  const nuevo = (await c.query(`SELECT to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NULL AS a, NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'precios_esp_cliente_sku_key') AS b`)).rows[0];
+  const ok = rows.length === 5 && mal.length === 0 && nuevo.a && nuevo.b;
+  console.log(`  FINANZAS_PARITY_CHECK[pre-088]: ${ok ? 'PASS' : 'FAIL'} ${JSON.stringify(mal)}`);
+  if (!ok) process.exit(1);
+}
+for (const [f, n] of [['088_b3_integridad_financiera.sql', '088'], ['089_b3_contencion_ordenes.sql', '089']]) {
+  for (const k of [1, 2]) {
+    console.log(`── aplicar ${n} (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+    const rr = await runFile(c, path.join(ROOT, 'supabase', f), { stopOnError: true });
+    if (rr.aborted) process.exit(1);
+  }
+}
+if (!(await rlsCheck('tras 088/089 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 088)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[088]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 088 (B3 integridad financiera)');
+const r088t = await runFile(c, path.join(ROOT, 'supabase/tests/088_b3_integridad_test.sql'), { stopOnError: true, echo: true });
+if (r088t.aborted) { console.log('RESULTADO: FALLÓ (088)'); process.exit(1); }
+
+async function conc088() {
+  console.log('── 088 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const SUB = (k) => '88c00000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN;
+    DELETE FROM cierres_financieros_ruta WHERE ruta_id BETWEEN 8861 AND 8869;
+    DELETE FROM pagos WHERE orden_id IN (SELECT id FROM ordenes WHERE cliente_id BETWEEN 8871 AND 8879);
+    DELETE FROM movimientos_contables WHERE orden_id IN (SELECT id FROM ordenes WHERE cliente_id BETWEEN 8871 AND 8879);
+    DELETE FROM cuentas_por_cobrar WHERE cliente_id BETWEEN 8871 AND 8879;
+    DELETE FROM orden_lineas WHERE orden_id IN (SELECT id FROM ordenes WHERE cliente_id BETWEEN 8871 AND 8879);
+    DELETE FROM ordenes WHERE cliente_id BETWEEN 8871 AND 8879;
+    DELETE FROM movimientos_contables WHERE referencia LIKE 'recepcion_compra/88c%';
+    DELETE FROM inventario_mov WHERE producto LIKE 'C88-%';
+    DELETE FROM stock_operaciones WHERE ruta_id BETWEEN 8861 AND 8869 OR operacion_id::text LIKE '88c%';
+    DELETE FROM rutas WHERE id BETWEEN 8861 AND 8869; DELETE FROM clientes WHERE id BETWEEN 8871 AND 8879;
+    DELETE FROM cuartos_frios WHERE id = 'CF-C88'; UPDATE cuartos_frios SET stock = stock - 'C88-A' WHERE stock ? 'C88-A';
+    DELETE FROM productos WHERE sku LIKE 'C88-%';
+    DELETE FROM usuarios WHERE id BETWEEN 8861 AND 8869; DELETE FROM auth.users WHERE id::text LIKE '88c00000-%';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN;
+    INSERT INTO auth.users (id, email) SELECT ('88c00000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'c' || k || '@t88c' FROM generate_series(1, 5) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (8861, 'ChoferC88-1', 'c1@t88c', 'Chofer', 'Activo', '${SUB(1)}'), (8862, 'ChoferC88-2', 'c2@t88c', 'Chofer', 'Activo', '${SUB(2)}'),
+      (8863, 'VentasC88', 'c3@t88c', 'Ventas', 'Activo', '${SUB(3)}'), (8864, 'ChoferC88-3', 'c4@t88c', 'Chofer', 'Activo', '${SUB(4)}'),
+      (8865, 'BolsasC88', 'c5@t88c', 'Almacén Bolsas', 'Activo', '${SUB(5)}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('C88-A', 'Hielo C88', 'Producto Terminado', 40, 0), ('C88-E', 'Bolsa C88', 'Empaque', 0, 0);
+    INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-C88', 'Cuarto C88', '{"C88-A": 100}');
+    INSERT INTO clientes (id, nombre, rfc, saldo, credito_autorizado, limite_credito) VALUES (8871, 'Cliente C88 A', 'CAA880101AB1', 0, true, 100), (8872, 'Cliente C88 B', 'CBB880101AB1', 0, true, 100);
+    INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, fecha, carga, carga_autorizada, extra_autorizado, carga_real, carga_solicitada_at) VALUES
+      (8861, 'R-8861', 'Ruta C88-1', 8861, 'ChoferC88-1', 'Pendiente firma', CURRENT_DATE, '{"C88-A": 10}', '{"C88-A": 10}', '{}', '{"C88-A": 10}', now()),
+      (8862, 'R-8862', 'Ruta C88-2', 8862, 'ChoferC88-2', 'Pendiente firma', CURRENT_DATE, '{"C88-A": 10}', '{"C88-A": 10}', '{}', '{"C88-A": 10}', now()),
+      (8863, 'R-8863', 'Ruta C88-3', 8864, 'ChoferC88-3', 'Pendiente firma', CURRENT_DATE, '{"C88-A": 10}', '{"C88-A": 10}', '{}', '{"C88-A": 10}', now());
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const solo = async (sub, sql, params) => {
+    await actor(a, sub);
+    try { const r = await a.query(sql, params); await a.query('COMMIT'); return { ok: true, row: r.rows[0] }; }
+    catch (e) { await a.query('ROLLBACK'); return { ok: false, code: e.code, msg: e.message }; }
+  };
+  const carrera = async (subA, sqlA, pA, subB, sqlB, pB) => {
+    await actor(a, subA); await actor(b, subB);
+    const ra = await a.query(sqlA, pA).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(sqlB, pB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  for (const [k, r] of [[1, 8861], [2, 8862], [4, 8863]]) {
+    const x = await solo(SUB(k), `SELECT confirmar_carga_ruta($1::uuid, $2::bigint, 'firma') AS r`, [`88c20000-0000-0000-0000-00000000000${k}`, r]);
+    const y = await solo(SUB(k), `UPDATE rutas SET estatus = 'En progreso' WHERE id = $1`, [r]);
+    if (!x.ok || !y.ok) { console.log('  fixture falló', x.msg || y.msg); process.exit(1); }
+  }
+  const FIN = `SELECT cerrar_ruta_financiero($1::uuid, $2::bigint, $3::jsonb) AS r`;
+  const exp = (cli) => JSON.stringify([{ express: true, clienteId: cli, pago: 'Crédito', items: [{ sku: 'C88-A', cant: 2, precio: 40 }] }]);
+  // C1: dos ventas exprés a crédito de 80 contra un límite de 100
+  let r = await carrera(SUB(1), FIN, ['88c30000-0000-0000-0000-000000000001', 8861, exp(8871)], SUB(2), FIN, ['88c30000-0000-0000-0000-000000000002', 8862, exp(8871)]);
+  ok(r.ra.ok && r.bloqueado && !r.rb.ok && /Excede límite/.test(r.rb.msg || ''), `088-C1a exprés 80 + exprés 80 (límite 100): la segunda espera y se rechaza (${r.rb.code || 'ok'})`);
+  ok(await n(`SELECT COALESCE(SUM(saldo_pendiente), 0) FROM cuentas_por_cobrar WHERE cliente_id = 8871`) === 80 && await n(`SELECT saldo FROM clientes WHERE id = 8871`) === 80, '088-C1b saldo del cliente 80 ≤ 100; una sola CxC');
+  // C2: venta normal a crédito (Ventas) concurrente con exprés a crédito, mismo cliente
+  const NORMAL = `SELECT crear_orden('{"cliente_id": 8872, "tipo_cobro": "Credito"}'::jsonb, '[{"sku":"C88-A","cantidad":2}]'::jsonb) AS r`;
+  r = await carrera(SUB(3), NORMAL, [], SUB(4), FIN, ['88c30000-0000-0000-0000-000000000003', 8863, exp(8872)]);
+  ok(r.ra.ok && r.bloqueado, '088-C2a crear_orden y la venta exprés se serializan por el cliente');
+  const idNormal = r.ra.ok ? Number(r.ra.row.r.id) : null;
+  await c.query(`UPDATE ordenes SET estatus = 'Entregada' WHERE id = $1`, [idNormal]);
+  const r2 = await solo(SUB(3), `SELECT crear_cxc_orden($1::bigint, 30) AS r`, [idNormal]);
+  const saldoB = await n(`SELECT saldo FROM clientes WHERE id = 8872`);
+  ok(saldoB <= 100 && (r.rb.ok ? !r2.ok && /Excede límite/.test(r2.msg || '') : r2.ok), `088-C2b el saldo nunca supera el límite (saldo ${saldoB}; exprés ${r.rb.ok ? 'aceptada → CxC de la venta normal rechazada al entregar' : 'rechazada'})`);
+  // C3: misma recepción de compra enviada dos veces a la vez
+  const REC = `SELECT registrar_recepcion_compra('88c40000-0000-0000-0000-000000000001'::uuid, 'C88-E', 50, 120, 'Prov C88', false) AS r`;
+  r = await carrera(SUB(5), REC, [], SUB(5), REC, []);
+  ok(r.ra.ok && r.bloqueado && r.rb.ok && r.rb.row.r.replay === true, '088-C3a misma recepción simultánea: la segunda espera y es replay');
+  ok(await n(`SELECT stock FROM productos WHERE sku = 'C88-E'`) === 50 && await n(`SELECT count(*) FROM movimientos_contables WHERE referencia = 'recepcion_compra/88c40000-0000-0000-0000-000000000001'`) === 1, '088-C3b stock +50 una vez, un solo egreso');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (088 concurrencia)'); process.exit(1); }
+}
+await conc088();
 for (const t of ['clientes', 'ordenes', 'leads', 'invoice_attempts', 'chofer_ubicaciones', 'movimientos_contables', 'auditoria', 'productos', 'rutas', 'pagos', 'inventario_mov']) {
   await c.query(`SELECT setval('${t}_id_seq', GREATEST((SELECT COALESCE(max(id), 0) FROM ${t}), (SELECT last_value FROM ${t}_id_seq)))`);
 }
-for (const [etq, f] of [['086', '086_cierre_financiero_test.sql'], ['085', '085_contencion_stock_test.sql'], ['084', '084_contratos_stock_test.sql'], ['083', '083_self_read_auth_id_test.sql'], ['082', '082_r3_r4_test.sql'], ['081', '081_ruta_id_ordenes_test.sql'], ['080', '080_rpc_asignacion_test.sql'], ['079', '079_identidad_legacy_test.sql'], ['078', '078_rutas_chofer_test.sql'], ['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
+for (const [etq, f] of [['087', '087_inventario_ruta_test.sql'], ['086', '086_cierre_financiero_test.sql'], ['085', '085_contencion_stock_test.sql'], ['084', '084_contratos_stock_test.sql'], ['083', '083_self_read_auth_id_test.sql'], ['082', '082_r3_r4_test.sql'], ['081', '081_ruta_id_ordenes_test.sql'], ['080', '080_rpc_asignacion_test.sql'], ['079', '079_identidad_legacy_test.sql'], ['078', '078_rutas_chofer_test.sql'], ['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
   const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
-  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 087)`); process.exit(1); }
-  console.log(`  ${etq} tras 087: PASS`);
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras 088)`); process.exit(1); }
+  console.log(`  ${etq} tras 088: PASS`);
 }
 await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
 {
   const rr = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
-  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 087)'); process.exit(1); }
-  console.log('  071 tras 087: PASS');
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (regresión 071 tras 088)'); process.exit(1); }
+  console.log('  071 tras 088: PASS');
 }
 console.log('── 084 concurrencia + frontend↔DB tras 087');
 await conc084();
@@ -1688,7 +1809,10 @@ await fe076();
 console.log('── 086 concurrencia + frontend↔DB tras 087');
 await conc086();
 await fe086();
-console.log('  concurrencia + frontend↔DB (076, 084 y 086) tras 087: PASS');
+console.log('── 087 concurrencia + frontend↔DB tras 088');
+await conc087();
+await fe087();
+console.log('  concurrencia + frontend↔DB (076, 084, 086 y 087) tras 088: PASS');
 
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
@@ -1720,7 +1844,10 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 084
   'stock_op_replay','stock_mov_cuarto','confirmar_carga_ruta','registrar_no_entrega','salida_cuarto_manual','traspaso_cuartos',
   // 087
-  'balance_ruta_interno','calcular_balance_ruta','finalizar_inventario_ruta','rutas_guard_inventario'];
+  'balance_ruta_interno','calcular_balance_ruta','finalizar_inventario_ruta','rutas_guard_inventario',
+  // 088
+  'precio_canonico','lineas_canonicas','fin_validar_credito','fin_actor_id','fin_orden_operable','productos_stock_interno',
+  'crear_orden','registrar_recepcion_compra','registrar_salida_empaque','clientes_guard_financiero','auditoria_actor','error_log_actor'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
@@ -1775,7 +1902,10 @@ if (!r.aborted) {
   console.log('── ROLLBACK 069 (verificación de reversibilidad de permisos)');
   const rb = await runFile(c, path.join(ROOT, 'supabase/069_rls_financiera_rollback.sql'), { stopOnError: true });
   const afterRb = (await catalogo()).filter(x => !x.startsWith('cuentas_por_cobrar|admin_all') || true);
-  const faltan = PROD_BEFORE.filter(x => !afterRb.includes(x)); const sobran = afterRb.filter(x => !PROD_BEFORE.includes(x));
+  // 088/089 cambian a propósito dos policies de ordenes fuera del alcance de 069
+  // (sin INSERT directo; UPDATE del chofer solo en su ruta).
+  const CAMBIOS_088 = ['ordenes|ventas_insert|INSERT', 'ordenes|chofer_update_own|UPDATE'];
+  const faltan = PROD_BEFORE.filter(x => !afterRb.includes(x) && !CAMBIOS_088.includes(x)); const sobran = afterRb.filter(x => !PROD_BEFORE.includes(x) && !CAMBIOS_088.includes(x));
   console.log('  rollback aplicado:', !rb.aborted, '| policies == producción antes:', faltan.length === 0 && sobran.length === 0 ? 'SÍ' : 'NO ' + JSON.stringify({ faltan, sobran }));
   console.log('  trigger guard presente tras rollback:', (await c.query(`SELECT count(*)::int AS n FROM pg_trigger WHERE tgname='trg_ordenes_guard_financiero'`)).rows[0].n);
 }

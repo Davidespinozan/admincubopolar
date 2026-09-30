@@ -105,16 +105,14 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   // P0: con factura, la identidad fiscal es la del cliente registrado.
   const errorFacturaExpress = validarVentaExpressFactura({ factura: vForm.factura, cliente: clienteExpressSel })?.error || null;
 
-  // Get price for a client+sku (special price or default)
-  const getPrice = useCallback((clienteNombre, sku) => {
-    const esp = data.preciosEsp?.find(p => {
-      const cli = data.clientes.find(c => c.id === p.clienteId || String(c.id) === String(p.clienteId));
-      return cli && s(cli.nombre) === clienteNombre && s(p.sku) === sku;
-    });
+  // Precio canónico (088, igual que el servidor): precio especial por ID de
+  // cliente + SKU si existe; si no, precio de catálogo. Nunca por nombre.
+  const getPrice = useCallback((clienteId, sku) => {
+    const esp = clienteId ? data.preciosEsp?.find(p => String(p.clienteId ?? p.cliente_id) === String(clienteId) && s(p.sku) === sku) : null;
     if (esp) return n(esp.precio);
     const prod = data.productos.find(p => s(p.sku) === sku);
     return prod ? n(prod.precio) : 0;
-  }, [data.preciosEsp, data.clientes, data.productos]);
+  }, [data.preciosEsp, data.productos]);
 
   // ── MI RUTA ACTIVA (asignada por administración) ──
   const isAdminPreview = user?.rol === 'Admin';
@@ -225,7 +223,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           if (match) {
             const cant = parseInt(match[1]);
             const sku = match[2];
-            const precio = getPrice(clienteNombre, sku);
+            const precio = getPrice(o.clienteId || o.cliente_id, sku);
             items.push({ sku, cant, precio });
           }
         });
@@ -717,7 +715,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     }
     setCreandoVenta(true);
     try {
-      const precio = getPrice(clienteNombre, sku);
+      const precio = getPrice(vForm.clienteId || clienteExpressSel?.id || null, sku);
       const subtotal = n(vForm.cant) * precio;
       const total = subtotal; // Hielo: IVA tasa 0%
       const venta = {
@@ -1457,9 +1455,9 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               </div>
               {vForm.cant && n(vForm.cant) > 0 && n(vForm.cant) <= (restante[vForm.sku] || 0) && (
                 <div className="bg-blue-50 rounded-xl p-3 text-center space-y-0.5">
-                  <p className="text-xs text-slate-500">Subtotal: {fmtMoney(n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku))}</p>
-                  <p className="text-xs text-slate-500">IVA 16%: {fmtMoney(Math.round((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) * 16) / 100)}</p>
-                  <p className="text-2xl font-extrabold text-slate-800">{fmtMoney((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) + (Math.round((n(vForm.cant) * getPrice((s(vForm.cliente) || s(clienteExpressSel?.nombre) || "Público en general"), vForm.sku)) * 16) / 100))}</p>
+                  {/* 088: mismo precio e IVA 0% que registra el servidor */}
+                  <p className="text-xs text-slate-500">Precio: {fmtMoney(getPrice(vForm.clienteId || clienteExpressSel?.id || null, vForm.sku))} · IVA 0% (hielo)</p>
+                  <p className="text-2xl font-extrabold text-slate-800">{fmtMoney(n(vForm.cant) * getPrice(vForm.clienteId || clienteExpressSel?.id || null, vForm.sku))}</p>
                 </div>
               )}
               <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pago</label>

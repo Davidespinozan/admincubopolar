@@ -110,6 +110,19 @@ BEGIN
 END $$;
 GRANT EXECUTE ON FUNCTION t79_identidad(TEXT, TEXT, BIGINT), t79_sin_privilegios(TEXT, BIGINT) TO anon, authenticated;
 
+CREATE OR REPLACE FUNCTION t88_retirada(p_sql TEXT, p_tag TEXT) RETURNS VOID LANGUAGE plpgsql AS $f$
+BEGIN
+  -- Capacidad genérica retirada por 088: antes se ejecuta; después, 42501.
+  IF to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NULL THEN EXECUTE p_sql; RETURN; END IF;
+  BEGIN
+    EXECUTE p_sql;
+    RAISE EXCEPTION 'FAIL: % (088) la capacidad retirada sigue disponible', p_tag;
+  EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'OK: % (088) denegado', p_tag;
+  END;
+END $f$;
+GRANT EXECUTE ON FUNCTION t88_retirada(TEXT, TEXT) TO anon, authenticated, service_role;
+CREATE OR REPLACE FUNCTION t88_fase() RETURNS BOOLEAN LANGUAGE sql STABLE AS $f$ SELECT to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NOT NULL $f$;
+GRANT EXECUTE ON FUNCTION t88_fase() TO anon, authenticated, service_role;
 \echo '── 079: estado físico'
 SELECT t79_assert((SELECT bool_and(prosecdef AND array_to_string(proconfig, ';') = 'search_path=public, pg_temp' AND provolatile = 's'
   AND NOT has_function_privilege('public', oid, 'EXECUTE') AND NOT has_function_privilege('anon', oid, 'EXECUTE')
@@ -118,7 +131,12 @@ SELECT t79_assert((SELECT bool_and(prosecdef AND array_to_string(proconfig, ';')
 SELECT t79_assert(pg_get_functiondef('public.get_my_rol()'::regprocedure) ~ 'SELECT erp_rol_activo\(\)' AND pg_get_functiondef('public.get_my_user_id()'::regprocedure) ~ 'SELECT erp_usuario_id\(\)'
   AND pg_get_functiondef('public.get_my_rol()'::regprocedure) !~ 'email|jwt|usuarios' AND pg_get_functiondef('public.get_my_user_id()'::regprocedure) !~ 'email|jwt|usuarios', '079-02 cuerpos canónicos: delegan en 071, sin email/JWT ni lectura propia de usuarios');
 SELECT t79_assert((SELECT pg_get_function_result('public.get_my_rol()'::regprocedure) = 'text' AND pg_get_function_result('public.get_my_user_id()'::regprocedure) = 'bigint'), '079-03 firmas y tipos de retorno conservados');
-SELECT t79_assert((SELECT count(*) = 47 FROM pg_policies WHERE schemaname = 'public' AND (coalesce(qual, '') || coalesce(with_check, '')) ~ 'get_my_rol\(\)')
+-- 088/089 retiran a propósito 6 policies con get_my_rol (egreso genérico, 2 del rol muerto Almacén,
+-- ventas_update reescrita con erp_rol_activo, y en 089 ventas_insert y write_roles).
+SELECT t79_assert((SELECT count(*) = 47 - (SELECT count(*) FROM (VALUES ('movimientos_contables','egreso_operativo_insert'),('rutas','almacen_update'),('rutas','almacen_write'),('ordenes','ventas_insert'),('orden_lineas','write_roles')) x(t, p)
+      WHERE NOT EXISTS (SELECT 1 FROM pg_policies q WHERE q.schemaname = 'public' AND q.tablename = x.t AND q.policyname = x.p))
+    - CASE WHEN EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'ordenes' AND policyname = 'ventas_update' AND qual ~ 'erp_rol_activo') THEN 1 ELSE 0 END
+  FROM pg_policies WHERE schemaname = 'public' AND (coalesce(qual, '') || coalesce(with_check, '')) ~ 'get_my_rol\(\)')
   AND (SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND (coalesce(qual, '') || coalesce(with_check, '')) ~ 'get_my_user_id\(\)'), '079-04 dependencias intactas: 47 policies con get_my_rol, 2 con get_my_user_id (ninguna reescrita)');
 SELECT t79_assert((SELECT md5(pg_get_functiondef(oid)) = '51a6dd4f6ee6486a34f81e3eec54eb8a' FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '769d64e0c31d5f74cdd765c44b80f259' FROM pg_proc WHERE oid = 'public.erp_rol_activo()'::regprocedure)
@@ -142,7 +160,22 @@ SELECT t79_identidad('079-20 Ventas activo', 'Ventas', 7902);
 SELECT t79_assert(t79_count($q$SELECT 1 FROM productos WHERE sku = 'P79-HIELO'$q$) = 1, '079-21 Ventas: ve catálogo');
 INSERT INTO clientes (nombre, rfc) VALUES ('Cliente 79 nuevo', 'XAXX010101000');
 SELECT t79_assert(t79_rows($q$UPDATE clientes SET zona = 'Norte' WHERE nombre = 'Cliente 79 nuevo'$q$) = 1, '079-22 Ventas: alta y edición de clientes (ventas_write / ventas_update)');
-INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, requiere_factura) VALUES ('OV-79V', 7910, 'Cliente 79', '1×P79-HIELO', 30, 'Creada', 'Efectivo', 'Contado', 7902, false);
+DO $do$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ordenes' AND policyname = 'ventas_insert') THEN
+    -- 089: Ventas ya no inserta órdenes por REST (usa crear_orden); la fila se
+    -- crea como fixture y se comprueba la denegación.
+    BEGIN
+      INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, requiere_factura) VALUES ('OV-79V', 7910, 'Cliente 79', '1×P79-HIELO', 30, 'Creada', 'Efectivo', 'Contado', 7902, false);
+      RAISE EXCEPTION 'FAIL: 079-23 (089) INSERT directo de orden no fue denegado';
+    EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'OK: 079-23 (089) INSERT directo de orden denegado';
+    END;
+    RESET ROLE;
+    INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, requiere_factura) VALUES ('OV-79V', 7910, 'Cliente 79', '1×P79-HIELO', 30, 'Creada', 'Efectivo', 'Contado', 7902, false);
+    SET LOCAL ROLE authenticated;
+  ELSE
+    INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, requiere_factura) VALUES ('OV-79V', 7910, 'Cliente 79', '1×P79-HIELO', 30, 'Creada', 'Efectivo', 'Contado', 7902, false);
+  END IF;
+END $do$;
 INSERT INTO leads (nombre) VALUES ('Lead 79 ventas');
 SELECT t79_assert(t79_count($q$SELECT 1 FROM ordenes WHERE folio = 'OV-79V'$q$) = 1 AND t79_count($q$SELECT 1 FROM leads WHERE nombre = 'Lead 79 ventas'$q$) = 1, '079-23 Ventas: crea pedido y lead (ventas_insert / leads.ventas_all)');
 SELECT t79_err($q$INSERT INTO productos (sku, nombre, precio, stock) VALUES ('P79-V', 'x', 1, 1)$q$, '079-24 Ventas: sin alta de productos', '42501');
@@ -167,7 +200,7 @@ ROLLBACK;
 
 BEGIN; SET LOCAL ROLE authenticated; SELECT t79_actor('authenticated', 'prod79@t', '79000000-0000-0000-0000-000000000004');
 SELECT t79_identidad('079-40 Producción activo', 'Producción', 7904);
-INSERT INTO movimientos_contables (tipo, categoria, concepto, monto) VALUES ('Egreso', 'Mermas', 'T79 egreso prod', 2);
+SELECT t88_retirada($q$INSERT INTO movimientos_contables (tipo, categoria, concepto, monto) VALUES ('Egreso', 'Mermas', 'T79 egreso prod', 2)$q$, '079-41 Producción: egreso directo');
 SELECT t79_assert(t79_count($q$SELECT 1 FROM productos WHERE sku = 'P79-HIELO'$q$) = 1, '079-41 Producción: egreso operativo permitido y catálogo visible');
 SELECT t79_assert(t79_rows($q$UPDATE productos SET stock = 999 WHERE sku = 'P79-HIELO'$q$) = 0, '079-42 Producción: 077 intacto (sin escritura directa de productos)');
 SELECT t79_err($q$INSERT INTO produccion (turno, maquina, sku, cantidad) VALUES ('T', 'M', 'P79-HIELO', 1)$q$, '079-43 Producción: 077 intacto (sin INSERT directo en produccion)', '42501');
@@ -175,7 +208,7 @@ ROLLBACK;
 
 BEGIN; SET LOCAL ROLE authenticated; SELECT t79_actor('authenticated', 'bolsas79@t', '79000000-0000-0000-0000-000000000005');
 SELECT t79_identidad('079-50 Almacén Bolsas activo', 'Almacén Bolsas', 7905);
-INSERT INTO movimientos_contables (tipo, categoria, concepto, monto) VALUES ('Egreso', 'Proveedores', 'T79 egreso bolsas', 2);
+SELECT t88_retirada($q$INSERT INTO movimientos_contables (tipo, categoria, concepto, monto) VALUES ('Egreso', 'Proveedores', 'T79 egreso bolsas', 2)$q$, '079-51 Almacén Bolsas: egreso directo');
 SELECT t79_assert(t79_count($q$SELECT 1 FROM productos WHERE sku = 'P79-HIELO'$q$) = 1, '079-51 Almacén Bolsas: egreso operativo permitido y catálogo visible');
 SELECT t79_err($q$INSERT INTO clientes (nombre) VALUES ('Cliente 79 b')$q$, '079-52 Almacén Bolsas: sin alta de clientes', '42501');
 ROLLBACK;

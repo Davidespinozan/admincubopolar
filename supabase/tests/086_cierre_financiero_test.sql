@@ -32,8 +32,8 @@ INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
   (8604, 'Chofer 86 B', 'chofer86b@t', 'Chofer', 'Activo', '86000000-0000-0000-0000-000000000004'),
   (8605, 'Chofer 86 C', 'chofer86c@t', 'Chofer', 'Activo', '86000000-0000-0000-0000-000000000005'),
   (8606, 'Chofer 86 D', 'chofer86d@t', 'Chofer', 'Activo', '86000000-0000-0000-0000-000000000006');
-INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('P86-A', 'Hielo 86', 'Producto Terminado', 30, 0);
-INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (8610, 'Cliente Contado 86', 'XAXX010101000', 0), (8611, 'Cliente Crédito 86', 'XAXX010101000', 0);
+INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('P86-A', 'Hielo 86', 'Producto Terminado', 35, 0);  -- 088: precio canónico = el de las ventas exprés
+INSERT INTO clientes (id, nombre, rfc, saldo, credito_autorizado, limite_credito) VALUES (8610, 'Cliente Contado 86', 'XAXX010101000', 0, false, 0), (8611, 'Cliente Crédito 86', 'XAXX010101000', 0, true, 1000);  -- 088: crédito autorizado
 INSERT INTO rutas (id, folio, nombre, chofer_id, chofer_nombre, estatus, fecha, carga, carga_autorizada, extra_autorizado, carga_real) VALUES
   (8601, 'R-8601', 'Ruta 86',        8603, 'Chofer 86', 'En progreso', CURRENT_DATE, '{"P86-A": 10}', '{"P86-A": 10}', '{}', '{"P86-A": 10}'),
   (8602, 'R-8602', 'Ruta 86 dos',    8605, 'Chofer 86 C', 'En progreso', CURRENT_DATE, '{"P86-A": 5}',  '{"P86-A": 5}',  '{}', '{"P86-A": 5}'),

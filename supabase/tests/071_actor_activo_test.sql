@@ -157,6 +157,19 @@ SELECT t_assert((SELECT (stock->>'HPC-5K')::int = 20 FROM cuartos_frios WHERE id
 -- 16/18/19. Chofer legítimo: merma en ruta descuenta; atribución = actor real aunque el cliente mande otro nombre
 CREATE OR REPLACE FUNCTION t_contenido() RETURNS BOOLEAN LANGUAGE sql STABLE AS $$ SELECT pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]' $$;
 GRANT EXECUTE ON FUNCTION t_contenido() TO anon, authenticated, service_role;
+CREATE OR REPLACE FUNCTION t88_retirada(p_sql TEXT, p_tag TEXT) RETURNS VOID LANGUAGE plpgsql AS $f$
+BEGIN
+  -- Capacidad genérica retirada por 088: antes se ejecuta; después, 42501.
+  IF to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NULL THEN EXECUTE p_sql; RETURN; END IF;
+  BEGIN
+    EXECUTE p_sql;
+    RAISE EXCEPTION 'FAIL: % (088) la capacidad retirada sigue disponible', p_tag;
+  EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'OK: % (088) denegado', p_tag;
+  END;
+END $f$;
+GRANT EXECUTE ON FUNCTION t88_retirada(TEXT, TEXT) TO anon, authenticated, service_role;
+CREATE OR REPLACE FUNCTION t88_fase() RETURNS BOOLEAN LANGUAGE sql STABLE AS $f$ SELECT to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NOT NULL $f$;
+GRANT EXECUTE ON FUNCTION t88_fase() TO anon, authenticated, service_role;
 CREATE OR REPLACE FUNCTION t_p087() RETURNS BOOLEAN LANGUAGE sql STABLE AS $$ SELECT to_regprocedure('public.finalizar_inventario_ruta(uuid,bigint,jsonb)') IS NOT NULL $$;
 GRANT EXECUTE ON FUNCTION t_p087() TO anon, authenticated, service_role;
 SELECT t_actor2('authenticated', 'chofer@t'); SET LOCAL ROLE authenticated;
@@ -173,17 +186,17 @@ SELECT t_assert((SELECT (stock->>'HPC-5K')::int = CASE WHEN t_contenido() THEN 2
 -- 24. Producción: entrada a cuarto + traspaso a productos
 SELECT t_actor2('authenticated', 'prod@t'); SET LOCAL ROLE authenticated;
 DO $$ BEGIN IF t_contenido() THEN BEGIN PERFORM update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":10,"tipo":"Entrada","origen":"Producción"}]'::jsonb); RAISE EXCEPTION 'FAIL: Producción movió stock con el RPC genérico (085)'; EXCEPTION WHEN OTHERS THEN IF SQLERRM LIKE 'FAIL:%' THEN RAISE; END IF; RAISE NOTICE '24 denied (085): %', SQLERRM; END; ELSE PERFORM update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":10,"tipo":"Entrada","origen":"Producción"}]'::jsonb); END IF; END $$;
-SELECT update_productos_stock_atomic('[{"sku":"HPC-5K","delta":-3,"tipo":"Salida","origen":"Transformación"}]'::jsonb);
+SELECT t88_retirada($q$SELECT update_productos_stock_atomic('[{"sku":"HPC-5K","delta":-3,"tipo":"Salida","origen":"Transformación"}]'::jsonb)$q$, '24. Producción: stock genérico de producto');
 RESET ROLE;
-SELECT t_assert((SELECT (stock->>'HPC-5K')::int = CASE WHEN t_contenido() THEN 20 ELSE 25 END FROM cuartos_frios WHERE id = 'CF-T') AND (SELECT stock = 97 FROM productos WHERE sku = 'HPC-5K'), '24. Producción: cuarto +10 (o 42501 tras 085), productos -3');
-SELECT t_assert((SELECT bool_and(usuario = 'Prod T') FROM (SELECT usuario FROM inventario_mov ORDER BY id DESC LIMIT CASE WHEN t_contenido() THEN 1 ELSE 2 END) x), '24. atribución Producción real');
+SELECT t_assert((SELECT (stock->>'HPC-5K')::int = CASE WHEN t_contenido() THEN 20 ELSE 25 END FROM cuartos_frios WHERE id = 'CF-T') AND (SELECT stock = CASE WHEN t88_fase() THEN 100 ELSE 97 END FROM productos WHERE sku = 'HPC-5K'), '24. Producción: cuarto +10 (o 42501 tras 085), productos -3');
+SELECT t_assert(t88_fase() OR (SELECT bool_and(usuario = 'Prod T') FROM (SELECT usuario FROM inventario_mov ORDER BY id DESC LIMIT CASE WHEN t_contenido() THEN 1 ELSE 2 END) x), '24. atribución Producción real (088: sin movimiento genérico)');
 -- I. Almacén Bolsas: entrada de empaques
 SELECT t_actor2('authenticated', 'bolsas@t'); SET LOCAL ROLE authenticated;
-SELECT update_productos_stock_atomic('[{"sku":"EMP-5","delta":100,"tipo":"Entrada","origen":"Compra bolsas"}]'::jsonb);
-INSERT INTO cuentas_por_pagar (proveedor, concepto, monto_original, monto_pagado, saldo_pendiente, fecha_emision, categoria, estatus) VALUES ('Prov T', 'Compra empaques', 200, 0, 200, CURRENT_DATE, 'Proveedores', 'Pendiente');
+SELECT t88_retirada($q$SELECT update_productos_stock_atomic('[{"sku":"EMP-5","delta":100,"tipo":"Entrada","origen":"Compra bolsas"}]'::jsonb)$q$, 'I. Almacén Bolsas: stock genérico');
+SELECT t88_retirada($q$INSERT INTO cuentas_por_pagar (proveedor, concepto, monto_original, monto_pagado, saldo_pendiente, fecha_emision, categoria, estatus) VALUES ('Prov T', 'Compra empaques', 200, 0, 200, CURRENT_DATE, 'Proveedores', 'Pendiente')$q$, 'I. Almacén Bolsas: CxP directa');
 DO $$ BEGIN INSERT INTO cuentas_por_pagar (proveedor, concepto, monto_original, saldo_pendiente, fecha_emision, categoria) VALUES ('Prov T', 'otra categoría', 1, 1, CURRENT_DATE, 'Nómina'); EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'I denied: %', SQLERRM; END $$;
 RESET ROLE;
-SELECT t_assert((SELECT stock = 150 FROM productos WHERE sku = 'EMP-5') AND (SELECT count(*) = 2 FROM cuentas_por_pagar) AND (SELECT count(*) = 0 FROM cuentas_por_pagar WHERE categoria = 'Nómina'), 'I. Almacén Bolsas: stock de empaques y CxP de compra; otra categoría denegada');
+SELECT t_assert((SELECT stock = CASE WHEN t88_fase() THEN 50 ELSE 150 END FROM productos WHERE sku = 'EMP-5') AND (SELECT count(*) = CASE WHEN t88_fase() THEN 1 ELSE 2 END FROM cuentas_por_pagar) AND (SELECT count(*) = 0 FROM cuentas_por_pagar WHERE categoria = 'Nómina'), 'I. Almacén Bolsas: stock de empaques y CxP de compra; otra categoría denegada');
 -- H. Admin: reverso de merma (flujo borrarMermaConReverso) y devolución de ruta
 SELECT t_actor2('authenticated', 'admin@t'); SET LOCAL ROLE authenticated;
 SELECT update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":5,"tipo":"Entrada","origen":"Reverso merma"}]'::jsonb);
@@ -214,15 +227,30 @@ UPDATE notificaciones SET leida = true WHERE id = 900;
 SELECT t_assert(t_count('costos_fijos') = 2 AND t_count('pagos_proveedores') = 1 AND (SELECT leida FROM notificaciones WHERE id = 900), '21. Admin escribe costos, paga CxP y marca notificación');
 SELECT t_actor2('authenticated', 'ventas@t');
 SELECT t_assert(t_count('clientes') = 1 AND t_count('ordenes') = 1 AND t_count('cuentas_por_cobrar') = 1 AND t_count('productos') >= 1 AND t_count('pagos') = 1, '22. Ventas lee clientes, órdenes, CxC, productos y pagos');
-INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id) VALUES ('OV-V', 10, 'Cliente T', '1×HPC-5K', 35, 'Creada', 'Efectivo', 'Contado', 2);
+DO $do$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ordenes' AND policyname = 'ventas_insert') THEN
+    -- 089: Ventas ya no inserta órdenes por REST (usa crear_orden); la fila se
+    -- crea como fixture y se comprueba la denegación.
+    BEGIN
+      INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id) VALUES ('OV-V', 10, 'Cliente T', '1×HPC-5K', 35, 'Creada', 'Efectivo', 'Contado', 2);
+      RAISE EXCEPTION 'FAIL: 22. (089) INSERT directo de orden no fue denegado';
+    EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'OK: 22. (089) INSERT directo de orden denegado';
+    END;
+    RESET ROLE;
+    INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id) VALUES ('OV-V', 10, 'Cliente T', '1×HPC-5K', 35, 'Creada', 'Efectivo', 'Contado', 2);
+    SET LOCAL ROLE authenticated;
+  ELSE
+    INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id) VALUES ('OV-V', 10, 'Cliente T', '1×HPC-5K', 35, 'Creada', 'Efectivo', 'Contado', 2);
+  END IF;
+END $do$;
 UPDATE notificaciones SET leida = false WHERE id = 900;
 SELECT t_assert((SELECT count(*) = 1 FROM ordenes WHERE folio = 'OV-V'), '22. Ventas crea pedido');
 SELECT t_actor2('authenticated', 'chofer@t');
 SELECT t_assert(t_count('ordenes') = 2 AND t_count('rutas') = 0 AND t_count('clientes') = 1 AND t_count('cuartos_frios') >= 1, '23. Chofer lee órdenes, clientes y cuartos');
 SELECT t_actor2('authenticated', 'prod@t');
 SELECT t_assert(t_count('productos') >= 1 AND t_count('cuartos_frios') >= 1 AND t_count('produccion') >= 0 AND t_count('inventario_mov') >= 0, '24. Producción lee productos, cuartos, producción y kardex');
-INSERT INTO costos_historial (tipo, categoria, concepto, monto, periodo, fecha) VALUES ('Costo de Ventas', 'Costo de Ventas', 'Producción OP-1: empaque', 10, '2026-09', CURRENT_DATE);
-SELECT t_assert(t_count('costos_historial') = 1, '24. Producción registra costo de empaque');
+SELECT t88_retirada($q$INSERT INTO costos_historial (tipo, categoria, concepto, monto, periodo, fecha) VALUES ('Costo de Ventas', 'Costo de Ventas', 'Producción OP-1: empaque', 10, '2026-09', CURRENT_DATE)$q$, '24. Producción: costos_historial directo');
+SELECT t_assert(t_count('costos_historial') = CASE WHEN t88_fase() THEN 0 ELSE 1 END, '24. Producción registra costo de empaque (088: solo por contrato)');
 SELECT t_actor2('authenticated', 'legacy@t');
 SELECT t_assert(t_count('ordenes') = 2, 'legacy: perfil ligado por backfill lee como Chofer');
 RESET ROLE;

@@ -34,7 +34,7 @@ INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
   (5, 'Inact T',   'inactivo@t','Ventas',     'Inactivo', '10000000-0000-0000-0000-000000000005'),
   (6, 'Chofer2 T', 'chofer2@t', 'Chofer',     'Activo',   '10000000-0000-0000-0000-000000000006');
 INSERT INTO productos (sku, nombre, precio, stock) SELECT 'HPC-5K', 'Hielo Purificado Cubos 5kg', 35, 100 WHERE NOT EXISTS (SELECT 1 FROM productos WHERE sku = 'HPC-5K');
-INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (10, 'Cliente Crédito', 'XAXX010101000', 0), (11, 'Cliente Contado', 'XAXX010101000', 0);
+INSERT INTO clientes (id, nombre, rfc, saldo, credito_autorizado, limite_credito) VALUES (10, 'Cliente Crédito', 'XAXX010101000', 0, true, 1000), (11, 'Cliente Contado', 'XAXX010101000', 0, false, 0);  -- 088: el crédito exige autorización y límite
 INSERT INTO rutas (id, folio, nombre, chofer_id, estatus, fecha) VALUES (100, 'R-100', 'Ruta T', 3, 'En progreso', CURRENT_DATE);
 INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, ruta_id, vendedor_id) VALUES
   (200, 'OV-0200', 11, 'Cliente Contado', '1×HPC-5K', 100, 'Asignada', 'Efectivo', 'Contado', 100, 2),   -- contado en ruta
@@ -67,6 +67,19 @@ BEGIN IF NOT COALESCE(p_cond, false) THEN RAISE EXCEPTION 'FAIL: %', p_msg; END 
       RAISE NOTICE 'OK: %', p_msg; END $$;
 
 \set QUIET off
+CREATE OR REPLACE FUNCTION t88_retirada(p_sql TEXT, p_tag TEXT) RETURNS VOID LANGUAGE plpgsql AS $f$
+BEGIN
+  -- Capacidad genérica retirada por 088: antes se ejecuta; después, 42501.
+  IF to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NULL THEN EXECUTE p_sql; RETURN; END IF;
+  BEGIN
+    EXECUTE p_sql;
+    RAISE EXCEPTION 'FAIL: % (088) la capacidad retirada sigue disponible', p_tag;
+  EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'OK: % (088) denegado', p_tag;
+  END;
+END $f$;
+GRANT EXECUTE ON FUNCTION t88_retirada(TEXT, TEXT) TO anon, authenticated, service_role;
+CREATE OR REPLACE FUNCTION t88_fase() RETURNS BOOLEAN LANGUAGE sql STABLE AS $f$ SELECT to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NOT NULL $f$;
+GRANT EXECUTE ON FUNCTION t88_fase() TO anon, authenticated, service_role;
 \echo
 \echo '════════ ATAQUES (todos deben quedar DENIED, sin cambios) ════════'
 
@@ -197,17 +210,46 @@ ROLLBACK;
 -- L. Ventas crea pedido
 BEGIN;
 SELECT t_actor('authenticated', 'ventas@t'); SET LOCAL ROLE authenticated;
-INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, requiere_factura)
-VALUES ('OV-L', 11, 'Cliente Contado', '2×HPC-5K', 70, 'Creada', 'Efectivo', 'Contado', 2, false);
+DO $do$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ordenes' AND policyname = 'ventas_insert') THEN
+    -- 089: Ventas ya no inserta órdenes por REST (usa crear_orden); la fila se
+    -- crea como fixture y se comprueba la denegación.
+    BEGIN
+      INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, requiere_factura) VALUES ('OV-L', 11, 'Cliente Contado', '2×HPC-5K', 70, 'Creada', 'Efectivo', 'Contado', 2, false);
+      RAISE EXCEPTION 'FAIL: L. (089) INSERT directo de orden no fue denegado';
+    EXCEPTION WHEN insufficient_privilege THEN RAISE NOTICE 'OK: L. (089) INSERT directo de orden denegado';
+    END;
+    RESET ROLE;
+    INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, requiere_factura) VALUES ('OV-L', 11, 'Cliente Contado', '2×HPC-5K', 70, 'Creada', 'Efectivo', 'Contado', 2, false);
+    SET LOCAL ROLE authenticated;
+  ELSE
+    INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, requiere_factura) VALUES ('OV-L', 11, 'Cliente Contado', '2×HPC-5K', 70, 'Creada', 'Efectivo', 'Contado', 2, false);
+  END IF;
+END $do$;
 SELECT t_assert((SELECT COUNT(*) = 1 FROM ordenes WHERE folio = 'OV-L'), 'L. Ventas crea pedido');
 -- edición legítima en Creada vía RPC (total cambia SOLO por el contrato)
 SELECT update_orden_atomic((SELECT id FROM ordenes WHERE folio = 'OV-L'), '{"total": 90, "productos": "3×HPC-5K"}'::jsonb, '[{"sku":"HPC-5K","cantidad":3,"precio_unit":30,"subtotal":90}]'::jsonb);
-SELECT t_assert((SELECT total = 90 FROM ordenes WHERE folio = 'OV-L'), 'L. update_orden_atomic cambia total en Creada');
+SELECT t_assert((SELECT total = CASE WHEN to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NULL THEN 90 ELSE 3 * (SELECT round(precio, 2) FROM productos WHERE sku = 'HPC-5K') END FROM ordenes WHERE folio = 'OV-L'), 'L. update_orden_atomic cambia total en Creada (088: total = precio canónico × 3)');
 SELECT t_assert((SELECT COUNT(*) = 1 FROM cuentas_por_cobrar) AND (SELECT COUNT(*) = 1 FROM pagos), 'V. Ventas lee CxC y pagos');
 ROLLBACK;
 
 -- M. Cobro permitido de Ventas (mostrador): Asignada→Entregada + contrato de ingreso/pago
 BEGIN;
+-- 088: Ventas solo cobra en mostrador órdenes SIN ruta; una orden de ruta la
+-- entrega su chofer. Se comprueba la denegación y el mostrador usa la orden
+-- sin ruta.
+DO $$ DECLARE v_n INT; BEGIN
+  IF t88_fase() THEN
+    PERFORM t_actor('authenticated', 'ventas@t'); SET LOCAL ROLE authenticated;
+    UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Transferencia SPEI' WHERE id = 205;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    IF v_n <> 0 THEN RAISE EXCEPTION 'FAIL: M (088) Ventas entregó una orden de ruta'; END IF;
+    RAISE NOTICE 'OK: M (088) Ventas no entrega órdenes de ruta';
+    RESET ROLE;
+    PERFORM set_config('request.jwt.claims', '', true);
+    UPDATE ordenes SET ruta_id = NULL WHERE id = 205;
+  END IF;
+END $$;
 SELECT t_actor('authenticated', 'ventas@t'); SET LOCAL ROLE authenticated;
 UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Transferencia SPEI' WHERE id = 205;
 SELECT t_assert((SELECT estatus = 'Entregada' AND metodo_pago = 'Transferencia SPEI' FROM ordenes WHERE id = 205), 'M. Ventas marca Entregada con método al cobrar');
@@ -316,11 +358,11 @@ ROLLBACK;
 -- U. Chofer inserta egreso operativo (merma) pero no ingreso
 BEGIN;
 SELECT t_actor('authenticated', 'chofer@t'); SET LOCAL ROLE authenticated;
-INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto) VALUES (CURRENT_DATE, 'Egreso', 'Mermas', 'Merma ruta T', 12);
+SELECT t88_retirada($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto) VALUES (CURRENT_DATE, 'Egreso', 'Mermas', 'Merma ruta T', 12)$q$, 'U. Chofer: egreso directo');
 DO $$ BEGIN INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto) VALUES (CURRENT_DATE, 'Ingreso', 'Ventas', 'falso-U', 12);
   EXCEPTION WHEN OTHERS THEN RAISE NOTICE 'U denied: %', SQLERRM; END $$;
 RESET ROLE;
-SELECT t_assert((SELECT COUNT(*) = 1 FROM movimientos_contables WHERE concepto = 'Merma ruta T') AND (SELECT COUNT(*) = 0 FROM movimientos_contables WHERE concepto = 'falso-U'), 'U. egreso operativo sí, ingreso no');
+SELECT t_assert((SELECT COUNT(*) = CASE WHEN t88_fase() THEN 0 ELSE 1 END FROM movimientos_contables WHERE concepto = 'Merma ruta T') AND (SELECT COUNT(*) = 0 FROM movimientos_contables WHERE concepto = 'falso-U'), 'U. egreso operativo sí, ingreso no');
 ROLLBACK;
 
 -- Backend (service_role): sigue pudiendo aplicar pagos y marcar Entregada/Facturada

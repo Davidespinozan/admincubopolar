@@ -264,9 +264,19 @@ SELECT t87_assert((t87_j('F2') ->> 'estatus') = 'Cerrada' AND (SELECT bool_and(r
 
 \echo '── 087 H: ventas exprés inválidas → falla cerrado'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t87_actor(16);
-SELECT cerrar_ruta_financiero('87000000-0000-0000-0000-00000000001a'::uuid, 8707, '[{"express": true, "pago": "Efectivo", "items": [{"sku": "P87-ZZ", "cant": 1, "precio": 30}]}]'::jsonb, 8716, 'x');
-SELECT t87_err($q$SELECT * FROM calcular_balance_ruta(8707)$q$, '087-H1 exprés con SKU fuera de catálogo: balance falla cerrado', 'P0001', '%no existe en el catálogo%');
-SELECT t87_err($q$SELECT finalizar_inventario_ruta('87000000-0000-0000-0000-00000000009a', 8707, '{"P87-A": 5}')$q$, '087-H2 y la finalización también', 'P0001', '%no existe en el catálogo%');
+DO $do$ BEGIN
+  IF to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NOT NULL THEN
+    -- 088: el SKU fuera de catálogo ya se rechaza en el cierre financiero,
+    -- antes de cualquier efecto; la ruta queda sin exprés ni marca.
+    PERFORM t87_err($q$SELECT cerrar_ruta_financiero('87000000-0000-0000-0000-00000000001a'::uuid, 8707, '[{"express": true, "pago": "Efectivo", "items": [{"sku": "P87-ZZ", "cant": 1, "precio": 30}]}]'::jsonb, 8716, 'x')$q$, '087-H1 (088) exprés con SKU fuera de catálogo rechazada en el cierre financiero', '22023');
+    RESET ROLE;
+    PERFORM t87_assert(NOT EXISTS (SELECT 1 FROM cierres_financieros_ruta WHERE ruta_id = 8707) AND NOT EXISTS (SELECT 1 FROM ordenes WHERE ruta_id = 8707), '087-H2 (088) sin venta exprés ni marca de cierre');
+  ELSE
+    PERFORM cerrar_ruta_financiero('87000000-0000-0000-0000-00000000001a'::uuid, 8707, '[{"express": true, "pago": "Efectivo", "items": [{"sku": "P87-ZZ", "cant": 1, "precio": 30}]}]'::jsonb, 8716, 'x');
+    PERFORM t87_err($q$SELECT * FROM calcular_balance_ruta(8707)$q$, '087-H1 exprés con SKU fuera de catálogo: balance falla cerrado', 'P0001', '%no existe en el catálogo%');
+    PERFORM t87_err($q$SELECT finalizar_inventario_ruta('87000000-0000-0000-0000-00000000009a', 8707, '{"P87-A": 5}')$q$, '087-H2 y la finalización también', 'P0001', '%no existe en el catálogo%');
+  END IF;
+END $do$;
 COMMIT;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t87_actor(17);
 SELECT cerrar_ruta_financiero('87000000-0000-0000-0000-00000000002a'::uuid, 8708, '[{"express": true, "pago": "Efectivo", "items": [{"sku": "P87-B", "cant": 1, "precio": 30}]}]'::jsonb, 8717, 'x');

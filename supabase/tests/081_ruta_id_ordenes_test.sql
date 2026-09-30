@@ -93,7 +93,16 @@ BEGIN
       ('mixto: cobro + ruta',                        $q$UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Efectivo', ruta_id = 8102 WHERE id = 8123$q$)
     ) x(col, sql)
   LOOP
-    IF p_visible THEN
+    IF to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NOT NULL THEN
+      -- 088: la policy de UPDATE ya acota filas por rol/ruta; denegado = 42501
+      -- (guard o WITH CHECK) o 0 filas (fila fuera del alcance del rol).
+      BEGIN
+        IF t81_rows(s.sql) <> 0 THEN RAISE EXCEPTION 'FAIL: % (088) modificó filas', p_tag || ': ' || s.col; END IF;
+        RAISE NOTICE 'OK: % → 0 filas (088)', p_tag || ': ' || s.col;
+      EXCEPTION WHEN insufficient_privilege THEN
+        RAISE NOTICE 'OK: % → rechazado 42501 (088)', p_tag || ': ' || s.col;
+      END;
+    ELSIF p_visible THEN
       PERFORM t81_err(s.sql, p_tag || ': ' || s.col || ' → rechazado', '42501');
     ELSE
       PERFORM t81_assert(t81_rows(s.sql) = 0, p_tag || ': ' || s.col || ' → 0 filas');
@@ -111,7 +120,7 @@ SELECT t81_assert((SELECT md5(pg_get_functiondef(oid)) = '99fb6cfe4933dc702e3531
 SELECT t81_assert((SELECT md5(pg_get_functiondef(oid)) = 'd9e6ce160e0eae40c4aae1d94455b4c0' FROM pg_proc WHERE oid = 'public.asignar_orden(bigint,bigint,bigint)'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '3fc56daefc13ad7697114de2ec2593aa' FROM pg_proc WHERE oid = 'public.asignar_ordenes_a_ruta(bigint,bigint[])'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = 'b16c475b7c15505a539bbfb98e14ea45' FROM pg_proc WHERE oid = 'public.cancelar_orden_asignada(bigint,bigint)'::regprocedure), '081-05 RPCs 080 sin cambios (md5 de producción)');
-SELECT t81_assert((SELECT string_agg(policyname, ',' ORDER BY policyname) = 'admin_all,read_all,rollback_delete,ventas_insert,ventas_update' FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ordenes'), '081-06 policies de ordenes sin cambios');
+SELECT t81_assert((SELECT string_agg(policyname, ',' ORDER BY policyname) = CASE WHEN to_regprocedure('public.crear_orden(jsonb,jsonb)') IS NULL THEN 'admin_all,read_all,rollback_delete,ventas_insert,ventas_update' WHEN EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'ordenes' AND policyname = 'ventas_insert') THEN 'admin_all,chofer_update_own,read_all,rollback_delete,ventas_insert,ventas_update' ELSE 'admin_all,chofer_update_own,read_all,rollback_delete,ventas_update' END FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ordenes'), '081-06 policies de ordenes sin cambios');
 
 \echo '── 081: Ventas — ataque directo y flujo legítimo'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t81_actor('authenticated', 'ventas81@t', '81000000-0000-0000-0000-000000000002');

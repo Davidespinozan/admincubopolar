@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { s, n, todayLocalISO } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
 import { useBodyScrollLock } from './ui/Modal';
+import { resolverOperacion } from '../data/produccionAtomicaLogic';
 
 const BOLSAS_SHELL = "min-h-dvh w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef2f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
 
@@ -10,6 +11,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
   // Tanda 17 P1: body scroll lock cuando modal está abierto.
   useBodyScrollLock(modal !== null);
   const [form, setForm] = useState({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
+  const opRef = useRef(null);
   const [toast, setToast] = useState("");
   const [registrando, setRegistrando] = useState(false);
 
@@ -59,17 +61,28 @@ export default function BolsasView({ user, data, actions, onLogout }) {
     const esEntrada = modal === "entrada";
     const motivo = esEntrada ? "Recepción de compra" : (form.destino || "Producción");
 
+    if (esEntrada && !(n(form.costo) > 0)) { showToast('Captura el total de la compra'); return; }
+    if (esEntrada && form.esCredito && !String(form.proveedor || '').trim()) { showToast('La compra a crédito requiere proveedor'); return; }
+    // 088: un operacion_id por movimiento lógico; un reintento con los mismos
+    // datos reutiliza el UUID (el servidor no duplica stock ni contabilidad).
+    const clave = [modal, form.sku, n(form.cantidad), esEntrada ? n(form.costo) : 0, form.proveedor || '', !!form.esCredito].join('|');
+    const op = resolverOperacion(opRef.current, clave);
+    opRef.current = op;
+
     setRegistrando(true);
     try {
-      await actions.movimientoBolsa(
+      const err = await actions.movimientoBolsa(
         form.sku,
         n(form.cantidad),
         esEntrada ? "Entrada" : "Salida",
         motivo,
         esEntrada ? n(form.costo) : 0,
         form.proveedor || null,
-        form.esCredito
+        form.esCredito,
+        { operacionId: op.id }
       );
+      if (err?.error) { showToast(err.error); return; }
+      opRef.current = null;
 
       // El historial se actualiza automáticamente via realtime desde inventarioMov
       // NOTA: movimientoBolsa no retorna estado de error — un 4xx/5xx de Supabase
@@ -238,7 +251,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
               )}
             </div>
             <button onClick={registrar}
-              disabled={registrando || !form.cantidad || n(form.cantidad) <= 0 || (modal === "salida" && n(form.cantidad) > stockActual(form.sku))}
+              disabled={registrando || !form.cantidad || n(form.cantidad) <= 0 || (modal === "salida" && n(form.cantidad) > stockActual(form.sku)) || (modal === "entrada" && !(n(form.costo) > 0))}
               className={`w-full py-4 text-white font-bold rounded-xl text-base mt-4 disabled:opacity-40 disabled:cursor-not-allowed ${modal === "entrada" ? "bg-emerald-600" : "bg-red-500"}`}>
               {registrando ? "Registrando…" : modal === "entrada" ? "✓ Registrar entrada" : "✓ Registrar salida"}
             </button>

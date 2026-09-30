@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
-import { parseProductos, validateItems, buildLineas, formatFolio, buildOrdenPayload, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI } from './ordenLogic';
+import { parseProductos, validateItems, buildLineas, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
 import { buildRegistrarMermaArgs, mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
@@ -960,167 +960,46 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── ÓRDENES ──
+      // 088: la orden se crea con el contrato crear_orden — orden Creada +
+      // líneas en UNA transacción; precios (especial del cliente o catálogo),
+      // total, folio, stock disponible, crédito y actor los deriva el
+      // servidor. El cliente solo manda cliente, productos×cantidad y datos de
+      // entrega. Sin INSERT directo en ordenes/orden_lineas.
       addOrden: async (o) => {
-        // Chofer puede crear ventas express en ruta (ChoferView).
-        const guard = requireRol(['Admin', 'Ventas', 'Chofer']);
+        const guard = requireRol(['Admin', 'Ventas']);
         if (guard) { t()?.error(guard.error); return guard; }
         try {
           const items = parseProductos(o.productos);
           const itemsErr = validateItems(items);
           if (itemsErr) return { message: itemsErr };
-
-          const [
-            { data: prods, error: errProds },
-            { data: pes, error: errPes },
-            { data: cuartos, error: errCfs },
-          ] = await Promise.all([
-            supabase.from('productos').select('sku, precio'),
-            supabase.from('precios_esp').select('sku, precio').eq('cliente_id', o.clienteId),
-            supabase.from('cuartos_frios').select('stock'),
-          ]);
-          if (errProds) {
-            console.warn('[addOrden] select productos:', errProds.message);
-            t()?.error('No se pudieron leer los productos');
-            return { message: errProds.message };
-          }
-          if (errPes) {
-            console.warn('[addOrden] select precios_esp:', errPes.message);
-            t()?.error('No se pudieron leer los precios especiales');
-            return { message: errPes.message };
-          }
-          if (errCfs) {
-            console.warn('[addOrden] select cuartos_frios:', errCfs.message);
-            t()?.error('No se pudieron leer cuartos fríos');
-            return { message: errCfs.message };
-          }
-
-          const built = buildLineas(items, prods || [], pes || []);
-          if (built.error) return { message: built.error };
-          const { lineas, total } = built;
-
-          // Validación de stock disponible. El stock real vive en
-          // cuartos_frios.stock (JSONB) — productos.stock es legacy y queda
-          // en 0 cuando se produce vía producirYCongelar (que solo actualiza
-          // cuartos_frios). Sumar desde JSONB de cada cuarto activo.
-          const stockBySku = {};
-          for (const cf of (cuartos || [])) {
-            const cfStock = (cf?.stock && typeof cf.stock === 'object') ? cf.stock : {};
-            for (const [sku, qty] of Object.entries(cfStock)) {
-              stockBySku[sku] = (stockBySku[sku] || 0) + Number(qty || 0);
-            }
-          }
-          const pedidoBySku = {};
-          for (const l of lineas) pedidoBySku[l.sku] = (pedidoBySku[l.sku] || 0) + Number(l.cantidad || 0);
-          for (const [sku, pedido] of Object.entries(pedidoBySku)) {
-            const disponible = stockBySku[sku] ?? 0;
-            if (pedido > disponible) {
-              const msg = `Stock insuficiente para ${sku} (disponible: ${disponible}, pedido: ${pedido})`;
-              t()?.error(msg);
-              return { message: msg };
-            }
-          }
-
-          // Validación de límite de crédito. Solo aplica a ventas a crédito
-          // y requiere clienteId (las ventas público en general no aplican).
-          // Tanda 2 🟡-4: el saldo se calcula desde SUM(saldo_pendiente) en
-          // cuentas_por_cobrar (NO desde clientes.saldo cache, que puede
-          // divergir y aceptaría ventas que superan el saldo real).
-          if (s(o.tipoCobro) === 'Credito' && o.clienteId) {
-            const [
-              { data: cliCred, error: errCred },
-              { data: cxcRows, error: errCxc },
-            ] = await Promise.all([
-              supabase
-                .from('clientes')
-                .select('limite_credito, credito_autorizado, nombre')
-                .eq('id', o.clienteId)
-                .maybeSingle(),
-              supabase
-                .from('cuentas_por_cobrar')
-                .select('saldo_pendiente')
-                .eq('cliente_id', o.clienteId)
-                .neq('estatus', 'Pagada'),
-            ]);
-            if (errCred) {
-              console.warn('[addOrden] select cliente para crédito:', errCred.message);
-              t()?.error('No se pudo verificar el crédito del cliente');
-              return { message: errCred.message };
-            }
-            if (errCxc) {
-              console.warn('[addOrden] select CxC para crédito:', errCxc.message);
-              t()?.error('No se pudo verificar las cuentas por cobrar del cliente');
-              return { message: errCxc.message };
-            }
-            if (!cliCred?.credito_autorizado) {
-              const msg = 'Cliente no tiene crédito autorizado';
-              t()?.error(msg);
-              return { message: msg };
-            }
-            const limite = Number(cliCred.limite_credito) || 0;
-            const saldo = (cxcRows || []).reduce(
-              (sum, r) => sum + Number(r?.saldo_pendiente || 0),
-              0
-            );
-            const disponible = limite - saldo;
-            if (Number(total) > disponible) {
-              const msg = `Excede límite de crédito. Disponible: $${disponible.toLocaleString('es-MX')}`;
-              t()?.error(msg);
-              return { message: msg };
-            }
-          }
-
-          const { data: seq, error: errSeq } = await supabase.rpc('nextval', { seq_name: 'folio_ov_seq' });
-          if (errSeq) {
-            console.warn('[addOrden] rpc nextval:', errSeq.message);
-            t()?.error('No se pudo generar folio');
-            return { message: errSeq.message };
-          }
-          if (!seq) {
-            t()?.error('No se pudo generar folio. Reintenta.');
-            return { message: 'No se pudo generar folio. Reintenta.' };
-          }
-          const folio = formatFolio(seq);
-
-          // Build productos string from parsed items
-          const productosStr = o.productos || items.map(i => `${i.qty}×${i.sku}`).join(', ');
-
-          // Resolve cliente name
-          let clienteNombre = s(o.cliente);
-          if (!clienteNombre && o.clienteId) {
-            const { data: cli, error: errCli } = await supabase.from('clientes').select('nombre').eq('id', o.clienteId).single();
-            if (errCli) {
-              console.warn('[addOrden] select clientes (no crítico):', errCli.message);
-            }
-            clienteNombre = cli?.nombre || 'Público en general';
-          }
-          if (!clienteNombre) clienteNombre = 'Público en general';
-
-          // Build insert payload — only include columns that exist in ordenes table
-          const ordenInsert = buildOrdenPayload(o, {
-            folio,
-            clienteNombre,
-            total,
-            productosStr,
+          const lat = o.latitudEntrega;
+          const lng = o.longitudEntrega;
+          const { data, error } = await supabase.rpc('crear_orden', {
+            p_orden: {
+              cliente_id: o.clienteId || null,
+              cliente_nombre: s(o.cliente) || null,
+              tipo_cobro: o.tipoCobro || 'Contado',
+              metodo_pago: o.metodoPago || 'Efectivo',
+              requiere_factura: o.requiereFactura === true,
+              folio_nota: o.folioNota || null,
+              fecha: o.fecha || null,
+              direccion_entrega: typeof o.direccionEntrega === 'string' ? o.direccionEntrega.trim() : null,
+              referencia_entrega: typeof o.referenciaEntrega === 'string' ? o.referenciaEntrega.trim() : null,
+              latitud_entrega: (lat === '' || lat === null || lat === undefined || !Number.isFinite(Number(lat))) ? null : Number(lat),
+              longitud_entrega: (lng === '' || lng === null || lng === undefined || !Number.isFinite(Number(lng))) ? null : Number(lng),
+            },
+            p_items: items.map(it => ({ sku: it.sku, cantidad: it.qty })),
           });
-
-          const { data: newOrd, error: e1 } = await supabase.from('ordenes').insert(ordenInsert).select('id, folio, cliente_nombre, productos, total, estatus, fecha, metodo_pago, cliente_id, requiere_factura, direccion_entrega, referencia_entrega, latitud_entrega, longitud_entrega').single();
-          if (e1) { t()?.error('Error al crear orden'); return e1; }
-
-          const { error: e2 } = await supabase.from('orden_lineas').insert(
-            lineas.map(l => ({ ...l, orden_id: newOrd.id }))
-          );
-          if (e2) {
-            // Rollback: borrar la orden creada para evitar orden huérfana sin líneas
-            await supabase.from('ordenes').delete().eq('id', newOrd.id);
-            console.warn('[addOrden] insert orden_lineas, rollback orden:', e2.message);
-            t()?.error('No se pudieron guardar las líneas — orden revertida');
-            return e2;
+          if (error) {
+            const msg = String(error.message || 'Error al crear orden').replace(/^venta: /, '');
+            console.warn('[addOrden] rpc crear_orden:', error.message);
+            t()?.error(msg);
+            return { message: msg };
           }
-
-          await log('Crear', 'Órdenes', `${folio} — $${total}`);
-          notify('venta', 'Nueva orden creada', `${folio} — ${clienteNombre} — $${total.toLocaleString()}`, '🧾', folio);
+          const newOrd = data || {};
+          await log('Crear', 'Órdenes', `${newOrd.folio} — $${newOrd.total}`);
+          notify('venta', 'Nueva orden creada', `${newOrd.folio} — ${newOrd.cliente_nombre} — $${Number(newOrd.total || 0).toLocaleString()}`, '🧾', newOrd.folio);
           rf();
-          // Return the created order so callers can use it immediately
           return { orden: { ...newOrd, cliente: newOrd.cliente_nombre } };
         } catch (e) {
           console.error('[addOrden] excepción:', e);
@@ -3666,81 +3545,41 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── ALMACÉN BOLSAS ──
-      movimientoBolsa: async (sku, cantidad, tipo, motivo, costo, proveedor, esCredito) => {
-        // Bolsas registra entradas; Producción consume al fabricar; Admin
-        // hace ambos desde Insumos.
-        const guard = requireRol(['Admin', 'Bolsas', 'Producción']);
+      // 088: Almacén Bolsas (y Admin) registran empaque/materia prima con
+      // contratos acotados e idempotentes: la recepción de compra liga stock
+      // + egreso (contado) o cuenta por pagar (crédito) en UNA transacción; la
+      // salida a Producción solo mueve stock. Sin RPC genérico de stock ni
+      // INSERT directo de egresos. opciones: { operacionId }.
+      movimientoBolsa: async (sku, cantidad, tipo, motivo, costo, proveedor, esCredito, opciones = {}) => {
+        const guard = requireRol(['Admin', 'Almacén Bolsas']);
         if (guard) { t()?.error(guard.error); return guard; }
         try {
           const qty = Number(cantidad);
           if (!sku) return { error: 'SKU requerido' };
-          if (!Number.isFinite(qty) || qty <= 0) return { error: 'Cantidad inválida' };
+          if (!Number.isInteger(qty) || qty <= 0) return { error: 'Cantidad inválida' };
           if (tipo !== 'Entrada' && tipo !== 'Salida') return { error: 'Tipo inválido' };
-
-          // RPC atómica (migración 054): FOR UPDATE + RAISE EXCEPTION en negativo.
-          // Reemplaza el patrón SELECT → JS → UPDATE que sufría race condition
-          // y clamp silencioso a 0 con Math.max. La RPC también inserta
-          // inventario_mov en la misma transacción.
-          const change = {
-            sku: String(sku),
-            delta: tipo === 'Entrada' ? qty : -qty,
-            tipo,
-            origen: motivo || 'Movimiento bolsa',
-            usuario: uname() || 'Sistema',
-          };
-
-          const { error: rpcErr } = await supabase.rpc('update_productos_stock_atomic', { p_changes: [change] });
-          if (rpcErr) {
-            console.warn('[movimientoBolsa] rpc update_productos_stock_atomic:', rpcErr.message);
-            t()?.error(rpcErr.message || 'No se pudo actualizar el stock');
-            return { error: rpcErr.message };
+          const operacionId = opciones.operacionId || nuevoOperacionId();
+          let res;
+          if (tipo === 'Entrada') {
+            const total = centavos(Number(costo));
+            if (!(total > 0)) return { error: 'Captura el total de la compra' };
+            if (esCredito && !s(proveedor)) return { error: 'La compra a crédito requiere proveedor' };
+            res = await supabase.rpc('registrar_recepcion_compra', {
+              p_operacion_id: operacionId, p_sku: String(sku), p_cantidad: qty, p_costo_total: total,
+              p_proveedor: s(proveedor) || null, p_credito: esCredito === true,
+            });
+          } else {
+            res = await supabase.rpc('registrar_salida_empaque', { p_operacion_id: operacionId, p_sku: String(sku), p_cantidad: qty });
           }
-
-          // Auto-registrar movimiento contable cuando es compra de empaques (Entrada)
-          // Si esto falla NO se hace rollback de stock+mov: la operación principal
-          // ya quedó. El consumer recibe { error, partial: true } y puede mostrar
-          // "movimiento ok, contabilidad pendiente".
-          if (tipo === 'Entrada' && Number(costo) > 0) {
-            const hoy = todayLocalISO();
-            const montoTotal = centavos(Number(costo));
-
-            if (esCredito && proveedor) {
-              const fechaVenc = todayLocalISO(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
-              const { error: errCxp } = await supabase.from('cuentas_por_pagar').insert({
-                proveedor: proveedor,
-                concepto: `Compra empaques: ${cantidad}×${sku}`,
-                monto_original: montoTotal,
-                monto_pagado: 0,
-                saldo_pendiente: montoTotal,
-                fecha_emision: hoy,
-                fecha_vencimiento: fechaVenc,
-                categoria: 'Proveedores',
-                estatus: 'Pendiente',
-              });
-              if (errCxp) {
-                console.warn('[movimientoBolsa] insert CxP (parcial):', errCxp.message);
-                t()?.error('Movimiento registrado, pero la cuenta por pagar no se creó. Regístrala desde Cuentas por Pagar.');
-                rf();
-                return { error: errCxp.message, partial: true };
-              }
-              log('Compra crédito', 'Almacén Bolsas', `${cantidad}×${sku} → CxP: $${Number(costo)} — ${proveedor}`);
-            } else {
-              const { error: errEgr } = await supabase.from('movimientos_contables').insert({
-                fecha: hoy,
-                tipo: 'Egreso', categoria: 'Proveedores',
-                concepto: `Compra empaques: ${cantidad}×${sku}${proveedor ? ' — ' + proveedor : ''}`,
-                monto: montoTotal,
-              });
-              if (errEgr) {
-                console.warn('[movimientoBolsa] insert egreso (parcial):', errEgr.message);
-                t()?.error('Movimiento registrado, pero el egreso contable no se creó. Regístralo desde Movimientos.');
-                rf();
-                return { error: errEgr.message, partial: true };
-              }
-            }
+          if (res.error) {
+            console.warn('[movimientoBolsa] rpc:', res.error.message);
+            t()?.error(res.error.message || 'No se pudo registrar el movimiento');
+            return { error: res.error.message };
           }
-
-          log(tipo, 'Almacén Bolsas', `${sku} x${cantidad} — ${motivo}`);
+          if (!res.data?.replay) {
+            log(tipo === 'Entrada' ? (esCredito ? 'Compra crédito' : 'Compra') : 'Salida', 'Almacén Bolsas',
+              `${sku} x${qty} — ${tipo === 'Entrada' ? `$${centavos(Number(costo))}${proveedor ? ' — ' + proveedor : ''}` : (motivo || 'Producción')}`);
+          }
           rf();
           return undefined;
         } catch (e) {
@@ -3749,7 +3588,6 @@ export function useSupaStore(userId, userName, userRol) {
           return { error: e?.message || 'Error inesperado' };
         }
       },
-
       // ── CERRAR RUTA COMPLETA (chofer) ──
       // ── INVENTARIO DE RUTA (087) ──
       // Balance canónico del camión (servidor, solo lectura): cargado,
