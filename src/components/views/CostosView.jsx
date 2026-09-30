@@ -1,3 +1,5 @@
+import { useEffect } from 'react';
+import { rangoMes } from '../../data/finanzasLogic';
 import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, fmtDate, fmtMoney, useToast, todayISO, PAGE_SIZE, Paginator } from './viewsCommon';
 
 const CATEGORIAS_COSTO = ['Nómina', 'Renta', 'Servicios', 'Gasolina', 'Mantenimiento', 'Empaque', 'Materia Prima', 'Administrativo', 'Otro'];
@@ -144,15 +146,22 @@ export function CostosView({ data, actions }) {
     return t;
   }, [costosHistorial]);
 
-  const totalMes = useMemo(() => {
-    const hoy = new Date();
-    const mesActual = hoy.getMonth();
-    const anioActual = hoy.getFullYear();
-    return costosHistorial.filter(c => {
-      const f = new Date(c.fecha || c.createdAt);
-      return f.getMonth() === mesActual && f.getFullYear() === anioActual;
-    }).reduce((sum, c) => sum + n(c.monto), 0);
-  }, [costosHistorial]);
+  // 093: el total del mes sale del reporte del servidor (todo el periodo,
+  // sin el tope de filas de la lista): costos fijos + variables + nómina +
+  // costo del hielo, cada uno una vez.
+  const [totalMes, setTotalMes] = useState(null);
+  const refrescoCostos = `${costosHistorial[0]?.id || 0}|${costosHistorial.length}`;
+  useEffect(() => {
+    let vivo = true;
+    const { desde, hasta } = rangoMes();
+    (async () => {
+      const r = await actions?.obtenerReporteFinanciero?.(desde, hasta);
+      if (!vivo || !r || r.error) return;
+      const x = r.data.resultados;
+      setTotalMes(x.costos_fijos + x.costos_variables + x.nomina + x.costo_ventas);
+    })();
+    return () => { vivo = false; };
+  }, [actions, refrescoCostos]);
 
   return (<div>
     {ConfirmEl}
@@ -162,7 +171,7 @@ export function CostosView({ data, actions }) {
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
       <div className="bg-white border border-slate-100 rounded-xl p-4">
         <p className="text-xs text-slate-400 uppercase">Total mes actual</p>
-        <p className="text-xl font-bold text-slate-800">{fmtMoney(totalMes)}</p>
+        <p className="text-xl font-bold text-slate-800">{totalMes === null ? '—' : fmtMoney(totalMes)}</p>
       </div>
       <div className="bg-white border border-slate-100 rounded-xl p-4">
         <p className="text-xs text-slate-400 uppercase">Costos fijos</p>

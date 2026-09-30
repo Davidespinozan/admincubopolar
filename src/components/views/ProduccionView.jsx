@@ -2,10 +2,11 @@ import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelec
 import { useRef } from 'react';
 import { traducirError } from '../../utils/errorMessages';
 import { resolverOperacion, claveTransformacion } from '../../data/produccionAtomicaLogic';
+import { reversibilidadProduccion } from '../../data/produccionLogic';
 
 export function ProduccionView({ data, actions }) {
   const toast = useToast();
-  const [askConfirm, ConfirmEl] = useConfirm();
+  const [, ConfirmEl] = useConfirm();
   const [tab, setTab] = useState('produccion'); // 'produccion' | 'transformaciones'
 
   // ── Editar (admin solo gestiona, NO registra producción nueva) ──
@@ -13,7 +14,30 @@ export function ProduccionView({ data, actions }) {
   // (operario en planta) vía producirYCongelar.
   const [editModal, setEditModal] = useState(false);
   const [editForm, setEditForm] = useState({id:null,turno:"",maquina:"",sku:"",cantidad:"",estatus:""});
-  const [editErrors, setEditErrors] = useState({});
+  // 093: la producción no se borra; se revierte con motivo (contrato del
+  // servidor). El UUID de la operación se conserva entre reintentos.
+  const [revModal, setRevModal] = useState(null);
+  const [revMotivo, setRevMotivo] = useState("");
+  const [revirtiendo, setRevirtiendo] = useState(false);
+  const opRevRef = useRef(null);
+  const confirmarReverso = async () => {
+    if (revirtiendo || !revModal) return;
+    const motivo = s(revMotivo).trim();
+    if (!motivo) { toast?.error("Escribe el motivo del reverso"); return; }
+    const op = resolverOperacion(opRevRef.current, `reverso|${revModal.id}|${motivo}`);
+    opRevRef.current = op;
+    setRevirtiendo(true);
+    try {
+      const r = await actions.revertirProduccion(revModal.id, motivo, { operacionId: op.id });
+      if (r?.error) return;
+      opRevRef.current = null;
+      toast?.success(`Producción ${s(revModal.folio)} revertida`);
+      setRevModal(null);
+    } finally {
+      setRevirtiendo(false);
+    }
+  };
+  const [, setEditErrors] = useState({});
 
   const openEdit = (r) => {
     setEditForm({id:r.id, turno:r.turno||"Turno 1", maquina:r.maquina||"Máquina 30", sku:s(r.sku), cantidad:String(r.cantidad||""), estatus:r.estatus||"En proceso"});
@@ -22,15 +46,9 @@ export function ProduccionView({ data, actions }) {
   };
 
   const saveEdit = async () => {
-    const e = {};
-    if (!editForm.cantidad || n(editForm.cantidad) <= 0) e.cantidad = "Cantidad debe ser mayor a 0";
-    if (Object.keys(e).length) { setEditErrors(e); return; }
-    // SKU NO se envía: updateProduccion lo bloquea (ver supaStore.js).
-    // Si la cantidad cambia, NO se ajusta stock automáticamente — admin
-    // debe corregir el stock manualmente desde InventarioView si aplica.
+    // 093: solo turno y máquina; la producción es un evento inmutable.
     const err = await actions.updateProduccion(editForm.id, {
       turno: editForm.turno, maquina: editForm.maquina,
-      cantidad: editForm.cantidad, estatus: editForm.estatus,
     });
     if (err) { toast?.error("No se pudo actualizar la orden"); return; }
     toast?.success("Orden actualizada");
@@ -342,9 +360,13 @@ export function ProduccionView({ data, actions }) {
                                     <button onClick={() => openEdit(r)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                                       <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                                     </button>
-                                    <button onClick={() => askConfirm('Eliminar registro de producción', `¿Eliminar este registro de producción de ${fmtDate(r.fecha)}? Esto reverterá el inventario asociado.`, async () => { const err = await actions.deleteProduccion(r.id); if (err) { toast?.error("No se pudo eliminar la orden"); return; } toast?.success("Orden eliminada"); }, true)} title="Eliminar" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    {(() => { const rv = reversibilidadProduccion(r); return rv.reversible ? (
+                                    <button onClick={() => { setRevModal(r); setRevMotivo(""); opRevRef.current = null; }} title="Revertir producción" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-xs font-semibold">
+                                      Revertir
                                     </button>
+                                    ) : (
+                                    <span title={rv.razon || ''} className="text-[10px] text-slate-400 max-w-[120px] truncate">{s(r.estatus) === 'Revertida' ? 'Revertida' : 'No reversible'}</span>
+                                    ); })()}
                                   </div>
                                 </div>
                               );
@@ -570,23 +592,30 @@ export function ProduccionView({ data, actions }) {
     </Modal>
 
     {/* ═══ MODAL: Editar producción ═══ */}
-    {/* SKU se muestra como referencia pero NO es editable: cambiar SKU
-        requeriría reverso de stock. Para corregir SKU mal capturado:
-        Eliminar (con reverso) y registrar de nuevo desde Standalone. */}
+    {/* 093: solo turno y máquina. Para corregir SKU o cantidad se revierte
+        la producción (contrato del servidor) y se registra de nuevo. */}
     <Modal open={editModal} onClose={()=>setEditModal(false)} title="Editar producción">
       <div className="space-y-3">
-        <FormSelect label="Estatus" options={["En proceso","Confirmada","Cancelada"]} value={editForm.estatus} onChange={e=>setEditForm({...editForm,estatus:e.target.value})} />
         <FormSelect label="Turno" options={["Turno 1","Turno 2","Turno 3"]} value={editForm.turno} onChange={e=>setEditForm({...editForm,turno:e.target.value})} />
         <FormSelect label="Máquina" options={["Máquina 30","Máquina 20","Máquina 15"]} value={editForm.maquina} onChange={e=>setEditForm({...editForm,maquina:e.target.value})} />
         <div>
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">SKU (no editable)</label>
           <div className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 text-slate-600 font-mono">{editForm.sku}</div>
-          <p className="text-[11px] text-slate-400 mt-1">Para cambiar SKU: elimina este registro (con reverso de stock) y registra de nuevo.</p>
+          <p className="text-[11px] text-slate-400 mt-1">SKU, cantidad y estatus no se editan: la producción es un registro permanente. Si fue un error, usa <span className="font-semibold">Revertir</span> y registra de nuevo.</p>
         </div>
-        <FormInput label="Cantidad *" type="number" min="0" value={editForm.cantidad} onChange={e=>setEditForm({...editForm,cantidad:e.target.value})} placeholder="Ej: 500" error={editErrors.cantidad} />
-        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">⚠ Cambiar la cantidad NO ajusta el stock automáticamente. Si necesitas corregir el inventario, hazlo desde Inventario → Ajustar.</p>
+        <div className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 text-slate-600">Cantidad: {n(editForm.cantidad).toLocaleString()}</div>
       </div>
       <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setEditModal(false)}>Cancelar</FormBtn><FormBtn primary onClick={saveEdit}>Guardar cambios</FormBtn></div>
+    </Modal>
+
+    {/* ═══ MODAL: Revertir producción (093) ═══ */}
+    <Modal open={!!revModal} onClose={() => setRevModal(null)} title={"Revertir producción " + s(revModal?.folio)}>
+      <div className="space-y-3">
+        <p className="text-sm text-slate-600">Se registrará un reverso: salen {n(revModal?.cantidad).toLocaleString()} × {s(revModal?.sku)} del cuarto <span className="font-semibold">{s(revModal?.cuartoId || revModal?.cuarto_id)}</span>{(revModal?.empaqueSku || revModal?.empaque_sku) ? <> y regresan {n(revModal?.empaqueCantidad ?? revModal?.empaque_cantidad).toLocaleString()} bolsas {s(revModal?.empaqueSku || revModal?.empaque_sku)}</> : null}. El registro original se conserva.</p>
+        <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2.5">Si ese cuarto ya no tiene esa cantidad (se vendió o salió), el reverso se rechaza completo.</p>
+        <FormInput label="Motivo *" value={revMotivo} onChange={e => setRevMotivo(e.target.value)} placeholder="Ej: se capturó por error" />
+      </div>
+      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={() => setRevModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={confirmarReverso} loading={revirtiendo}>Revertir</FormBtn></div>
     </Modal>
 
     {ConfirmEl}

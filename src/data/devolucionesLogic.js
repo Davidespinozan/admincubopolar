@@ -138,10 +138,12 @@ export function calcAjustePago({ orden, totalDevuelto, tipoReembolso }) {
     // Marca el flag para CFDI tipo E pendiente. Si la orden estaba Facturada
     // (CFDI tipo I emitido), Santiago necesita disparar la nota crédito desde
     // facturación cuando se integre.
+    // 093: en una venta a crédito la nota de crédito reduce lo que el cliente
+    // debe (CxC); nunca es salida de dinero.
     const facturada = String(orden?.estatus || '').trim() === 'Facturada';
     return {
       accion: 'nota_credito',
-      ajustaCxC: false,
+      ajustaCxC: esCredito,
       monto,
       requiereNotaCredito: facturada,
     };
@@ -185,4 +187,28 @@ export function calcTotalDevolucion(items, lineasOriginales) {
     total += qty * precio;
   }
   return centavos(total);
+}
+
+/**
+ * 093: dinero que REALMENTE se devuelve al cliente (salida de efectivo).
+ *
+ *   - Solo el reembolso tipo 'Efectivo' puede sacar dinero.
+ *   - Venta de contado: se devuelve el total.
+ *   - Venta a crédito: primero se reduce lo que el cliente debe (CxC); solo
+ *     lo que exceda el saldo pendiente ya se había cobrado y sale en efectivo.
+ *     Una venta a crédito no cobrada NO genera salida de dinero.
+ *
+ * @param {Object} p
+ * @param {string} p.tipoReembolso
+ * @param {boolean} p.esCredito
+ * @param {number} p.total                    — total devuelto
+ * @param {number|null} p.saldoPendienteAntes — saldo de la CxC antes del ajuste (null = sin CxC)
+ * @returns {number}
+ */
+export function calcReembolsoEfectivo({ tipoReembolso, esCredito, total, saldoPendienteAntes }) {
+  const monto = centavos(Number(total || 0));
+  if (tipoReembolso !== 'Efectivo' || !(monto > 0)) return 0;
+  if (!esCredito) return monto;
+  if (saldoPendienteAntes === null || saldoPendienteAntes === undefined) return monto;
+  return centavos(Math.max(0, monto - Number(saldoPendienteAntes || 0)));
 }

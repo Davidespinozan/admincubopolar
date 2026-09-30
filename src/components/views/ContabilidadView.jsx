@@ -1,6 +1,8 @@
 import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, todayISO, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
 import { traducirError } from '../../utils/errorMessages';
 import { esAsientoDeContrato } from '../../data/asientosContablesLogic';
+import { useEffect } from 'react';
+import { rangoDeMes, lineasEstadoResultados, lineasFlujoEfectivo } from '../../data/finanzasLogic';
 
 export function ContabilidadView({ data, actions }) {
   const toast = useToast();
@@ -13,9 +15,28 @@ export function ContabilidadView({ data, actions }) {
   const [saving, setSaving] = useState(false);
 
   const cont = data.contabilidad || { ingresos: [], egresos: [] };
-  const totalIngresos = cont.ingresos.reduce((s, i) => s + n(i.monto), 0);
-  const totalEgresos = cont.egresos.reduce((s, e) => s + n(e.monto), 0);
-  const balance = totalIngresos - totalEgresos;
+
+  // 093: los totales NO salen de esta lista (mezcla efectivo y no efectivo y
+  // trae solo los movimientos más recientes). Vienen del reporte del
+  // servidor para el mes elegido: Flujo de efectivo y Estado de resultados.
+  const [mes, setMes] = useState(() => todayISO().slice(0, 7));
+  const [reporte, setReporte] = useState(null);
+  const [reporteError, setReporteError] = useState(null);
+  const refrescoFin = `${(cont.egresos || [])[0]?.id || 0}|${(cont.ingresos || [])[0]?.id || 0}|${(data.pagos || [])[0]?.id || 0}`;
+  useEffect(() => {
+    let vivo = true;
+    const { desde, hasta } = rangoDeMes(mes);
+    (async () => {
+      const r = await actions?.obtenerReporteFinanciero?.(desde, hasta);
+      if (!vivo) return;
+      if (!r || r.error) { setReporteError(r?.error || 'No disponible'); setReporte(null); return; }
+      setReporteError(null);
+      setReporte(r.data);
+    })();
+    return () => { vivo = false; };
+  }, [actions, mes, refrescoFin]);
+  const lineasFE = lineasFlujoEfectivo(reporte);
+  const lineasER = lineasEstadoResultados(reporte);
 
   const CATS_INGRESO = ["Ventas", "Cobranza", "Otro ingreso"];
   const CATS_EGRESO = ["Proveedores", "Combustible", "Servicios", "Mantenimiento", "Nómina", "Impuestos", "Renta", "Otro gasto"];
@@ -65,18 +86,12 @@ export function ContabilidadView({ data, actions }) {
     }
   };
 
-  const egresosPorCat = {};
-  for (const e of cont.egresos) {
-    const cat = s(e.categoria) || "Otro";
-    egresosPorCat[cat] = (egresosPorCat[cat] || 0) + n(e.monto);
-  }
-
   const todos = [...cont.ingresos.map(i => ({ ...i, _tipo: "Ingreso" })), ...cont.egresos.map(e => ({ ...e, _tipo: "Egreso" }))].sort((a, b) => (b.id || 0) - (a.id || 0));
 
   return (<div className="space-y-4">
     {ConfirmEl}
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h2 className="text-lg font-bold text-slate-800">Ingresos / Egresos</h2>
+      <h2 className="text-lg font-bold text-slate-800">Contabilidad</h2>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex gap-2">
           <button onClick={() => reporteFinanciero(cont, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
@@ -89,35 +104,38 @@ export function ContabilidadView({ data, actions }) {
       </div>
     </div>
 
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-      <div className="bg-emerald-50 rounded-xl p-3 sm:p-4 border border-emerald-200">
-        <p className="text-[10px] text-emerald-500 uppercase font-bold">Ingresos</p>
-        <p className="text-lg sm:text-xl font-extrabold text-emerald-700">{fmtMoney(totalIngresos)}</p>
-      </div>
-      <div className="bg-red-50 rounded-xl p-3 sm:p-4 border border-red-200">
-        <p className="text-[10px] text-red-500 uppercase font-bold">Egresos</p>
-        <p className="text-lg sm:text-xl font-extrabold text-red-600">{fmtMoney(totalEgresos)}</p>
-      </div>
-      <div className={`col-span-2 sm:col-span-1 rounded-xl p-3 sm:p-4 border ${balance >= 0 ? "bg-blue-50 border-blue-200" : "bg-red-50 border-red-200"}`}>
-        <p className="text-[10px] text-slate-500 uppercase font-bold">Balance</p>
-        <p className={`text-xl font-extrabold ${balance >= 0 ? "text-blue-700" : "text-red-600"}`}>{fmtMoney(balance)}</p>
-      </div>
+    <div className="flex items-center gap-2">
+      <label className="text-xs font-bold text-slate-500 uppercase">Mes</label>
+      <input type="month" value={mes} onChange={e => setMes(e.target.value || todayISO().slice(0, 7))} className="px-3 py-2 border border-slate-200 rounded-xl text-base sm:text-sm min-h-[44px]" />
     </div>
+    {reporteError && <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2">No se pudo cargar el reporte: {reporteError}</p>}
 
-    {Object.keys(egresosPorCat).length > 0 && (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
       <div className="bg-white rounded-xl p-4 border border-slate-100">
-        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Egresos por categoría</h3>
-        {Object.entries(egresosPorCat).sort((a, b) => b[1] - a[1]).map(([cat, monto]) => (
-          <div key={cat} className="flex justify-between items-center py-2 border-b border-slate-50 last:border-0">
-            <span className="text-sm text-slate-600">{cat}</span>
-            <span className="text-sm font-bold text-slate-800">{fmtMoney(monto)}</span>
+        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Flujo de efectivo</h3>
+        <p className="text-[11px] text-slate-400 mb-2">Dinero que realmente entró y salió en el mes. No incluye mermas ni costo de producción; no es el saldo del banco.</p>
+        {lineasFE.map(l => (
+          <div key={l.clave} className={`flex justify-between items-center py-1.5 ${l.total ? 'font-bold border-t border-slate-100' : 'border-b border-slate-50'}`}>
+            <span className="text-sm text-slate-600">{l.etiqueta}</span>
+            <span className={`text-sm font-bold ${l.total ? (l.clave === 'neto' ? (n(l.monto) >= 0 ? 'text-blue-700' : 'text-red-600') : 'text-slate-800') : (l.signo > 0 ? 'text-emerald-600' : 'text-red-500')}`}>{l.total ? fmtMoney(l.monto) : (l.signo > 0 ? '+' : '-') + fmtMoney(l.monto)}</span>
           </div>
         ))}
       </div>
-    )}
+      <div className="bg-white rounded-xl p-4 border border-slate-100">
+        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Estado de resultados / Utilidad</h3>
+        <p className="text-[11px] text-slate-400 mb-2">Ventas entregadas en el mes menos costo del hielo y gastos (cada uno una vez).</p>
+        {lineasER.map(l => (
+          <div key={l.clave} className={`flex justify-between items-center py-1.5 ${l.total ? 'font-bold border-t border-slate-100' : 'border-b border-slate-50'}`}>
+            <span className="text-sm text-slate-600">{l.etiqueta}</span>
+            <span className={`text-sm font-bold ${l.total ? (n(l.monto) >= 0 ? 'text-emerald-700' : 'text-red-600') : (l.signo > 0 ? 'text-emerald-600' : 'text-red-500')}`}>{l.total ? fmtMoney(l.monto) : (l.signo > 0 ? '+' : '-') + fmtMoney(l.monto)}</span>
+          </div>
+        ))}
+      </div>
+    </div>
 
     <div>
-      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Movimientos recientes</h3>
+      <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Bitácora de movimientos (más recientes)</h3>
+      <p className="text-[11px] text-slate-400 mb-2">Registro de asientos. Incluye movimientos que no son dinero (mermas, costos anteriores); los totales de arriba ya los separan.</p>
       {todos.length === 0 && (
         <EmptyState
           message="Aún no hay movimientos contables"

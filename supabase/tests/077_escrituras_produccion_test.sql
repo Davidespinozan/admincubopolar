@@ -83,7 +83,12 @@ BEGIN
   PERFORM t77_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Entrada', 'P77-BOLSA', 999, 'x', 'Admin 77')$q$, p_tag || ': INSERT directo de kardex denegado', '42501');
   PERFORM t77_err($q$INSERT INTO produccion (folio, turno, maquina, sku, cantidad, estatus) VALUES ('OP-X77', 'T', 'M', 'P77-HIELO', 1, 'Pendiente')$q$, p_tag || ': INSERT directo en produccion denegado', '42501');
   PERFORM t77_assert(t77_rows($q$UPDATE produccion SET cantidad = 999, estatus = 'Pendiente', sku = 'P77-TRIT' WHERE folio = 'OP-77FIX'$q$) = 0, p_tag || ': UPDATE directo de produccion no afecta filas');
-  PERFORM t77_assert(t77_rows($q$DELETE FROM produccion WHERE folio = 'OP-77FIX'$q$) = 0, p_tag || ': DELETE directo de produccion no afecta filas');
+  -- 094: sin privilegio de DELETE en produccion (más estricto que cero filas).
+  BEGIN
+    PERFORM t77_assert(t77_rows($q$DELETE FROM produccion WHERE folio = 'OP-77FIX'$q$) = 0, p_tag || ': DELETE directo de produccion no afecta filas');
+  EXCEPTION WHEN insufficient_privilege THEN
+    PERFORM t77_assert(true, p_tag || ': DELETE directo de produccion sin privilegio (094)');
+  END;
 END $$;
 GRANT EXECUTE ON FUNCTION t77_intentos(TEXT) TO anon, authenticated;
 
@@ -144,10 +149,24 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t77_actor('authenticated', 'admin77@
 INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('X77-ADMIN', 'Alta Admin', 'Producto Terminado', 10, 0);
 SELECT t77_assert(t77_rows($q$UPDATE productos SET precio = 11, stock_minimo = 5 WHERE sku = 'X77-ADMIN'$q$) = 1, '077-40 Admin: alta y edición de producto');
 SELECT t77_assert(t77_rows($q$DELETE FROM productos WHERE sku = 'X77-ADMIN'$q$) = 1, '077-41 Admin: baja de producto');
-SELECT t77_assert(t77_rows($q$UPDATE productos SET stock = 25 WHERE sku = 'P77-BARRA'$q$) = 1, '077-42 Admin: ajuste manual de stock');
+-- 094: el stock de insumos cambia por el contrato de ajuste, no por UPDATE.
+DO $do$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_productos_guard_stock') THEN
+    PERFORM t77_assert((ajustar_existencia(gen_random_uuid(), 'P77-BARRA', 25, 'conteo 077') ->> 'nueva')::int = 25, '077-42 Admin: ajuste manual de stock (contrato 093)');
+  ELSE
+    PERFORM t77_assert(t77_rows($q$UPDATE productos SET stock = 25 WHERE sku = 'P77-BARRA'$q$) = 1, '077-42 Admin: ajuste manual de stock');
+  END IF;
+END $do$;
 INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Entrada', 'P77-BARRA', 13, 'Ajuste manual', 'Admin 77');
 SELECT t77_assert(t77_rows($q$UPDATE produccion SET turno = 'Turno 2' WHERE folio = 'OP-77FIX'$q$) = 1, '077-43 Admin: edición de producción');
-SELECT t77_assert(t77_rows($q$DELETE FROM produccion WHERE folio = 'OP-77FIX'$q$) = 1, '077-44 Admin: borrado de producción');
+-- 094: la producción no se borra (se revierte con revertir_produccion).
+DO $do$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_productos_guard_stock') THEN
+    PERFORM t77_err($q$DELETE FROM produccion WHERE folio = 'OP-77FIX'$q$, '077-44 Admin: borrado físico de producción sin privilegio (094)', '42501');
+  ELSE
+    PERFORM t77_assert(t77_rows($q$DELETE FROM produccion WHERE folio = 'OP-77FIX'$q$) = 1, '077-44 Admin: borrado de producción');
+  END IF;
+END $do$;
 SELECT rename_sku((SELECT id FROM productos WHERE sku = 'P77-TRIT'), 'P77-TRIT', 'P77-TRIT2');
 COMMIT;
 SELECT t77_assert((SELECT count(*) = 1 FROM inventario_mov WHERE producto = 'P77-BARRA' AND origen = 'Ajuste manual'), '077-45 Admin: kardex del ajuste manual');

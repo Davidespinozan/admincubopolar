@@ -6,30 +6,19 @@ import { buildUpdateFieldsProduccion } from '../data/produccionLogic';
 
 describe('buildUpdateFieldsProduccion', () => {
   describe('campos editables (whitelist)', () => {
-    it('acepta turno, máquina, cantidad, estatus', () => {
+    it('093: acepta solo turno y máquina (la producción es inmutable)', () => {
       const out = buildUpdateFieldsProduccion({
         turno: 'Turno 2',
         maquina: 'Máquina 20',
         cantidad: '500',
-        estatus: 'Confirmada',
+        estatus: 'Cancelada',
       });
-      expect(out).toEqual({
-        turno: 'Turno 2',
-        maquina: 'Máquina 20',
-        cantidad: 500,
-        estatus: 'Confirmada',
-      });
+      expect(out).toEqual({ turno: 'Turno 2', maquina: 'Máquina 20' });
     });
 
-    it('cantidad se convierte a Number', () => {
-      const out = buildUpdateFieldsProduccion({ cantidad: '750' });
-      expect(out).toEqual({ cantidad: 750 });
-      expect(typeof out.cantidad).toBe('number');
-    });
-
-    it('cantidad puede ser 0 si admin lo manda explícito (UI valida >0 aparte)', () => {
-      const out = buildUpdateFieldsProduccion({ cantidad: '0' });
-      expect(out).toEqual({ cantidad: 0 });
+    it('cantidad y estatus ya no son editables', () => {
+      expect(buildUpdateFieldsProduccion({ cantidad: '750' })).toBeNull();
+      expect(buildUpdateFieldsProduccion({ estatus: 'Revertida' })).toBeNull();
     });
 
     it('permite actualizar solo un campo', () => {
@@ -96,18 +85,13 @@ describe('buildUpdateFieldsProduccion', () => {
   });
 
   describe('manejo de undefined vs falsy', () => {
-    it('acepta estatus = "" (string vacío) si el caller lo manda', () => {
-      const out = buildUpdateFieldsProduccion({ estatus: '' });
-      expect(out).toEqual({ estatus: '' });
-    });
-
     it('ignora explícitamente undefined pero no null', () => {
       const out = buildUpdateFieldsProduccion({
         turno: 'Turno 1',
-        maquina: undefined,
+        maquina: null,
         estatus: null,
       });
-      expect(out).toEqual({ turno: 'Turno 1', estatus: null });
+      expect(out).toEqual({ turno: 'Turno 1', maquina: null });
     });
   });
 });

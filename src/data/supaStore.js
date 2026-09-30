@@ -3,10 +3,10 @@ import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { n, s, centavos, todayLocalISO } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
-import { parseProductos, validateItems, buildLineas, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI } from './ordenLogic';
+import { parseProductos, validateItems, buildLineas, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI, esPagoEnLinea } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
 import { buildRegistrarMermaArgs, mensajeErrorMerma } from './mermasLogic';
-import { buildUpdateFieldsProduccion, calcReversoChangesProduccion } from './produccionLogic';
+import { buildUpdateFieldsProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
 import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
 import {
@@ -14,7 +14,7 @@ import {
   mensajeErrorCierreFinanciero, leerOperacionCierre, guardarOperacionCierre, borrarOperacionCierre,
   resolverOperacion as resolverOperacionCierre,
 } from './cierreFinancieroLogic';
-import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion } from './devolucionesLogic';
+import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion, calcReembolsoEfectivo } from './devolucionesLogic';
 import { calcularEsperadoPorRuta, validateCierre, buildCierrePayload, buildPagosSnapshot, fechaCierreDesdeRuta } from './cierreCajaLogic';
 import {
   validateConfirmarCarga,
@@ -30,6 +30,7 @@ import {
 } from './inventarioRutaLogic';
 import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
 import { TABLAS_CORE_RT, TABLAS_SLICE_RT } from './realtimeLogic';
+import { normalizarReporteFinanciero } from './finanzasLogic';
 
 // ═══════════════════════════════════════════════════════════════
 // useSupaStore — fuente única de verdad para toda la app
@@ -877,7 +878,9 @@ export function useSupaStore(userId, userName, userRol) {
         else if (p.claveProdServ !== undefined) update.clave_prod_serv = p.claveProdServ || null;
         if (p.clave_unidad !== undefined) update.clave_unidad = p.clave_unidad || 'H87';
         else if (p.claveUnidad !== undefined) update.clave_unidad = p.claveUnidad || 'H87';
-        if (p.stock !== undefined && p.stock !== null && p.stock !== '') update.stock = Number(p.stock) || 0;
+        // 093: editar el catálogo NUNCA toca el stock (un formulario abierto
+        // con un valor viejo no puede restaurarlo). El stock cambia solo por
+        // movimientos trazables: compra, producción, reverso o ajuste.
         const { error } = await supabase.from('productos').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar producto: ' + error.message); return error; }
         log('Editar', 'Productos', `ID ${id} — ${p.nombre}`);
@@ -1097,14 +1100,21 @@ export function useSupaStore(userId, userName, userRol) {
                 } else if (cxcRes?.creada) {
                   notify('credito', 'Venta a crédito', `${s(ord.folio)} — ${cli?.nombre || 'Cliente'} — $${n(ord.total).toLocaleString()} a 30 días`, '💳', s(ord.folio));
                 }
-              } else {
-                // P1 Fase A: ingreso contable por contrato (idempotente).
-                const { error: ingresoError } = await supabase.rpc('registrar_ingreso_orden', {
+              } else if (!esPagoEnLinea(mPago)) {
+                // 093: la venta de contado cobrada al entregar se registra como
+                // PAGO (evento canónico del flujo de efectivo) con el contrato
+                // registrar_pago_orden (idempotente; también deja el ingreso
+                // contable). El ingreso del estado de resultados sale de la
+                // entrega (delivered_at), no de este registro.
+                const { error: pagoError } = await supabase.rpc('registrar_pago_orden', {
                   p_orden_id: id,
+                  p_metodo: mPago,
                   p_usuario_id: uid(),
                 });
-                if (ingresoError) downstreamError = ingresoError;
+                if (pagoError) downstreamError = pagoError;
               }
+              // QR / link de pago: el dinero llega por el webhook (pagos); no se
+              // registra un cobro que todavía no ocurrió.
 
               if (downstreamError) {
                 await supabase.from('ordenes').update({
@@ -1414,10 +1424,8 @@ export function useSupaStore(userId, userName, userRol) {
       updateProduccion: async (id, fields) => {
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
-        // SKU NO es editable: cambiar SKU requeriría revertir stock. Si
-        // admin se equivoca, debe Eliminar (con reverso) y volver a registrar.
-        // Cantidad sí editable pero NO toca stock — admin ajusta manualmente
-        // via InventarioView si la corrección lo amerita.
+        // 093: la producción es un evento inmutable; solo se corrigen turno y
+        // máquina. Para deshacer una producción se usa revertirProduccion.
         // Construcción del payload pura — extraída a produccionLogic.
         const upd = buildUpdateFieldsProduccion(fields);
         if (!upd) return { error: 'Nada que actualizar' };
@@ -1427,125 +1435,34 @@ export function useSupaStore(userId, userName, userRol) {
         rf();
       },
 
-      // Borra producción regresando el stock al cuarto frío disponible
-      // (FIFO inverso multi-cuarto). Si el stock ya se consumió y no hay
-      // suficiente disponible, la migración 047 hace RAISE EXCEPTION y
-      // la eliminación falla con mensaje claro.
-      deleteProduccion: async (id) => {
+      // 093: la producción es inmutable. Deshacerla es un reverso
+      // compensatorio en el servidor (revertir_produccion): Admin, UUID,
+      // atómico e idempotente; usa SOLO los datos guardados de esa producción
+      // (cuarto original, empaque y cantidad históricos, costo). Las
+      // transformaciones y las producciones legadas sin esos datos no se
+      // pueden revertir todavía. No existe borrado físico.
+      revertirProduccion: async (id, motivo, opciones = {}) => {
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
         try {
           if (!id) return { error: 'Producción requerida' };
-
-          // 1. SELECT producción
-          const { data: prod, error: errSel } = await supabase
-            .from('produccion')
-            .select('id, folio, sku, cantidad, tipo')
-            .eq('id', id)
-            .single();
-          if (errSel || !prod) {
-            return { error: errSel?.message || 'Producción no encontrada' };
-          }
-
-          const sku = s(prod.sku);
-          const cant = n(prod.cantidad);
-          const folio = s(prod.folio) || `ID ${id}`;
-          // Las transformaciones tienen tipo='Transformacion' y otra lógica
-          // de stock; aquí solo manejamos producción normal.
-          const esTransformacion = s(prod.tipo) === 'Transformacion';
-
-          // 2. Borrado sin reverso si no hay nada que revertir
-          if (esTransformacion || !sku || cant <= 0) {
-            const { error: errDel } = await supabase.from('produccion').delete().eq('id', id);
-            if (errDel) { t()?.error('Error al eliminar producción'); return { error: errDel.message }; }
-            await log('Eliminar (sin reverso)', 'Producción', `${folio} — ${esTransformacion ? 'transformación' : 'sin cantidad/SKU'}`);
-            rf();
-            return undefined;
-          }
-
-          // 3. FIFO inverso: distribuir el descuento entre cuartos con stock
-          const { data: cuartos, error: errCfs } = await supabase
-            .from('cuartos_frios')
-            .select('id, nombre, stock')
-            .order('id');
-          if (errCfs) {
-            t()?.error('No se pudieron leer cuartos fríos');
-            return { error: errCfs.message };
-          }
-          // Distribución pura — extraída a produccionLogic.
-          const { changes, faltante } = calcReversoChangesProduccion(
-            { sku, cantidad: cant, folio },
-            cuartos || [],
-            uname() || 'Admin'
-          );
-          if (faltante > 0) {
-            const msg = `No se puede eliminar: faltan ${faltante} ${sku} en cuartos fríos (probablemente ya se vendió o salió).`;
+          const motivoTxt = s(motivo).trim();
+          if (!motivoTxt) return { error: 'Motivo requerido' };
+          const { data, error } = await supabase.rpc('revertir_produccion', {
+            p_operacion_id: opciones.operacionId || nuevoOperacionId(),
+            p_produccion_id: Number(id),
+            p_motivo: motivoTxt,
+          });
+          if (error) {
+            const msg = error.message || 'No se pudo revertir la producción';
             t()?.error(msg);
             return { error: msg };
           }
-
-          // 4. Aplicar reverso
-          if (changes.length > 0) {
-            const { error: errRpc } = await supabase.rpc('update_stocks_atomic', { p_changes: changes });
-            if (errRpc) {
-              console.warn('[deleteProduccion] rpc update_stocks_atomic:', errRpc.message);
-              t()?.error('No se pudo regresar el stock — producción NO eliminada');
-              return { error: 'No se pudo regresar el stock — producción NO eliminada. ' + (errRpc.message || '') };
-            }
-          }
-
-          // 5. Borrar la fila
-          const { error: errDel } = await supabase.from('produccion').delete().eq('id', id);
-          if (errDel) {
-            console.warn('[deleteProduccion] CRÍTICO: stock revertido pero producción no se pudo borrar:', errDel);
-            t()?.error('Stock regresado pero la producción no se pudo borrar. Revísalo en Supabase.');
-            return { error: 'Stock regresado pero la producción no se pudo borrar. Revísalo en Supabase.' };
-          }
-
-          // 6. Reverso de empaque (auditoría 🔴-6, Tanda 1):
-          //    registrar_produccion (076) descuenta empaque del SKU producido.
-          //    Al borrar, devolvemos ese empaque a productos.stock vía RPC
-          //    atómica. Best-effort: si falla, log warning + notify pero NO
-          //    bloqueamos el borrado (la producción ya quedó eliminada y el
-          //    stock del CF revertido).
-          let empaqueRevertido = null;
-          try {
-            const { data: prodCatalog } = await supabase
-              .from('productos').select('empaque_sku').eq('sku', sku).maybeSingle();
-            const empaqueSku = prodCatalog?.empaque_sku;
-            if (empaqueSku) {
-              const empaqueChange = {
-                sku: String(empaqueSku),
-                delta: cant,
-                tipo: 'Entrada',
-                origen: `Reverso producción ${folio}`,
-                usuario: uname() || 'Admin',
-              };
-              const { error: errEmp } = await supabase.rpc('update_productos_stock_atomic', {
-                p_changes: [empaqueChange],
-              });
-              if (errEmp) {
-                console.warn('[deleteProduccion] reverso empaque (no crítico):', errEmp.message);
-                notify('advertencia', 'Reverso de empaque pendiente',
-                  `Producción ${folio} eliminada — devuelve manualmente ${cant}× ${empaqueSku} a Insumos.`,
-                  '⚠️', folio);
-              } else {
-                empaqueRevertido = `${cant}× ${empaqueSku}`;
-              }
-            }
-          } catch (eEmp) {
-            console.warn('[deleteProduccion] excepción en reverso empaque:', eEmp);
-          }
-
-          const detalle = empaqueRevertido
-            ? `${folio} — ${cant}×${sku} + empaque ${empaqueRevertido}`
-            : `${folio} — ${cant}×${sku}`;
-          await log('Eliminar con reverso', 'Producción', detalle);
           rf();
-          return undefined;
+          return { data };
         } catch (e) {
-          console.error('[deleteProduccion] excepción:', e);
-          t()?.error('Error inesperado al eliminar producción');
+          console.error('[revertirProduccion] excepción:', e);
+          t()?.error('Error inesperado al revertir producción');
           return { error: e?.message || 'Error inesperado' };
         }
       },
@@ -1885,88 +1802,28 @@ export function useSupaStore(userId, userName, userRol) {
         }
       },
 
-      ajustarExistenciaManual: async ({ sku, nuevaExistencia, motivo }) => {
+      // 093: ajuste manual por contrato del servidor (ajustar_existencia):
+      // Admin, motivo obligatorio, el servidor lee la existencia actual con
+      // bloqueo, calcula el delta, no permite negativos, deja kardex con el
+      // actor canónico y es idempotente por operación. Para producto
+      // terminado ajusta los cuartos fríos; para insumos, el total.
+      ajustarExistenciaManual: async ({ sku, nuevaExistencia, motivo, operacionId } = {}) => {
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
         const target = Number(nuevaExistencia);
-        if (!sku || Number.isNaN(target) || target < 0) {
-          const err = { message: 'Datos de ajuste inválidos' };
+        const motivoTxt = s(motivo).trim();
+        if (!sku || !Number.isInteger(target) || target < 0 || !motivoTxt) {
+          const err = { message: 'Datos de ajuste inválidos (existencia entera ≥ 0 y motivo)' };
           t()?.error(err.message);
           return err;
         }
-
-        const { data: cuartos, error: cfErr } = await supabase
-          .from('cuartos_frios')
-          .select('id,nombre,stock');
-
-        if (cfErr) {
-          t()?.error('Error al leer cuartos fríos');
-          return cfErr;
-        }
-
-        const rooms = (cuartos || []).map(cf => ({
-          ...cf,
-          stockObj: (cf.stock && typeof cf.stock === 'object') ? { ...cf.stock } : {},
-          currentQty: Number((cf.stock && typeof cf.stock === 'object') ? (cf.stock[sku] || 0) : 0),
-        }));
-
-        const actual = rooms.reduce((acc, cf) => acc + cf.currentQty, 0);
-        const delta = target - actual;
-
-        if (delta !== 0) {
-          if (delta > 0) {
-            const targetRoom = rooms.find(cf => cf.currentQty > 0) || rooms[0];
-            if (!targetRoom) {
-              const err = { message: 'No hay cuartos fríos para aplicar ajuste' };
-              t()?.error(err.message);
-              return err;
-            }
-            targetRoom.stockObj[sku] = Number(targetRoom.currentQty) + delta;
-          } else {
-            let remaining = Math.abs(delta);
-            for (const room of rooms) {
-              if (remaining <= 0) break;
-              const qty = Number(room.stockObj[sku] || 0);
-              if (qty <= 0) continue;
-              const take = Math.min(qty, remaining);
-              room.stockObj[sku] = qty - take;
-              remaining -= take;
-            }
-            if (remaining > 0) {
-              const err = { message: 'No se pudo descontar ajuste completo' };
-              t()?.error(err.message);
-              return err;
-            }
-          }
-
-          const updates = rooms
-            .filter(room => Number(room.stockObj[sku] || 0) !== Number(room.currentQty || 0))
-            .map(room => supabase.from('cuartos_frios').update({ stock: room.stockObj }).eq('id', room.id));
-
-          if (updates.length > 0) {
-            const results = await Promise.all(updates);
-            const failed = results.find(r => r.error);
-            if (failed?.error) {
-              t()?.error('Error al actualizar stock en cuartos fríos');
-              return failed.error;
-            }
-          }
-        }
-
-        const { error: prodErr } = await supabase.from('productos').update({ stock: target }).eq('sku', sku);
-        if (prodErr) { t()?.error('Error al actualizar stock de producto'); return prodErr; }
-
-        const { error: movErr } = await supabase.from('inventario_mov').insert({
-          tipo: delta >= 0 ? 'Entrada' : 'Salida',
-          producto: sku,
-          cantidad: Math.abs(delta),
-          origen: `Ajuste manual: ${motivo || 'Sin motivo'}`,
-          usuario: uname(),
+        const { error } = await supabase.rpc('ajustar_existencia', {
+          p_operacion_id: operacionId || nuevoOperacionId(),
+          p_sku: String(sku),
+          p_nueva_existencia: target,
+          p_motivo: motivoTxt,
         });
-        if (movErr) { t()?.error('Error al registrar movimiento de inventario'); }
-
-        await log('Ajustar', 'Inventario', `${sku}: ${actual} → ${target}. Motivo: ${motivo || 'Sin motivo'}`);
-
+        if (error) { t()?.error(error.message || 'No se pudo ajustar la existencia'); return error; }
         rf();
       },
 
@@ -3021,43 +2878,56 @@ export function useSupaStore(userId, userName, userRol) {
           let ajustePartial = false;
           let ajusteMsg = null;
 
-          if (ajuste.accion === 'egreso' && total > 0) {
+          // 093: primero se revierte lo que realmente existía.
+          //   - Venta a crédito (Efectivo o Nota de crédito): baja la CxC.
+          //   - Salida de dinero SOLO por lo que efectivamente se devuelve
+          //     (contado, o lo ya cobrado de un crédito). Un crédito no
+          //     cobrado no genera un egreso falso.
+          //   El ingreso del estado de resultados se reduce desde la fila de
+          //   devoluciones (servidor), no desde este egreso.
+          let saldoPendienteAntes = null;
+          if (ajuste.ajustaCxC && orden.cliente_id) {
+            const { data: cxc, error: errCxc } = await supabase
+              .from('cuentas_por_cobrar')
+              .select('id, saldo_pendiente')
+              .eq('orden_id', ordenId)
+              .maybeSingle();
+            if (!errCxc && cxc) {
+              saldoPendienteAntes = Number(cxc.saldo_pendiente || 0);
+              // 090: la CxC y el saldo del cliente se ajustan con el contrato
+              // ajustar_cxc_devolucion (misma aritmética, una transacción).
+              const { error: errUpdCxc } = await supabase.rpc('ajustar_cxc_devolucion', { p_orden_id: Number(ordenId), p_monto: total });
+              if (errUpdCxc) {
+                console.warn('[registrarDevolucion] rpc ajustar_cxc_devolucion (parcial):', errUpdCxc.message);
+                ajustePartial = true;
+                ajusteMsg = 'Devolución registrada pero la CxC no se ajustó. Revísala manualmente.';
+              }
+            }
+          }
+
+          const reembolso = calcReembolsoEfectivo({
+            tipoReembolso,
+            esCredito: ajuste.ajustaCxC,
+            total,
+            saldoPendienteAntes,
+          });
+          if (ajuste.accion === 'egreso' && reembolso > 0) {
             const { error: errEgr } = await supabase.from('movimientos_contables').insert({
               fecha: todayLocalISO(),
               tipo: 'Egreso',
               categoria: 'Devoluciones',
               concepto: ajuste.conceptoEgreso || `Devolución cliente ${folio}`,
-              monto: total,
+              monto: reembolso,
               orden_id: ordenId,
             });
             if (errEgr) {
-              // Stock + devolución ya están bien; el egreso contable es secundario.
-              // Best-effort: avisar y continuar (mismo patrón que registrarMerma).
+              // Stock + devolución ya están bien; el egreso es secundario.
               console.warn('[registrarDevolucion] insert egreso (parcial):', errEgr.message);
               notify('advertencia', 'Asiento contable pendiente',
-                `Devolución ${folio} — egreso contable no se registró, regístralo manual.`,
+                `Devolución ${folio} — el reembolso en efectivo no se registró, regístralo manual.`,
                 '⚠️', folio);
               ajustePartial = true;
-              ajusteMsg = 'Devolución registrada y stock regresado, pero el egreso contable no. Regístralo manual.';
-            }
-
-            // Si era venta a crédito, además reducir CxC
-            if (ajuste.ajustaCxC && orden.cliente_id) {
-              const { data: cxc, error: errCxc } = await supabase
-                .from('cuentas_por_cobrar')
-                .select('id, monto_pagado, monto_original, saldo_pendiente, estatus')
-                .eq('orden_id', ordenId)
-                .maybeSingle();
-              if (!errCxc && cxc) {
-                // 090: la CxC y el saldo del cliente se ajustan con el contrato
-                // ajustar_cxc_devolucion (misma aritmética, una transacción).
-                const { error: errUpdCxc } = await supabase.rpc('ajustar_cxc_devolucion', { p_orden_id: Number(ordenId), p_monto: total });
-                if (errUpdCxc) {
-                  console.warn('[registrarDevolucion] rpc ajustar_cxc_devolucion (parcial):', errUpdCxc.message);
-                  ajustePartial = true;
-                  ajusteMsg = 'Devolución registrada pero la CxC no se ajustó. Revísala manualmente.';
-                }
-              }
+              ajusteMsg = 'Devolución registrada y stock regresado, pero el reembolso en efectivo no. Regístralo manual.';
             }
           }
 
@@ -3551,6 +3421,25 @@ export function useSupaStore(userId, userName, userRol) {
       // 092: control "Salió a Producción vs Usó Producción" calculado en el
       // servidor desde fuentes independientes (eventos de entrega canónicos vs
       // consumo del contrato de producción). Solo lectura; Admin y Almacén Bolsas.
+      // 093: reporte financiero del servidor para un periodo: Estado de
+      // resultados (devengado) y Flujo de efectivo por separado, más saldos
+      // de CxC/CxP. Calculado sobre TODOS los registros del periodo (sin los
+      // topes de filas del cliente). Admin y Facturación.
+      obtenerReporteFinanciero: async (desde, hasta) => {
+        const guard = requireRol(['Admin', 'Facturación']);
+        if (guard) return guard;
+        try {
+          const { data, error } = await supabase.rpc('reporte_financiero', { p_desde: desde, p_hasta: hasta });
+          if (error) {
+            console.warn('[obtenerReporteFinanciero] rpc:', error.message);
+            return { error: error.message };
+          }
+          return { data: normalizarReporteFinanciero(data) };
+        } catch (e) {
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
       obtenerConciliacionEmpaque: async () => {
         const guard = requireRol(['Admin', 'Almacén Bolsas']);
         if (guard) return guard;

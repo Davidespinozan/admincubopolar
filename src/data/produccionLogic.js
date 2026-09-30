@@ -12,56 +12,15 @@ import { centavos } from '../utils/safe';
  */
 export function buildUpdateFieldsProduccion(fields) {
   if (!fields || typeof fields !== 'object') return null;
-  const allowed = ['turno', 'maquina', 'cantidad', 'estatus'];
+  // 093: la producción es inmutable; solo se corrigen turno y máquina.
+  const allowed = ['turno', 'maquina'];
   const upd = {};
   for (const k of allowed) {
     if (fields[k] !== undefined) upd[k] = fields[k];
   }
-  if (upd.cantidad !== undefined) upd.cantidad = Number(upd.cantidad);
   return Object.keys(upd).length === 0 ? null : upd;
 }
 
-/**
- * Calcula la distribución FIFO inverso para revertir el stock de una
- * producción al eliminarla. Reparte el descuento entre los cuartos fríos
- * que tengan stock disponible del SKU, en orden de id (los primeros se
- * descuentan primero).
- *
- * @param {Object} prod          — { sku, cantidad, folio } de la producción
- * @param {Array}  cuartos       — [{ id, stock: { sku: qty } }, ...] activos
- * @param {string} usuario       — nombre quien ejecuta el reverso (para audit)
- * @returns {{ changes: Array, faltante: number }}
- *          changes: lista para `update_stocks_atomic` con delta negativo
- *          faltante: unidades sin cubrir (>0 → no se puede revertir todo)
- */
-export function calcReversoChangesProduccion(prod, cuartos, usuario) {
-  const sku = String(prod?.sku || '');
-  const cant = Number(prod?.cantidad || 0);
-  const folio = String(prod?.folio || '');
-  const user = String(usuario || 'Admin');
-
-  if (!sku || cant <= 0) return { changes: [], faltante: cant > 0 ? cant : 0 };
-
-  const changes = [];
-  let remaining = cant;
-  for (const cf of (cuartos || [])) {
-    if (remaining <= 0) break;
-    const available = Number((cf?.stock || {})[sku] || 0);
-    if (available > 0) {
-      const toTake = Math.min(available, remaining);
-      remaining -= toTake;
-      changes.push({
-        cuarto_id: cf.id,
-        sku,
-        delta: -toTake,
-        tipo: 'Reverso producción',
-        origen: `Reverso ${folio || 'producción'}`,
-        usuario: user,
-      });
-    }
-  }
-  return { changes, faltante: remaining };
-}
 
 /**
  * Calcula el costo total de una corrida de producción.
@@ -90,4 +49,29 @@ export function calcCostoProduccion(cantidad, costoUnitario) {
 export function buildConceptoProduccion(folio, id, cantidad, sku, empaqueSku) {
   const ref = folio || id;
   return `Producción ${ref}: ${cantidad}× ${sku} (empaque: ${empaqueSku})`;
+}
+
+/**
+ * 093: ¿esta producción se puede revertir? Espejo de las reglas de
+ * revertir_produccion (el servidor decide; esto solo guía la vista).
+ * Requiere evidencia durable del efecto original: operación, cuarto y, si
+ * consumió empaque, la cantidad guardada. Transformaciones: aún no.
+ * @param {Object} r — fila de producción (camelCase o snake_case)
+ * @returns {{ reversible: boolean, razon: string|null }}
+ */
+export function reversibilidadProduccion(r) {
+  if (!r) return { reversible: false, razon: 'Sin datos' };
+  const tipo = String(r.tipo || '');
+  const estatus = String(r.estatus || '');
+  const op = r.operacionId ?? r.operacion_id;
+  const cuarto = r.cuartoId ?? r.cuarto_id;
+  const empSku = r.empaqueSku ?? r.empaque_sku;
+  const empCant = r.empaqueCantidad ?? r.empaque_cantidad;
+  if (tipo === 'Transformacion') return { reversible: false, razon: 'Las transformaciones no se pueden revertir todavía' };
+  if (estatus === 'Revertida' || r.revertidaAt || r.revertida_at) return { reversible: false, razon: 'Ya fue revertida' };
+  if (estatus !== 'Confirmada') return { reversible: false, razon: `No está confirmada (${estatus || 'sin estatus'})` };
+  if (!op || !String(cuarto || '').trim() || (empSku && (empCant === null || empCant === undefined))) {
+    return { reversible: false, razon: 'Producción anterior sin datos suficientes: no se puede revertir con certeza' };
+  }
+  return { reversible: true, razon: null };
 }

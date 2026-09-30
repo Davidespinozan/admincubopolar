@@ -127,8 +127,7 @@ describe('auditoría estática del cutover (R2 fase 2A)', () => {
       if (/rpc\(\s*['"]update_stocks_atomic['"]/.test(l)) callers.add(fn);
     }
     expect([...callers].sort()).toEqual([
-      'deleteProduccion',          // Admin
-      'registrarDevolucion',       // Admin (requireAdmin)
+      'registrarDevolucion',       // Admin (requireAdmin); 093: deleteProduccion ya no existe
     ]);
     // 087: cancelarRutaConDevolucion ya no devuelve stock (ruta cargada → cierre canónico)
     expect(accion(store, 'cancelarRutaConDevolucion')).not.toMatch(/update_stocks_atomic|buildCancelacionChanges/);

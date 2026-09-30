@@ -6,6 +6,7 @@ import {
   validateDevolucion,
   calcDevolucionChanges,
   calcAjustePago,
+  calcReembolsoEfectivo,
   calcTotalDevolucion,
   TIPOS_REEMBOLSO,
   ESTATUS_DEVOLVIBLES,
@@ -310,6 +311,18 @@ describe('calcAjustePago', () => {
     });
   });
 
+  describe('Nota credito sobre venta a crédito (093)', () => {
+    it('reduce la CxC y no es salida de dinero', () => {
+      const r = calcAjustePago({
+        orden: { estatus: 'Entregada', metodo_pago: 'Crédito', folio: 'OV' },
+        totalDevuelto: 80,
+        tipoReembolso: 'Nota credito',
+      });
+      expect(r.accion).toBe('nota_credito');
+      expect(r.ajustaCxC).toBe(true);
+    });
+  });
+
   describe('shape común', () => {
     it('monto se redondea con centavos()', () => {
       const r = calcAjustePago({
@@ -370,5 +383,25 @@ describe('constantes exportadas', () => {
 
   it('ESTATUS_DEVOLVIBLES son Entregada y Facturada', () => {
     expect(ESTATUS_DEVOLVIBLES).toEqual(['Entregada', 'Facturada']);
+  });
+});
+
+// ─── calcReembolsoEfectivo (093) ─────────────────────────────────
+describe('calcReembolsoEfectivo', () => {
+  it('contado: se devuelve el total en efectivo', () => {
+    expect(calcReembolsoEfectivo({ tipoReembolso: 'Efectivo', esCredito: false, total: 100, saldoPendienteAntes: null })).toBe(100);
+  });
+  it('crédito no cobrado: ninguna salida de dinero (solo baja la CxC)', () => {
+    expect(calcReembolsoEfectivo({ tipoReembolso: 'Efectivo', esCredito: true, total: 50, saldoPendienteAntes: 200 })).toBe(0);
+  });
+  it('crédito parcialmente cobrado: sale solo lo que excede el saldo pendiente', () => {
+    expect(calcReembolsoEfectivo({ tipoReembolso: 'Efectivo', esCredito: true, total: 150, saldoPendienteAntes: 100 })).toBe(50);
+  });
+  it('crédito liquidado: se devuelve el total', () => {
+    expect(calcReembolsoEfectivo({ tipoReembolso: 'Efectivo', esCredito: true, total: 70, saldoPendienteAntes: 0 })).toBe(70);
+  });
+  it('nota de crédito y reposición nunca sacan dinero', () => {
+    expect(calcReembolsoEfectivo({ tipoReembolso: 'Nota credito', esCredito: false, total: 70, saldoPendienteAntes: null })).toBe(0);
+    expect(calcReembolsoEfectivo({ tipoReembolso: 'Reposicion', esCredito: true, total: 70, saldoPendienteAntes: 0 })).toBe(0);
   });
 });

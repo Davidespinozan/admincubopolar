@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -2030,6 +2030,139 @@ await fe084();
 await conc088();
 console.log('  concurrencia + frontend↔DB (076, 084, 088) tras 092: PASS');
 
+// ═══ 093/094 — finanzas (efectivo vs resultados), producción inmutable, stock trazable ═══
+{
+  const PROD = {
+    'conciliacion_empaque()': '88d9ef2013b90340d9de7c435884a896',
+    'costos_historial_guard()': 'd9f29f36245e70db1b4cf5304d72b448',
+    'inventario_mov_guard()': 'b2fba39ec7f289076a61337298c37c50',
+  };
+  const rows = (await c.query(`SELECT oid::regprocedure::text AS sig, md5(pg_get_functiondef(oid)) AS m FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('conciliacion_empaque','costos_historial_guard','inventario_mov_guard')`)).rows;
+  const mal = Object.keys(PROD).filter(k => (rows.find(x => x.sig === k) || {}).m !== PROD[k]);
+  const nuevo = (await c.query(`SELECT to_regprocedure('public.revertir_produccion(uuid,bigint,text)') IS NULL AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'ordenes' AND column_name = 'delivered_at') AS a`)).rows[0].a;
+  const ok = mal.length === 0 && nuevo;
+  console.log(`  FINANZAS093_PARITY_CHECK[pre-093]: ${ok ? 'PASS' : 'FAIL'} ${JSON.stringify(mal)}`);
+  if (!ok) process.exit(1);
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 093 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '093_finanzas_reverso_produccion.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 093 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 093)'); process.exit(1); }
+console.log('── PRUEBAS 093 (antes de 094: el frontend anterior conserva DELETE y UPDATE de stock)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/093_finanzas_reverso_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (093)'); process.exit(1); }
+}
+await reruns090('093');
+for (const [etq, f] of [['090', '090_b4_privilegios_test.sql'], ['092', '092_empaque_entrega_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 093)`); process.exit(1); }
+  console.log(`  ${etq} tras 093: PASS`);
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 094 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '094_contencion_produccion_stock.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[094]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)}`);
+  if (mal.length) process.exit(1);
+}
+console.log('── PRUEBAS 093 (tras 094)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/093_finanzas_reverso_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (093 tras 094)'); process.exit(1); }
+}
+await reruns090('094');
+for (const [etq, f] of [['090', '090_b4_privilegios_test.sql'], ['092', '092_empaque_entrega_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 094)`); process.exit(1); }
+  console.log(`  ${etq} tras 094: PASS`);
+}
+async function conc093() {
+  console.log('── 093 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const SUB = (k) => '93c00000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM costos_historial WHERE concepto LIKE '%C93-%';
+    DELETE FROM auditoria WHERE detalle LIKE '%C93-%';
+    DELETE FROM inventario_mov WHERE producto LIKE 'C93-%';
+    DELETE FROM produccion WHERE sku LIKE 'C93-%';
+    DELETE FROM stock_operaciones WHERE operacion_id::text LIKE '93c%';
+    DELETE FROM cuartos_frios WHERE id = 'CF-C93';
+    DELETE FROM productos WHERE sku LIKE 'C93-%';
+    DELETE FROM usuarios WHERE id BETWEEN 9361 AND 9369; DELETE FROM auth.users WHERE id::text LIKE '93c00000-%';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN;
+    INSERT INTO auth.users (id, email) SELECT ('93c00000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'c' || k || '@t93c' FROM generate_series(1, 3) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (9361, 'AdminC93-1', 'c1@t93c', 'Admin', 'Activo', '${SUB(1)}'), (9362, 'AdminC93-2', 'c2@t93c', 'Admin', 'Activo', '${SUB(2)}'),
+      (9363, 'ProdC93', 'c3@t93c', 'Producción', 'Activo', '${SUB(3)}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario, empaque_sku) VALUES
+      ('C93-E', 'Bolsa C93', 'Empaque', 0, 100, 1, NULL), ('C93-H', 'Hielo C93', 'Producto Terminado', 30, 0, 0, 'C93-E');
+    INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-C93', 'Cuarto C93', '{}'::jsonb);
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const carrera = async (subA, sqlA, pA, subB, sqlB, pB) => {
+    await actor(a, subA); await actor(b, subB);
+    const ra = await a.query(sqlA, pA).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(sqlB, pB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  await actor(a, SUB(3));
+  const pr = (await a.query(`SELECT registrar_produccion('93c10000-0000-0000-0000-000000000001', 'Turno 1', 'Máquina C93', 'C93-H', 30, 'CF-C93') AS r`)).rows[0].r;
+  await a.query('COMMIT');
+  const REV = `SELECT revertir_produccion($1::uuid, $2::bigint, 'carrera') AS r`;
+  // C1: dos reversos distintos de la misma producción al mismo tiempo
+  let r = await carrera(SUB(1), REV, ['93c20000-0000-0000-0000-000000000001', pr.id], SUB(2), REV, ['93c20000-0000-0000-0000-000000000002', pr.id]);
+  ok(r.ra.ok && r.bloqueado && !r.rb.ok && /ya fue revertida/.test(r.rb.msg || ''), `093-C1a dos reversos simultáneos: el segundo espera y se rechaza (${r.rb.code || 'ok'})`);
+  ok(await n(`SELECT (stock->>'C93-H')::int FROM cuartos_frios WHERE id = 'CF-C93'`) === 0 && await n(`SELECT stock FROM productos WHERE sku = 'C93-E'`) === 100
+    && await n(`SELECT count(*) FROM costos_historial WHERE tipo = 'Reverso producción' AND concepto LIKE '%C93-H%'`) === 1, '093-C1b un solo reverso: cuarto 30 → 0, empaque 70 → 100, un costo compensatorio');
+  // C2: el mismo reverso (mismo UUID) al mismo tiempo
+  await actor(a, SUB(3));
+  const pr2 = (await a.query(`SELECT registrar_produccion('93c10000-0000-0000-0000-000000000002', 'Turno 1', 'Máquina C93', 'C93-H', 10, 'CF-C93') AS r`)).rows[0].r;
+  await a.query('COMMIT');
+  r = await carrera(SUB(1), REV, ['93c20000-0000-0000-0000-000000000003', pr2.id], SUB(1), REV, ['93c20000-0000-0000-0000-000000000003', pr2.id]);
+  ok(r.ra.ok && r.bloqueado && r.rb.ok && r.rb.row.r.replay === true, '093-C2a mismo reverso simultáneo: la segunda espera y es replay');
+  ok(await n(`SELECT stock FROM productos WHERE sku = 'C93-E'`) === 100 && await n(`SELECT count(*) FROM inventario_mov WHERE operacion_id = '93c20000-0000-0000-0000-000000000003'`) === 2, '093-C2b un solo efecto (empaque de vuelta en 100, dos kardex)');
+  // C3: producción y ajuste de existencia del empaque al mismo tiempo: sin carrera de stock
+  const AJ = `SELECT ajustar_existencia($1::uuid, 'C93-E', 90, 'conteo C93') AS r`;
+  const PRODQ = `SELECT registrar_produccion($1::uuid, 'Turno 1', 'Máquina C93', 'C93-H', 5, 'CF-C93') AS r`;
+  r = await carrera(SUB(1), AJ, ['93c30000-0000-0000-0000-000000000001'], SUB(3), PRODQ, ['93c10000-0000-0000-0000-000000000003']);
+  ok(r.ra.ok && r.bloqueado && r.rb.ok, '093-C3a ajuste y producción simultáneos: la producción espera el lock del empaque');
+  ok(await n(`SELECT stock FROM productos WHERE sku = 'C93-E'`) === 85, '093-C3b el ajuste fija 90 y después la producción consume 5 (85): nada se pierde');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (093 concurrencia)'); process.exit(1); }
+}
+await conc093();
+console.log('── concurrencia + frontend↔DB tras 093/094');
+await conc076();
+await fe076();
+await conc084();
+await fe084();
+await conc088();
+await conc092();
+console.log('  concurrencia + frontend↔DB (076, 084, 088, 092) tras 093/094: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -2067,7 +2200,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 090
   'nextval','b4_ruta_con_historia','anular_cxc_orden','ajustar_cxc_devolucion',
   // 092
-  'conciliacion_empaque'];
+  'conciliacion_empaque',
+  // 093
+  'revertir_produccion','ajustar_existencia','reporte_financiero','fin_egreso_no_efectivo','productos_existencia_inicial'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
@@ -2088,7 +2223,7 @@ console.log('  SEARCH_PATH_CHECK:', spOk ? 'PASS' : 'FAIL', `(${sp.filter(f=>f.c
 const objs = (await c.query(`SELECT n.nspname, c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','pg_catalog')
   UNION SELECT n.nspname, p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('public','pg_catalog')`)).rows;
 const where = new Map(); for (const o of objs) { if (!where.has(o.name)) where.set(o.name, new Set()); where.get(o.name).add(o.nspname); }
-const KW = new Set(['except','intersect','if','exists','coalesce','nullif','greatest','least','case','when','then','else','end','and','or','not','in','select','from','where','values','returning','into','set','update','insert','delete','for','loop','perform','raise','exception','return','begin','declare','found','is','null','true','false','as','on','using','errcode','array','row','distinct','all','any','some','cast','interval','date','numeric','text','bigint','int','integer','boolean','jsonb','varchar','record','rowtype','type','with','check','lateral','limit','order','by','group','having','each','statement','new','old','trigger','language','plpgsql','sql','stable','security','definer','search_path','pg_temp','public','function','replace','create','returns','void','diagnostics','get','row_count','strict','conflict','nothing']);
+const KW = new Set(['except','intersect','if','exists','coalesce','nullif','greatest','least','case','when','then','else','end','and','or','not','in','select','from','where','values','returning','into','set','update','insert','delete','for','loop','perform','raise','exception','return','begin','declare','found','is','null','true','false','as','on','using','errcode','array','row','distinct','all','any','some','cast','interval','date','numeric','text','bigint','int','integer','boolean','jsonb','varchar','record','rowtype','type','with','check','lateral','limit','order','by','group','having','each','statement','new','old','trigger','language','plpgsql','sql','stable','security','definer','search_path','pg_temp','public','function','replace','create','returns','void','diagnostics','get','row_count','strict','conflict','nothing','filter']);
 const refs = {};
 for (const f of sp) {
   const body = f.def.split('$function$')[1] || f.def;

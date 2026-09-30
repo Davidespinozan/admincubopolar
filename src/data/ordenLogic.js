@@ -410,3 +410,15 @@ export function buildOrdenPayload(o, ctx) {
     longitud_entrega: Number.isFinite(lngNum) ? lngNum : null,
   };
 }
+
+/**
+ * 093: ¿el método de pago se cobra en línea (link / QR del proveedor)?
+ * En ese caso el dinero lo registra el webhook de pago (tabla pagos) y la
+ * entrega NO registra un cobro que todavía no ocurrió.
+ * @param {string} metodo
+ * @returns {boolean}
+ */
+export function esPagoEnLinea(metodo) {
+  const m = String(metodo || '').toLowerCase();
+  return m.includes('qr') || m.includes('link');
+}

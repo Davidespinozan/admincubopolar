@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Icons } from '../ui/Icons';
 import { StatusBadge, DataTable, CapacityBar } from '../ui/Components';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, fmtDateTime, fmtMoney, fmtPct, todayLocalISO } from '../../utils/safe';
+import { rangoMes, lineasEstadoResultados, lineasFlujoEfectivo } from '../../data/finanzasLogic';
 
 // ── FIX P3: ALL DERIVED STATE NOW MEMOIZED ──
 // BEFORE: 4 reduce/filter calls ran on every render — even when user
@@ -24,7 +25,7 @@ function looksLikeRealName(nombre) {
   return t.includes(' ') && !/[_\d.]/.test(t);
 }
 
-export default function DashboardView({ data, user, onNavigate }) {
+export default function DashboardView({ data, user, actions, onNavigate }) {
   const hoy = new Date();
   const y = hoy.getFullYear();
   const m = hoy.getMonth();
@@ -188,7 +189,10 @@ export default function DashboardView({ data, user, onNavigate }) {
     const estatusVenta = new Set(["entregada", "facturada"]);
     for (const ord of (data.ordenes || [])) {
       if (!estatusVenta.has(s(ord.estatus).toLowerCase())) continue;
-      const f = s(ord.fecha).slice(0, 10);
+      // 093: la venta cuenta el día que se entregó (delivered_at del
+      // servidor); las órdenes anteriores sin ese dato usan su fecha.
+      const entregada = ord.deliveredAt || ord.delivered_at;
+      const f = entregada ? todayLocalISO(new Date(entregada)) : s(ord.fecha).slice(0, 10);
       const tot = n(ord.total);
       if (f === hoyStr) dia += tot;
       if (f >= semStr) semana += tot;
@@ -197,69 +201,31 @@ export default function DashboardView({ data, user, onNavigate }) {
     return { dia, semana, mes };
   }, [data.ordenes]);
 
-  // ── ESTADO DE RESULTADOS ──
-  const estadoResultados = useMemo(() => {
-    const movs = data.contabilidad || { ingresos: [], egresos: [] };
-    const historial = data.costosHistorial || [];
-    
-    const calcPeriodo = (filtro, filtroHist) => {
-      const ingresos = (movs.ingresos || []).filter(filtro);
-      const egresos = (movs.egresos || []).filter(filtro);
-      const costos = historial.filter(filtroHist);
-      
-      // Ingresos por ventas
-      const ventasTot = ingresos.filter(i => s(i.categoria) === 'Ventas' || s(i.categoria) === 'Cobranza').reduce((sum, i) => sum + n(i.monto), 0);
-      
-      // Costo de ventas: Empaque usado en producción
-      const costoDeVentas = costos.filter(c => s(c.tipo) === 'Producción' || s(c.categoria) === 'Empaque').reduce((sum, c) => sum + n(c.monto), 0);
-      
-      // Gastos operativos: Todo lo demás de costos_historial + egresos contables
-      const costosOp = costos.filter(c => s(c.tipo) !== 'Producción' && s(c.categoria) !== 'Empaque').reduce((sum, c) => sum + n(c.monto), 0);
-      // Para no duplicar, solo sumar egresos que NO vengan de costos_historial (sin movimiento_id vinculado)
-      const egresosSinVinculo = egresos.filter(e => !e.referencia?.includes('Costo fijo') && !e.referencia?.includes('costo_historial')).reduce((sum, e) => sum + n(e.monto), 0);
-      const gastosOp = costosOp + egresosSinVinculo;
-      
-      // Utilidad bruta y neta
-      const utilidadBruta = ventasTot - costoDeVentas;
-      const utilidad = utilidadBruta - gastosOp;
-      
-      return { ventasTot, costoDeVentas, gastosOp, utilidadBruta, utilidad };
-    };
-    
-    const hoyStr = todayLocalISO();
-    const sem = new Date(); sem.setDate(sem.getDate() - 7);
-    const semStr = todayLocalISO(sem);
-    const mes = new Date(); mes.setDate(1);
-    const mesStr = todayLocalISO(mes);
-    
-    const filtroFecha = (fecha) => (m) => s(m.fecha) >= fecha;
-    const filtroHistFecha = (fecha) => (c) => (s(c.fecha) || s(c.createdAt)) >= fecha;
-    
-    return {
-      dia: calcPeriodo(m => s(m.fecha) === hoyStr, c => (s(c.fecha) || s(c.createdAt) || '').startsWith(hoyStr)),
-      semana: calcPeriodo(filtroFecha(semStr), filtroHistFecha(semStr)),
-      mes: calcPeriodo(filtroFecha(mesStr), filtroHistFecha(mesStr)),
-    };
-  }, [data.contabilidad, data.costosHistorial]);
-
-  // ── BALANCE SIMPLIFICADO ──
-  const balance = useMemo(() => {
-    // Efectivo cobrado hoy
-    const hoyStr = todayLocalISO();
-    const efectivoHoy = (data.pagos || [])
-      .filter(p => s(p.fecha) === hoyStr && (s(p.metodoPago) === 'Efectivo' || s(p.metodo_pago) === 'Efectivo'))
-      .reduce((s, p) => s + n(p.monto), 0);
-    // Cuentas por cobrar
-    const cxcTotal = (data.cuentasPorCobrar || [])
-      .filter(c => c.estatus !== 'Pagada')
-      .reduce((s, c) => s + n(c.saldoPendiente), 0);
-    // Cuentas por pagar
-    const cxpTotal = (data.cuentasPorPagar || [])
-      .filter(c => c.estatus !== 'Pagada')
-      .reduce((s, c) => s + n(c.saldoPendiente), 0);
-    const posicion = efectivoHoy + cxcTotal - cxpTotal;
-    return { efectivoHoy, cxcTotal, cxpTotal, posicion };
-  }, [data.pagos, data.cuentasPorCobrar, data.cuentasPorPagar]);
+  // ── 093: REPORTE FINANCIERO DEL SERVIDOR (mes en curso) ──
+  // Estado de resultados (utilidad devengada: ingreso al entregar, costo al
+  // consumir empaque, cada gasto una vez) y Flujo de efectivo (dinero que
+  // realmente entró y salió) por separado. Se calcula en el servidor sobre
+  // todo el periodo; se refresca cuando cambian los datos financieros.
+  const [reporte, setReporte] = useState(null);
+  const [reporteError, setReporteError] = useState(null);
+  const refrescoFin = `${(data.ordenes || []).length}|${(data.pagos || [])[0]?.id || 0}|${(data.contabilidad?.egresos || [])[0]?.id || 0}|${(data.costosHistorial || [])[0]?.id || 0}|${(data.cuentasPorCobrar || [])[0]?.id || 0}`;
+  useEffect(() => {
+    let vivo = true;
+    const { desde, hasta } = rangoMes();
+    (async () => {
+      const r = await actions?.obtenerReporteFinanciero?.(desde, hasta);
+      if (!vivo) return;
+      if (!r || r.error) { setReporteError(r?.error || 'No disponible'); return; }
+      setReporteError(null);
+      setReporte(r.data);
+    })();
+    return () => { vivo = false; };
+  }, [actions, refrescoFin]);
+  const utilidadMes = reporte?.resultados?.utilidad ?? null;
+  const cxcPendiente = reporte?.saldos?.cxc_pendiente ?? null;
+  const cxpPendiente = reporte?.saldos?.cxp_pendiente ?? null;
+  const lineasER = useMemo(() => lineasEstadoResultados(reporte), [reporte]);
+  const lineasFE = useMemo(() => lineasFlujoEfectivo(reporte), [reporte]);
 
   // ── ZONA 1: Saludo según hora ──
   const saludo = useMemo(() => {
@@ -295,7 +261,7 @@ export default function DashboardView({ data, user, onNavigate }) {
     }
 
     // Cobros pendientes (cliente que más debe)
-    if (balance.cxcTotal > 0) {
+    if ((cxcPendiente || 0) > 0) {
       // Buscar al cliente que más debe
       const porCliente = {};
       for (const c of (data.cuentasPorCobrar || [])) {
@@ -325,7 +291,7 @@ export default function DashboardView({ data, user, onNavigate }) {
     }
 
     return acciones;
-  }, [ordPend, tableroDemanda, balance.cxcTotal, data.cuentasPorCobrar, data.clientes]);
+  }, [ordPend, tableroDemanda, cxcPendiente, data.cuentasPorCobrar, data.clientes]);
 
   return (
     <div>
@@ -382,15 +348,15 @@ export default function DashboardView({ data, user, onNavigate }) {
             <p className="font-display text-base sm:text-xl md:text-2xl font-bold text-slate-900">{fmtMoney(ventasResumen.semana)}</p>
           </div>
           <div>
-            <p className="text-xs text-slate-500 mb-1">Ganaste (mes)</p>
-            <p className={`font-display text-base sm:text-xl md:text-2xl font-bold ${estadoResultados.mes.utilidad >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-              {fmtMoney(estadoResultados.mes.utilidad)}
+            <p className="text-xs text-slate-500 mb-1">Utilidad del mes</p>
+            <p className={`font-display text-base sm:text-xl md:text-2xl font-bold ${utilidadMes === null ? 'text-slate-400' : utilidadMes >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+              {utilidadMes === null ? '—' : fmtMoney(utilidadMes)}
             </p>
           </div>
           <div>
             <p className="text-xs text-slate-500 mb-1">Te deben</p>
-            <p className={`font-display text-base sm:text-xl md:text-2xl font-bold ${balance.cxcTotal > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
-              {fmtMoney(balance.cxcTotal)}
+            <p className={`font-display text-base sm:text-xl md:text-2xl font-bold ${(cxcPendiente || 0) > 0 ? 'text-amber-600' : 'text-slate-400'}`}>
+              {cxcPendiente === null ? '—' : fmtMoney(cxcPendiente)}
             </p>
           </div>
         </div>
@@ -415,63 +381,45 @@ export default function DashboardView({ data, user, onNavigate }) {
       )}
 
 
-      {/* Estado de Resultados y Balance */}
+      {/* 093: Estado de resultados y Flujo de efectivo, separados */}
       <div className="mb-4 grid grid-cols-1 gap-4 md:mb-6 md:grid-cols-2">
-        {/* Estado de Resultados */}
         <div className="rounded-2xl border border-slate-100 bg-white p-4 md:p-5">
-          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Calculator /> Cómo va el mes</h3>
-          <div className="flex gap-2 mb-3">
-            <button className="rounded-full bg-slate-900 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">Mes</button>
-          </div>
+          <h3 className="text-sm font-bold text-slate-700 mb-1 flex items-center gap-2"><Icons.Calculator /> Estado de resultados (mes)</h3>
+          <p className="text-[11px] text-slate-400 mb-3">Utilidad: ventas entregadas menos costo del hielo y gastos. Comprar empaque no es gasto hasta que se usa; cobrar un crédito no es venta nueva.</p>
+          {reporteError && <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2">No se pudo cargar: {reporteError}</p>}
           <div className="space-y-2">
-            <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Ventas</span>
-              <span className="text-sm font-bold text-emerald-600">{"+" + fmtMoney(estadoResultados.mes.ventasTot)}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Costo del hielo</span>
-              <span className="text-sm font-bold text-red-500">{"-" + fmtMoney(estadoResultados.mes.costoDeVentas)}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-100 bg-slate-50 rounded-lg px-2 -mx-2">
-              <span className="text-sm font-semibold text-slate-700">Ganancia antes de gastos</span>
-              <span className={`text-sm font-bold ${estadoResultados.mes.utilidadBruta >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                {fmtMoney(estadoResultados.mes.utilidadBruta)}
-              </span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Otros gastos</span>
-              <span className="text-sm font-bold text-red-500">{"-" + fmtMoney(estadoResultados.mes.gastosOp)}</span>
-            </div>
-            <div className="-mx-2 flex justify-between rounded-[16px] bg-slate-900 px-3 py-2 text-white">
-              <span className="text-sm font-bold text-white/82">Ganancia</span>
-              <span className={`text-sm font-extrabold ${estadoResultados.mes.utilidad >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>
-                {fmtMoney(estadoResultados.mes.utilidad)}
-              </span>
-            </div>
+            {lineasER.map(l => l.total ? (
+              <div key={l.clave} className={`-mx-2 flex justify-between rounded-[16px] px-3 py-2 ${l.clave === 'utilidad' ? 'bg-slate-900 text-white' : 'bg-slate-50'}`}>
+                <span className={`text-sm font-bold ${l.clave === 'utilidad' ? 'text-white/82' : 'text-slate-700'}`}>{l.etiqueta}</span>
+                <span className={`text-sm font-extrabold ${l.clave === 'utilidad' ? (n(l.monto) >= 0 ? 'text-cyan-200' : 'text-red-300') : (n(l.monto) >= 0 ? 'text-emerald-600' : 'text-red-600')}`}>{fmtMoney(l.monto)}</span>
+              </div>
+            ) : (
+              <div key={l.clave} className="flex justify-between py-1.5 border-b border-slate-100">
+                <span className="text-sm text-slate-600">{l.etiqueta}</span>
+                <span className={`text-sm font-bold ${l.signo > 0 ? 'text-emerald-600' : 'text-red-500'}`}>{(l.signo > 0 ? '+' : '-') + fmtMoney(l.monto)}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Balance Simplificado */}
         <div className="rounded-2xl border border-slate-100 bg-white p-4 md:p-5">
-          <h3 className="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2"><Icons.Wallet /> Tu dinero</h3>
+          <h3 className="text-sm font-bold text-slate-700 mb-1 flex items-center gap-2"><Icons.Wallet /> Flujo de efectivo (mes)</h3>
+          <p className="text-[11px] text-slate-400 mb-3">Dinero que realmente entró y salió. No incluye mermas ni costo de producción. No es el saldo del banco: el sistema no registra saldo inicial.</p>
           <div className="space-y-2">
-            <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Cobrado hoy en efectivo</span>
-              <span className="text-sm font-bold text-emerald-600">{fmtMoney(balance.efectivoHoy)}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Te deben</span>
-              <span className="text-sm font-bold text-amber-600">{fmtMoney(balance.cxcTotal)}</span>
-            </div>
-            <div className="flex justify-between py-1.5 border-b border-slate-100">
-              <span className="text-sm text-slate-600">Debes</span>
-              <span className="text-sm font-bold text-red-500">{fmtMoney(balance.cxpTotal)}</span>
-            </div>
-            <div className="-mx-2 flex justify-between rounded-[16px] bg-slate-900 px-3 py-2 text-white">
-              <span className="text-sm font-bold text-white/82">Saldo a favor</span>
-              <span className={`text-sm font-extrabold ${balance.posicion >= 0 ? 'text-cyan-200' : 'text-red-300'}`}>
-                {fmtMoney(balance.posicion)}
-              </span>
+            {lineasFE.map(l => l.total ? (
+              <div key={l.clave} className={`-mx-2 flex justify-between rounded-[16px] px-3 py-2 ${l.clave === 'neto' ? 'bg-slate-900 text-white' : 'bg-slate-50'}`}>
+                <span className={`text-sm font-bold ${l.clave === 'neto' ? 'text-white/82' : 'text-slate-700'}`}>{l.etiqueta}</span>
+                <span className={`text-sm font-extrabold ${l.clave === 'neto' ? (n(l.monto) >= 0 ? 'text-cyan-200' : 'text-red-300') : 'text-slate-800'}`}>{fmtMoney(l.monto)}</span>
+              </div>
+            ) : (
+              <div key={l.clave} className="flex justify-between py-1.5 border-b border-slate-100">
+                <span className="text-sm text-slate-600">{l.etiqueta}</span>
+                <span className={`text-sm font-bold ${l.signo > 0 ? 'text-emerald-600' : 'text-red-500'}`}>{(l.signo > 0 ? '+' : '-') + fmtMoney(l.monto)}</span>
+              </div>
+            ))}
+            <div className="grid grid-cols-2 gap-2 pt-2">
+              <div className="rounded-xl bg-amber-50 p-2.5"><p className="text-xs text-amber-600">Te deben (CxC)</p><p className="text-sm font-extrabold text-amber-700">{cxcPendiente === null ? '—' : fmtMoney(cxcPendiente)}</p></div>
+              <div className="rounded-xl bg-red-50 p-2.5"><p className="text-xs text-red-500">Debes (CxP)</p><p className="text-sm font-extrabold text-red-600">{cxpPendiente === null ? '—' : fmtMoney(cxpPendiente)}</p></div>
             </div>
           </div>
         </div>

@@ -95,6 +95,7 @@ describe('090: el mapa de grants cubre exactamente las escrituras directas del f
   const sql = src('../../supabase/090_b4_privilegios_e_historia.sql');
   const mapa = JSON.parse(sql.match(/v_mapa JSONB := '(\{[\s\S]*?\})'::jsonb/)[1]);
   delete mapa.cuentas_por_cobrar; // 091 retira el DML directo restante de CxC
+  mapa.produccion = mapa.produccion.filter(op => op !== 'DELETE'); // 094: la producción se revierte, no se borra
   const normal = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, [...v].sort()]).sort(([a], [b]) => a.localeCompare(b)));
 
   it('cada tabla y operación escrita por el frontend tiene su grant, y no sobra ninguno', () => {

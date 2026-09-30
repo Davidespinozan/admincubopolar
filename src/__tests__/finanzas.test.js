@@ -1,183 +1,92 @@
-// finanzas.test.js — análisis financiero (estado de resultados, liquidez)
+// finanzas.test.js — 093: reportes financieros separados (flujo de efectivo
+// vs estado de resultados). Las cifras vienen del servidor; aquí se prueban
+// la normalización, las líneas y que las vistas ya no mezclan conceptos.
 import { describe, it, expect } from 'vitest';
-import {
-  filtrarPorFecha,
-  calcEstadoResultados,
-  calcPosicionFinanciera,
-  efectivoDelDia,
-  saldoPendienteTotal,
-} from '../data/finanzasLogic';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { rangoMes, rangoDeMes, normalizarReporteFinanciero, lineasEstadoResultados, lineasFlujoEfectivo } from '../data/finanzasLogic';
 
-// ─── filtrarPorFecha ──────────────────────────────────────────
-describe('filtrarPorFecha', () => {
-  const movs = [
-    { fecha: '2026-03-01', monto: 100 },
-    { fecha: '2026-03-15', monto: 200 },
-    { fecha: '2026-03-20', monto: 300 },
-  ];
+const src = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-  it('filtra desde fecha inclusive', () => {
-    const r = filtrarPorFecha(movs, '2026-03-15');
-    expect(r).toHaveLength(2);
-    expect(r[0].monto).toBe(200);
-  });
+// Respuesta del servidor para el escenario de aceptación del 093.
+const ACEPTACION = {
+  desde: '2026-10-01', hasta: '2026-10-31',
+  resultados: { ventas_entregadas: 1500, costo_ventas: 150, costos_fijos: 400, nomina: 600, mermas: 50, utilidad_bruta: 1350, utilidad: 300 },
+  flujo: { entradas_pagos: 1300, entradas: 1300, salidas_compras_contado: 200, salidas_costos: 400, salidas_nomina: 600, salidas: 1200, excluido_no_efectivo: 50, neto: 100 },
+  saldos: { cxc_pendiente: 200, cxc_n: 1, cxp_pendiente: 0, cxp_n: 0 },
+  limitaciones: ['No es el saldo de caja ni del banco'],
+};
 
-  it('devuelve todos si la fecha es muy antigua', () => {
-    expect(filtrarPorFecha(movs, '2000-01-01')).toHaveLength(3);
-  });
-
-  it('devuelve vacío si la fecha es futura', () => {
-    expect(filtrarPorFecha(movs, '2030-01-01')).toHaveLength(0);
-  });
-
-  it('maneja array vacío', () => {
-    expect(filtrarPorFecha([], '2026-01-01')).toHaveLength(0);
-  });
-
-  it('maneja null', () => {
-    expect(filtrarPorFecha(null, '2026-01-01')).toHaveLength(0);
+describe('rangoMes / rangoDeMes', () => {
+  it('mes calendario completo', () => {
+    expect(rangoMes(new Date(2026, 1, 10))).toEqual({ desde: '2026-02-01', hasta: '2026-02-28' });
+    expect(rangoDeMes('2026-10')).toEqual({ desde: '2026-10-01', hasta: '2026-10-31' });
   });
 });
 
-// ─── calcEstadoResultados ─────────────────────────────────────
-describe('calcEstadoResultados', () => {
-  const ingresos = [
-    { categoria: 'Ventas',    monto: 50000 },
-    { categoria: 'Cobranza',  monto: 10000 },
-    { categoria: 'Otro',      monto: 500   }, // no cuenta como venta
-  ];
-
-  const egresos = [
-    { categoria: 'Costo de Ventas', monto: 20000 },
-    { categoria: 'Nómina',          monto: 8000  },
-    { categoria: 'Gastos',          monto: 2000  },
-  ];
-
-  it('calcula ventas (Ventas + Cobranza)', () => {
-    const r = calcEstadoResultados(ingresos, egresos);
-    expect(r.ventas).toBe(60000);
+describe('normalizarReporteFinanciero', () => {
+  it('llaves estables y números', () => {
+    const r = normalizarReporteFinanciero(ACEPTACION);
+    expect(r.resultados.utilidad).toBe(300);
+    expect(r.resultados.otros_gastos).toBe(0);
+    expect(r.flujo.neto).toBe(100);
+    expect(r.saldos.cxc_pendiente).toBe(200);
+    expect(r.limitaciones).toHaveLength(1);
   });
-
-  it('calcula costo de ventas (solo categoría Costo de Ventas)', () => {
-    const r = calcEstadoResultados(ingresos, egresos);
-    expect(r.costoDeVentas).toBe(20000);
-  });
-
-  it('calcula utilidad bruta = ventas − costo de ventas', () => {
-    const r = calcEstadoResultados(ingresos, egresos);
-    expect(r.utilidadBruta).toBe(40000);
-  });
-
-  it('calcula gastos operativos (todo excepto Costo de Ventas)', () => {
-    const r = calcEstadoResultados(ingresos, egresos);
-    expect(r.gastosOp).toBe(10000); // 8000 + 2000
-  });
-
-  it('calcula utilidad neta = utilidad bruta − gastos op', () => {
-    const r = calcEstadoResultados(ingresos, egresos);
-    expect(r.utilidad).toBe(30000);
-  });
-
-  it('utilidad negativa cuando gastos > ventas', () => {
-    const r = calcEstadoResultados(
-      [{ categoria: 'Ventas', monto: 1000 }],
-      [{ categoria: 'Nómina', monto: 5000 }]
-    );
-    expect(r.utilidad).toBeLessThan(0);
-  });
-
-  it('todo en 0 para listas vacías', () => {
-    const r = calcEstadoResultados([], []);
-    expect(r.ventas).toBe(0);
-    expect(r.utilidad).toBe(0);
+  it('respuesta vacía no rompe', () => {
+    const r = normalizarReporteFinanciero(null);
+    expect(r.resultados.utilidad).toBe(0);
+    expect(r.flujo.entradas).toBe(0);
   });
 });
 
-// ─── calcPosicionFinanciera ───────────────────────────────────
-describe('calcPosicionFinanciera', () => {
-  it('posición positiva: más activos que pasivos', () => {
-    const r = calcPosicionFinanciera(5000, 10000, 3000);
-    expect(r.posicion).toBe(12000); // 5000 + 10000 - 3000
+describe('líneas: la compra no es gasto y el cobro no es ingreso', () => {
+  const r = normalizarReporteFinanciero(ACEPTACION);
+  it('estado de resultados: ventas 1500, costo 150, fijos 400, nómina 600, mermas 50 → 300', () => {
+    const l = Object.fromEntries(lineasEstadoResultados(r).map(x => [x.clave, x.monto]));
+    expect(l).toMatchObject({ ventas_entregadas: 1500, costo_ventas: 150, costos_fijos: 400, nomina: 600, mermas: 50, utilidad: 300 });
+    expect(l).not.toHaveProperty('salidas_compras_contado');
   });
-
-  it('posición negativa cuando cxp > efectivo + cxc', () => {
-    const r = calcPosicionFinanciera(1000, 2000, 8000);
-    expect(r.posicion).toBe(-5000);
-  });
-
-  it('liquidez neta = efectivo − cxp', () => {
-    const r = calcPosicionFinanciera(5000, 10000, 3000);
-    expect(r.liquidezNeta).toBe(2000); // 5000 - 3000
-  });
-
-  it('todo en 0 cuando no hay nada', () => {
-    const r = calcPosicionFinanciera(0, 0, 0);
-    expect(r.posicion).toBe(0);
-    expect(r.liquidezNeta).toBe(0);
-  });
-
-  it('maneja decimales correctamente', () => {
-    const r = calcPosicionFinanciera(1000.50, 2000.25, 500.75);
-    expect(r.posicion).toBe(2500); // 1000.50 + 2000.25 - 500.75
+  it('flujo: entró 1300, salió 1200 (compra 200 + renta 400 + nómina 600), sin merma', () => {
+    const l = Object.fromEntries(lineasFlujoEfectivo(r).map(x => [x.clave, x.monto]));
+    expect(l).toMatchObject({ entradas: 1300, salidas_compras_contado: 200, salidas_costos: 400, salidas_nomina: 600, salidas: 1200, neto: 100 });
+    expect(Object.keys(l)).not.toContain('mermas');
   });
 });
 
-// ─── efectivoDelDia ───────────────────────────────────────────
-describe('efectivoDelDia', () => {
-  const hoy = '2026-03-20';
-  const pagos = [
-    { fecha: hoy,         monto: 500,  metodo_pago: 'Efectivo' },
-    { fecha: hoy,         monto: 300,  metodo_pago: 'Efectivo' },
-    { fecha: hoy,         monto: 1000, metodo_pago: 'Transferencia' }, // no efectivo
-    { fecha: '2026-03-19',monto: 200,  metodo_pago: 'Efectivo' },     // otro día
-  ];
-
-  it('suma solo cobros en efectivo del día', () => {
-    expect(efectivoDelDia(pagos, hoy)).toBe(800);
+describe('093: las vistas usan el reporte del servidor', () => {
+  it('Dashboard: sin fórmula mezclada; utilidad y flujo por separado', () => {
+    const v = src('../components/views/DashboardView.jsx');
+    expect(v).toMatch(/obtenerReporteFinanciero/);
+    expect(v).not.toMatch(/egresosSinVinculo|Costo fijo|costo_historial'\)/);
+    expect(v).not.toMatch(/Saldo a favor/);
+    expect(v).toMatch(/Flujo de efectivo/);
+    expect(v).toMatch(/Estado de resultados/);
   });
-
-  it('excluye pagos de otros días', () => {
-    expect(efectivoDelDia(pagos, '2026-03-19')).toBe(200);
+  it('Contabilidad: sin "Balance" ambiguo', () => {
+    const v = src('../components/views/ContabilidadView.jsx');
+    expect(v).toMatch(/obtenerReporteFinanciero/);
+    expect(v).not.toMatch(/>Balance</);
+    expect(v).toMatch(/Flujo de efectivo/);
   });
-
-  it('devuelve 0 si no hay cobros', () => {
-    expect(efectivoDelDia([], hoy)).toBe(0);
-  });
-
-  it('acepta metodo_pago en camelCase (metodoPago)', () => {
-    const pagosCC = [{ fecha: hoy, monto: 750, metodoPago: 'Efectivo' }];
-    expect(efectivoDelDia(pagosCC, hoy)).toBe(750);
+  it('el store expone el reporte del servidor', () => {
+    const store = src('../data/supaStore.js');
+    expect(store).toMatch(/obtenerReporteFinanciero: async/);
+    expect(store).toMatch(/rpc\('reporte_financiero'/);
   });
 });
 
-// ─── saldoPendienteTotal ──────────────────────────────────────
-describe('saldoPendienteTotal', () => {
-  const cuentas = [
-    { estatus: 'Pendiente', saldo_pendiente: 5000 },
-    { estatus: 'Parcial',   saldo_pendiente: 1500 },
-    { estatus: 'Pagada',    saldo_pendiente: 0    }, // no suma
-    { estatus: 'Pendiente', saldo_pendiente: 3000 },
-  ];
-
-  it('suma solo cuentas no pagadas', () => {
-    expect(saldoPendienteTotal(cuentas)).toBe(9500);
+describe('093: la entrega de mostrador registra el cobro como pago canónico', () => {
+  it('esPagoEnLinea: QR / link esperan al webhook; lo demás se cobra al entregar', async () => {
+    const { esPagoEnLinea } = await import('../data/ordenLogic');
+    expect(esPagoEnLinea('QR / Link de pago')).toBe(true);
+    expect(esPagoEnLinea('Efectivo')).toBe(false);
+    expect(esPagoEnLinea('Transferencia')).toBe(false);
+    expect(esPagoEnLinea('Tarjeta')).toBe(false);
   });
-
-  it('excluye cuentas Pagadas', () => {
-    const soloPagadas = [{ estatus: 'Pagada', saldo_pendiente: 9999 }];
-    expect(saldoPendienteTotal(soloPagadas)).toBe(0);
-  });
-
-  it('devuelve 0 para lista vacía', () => {
-    expect(saldoPendienteTotal([])).toBe(0);
-  });
-
-  it('maneja null', () => {
-    expect(saldoPendienteTotal(null)).toBe(0);
-  });
-
-  it('maneja saldo_pendiente null en fila individual', () => {
-    const c = [{ estatus: 'Pendiente', saldo_pendiente: null }];
-    expect(saldoPendienteTotal(c)).toBe(0);
+  it('updateOrdenEstatus usa registrar_pago_orden (no un ingreso contable suelto)', () => {
+    const store = src('../data/supaStore.js');
+    expect(store).toMatch(/else if \(!esPagoEnLinea\(mPago\)\)[\s\S]{0,700}rpc\('registrar_pago_orden'/);
+    expect(store).not.toMatch(/rpc\('registrar_ingreso_orden'/);
   });
 });

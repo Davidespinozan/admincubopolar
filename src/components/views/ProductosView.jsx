@@ -27,7 +27,9 @@ export function ProductosView({ data, actions }) {
       sku: form.sku,
       nombre: form.nombre,
       tipo: form.tipo,
-      stock: Number(form.stock) || 0,
+      // 093: el stock solo se captura al dar de alta (existencia inicial con
+      // kardex). Al editar no se envía: cambia solo por movimientos trazables.
+      ...(modal === "new" ? { stock: Number(form.stock) || 0 } : {}),
       ubicacion: form.ubicacion,
       precio: form.tipo === "Producto Terminado" ? Number(form.precio) || 0 : 0,
       costo_unitario: form.tipo === "Empaque" ? Number(form.costoUnitario) || 0 : 0,
@@ -113,7 +115,11 @@ export function ProductosView({ data, actions }) {
         <FormInput label="SKU *" value={form.sku} onChange={e=>setForm({...form,sku:e.target.value.toUpperCase()})} placeholder="Ej: HPC-25K" error={errors.sku} />
         <FormInput label="Nombre *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} error={errors.nombre} />
         <FormSelect label="Tipo" options={["Producto Terminado","Empaque"]} value={form.tipo} onChange={e=>{const t=e.target.value;setForm({...form,tipo:t,precio:t==="Empaque"?0:form.precio,costoUnitario:t==="Producto Terminado"?0:form.costoUnitario,empaqueSku:t==="Empaque"?"":form.empaqueSku})}} />
-        <FormInput label="Stock inicial" type="number" min="0" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} />
+        {modal === "new" ? (
+          <FormInput label="Stock inicial" type="number" min="0" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} />
+        ) : (
+          <p className="text-xs text-slate-500 bg-slate-50 rounded-lg p-2.5">Stock actual: <span className="font-semibold">{Number(form.stock || 0).toLocaleString()}</span>. Para corregirlo usa <span className="font-semibold">Ajustar existencia</span> en Inventario (queda registrado con motivo).</p>
+        )}
         <FormSelect label="Ubicación" options={["CF-1","CF-2","CF-3","Almacén"]} value={form.ubicacion} onChange={e=>setForm({...form,ubicacion:e.target.value})} />
         {form.tipo==="Producto Terminado" && (
           <>
