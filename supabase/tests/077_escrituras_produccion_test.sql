@@ -95,7 +95,10 @@ SELECT t77_assert((SELECT bool_and(relrowsecurity) FROM pg_class WHERE oid IN ('
 
 \echo '── 077: escritura directa denegada (no Admin)'
 BEGIN; SET LOCAL ROLE anon; SELECT t77_actor('anon', NULL, NULL);
-SELECT t77_assert(t77_rows($q$UPDATE productos SET stock = 1 WHERE sku = 'P77-BOLSA'$q$) = 0, '077-10 anon: UPDATE productos no afecta filas');
+DO $do$ DECLARE n BIGINT; BEGIN
+  BEGIN n := t77_rows($q$UPDATE productos SET stock = 1 WHERE sku = 'P77-BOLSA'$q$); EXCEPTION WHEN insufficient_privilege THEN n := 0; END;
+  PERFORM t77_assert(n = 0, '077-10 anon: UPDATE productos no afecta filas (o sin privilegio tras 090)');
+END $do$;
 SELECT t77_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad) VALUES ('Entrada', 'P77-BOLSA', 1)$q$, '077-11 anon: INSERT kardex denegado', '42501');
 SELECT t77_err($q$INSERT INTO produccion (turno, maquina, sku, cantidad) VALUES ('T', 'M', 'P77-HIELO', 1)$q$, '077-12 anon: INSERT produccion denegado', '42501');
 ROLLBACK;

@@ -1,5 +1,6 @@
 import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, todayISO, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
 import { traducirError } from '../../utils/errorMessages';
+import { esAsientoDeContrato } from '../../data/asientosContablesLogic';
 
 export function ContabilidadView({ data, actions }) {
   const toast = useToast();
@@ -130,8 +131,14 @@ export function ContabilidadView({ data, actions }) {
               <span className="text-sm font-semibold text-slate-700 min-w-0 truncate">{s(m.concepto)}</span>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className={`text-sm font-bold ${m._tipo === "Ingreso" ? "text-emerald-700" : "text-red-600"}`}>{(m._tipo === "Ingreso" ? "+" : "-") + fmtMoney(m.monto)}</span>
-                <button onClick={() => openEdit(m)} title="Editar" aria-label="Editar movimiento" className="text-slate-500 hover:text-blue-600 text-sm p-1">✏️</button>
-                <button onClick={() => askConfirm('Eliminar movimiento','¿Eliminar este movimiento contable?',()=>actions.deleteMovContable(m.id),true)} className="text-red-400 hover:text-red-600 text-xs p-1" title="Eliminar" aria-label="Eliminar movimiento">✕</button>
+                {esAsientoDeContrato(m) ? (
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 px-1" title="Asiento generado por el sistema; no se edita ni se borra">Sistema</span>
+                ) : (
+                  <>
+                    <button onClick={() => openEdit(m)} title="Editar" aria-label="Editar movimiento" className="text-slate-500 hover:text-blue-600 text-sm p-1">✏️</button>
+                    <button onClick={() => askConfirm('Eliminar movimiento','¿Eliminar este movimiento contable?',()=>actions.deleteMovContable(m.id),true)} className="text-red-400 hover:text-red-600 text-xs p-1" title="Eliminar" aria-label="Eliminar movimiento">✕</button>
+                  </>
+                )}
               </div>
             </div>
             <div className="flex justify-between mt-0.5">

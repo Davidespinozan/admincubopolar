@@ -97,7 +97,7 @@ END $$;
 GRANT EXECUTE ON FUNCTION t84_denegado(TEXT, BOOLEAN) TO anon, authenticated;
 
 \echo '── 084: estado físico'
-SELECT t84_assert((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.stock_operaciones'::regclass) AND (SELECT string_agg(policyname, ',' ORDER BY policyname) = 'admin_all,read_all' FROM pg_policies WHERE tablename = 'stock_operaciones')
+SELECT t84_assert((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.stock_operaciones'::regclass) AND (SELECT string_agg(policyname, ',' ORDER BY policyname) = CASE WHEN to_regprocedure('public.b4_escritura_api()') IS NULL THEN 'admin_all,read_all' ELSE 'read_all' END FROM pg_policies WHERE tablename = 'stock_operaciones')  -- 090 retira admin_all (inutilizable)
   AND NOT has_table_privilege('anon', 'public.stock_operaciones', 'SELECT') AND has_table_privilege('authenticated', 'public.stock_operaciones', 'SELECT') AND NOT has_table_privilege('authenticated', 'public.stock_operaciones', 'INSERT'), '084-01 stock_operaciones: RLS, admin_all + read_all, anon sin acceso, authenticated solo lectura');
 SELECT t84_assert((SELECT string_agg(column_name, ',' ORDER BY column_name) = 'cuarto_id,operacion_id,ruta_id' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'inventario_mov' AND column_name IN ('cuarto_id', 'ruta_id', 'operacion_id') AND is_nullable = 'YES')
   AND (SELECT count(*) = 3 FROM pg_constraint WHERE conrelid = 'public.inventario_mov'::regclass AND conname IN ('inventario_mov_cuarto_id_fkey', 'inventario_mov_ruta_id_fkey', 'inventario_mov_operacion_id_fkey') AND confdeltype = 'n'), '084-02 kardex: cuarto_id, ruta_id, operacion_id nullables con FK ON DELETE SET NULL');

@@ -1211,16 +1211,15 @@ export function useSupaStore(userId, userName, userRol) {
           });
           if (validationErr) return validationErr;
 
-          // Borrar CxC sin pagos (ya validamos monto_pagado === 0 arriba)
+          // 090: la CxC sin cobros se anula con el contrato anular_cxc_orden
+          // (borra la cuenta y revierte el saldo del cliente en una
+          // transacción). Ningún JWT escribe cuentas_por_cobrar por REST.
           if (cxc) {
-            const { error: errDelCxc } = await supabase
-              .from('cuentas_por_cobrar')
-              .delete()
-              .eq('id', cxc.id);
-            if (errDelCxc) {
-              console.warn('[cancelarOrden] delete cxc:', errDelCxc.message);
-              t()?.error('No se pudo borrar la CxC asociada');
-              return { error: errDelCxc.message };
+            const { error: errAnular } = await supabase.rpc('anular_cxc_orden', { p_orden_id: Number(ordenId) });
+            if (errAnular) {
+              console.warn('[cancelarOrden] rpc anular_cxc_orden:', errAnular.message);
+              t()?.error('No se pudo anular la CxC asociada');
+              return { error: errAnular.message };
             }
           }
 
@@ -2522,33 +2521,6 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── PAGOS ──
-      registrarPago: async (clienteId, monto, referencia) => {
-        try {
-          if (!clienteId) return { error: 'Cliente requerido' };
-          const montoNum = Number(monto);
-          if (!Number.isFinite(montoNum) || montoNum <= 0) {
-            return { error: 'Monto debe ser mayor a 0' };
-          }
-          const { error } = await supabase.rpc('registrar_pago', {
-            p_cliente_id: clienteId,
-            p_monto: centavos(montoNum),
-            p_referencia: referencia,
-            p_usuario_id: uid(),
-          });
-          if (error) {
-            const msg = error.message || 'Error al registrar pago';
-            t()?.error(msg);
-            return { error: msg };
-          }
-          log('Registrar', 'Pagos', `Cliente #${clienteId} — $${montoNum} — ${referencia || 'Sin ref'}`);
-          rf();
-          return undefined;
-        } catch (e) {
-          const msg = e?.message || 'Error inesperado al registrar pago';
-          t()?.error(msg);
-          return { error: msg };
-        }
-      },
 
       // Cobrar contra una cuenta por cobrar específica
       cobrarCxC: async (cxcId, monto, metodoPago, referencia) => {
@@ -3077,25 +3049,11 @@ export function useSupaStore(userId, userName, userRol) {
                 .eq('orden_id', ordenId)
                 .maybeSingle();
               if (!errCxc && cxc) {
-                const nuevoMontoOriginal = centavos(Number(cxc.monto_original) - total);
-                const nuevoSaldo = centavos(Math.max(0, Number(cxc.saldo_pendiente) - total));
-                const pagado = Number(cxc.monto_pagado || 0);
-                const nuevoEstatus = nuevoMontoOriginal <= 0 ? 'Pagada'
-                  : pagado >= nuevoMontoOriginal ? 'Pagada'
-                  : pagado > 0 ? 'Parcial'
-                  : 'Pendiente';
-                const { error: errUpdCxc } = await supabase
-                  .from('cuentas_por_cobrar')
-                  .update({
-                    monto_original: Math.max(0, nuevoMontoOriginal),
-                    saldo_pendiente: nuevoSaldo,
-                    estatus: nuevoEstatus,
-                  })
-                  .eq('id', cxc.id);
-                if (!errUpdCxc) {
-                  await supabase.rpc('increment_saldo', { p_cli: orden.cliente_id, p_delta: -total });
-                } else {
-                  console.warn('[registrarDevolucion] update CxC (parcial):', errUpdCxc.message);
+                // 090: la CxC y el saldo del cliente se ajustan con el contrato
+                // ajustar_cxc_devolucion (misma aritmética, una transacción).
+                const { error: errUpdCxc } = await supabase.rpc('ajustar_cxc_devolucion', { p_orden_id: Number(ordenId), p_monto: total });
+                if (errUpdCxc) {
+                  console.warn('[registrarDevolucion] rpc ajustar_cxc_devolucion (parcial):', errUpdCxc.message);
                   ajustePartial = true;
                   ajusteMsg = 'Devolución registrada pero la CxC no se ajustó. Revísala manualmente.';
                 }
@@ -3784,96 +3742,6 @@ export function useSupaStore(userId, userName, userRol) {
       // Pensada para pre-producción: permite a Admin limpiar el sistema
       // antes de operar con datos reales.
       // Requiere confirmacion === 'RESETEAR' para activarse.
-      resetSistema: async ({ confirmacion, motivo = '' } = {}) => {
-        const guard = requireAdmin();
-        if (guard) { t()?.error(guard.error); return guard; }
-        try {
-          if (confirmacion !== 'RESETEAR') {
-            return { error: 'Confirmación inválida. Debes escribir RESETEAR.' };
-          }
-
-          const usuario = uname() || 'Admin';
-          const inicioReset = new Date().toISOString();
-
-          // Orden defensivo: hijos antes que padres (tolera FKs sin CASCADE)
-          const tablas = [
-            'pagos',
-            'cuentas_por_cobrar',
-            'orden_lineas',
-            'invoice_attempts',
-            // 'mermas' NO se borra (072): es evento histórico inmutable, sin
-            // DELETE para clientes. Igual que auditoria.
-            'inventario_mov',
-            'chofer_ubicaciones',
-            'ordenes',
-            'rutas',
-            'produccion',
-            'nomina_recibos',
-            'nomina_periodos',
-            'pagos_proveedores',
-            'cuentas_por_pagar',
-            'movimientos_contables',
-            'costos_historial',
-            'notificaciones',
-            'error_log',
-          ];
-
-          const errores = [];
-
-          for (const tabla of tablas) {
-            const { error } = await supabase.from(tabla).delete().neq('id', 0);
-            if (error) errores.push({ tabla, error: error.message });
-          }
-
-          // Reset stock de cuartos fríos (JSONB → {})
-          const { error: errCF } = await supabase
-            .from('cuartos_frios')
-            .update({ stock: {} })
-            .neq('id', 0);
-          if (errCF) errores.push({ tabla: 'cuartos_frios.stock', error: errCF.message });
-
-          // Reset stock de productos
-          const { error: errProd } = await supabase
-            .from('productos')
-            .update({ stock: 0 })
-            .neq('id', 0);
-          if (errProd) errores.push({ tabla: 'productos.stock', error: errProd.message });
-
-          // Auditoria NO se borra: cumplimiento SAT y trazabilidad histórica.
-          // El reset solo agrega la entrada de RESET_SISTEMA al historial.
-
-          // Audit log del reset
-          const detalle = JSON.stringify({
-            motivo: motivo || 'Sin motivo',
-            tablas_afectadas: tablas,
-            inicio: inicioReset,
-            errores: errores.length > 0 ? errores : null,
-          });
-          const { error: errInsAud } = await supabase.from('auditoria').insert({
-            usuario,
-            accion: 'RESET_SISTEMA',
-            modulo: 'Sistema',
-            detalle,
-          });
-          if (errInsAud) {
-            console.warn('[resetSistema] insert auditoria final falló:', errInsAud.message);
-          }
-
-          rf();
-
-          if (errores.length > 0) {
-            const msg = `Reset parcial: ${errores.length} ${errores.length === 1 ? 'tabla con error' : 'tablas con errores'}`;
-            t()?.error(msg);
-            return { error: msg, partial: true, detalles: errores };
-          }
-
-          return undefined;
-        } catch (e) {
-          console.error('[resetSistema] excepción:', e);
-          t()?.error('Error inesperado durante reset');
-          return { error: e?.message || 'Error inesperado durante reset' };
-        }
-      },
     };
   }
 

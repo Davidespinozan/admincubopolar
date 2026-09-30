@@ -163,9 +163,8 @@ describe('callers de mermas (072)', () => {
     expect(v).not.toMatch(/borrarMermaConReverso/);
   });
 
-  it('el reset del sistema no borra mermas (historia inmutable)', () => {
+  it('no existe un reset del sistema que borre mermas (retirado en 090)', () => {
     const store = leer('src/data/supaStore.js');
-    const bloque = store.slice(store.indexOf('resetSistema:'), store.indexOf('resetSistema:') + 1500);
-    expect(bloque).not.toMatch(/^\s*'mermas',/m);
+    expect(store).not.toMatch(/resetSistema/);
   });
 });

@@ -178,17 +178,16 @@ describe('frontend 076: una sola RPC por operación', () => {
 });
 
 describe('auditoría de callers (compuerta 077): escrituras directas restantes', () => {
-  // resetSistema (solo Admin) borra por un loop de nombres de tabla; se
-  // verifica aparte que sea la única escritura dinámica y que exija Admin.
-  it('resetSistema: única escritura con nombre de tabla dinámico, y exige Admin', () => {
+  // 090: resetSistema se retiró de producción; ya no queda ninguna escritura
+  // con nombre de tabla dinámico en el store.
+  it('ninguna escritura con nombre de tabla dinámico', () => {
     const dinamicas = STORE_LINES.map((l, i) => (/from\(\s*tabla\s*\)/.test(l) ? accionEn(i) : null)).filter(Boolean);
-    expect([...new Set(dinamicas)]).toEqual(['resetSistema']);
-    expect(cuerpo('resetSistema')).toMatch(/requireAdmin\(\)/);
+    expect(dinamicas).toEqual([]);
   });
   it('productos: solo acciones de Admin', () => {
     expect(escrituras('productos')).toEqual([
       'addProducto:insert', 'ajustarExistenciaManual:update', 'ajustarStockCuarto:update', 'deleteDemoProducts:delete',
-      'deleteProducto:delete', 'resetSistema:update', 'updateProducto:update', 'updateStockMinimo:update',
+      'deleteProducto:delete', 'updateProducto:update', 'updateStockMinimo:update',
     ]);
   });
   it('inventario_mov: solo los ajustes manuales de Admin', () => {

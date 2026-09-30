@@ -75,10 +75,11 @@ GRANT ALL ON t82_ids TO anon, authenticated, service_role;
 INSERT INTO t82_ids VALUES ('h0', t82_huella());
 
 \echo '── 082 R3: estado físico'
-SELECT t82_assert((SELECT count(*) = 1 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'confirmar_produccion'), '082-01 confirmar_produccion sigue físicamente presente');
-SELECT t82_assert((SELECT md5(pg_get_functiondef(oid)) = '406cf50b7a01973bde25b4dcdf0316f9' AND prosecdef FROM pg_proc WHERE oid = 'public.confirmar_produccion(bigint,bigint)'::regprocedure), '082-02 cuerpo sin reescribir (md5 de producción)');
+-- 090 retira confirmar_produccion (función muerta): 082-01..03 aceptan esa retirada.
+SELECT t82_assert((to_regprocedure('public.confirmar_produccion(bigint,bigint)') IS NULL AND to_regprocedure('public.b4_escritura_api()') IS NOT NULL) OR (SELECT count(*) = 1 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname = 'confirmar_produccion'), '082-01 confirmar_produccion sigue físicamente presente (o retirada en 090)');
+SELECT t82_assert((to_regprocedure('public.confirmar_produccion(bigint,bigint)') IS NULL AND to_regprocedure('public.b4_escritura_api()') IS NOT NULL) OR (SELECT md5(pg_get_functiondef(oid)) = '406cf50b7a01973bde25b4dcdf0316f9' AND prosecdef FROM pg_proc WHERE oid = to_regprocedure('public.confirmar_produccion(bigint,bigint)')), '082-02 cuerpo sin reescribir (md5 de producción) o retirada en 090');
 SELECT t82_assert((SELECT NOT has_function_privilege('public', oid, 'EXECUTE') AND NOT has_function_privilege('anon', oid, 'EXECUTE') AND NOT has_function_privilege('authenticated', oid, 'EXECUTE') AND NOT has_function_privilege('service_role', oid, 'EXECUTE')
-  FROM pg_proc WHERE oid = 'public.confirmar_produccion(bigint,bigint)'::regprocedure), '082-03 sin EXECUTE para PUBLIC, anon, authenticated ni service_role');
+  FROM pg_proc WHERE oid = to_regprocedure('public.confirmar_produccion(bigint,bigint)')) OR (to_regprocedure('public.confirmar_produccion(bigint,bigint)') IS NULL AND to_regprocedure('public.b4_escritura_api()') IS NOT NULL), '082-03 sin EXECUTE para PUBLIC, anon, authenticated ni service_role (o retirada en 090)');
 SELECT t82_assert((SELECT count(*) = 0 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname <> 'confirmar_produccion' AND pg_get_functiondef(p.oid) ~ 'confirmar_produccion')
   AND (SELECT count(*) = 0 FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid WHERE NOT t.tgisinternal AND pg_get_functiondef(p.oid) ~ 'confirmar_produccion'), '082-04 ninguna función ni trigger la invoca');
 
@@ -100,7 +101,7 @@ BEGIN
   LOOP
     PERFORM t82_actor(a.dbrole, a.email, a.sub);
     EXECUTE format('SET LOCAL ROLE %I', a.dbrole);
-    PERFORM t82_err($q$SELECT confirmar_produccion(8290, 8201)$q$, a.tag || ': confirmar_produccion denegada por ACL', '42501');
+    PERFORM t82_err($q$SELECT confirmar_produccion(8290, 8201)$q$, a.tag || ': confirmar_produccion denegada por ACL (o inexistente tras 090)', '42501|42883');
     RESET ROLE;
     PERFORM t82_assert(t82_huella() = (SELECT v FROM t82_ids WHERE k = 'h0'), a.tag || ': cero efectos (stock, producción, kardex, auditoría)');
   END LOOP;

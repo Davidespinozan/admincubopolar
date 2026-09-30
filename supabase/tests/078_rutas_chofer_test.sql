@@ -11,6 +11,7 @@ DELETE FROM inventario_mov WHERE producto LIKE 'P78-%';
 DELETE FROM movimientos_contables WHERE concepto LIKE '%R-78%';
 DELETE FROM orden_lineas WHERE orden_id BETWEEN 7820 AND 7829;
 DELETE FROM ordenes WHERE id BETWEEN 7820 AND 7829;
+DO $$ BEGIN IF to_regclass('public.stock_operaciones') IS NOT NULL THEN DELETE FROM stock_operaciones WHERE ruta_id BETWEEN 7801 AND 7899 OR operacion_id::text LIKE '78000000-%'; END IF; END $$;
 DELETE FROM rutas WHERE id BETWEEN 7801 AND 7899;
 DELETE FROM clientes WHERE id = 7810;
 DELETE FROM cuartos_frios WHERE id = 'CF-78';
@@ -178,7 +179,16 @@ BEGIN
   END LOOP;
 END $$;
 BEGIN; SET LOCAL ROLE anon; SELECT t78_actor('anon', NULL, NULL);
-SELECT t78_ataques('078-26 anon', 7801, false);
+-- 090: anon ya no tiene privilegios sobre rutas: cada intento falla por ACL.
+DO $do$ BEGIN
+  IF has_table_privilege('anon', 'public.rutas', 'UPDATE') THEN
+    PERFORM t78_ataques('078-26 anon', 7801, false);
+  ELSE
+    PERFORM t78_err($q$UPDATE rutas SET carga_autorizada = '{"P78-HIELO": 999}' WHERE id = 7801$q$, '078-26 anon: UPDATE sin privilegio (090)', '42501');
+    PERFORM t78_err($q$DELETE FROM rutas WHERE id = 7801$q$, '078-26 anon: DELETE sin privilegio (090)', '42501');
+    PERFORM t78_err($q$INSERT INTO rutas (folio, nombre, chofer_id, estatus) VALUES ('R-7890', 'nueva', 7804, 'Programada')$q$, '078-26 anon: INSERT sin privilegio (090)', '42501');
+  END IF;
+END $do$;
 ROLLBACK;
 SELECT t78_assert(t78_huella() = (SELECT v FROM t78_ids WHERE k = 'h0'), '078-27 anon: cero efectos');
 
@@ -272,6 +282,7 @@ DELETE FROM inventario_mov WHERE producto LIKE 'P78-%';
 DELETE FROM movimientos_contables WHERE concepto LIKE '%R-78%';
 DELETE FROM orden_lineas WHERE orden_id BETWEEN 7820 AND 7829;
 DELETE FROM ordenes WHERE id BETWEEN 7820 AND 7829;
+DO $$ BEGIN IF to_regclass('public.stock_operaciones') IS NOT NULL THEN DELETE FROM stock_operaciones WHERE ruta_id BETWEEN 7801 AND 7899 OR operacion_id::text LIKE '78000000-%'; END IF; END $$;
 DELETE FROM rutas WHERE id BETWEEN 7801 AND 7899;
 DELETE FROM clientes WHERE id = 7810;
 DELETE FROM cuartos_frios WHERE id = 'CF-78';

@@ -102,7 +102,11 @@ SELECT t_actor2('authenticated', 'inactivo@t');
 SELECT t_assert(t_count('clientes') = 0 AND t_count('ordenes') = 0 AND t_count('pagos') = 0 AND t_count('cuentas_por_cobrar') = 0 AND t_count('movimientos_contables') = 0 AND t_count('configuracion_empresa') = 0 AND t_count('payment_webhook_events') = 0, '11. inactivo: mismas denegaciones de lectura');
 RESET ROLE;
 SELECT t_actor2('anon', NULL); SET LOCAL ROLE anon;
-SELECT t_assert(t_count('clientes') = 0 AND t_count('ordenes') = 0 AND t_count('productos') = 0 AND t_count('configuracion_empresa') = 0, 'A. anon no lee nada');
+-- 090: anon ya no tiene SELECT (más estricto que cero filas).
+DO $do$ DECLARE n BIGINT; BEGIN
+  BEGIN n := t_count('clientes') + t_count('ordenes') + t_count('productos') + t_count('configuracion_empresa'); EXCEPTION WHEN insufficient_privilege THEN n := 0; END;
+  PERFORM t_assert(n = 0, 'A. anon no lee nada');
+END $do$;
 RESET ROLE;
 ROLLBACK;
 

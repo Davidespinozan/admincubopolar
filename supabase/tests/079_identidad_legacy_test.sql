@@ -151,7 +151,10 @@ INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('P79-ADMIN', 'A
 SELECT t79_assert(t79_rows($q$UPDATE productos SET precio = 6 WHERE sku = 'P79-ADMIN'$q$) = 1 AND t79_rows($q$DELETE FROM productos WHERE sku = 'P79-ADMIN'$q$) = 1, '079-13 Admin: alta, edición y baja de producto (productos.admin_all)');
 SELECT t79_assert(t79_rows($q$UPDATE rutas SET carga_autorizada = '{"P79-HIELO": 3}' WHERE id = 7901$q$) = 1, '079-14 Admin: gestiona rutas (rutas.admin_all)');
 SELECT t79_assert(t79_count($q$SELECT 1 FROM movimientos_contables WHERE concepto LIKE '%T79%'$q$) = 1 AND t79_count($q$SELECT 1 FROM auditoria WHERE detalle LIKE '%T79%'$q$) = 1 AND t79_count($q$SELECT 1 FROM chofer_ubicaciones WHERE ruta_id BETWEEN 7901 AND 7999$q$) = 2, '079-15 Admin: ve ledger, auditoría y GPS de todos (admin_all / admin_read / admin_or_self_read)');
+-- 090: Admin ya no inserta órdenes por REST (crear_orden); la fila es solo fixture.
+RESET ROLE;
 INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id) VALUES (7920, 'OV-7920', 7910, 'Cliente 79', '1×P79-HIELO', 30, 'Creada', 'Efectivo', 'Contado', 7902);
+SET LOCAL ROLE authenticated;
 SELECT t79_assert(t79_rows($q$DELETE FROM ordenes WHERE id = 7920$q$) = 1, '079-16 Admin: DELETE ordenes (rollback_delete)');
 ROLLBACK;
 
@@ -215,7 +218,10 @@ ROLLBACK;
 
 BEGIN; SET LOCAL ROLE authenticated; SELECT t79_actor('authenticated', 'fact79@t', '79000000-0000-0000-0000-000000000006');
 SELECT t79_identidad('079-60 Facturación activo', 'Facturación', 7906);
+-- 090: los intentos de factura los escribe el backend (service_role); aquí es fixture.
+RESET ROLE;
 INSERT INTO invoice_attempts (provider, status) VALUES ('test79', 'pending');
+SET LOCAL ROLE authenticated;
 SELECT t79_assert(t79_count($q$SELECT 1 FROM movimientos_contables WHERE concepto LIKE '%T79%'$q$) = 1 AND t79_count($q$SELECT 1 FROM invoice_attempts WHERE provider = 'test79'$q$) = 1, '079-61 Facturación: intentos de factura y lectura del ledger (facturacion_all / facturacion_read)');
 INSERT INTO clientes (nombre, rfc) VALUES ('Cliente 79 fact', 'XAXX010101000');
 SELECT t79_err($q$INSERT INTO leads (nombre) VALUES ('Lead 79 f')$q$, '079-62 Facturación: alta de clientes sí, leads no', '42501');
@@ -269,9 +275,16 @@ ROLLBACK;
 BEGIN; SET LOCAL ROLE anon; SELECT t79_actor('anon', NULL, NULL);
 SELECT t79_err($q$SELECT get_my_rol()$q$, '079-90 anon: sin EXECUTE en get_my_rol', '42501');
 SELECT t79_err($q$SELECT get_my_user_id()$q$, '079-91 anon: sin EXECUTE en get_my_user_id', '42501');
-SELECT t79_assert(t79_count($q$SELECT 1 FROM productos WHERE sku = 'P79-HIELO'$q$) = 0 AND t79_count($q$SELECT 1 FROM usuarios WHERE id = 7901$q$) = 0, '079-92 anon: nada visible');
+-- 090: anon ya no tiene privilegios de tabla (más estricto que cero filas).
+DO $do$ DECLARE n BIGINT; BEGIN
+  BEGIN n := t79_count($q$SELECT 1 FROM productos WHERE sku = 'P79-HIELO'$q$) + t79_count($q$SELECT 1 FROM usuarios WHERE id = 7901$q$); EXCEPTION WHEN insufficient_privilege THEN n := 0; END;
+  PERFORM t79_assert(n = 0, '079-92 anon: nada visible (o sin privilegio tras 090)');
+END $do$;
 SELECT t79_err($q$INSERT INTO productos (sku, nombre, precio, stock) VALUES ('P79-A', 'x', 1, 1)$q$, '079-93 anon: INSERT denegado', '42501');
-SELECT t79_assert(t79_rows($q$UPDATE usuarios SET estatus = 'Activo' WHERE id = 7907$q$) = 0, '079-94 anon: UPDATE usuarios 0 filas');
+DO $do$ DECLARE n BIGINT; BEGIN
+  BEGIN n := t79_rows($q$UPDATE usuarios SET estatus = 'Activo' WHERE id = 7907$q$); EXCEPTION WHEN insufficient_privilege THEN n := 0; END;
+  PERFORM t79_assert(n = 0, '079-94 anon: UPDATE usuarios 0 filas (o sin privilegio tras 090)');
+END $do$;
 ROLLBACK;
 SELECT t79_assert(t79_huella() = (SELECT v FROM t79_ids WHERE k = 'h0'), '079-95 huella final intacta');
 

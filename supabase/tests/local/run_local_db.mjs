@@ -94,6 +94,9 @@ async function runFile(client, file, { stopOnError = false, echo = false } = {})
 const admin = await connect('postgres');
 await admin.query(`DROP DATABASE IF EXISTS ${DB}`);
 await admin.query(`CREATE DATABASE ${DB}`);
+// 090: el rol postgres (dueño en producción) solo existe desde el bloque 090;
+// las migraciones anteriores corren igual que siempre.
+await admin.query('DROP ROLE IF EXISTS postgres');
 await admin.end();
 
 const c = await connect();
@@ -103,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -1814,6 +1817,105 @@ await conc087();
 await fe087();
 console.log('  concurrencia + frontend↔DB (076, 084, 086 y 087) tras 088: PASS');
 
+// ═══ 090/091 — B4: privilegios, ejecución e historia canónica ═══
+{
+  // Paridad previa: las funciones que 090 reemplaza siguen idénticas a producción.
+  // Deriva conocida: el wrapper nextval de producción no viene del repo (004
+  // crea otra versión). Se instala el cuerpo exacto de producción para que 090
+  // se pruebe sobre el estado real.
+  await c.query(`CREATE OR REPLACE FUNCTION public.nextval(seq_name text)
+ RETURNS bigint
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+AS $function$
+BEGIN
+  RETURN nextval(seq_name::regclass);
+END;
+$function$`);
+  const PROD = {
+    'nextval(text)': '6f6a38eb7e9bfb545074f9cd2fb7d020', 'erp_actor_etiqueta()': '8005e4dcb61976fc0a888c7dbfcab712',
+    'registrar_produccion(uuid,text,text,text,integer,text)': 'bda21dcb98902374f7eb85e85bf04f80',
+    'registrar_transformacion(uuid,text,integer,text,integer,text,text)': '6ce6d5b76b85874250d2ee652fe032e8',
+    'cerrar_ruta_financiero(uuid,bigint,jsonb,bigint,text)': 'c17d27ac7e244c62e4a8443a9bf524bc',
+    'cerrar_ruta_financiero(bigint,jsonb,bigint,text)': '0ef270736929d362bafcc1d8b37b8cc5',
+  };
+  const rows = (await c.query(`SELECT oid::regprocedure::text AS sig, md5(pg_get_functiondef(oid)) AS m FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('nextval','erp_actor_etiqueta','registrar_produccion','registrar_transformacion','cerrar_ruta_financiero')`)).rows;
+  const mal = Object.keys(PROD).filter(k => (rows.find(r => r.sig === k) || {}).m !== PROD[k]);
+  const muertas = (await c.query(`SELECT count(*)::int AS n FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('registrar_pago','move_stock','confirmar_produccion','timbrar_orden','check_orden_transition','check_produccion_transition','check_stock_positive','prevent_mutation')`)).rows[0].n;
+  const ok = mal.length === 0 && muertas === 8;
+  console.log(`  B4_PARITY_CHECK[pre-090]: ${ok ? 'PASS' : 'FAIL'} ${JSON.stringify({ mal, muertas })}`);
+  if (!ok) process.exit(1);
+  // Rol dueño como en producción, con los privilegios por defecto de Supabase.
+  await c.query(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'postgres') THEN CREATE ROLE postgres NOLOGIN; END IF; END $$`);
+  await c.query(`GRANT USAGE, CREATE ON SCHEMA public TO postgres`);
+  await c.query(`ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role`);
+  await c.query(`ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO anon, authenticated, service_role`);
+  await c.query(`ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role`);
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 090 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '090_b4_privilegios_e_historia.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 090 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 090)'); process.exit(1); }
+{
+  const perm = (await c.query(`SELECT tablename||'|'||policyname AS p, cmd FROM pg_policies WHERE schemaname='public' AND (qual='true' OR with_check='true' OR roles::text ~ 'public') ORDER BY 1`)).rows;
+  const mal = perm.filter(x => !PERMISIVAS_DEUDA_072.includes(x.p)).map(x => x.p + ':' + x.cmd);
+  console.log(`  PERMISSIVE_POLICY_CHECK[090]: ${mal.length === 0 ? 'PASS' : 'FAIL'} fuera_de_deuda=${JSON.stringify(mal)} restantes=${JSON.stringify(perm.map(x => x.p))}`);
+  if (mal.length) process.exit(1);
+}
+async function reruns090(etiqueta) {
+  // Artefacto del arnés: el barrido de EXECUTE/grants de 090 también alcanza a
+  // los helpers de prueba (t*_) que ya existían; CREATE OR REPLACE conserva ese
+  // ACL. Se restaura solo para objetos de prueba.
+  await c.query(`DO $$ DECLARE f RECORD; BEGIN
+    FOR f IN SELECT p.oid::regprocedure AS sig FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname ~ '^t[0-9]*_' LOOP
+      EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO PUBLIC', f.sig); END LOOP;
+    FOR f IN SELECT c.oid::regclass AS rel FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind IN ('r', 'v') AND c.relname ~ '^t[0-9]*_' LOOP
+      EXECUTE format('GRANT ALL ON %s TO anon, authenticated, service_role', f.rel); END LOOP;
+  END $$`);
+  for (const t of ['clientes', 'ordenes', 'leads', 'invoice_attempts', 'chofer_ubicaciones', 'movimientos_contables', 'auditoria', 'productos', 'rutas', 'pagos', 'inventario_mov', 'notificaciones', 'payment_webhook_events', 'payment_intents']) {
+    await c.query(`SELECT setval('${t}_id_seq', GREATEST((SELECT COALESCE(max(id), 0) FROM ${t}), (SELECT last_value FROM ${t}_id_seq)))`);
+  }
+  for (const [etq, f] of [['088', '088_b3_integridad_test.sql'], ['087', '087_inventario_ruta_test.sql'], ['086', '086_cierre_financiero_test.sql'], ['085', '085_contencion_stock_test.sql'], ['084', '084_contratos_stock_test.sql'], ['083', '083_self_read_auth_id_test.sql'], ['082', '082_r3_r4_test.sql'], ['081', '081_ruta_id_ordenes_test.sql'], ['080', '080_rpc_asignacion_test.sql'], ['079', '079_identidad_legacy_test.sql'], ['078', '078_rutas_chofer_test.sql'], ['077', '077_escrituras_produccion_test.sql'], ['076', '076_produccion_atomica_test.sql'], ['075', '075_cuartos_precios_test.sql'], ['074', '074_rename_sku_test.sql'], ['073', '073_vista_gps_test.sql'], ['072', '072_mermas_test.sql']]) {
+    const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+    if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión ${etq} tras ${etiqueta})`); process.exit(1); }
+    console.log(`  ${etq} tras ${etiqueta}: PASS`);
+  }
+  await c.query('DELETE FROM payment_webhook_events WHERE id = 600');
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/071_actor_activo_test.sql'), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (regresión 071 tras ${etiqueta})`); process.exit(1); }
+  console.log(`  071 tras ${etiqueta}: PASS`);
+}
+console.log('── PRUEBAS 090 (antes de 091: bundle anterior aún escribe CxC)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/090_b4_privilegios_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (090)'); process.exit(1); }
+}
+await reruns090('090');
+for (const k of [1, 2]) {
+  console.log(`── aplicar 091 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '091_b4_contencion_cxc.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+console.log('── PRUEBAS 090 (tras 091)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/090_b4_privilegios_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (090 tras 091)'); process.exit(1); }
+}
+await reruns090('091');
+console.log('── concurrencia + frontend↔DB tras 090/091');
+await conc084();
+await fe084();
+await conc076();
+await fe076();
+await conc086();
+await fe086();
+await conc087();
+await fe087();
+await conc088();
+console.log('  concurrencia + frontend↔DB (076, 084, 086, 087 y 088) tras 090/091: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -1847,7 +1949,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   'balance_ruta_interno','calcular_balance_ruta','finalizar_inventario_ruta','rutas_guard_inventario',
   // 088
   'precio_canonico','lineas_canonicas','fin_validar_credito','fin_actor_id','fin_orden_operable','productos_stock_interno',
-  'crear_orden','registrar_recepcion_compra','registrar_salida_empaque','clientes_guard_financiero','auditoria_actor','error_log_actor'];
+  'crear_orden','registrar_recepcion_compra','registrar_salida_empaque','clientes_guard_financiero','auditoria_actor','error_log_actor',
+  // 090
+  'nextval','b4_ruta_con_historia','anular_cxc_orden','ajustar_cxc_devolucion'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

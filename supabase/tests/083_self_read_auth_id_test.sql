@@ -90,7 +90,11 @@ SELECT t83_actor('authenticated', 'ventas83@t', '83000000-0000-0000-0000-0000000
 SELECT t83_assert(t83_rows($q$UPDATE usuarios SET rol = 'Admin' WHERE id = 8302$q$) = 0 AND t83_rows($q$UPDATE usuarios SET auth_id = '83000000-0000-0000-0000-000000000001' WHERE id = 8302$q$) = 0, '083-26 el propio usuario no edita su fila (self_read es solo SELECT)');
 ROLLBACK;
 BEGIN; SET LOCAL ROLE anon; SELECT t83_actor('anon', 'admin83@t', NULL);
-SELECT t83_assert(t83_visibles() = '', '083-27 anon: cero filas');
+-- 090: anon ya no tiene SELECT sobre usuarios (más estricto que cero filas).
+DO $do$ DECLARE v TEXT; BEGIN
+  BEGIN v := t83_visibles(); EXCEPTION WHEN insufficient_privilege THEN v := ''; END;
+  PERFORM t83_assert(v = '', '083-27 anon: cero filas (o sin privilegio tras 090)');
+END $do$;
 ROLLBACK;
 SELECT t83_assert(t83_huella() = (SELECT v FROM t83_ids WHERE k = 'h0'), '083-28 cero cambios en perfiles (nada vinculado, nada reactivado)');
 
