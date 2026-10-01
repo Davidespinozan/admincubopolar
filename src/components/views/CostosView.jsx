@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
+import { diaNegocio } from '../../utils/fechas';
 import { rangoMes } from '../../data/finanzasLogic';
-import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, fmtDate, fmtMoney, useToast, todayISO, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, fmtDate, fmtMoney, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 
 const CATEGORIAS_COSTO = ['Nómina', 'Renta', 'Servicios', 'Gasolina', 'Mantenimiento', 'Empaque', 'Materia Prima', 'Administrativo', 'Otro'];
 const FRECUENCIAS = ['Mensual', 'Quincenal', 'Semanal', 'Único'];
@@ -18,8 +19,8 @@ export function CostosView({ data, actions }) {
 
   const empty = { nombre: '', categoria: 'Servicios', monto: '', frecuencia: 'Mensual', diaCargo: '1', proveedor: '', activo: true };
   const [form, setForm] = useState(empty);
-  const [aplicarForm, setAplicarForm] = useState({ fecha: todayISO(), referencia: '' });
-  const emptyGasto = { concepto: '', categoria: 'Gasolina', monto: '', fecha: todayISO(), referencia: '' };
+  const [aplicarForm, setAplicarForm] = useState({ fecha: diaNegocio(), referencia: '' });
+  const emptyGasto = { concepto: '', categoria: 'Gasolina', monto: '', fecha: diaNegocio(), referencia: '' };
   const [gastoForm, setGastoForm] = useState(emptyGasto);
   const [saving, setSaving] = useState(false);
   const [aplicando, setAplicando] = useState(false);
@@ -94,7 +95,7 @@ export function CostosView({ data, actions }) {
   };
 
   const openAplicar = (c) => {
-    setAplicarForm({ fecha: todayISO(), referencia: '' });
+    setAplicarForm({ fecha: diaNegocio(), referencia: '' });
     setAplicarModal(c);
   };
 

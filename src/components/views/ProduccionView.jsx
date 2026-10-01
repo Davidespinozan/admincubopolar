@@ -1,4 +1,5 @@
-import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion, todayLocalISO } from './viewsCommon';
+import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion } from './viewsCommon';
+import { diaNegocio, sumarDias } from '../../utils/fechas';
 import { useRef } from 'react';
 import { traducirError } from '../../utils/errorMessages';
 import { resolverOperacion, claveTransformacion } from '../../data/produccionAtomicaLogic';
@@ -182,15 +183,12 @@ export function ProduccionView({ data, actions }) {
   // Generar lista completa de días (incluyendo sin producción) desde hoy hacia atrás
   const todosLosDias = useMemo(() => {
     const dias = [];
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-
+    // 098: días de negocio como fechas de calendario (sin zona del navegador).
+    const hoy = diaNegocio();
     const fechasConProd = Object.keys(diasConProduccion).sort();
-    const fechaMasAntigua = fechasConProd[0] ? new Date(fechasConProd[0]) : hoy;
+    const fechaMasAntigua = fechasConProd[0] && fechasConProd[0] < hoy ? fechasConProd[0] : hoy;
 
-    const cursor = new Date(hoy);
-    while (cursor >= fechaMasAntigua) {
-      const fechaStr = todayLocalISO(cursor);
+    for (let fechaStr = hoy; fechaStr >= fechaMasAntigua; fechaStr = sumarDias(fechaStr, -1)) {
       const dataDia = diasConProduccion[fechaStr] || { fecha: fechaStr, registros: [] };
 
       const porTurno = { 'Turno 1': [], 'Turno 2': [], 'Turno 3': [] };
@@ -204,14 +202,12 @@ export function ProduccionView({ data, actions }) {
 
       dias.push({
         fecha: fechaStr,
-        fechaObj: new Date(cursor),
+        fechaObj: new Date(Number(fechaStr.slice(0, 4)), Number(fechaStr.slice(5, 7)) - 1, Number(fechaStr.slice(8, 10))),
         registros: dataDia.registros,
         porTurno,
         totalDia,
         sinProduccion: dataDia.registros.length === 0,
       });
-
-      cursor.setDate(cursor.getDate() - 1);
     }
     return dias;
   }, [diasConProduccion]);

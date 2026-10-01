@@ -1,4 +1,5 @@
-import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, todayISO, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
+import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
+import { diaNegocio } from '../../utils/fechas';
 import { traducirError } from '../../utils/errorMessages';
 import { esAsientoDeContrato } from '../../data/asientosContablesLogic';
 import { useEffect } from 'react';
@@ -9,7 +10,7 @@ export function ContabilidadView({ data, actions }) {
   const [askConfirm, ConfirmEl] = useConfirm();
   const [showAll, setShowAll] = useState(false);
   const [modal, setModal] = useState(null);
-  const empty = { tipo: "Egreso", categoria: "Proveedores", concepto: "", monto: "", fecha: todayISO() };
+  const empty = { tipo: "Egreso", categoria: "Proveedores", concepto: "", monto: "", fecha: diaNegocio() };
   const [form, setForm] = useState(empty);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
@@ -19,7 +20,7 @@ export function ContabilidadView({ data, actions }) {
   // 093: los totales NO salen de esta lista (mezcla efectivo y no efectivo y
   // trae solo los movimientos más recientes). Vienen del reporte del
   // servidor para el mes elegido: Flujo de efectivo y Estado de resultados.
-  const [mes, setMes] = useState(() => todayISO().slice(0, 7));
+  const [mes, setMes] = useState(() => diaNegocio().slice(0, 7));
   const [reporte, setReporte] = useState(null);
   const [reporteError, setReporteError] = useState(null);
   const refrescoFin = `${(cont.egresos || [])[0]?.id || 0}|${(cont.ingresos || [])[0]?.id || 0}|${(data.pagos || [])[0]?.id || 0}`;
@@ -50,7 +51,7 @@ export function ContabilidadView({ data, actions }) {
       categoria: s(m.categoria) || (tipo === 'Ingreso' ? 'Ventas' : 'Proveedores'),
       concepto: s(m.concepto),
       monto: String(n(m.monto)),
-      fecha: s(m.fecha) || todayISO(),
+      fecha: s(m.fecha) || diaNegocio(),
     });
     setErrors({});
     setModal(m);
@@ -106,7 +107,7 @@ export function ContabilidadView({ data, actions }) {
 
     <div className="flex items-center gap-2">
       <label className="text-xs font-bold text-slate-500 uppercase">Mes</label>
-      <input type="month" value={mes} onChange={e => setMes(e.target.value || todayISO().slice(0, 7))} className="px-3 py-2 border border-slate-200 rounded-xl text-base sm:text-sm min-h-[44px]" />
+      <input type="month" value={mes} onChange={e => setMes(e.target.value || diaNegocio().slice(0, 7))} className="px-3 py-2 border border-slate-200 rounded-xl text-base sm:text-sm min-h-[44px]" />
     </div>
     {reporteError && <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2">No se pudo cargar el reporte: {reporteError}</p>}
 

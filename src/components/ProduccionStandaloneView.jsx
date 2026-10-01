@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { diaNegocio } from '../utils/fechas';
 import { resolverOperacion, claveProduccion, claveTransformacion } from '../data/produccionAtomicaLogic';
 import { claveSalida, claveTraspaso, MOTIVOS_SALIDA_MANUAL } from '../data/stockContratosLogic';
 import { mermasActivas } from '../data/mermasLogic';
@@ -177,14 +178,14 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   };
 
   const prodHoy = useMemo(() => {
-    const hoy = todayLocalISO();
+    const hoy = diaNegocio();
     return data.produccion.filter(p => p.fecha && p.fecha.slice(0, 10) === hoy);
   }, [data.produccion]);
 
   const totalHoy = useMemo(() => prodHoy.reduce((s, p) => s + n(p.cantidad), 0), [prodHoy]);
 
   const mermasHoyList = useMemo(() => {
-    const hoy = todayLocalISO();
+    const hoy = diaNegocio();
     return mermasActivas(data.mermas).filter(m => s(m.fecha).slice(0, 10) === hoy);
   }, [data.mermas]);
 
@@ -259,7 +260,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const producidoHoyPorSku = useMemo(() => {
     const acc = {};
     for (const p of productosHielo) acc[s(p.sku)] = 0;
-    const hoy = todayLocalISO();
+    const hoy = diaNegocio();
     for (const pr of (data.produccion || [])) {
       if (!s(pr.fecha).startsWith(hoy)) continue;
       const sku = s(pr.sku);

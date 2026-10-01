@@ -143,7 +143,6 @@ export function formatLeadMensaje(body) {
 export function buildLeadRow({ nombre, telefono, body, todayISO }) {
   const utmSource = String(body?.utm_source || '').trim();
   const origen = utmSource ? `Landing - ${utmSource}` : 'Landing page';
-  const fecha = todayISO || new Date().toISOString().slice(0, 10);
   return {
     nombre,
     telefono,
@@ -151,6 +150,8 @@ export function buildLeadRow({ nombre, telefono, body, todayISO }) {
     mensaje: formatLeadMensaje(body),
     origen,
     estatus: 'Nuevo',
-    fecha,
+    // 098: sin fecha inyectada, la pone el servidor (fin_hoy(), Mazatlán);
+    // new Date().toISOString() era el día UTC.
+    ...(todayISO ? { fecha: todayISO } : {}),
   };
 }

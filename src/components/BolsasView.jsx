@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
-import { s, n, todayLocalISO } from '../utils/safe';
+import { diaNegocio } from '../utils/fechas';
+import { s, n } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
 import { useBodyScrollLock } from './ui/Modal';
 import { resolverOperacion } from '../data/produccionAtomicaLogic';
@@ -22,7 +23,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
 
   // Cargar historial del día desde la BD (inventarioMov) para empaques
   const historial = useMemo(() => {
-    const hoyStr = todayLocalISO();
+    const hoyStr = diaNegocio();
     return (data.inventarioMov || [])
       .filter(m => {
         const fecha = s(m.createdAt || m.created_at || m.fecha);
@@ -48,7 +49,7 @@ export default function BolsasView({ user, data, actions, onLogout }) {
   }, [data.inventarioMov, empaqueSKUs, empaques]);
 
   const movHoy = useMemo(
-    () => resumenDiaEmpaque(data.inventarioMov, empaques.map(e => s(e.sku)), todayLocalISO()),
+    () => resumenDiaEmpaque(data.inventarioMov, empaques.map(e => s(e.sku)), diaNegocio()),
     [data.inventarioMov, empaques],
   );
 

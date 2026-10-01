@@ -1,5 +1,5 @@
-import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, useToast, todayLocalISO, PAGE_SIZE, Paginator } from './viewsCommon';
-import { diasEntre } from '../../utils/fechas';
+import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { diasEntre, diaNegocio, sumarDias } from '../../utils/fechas';
 import { esMermaActiva, puedeRevertirMerma } from '../../data/mermasLogic';
 
 export function MermasView({ data, actions }) {
@@ -11,12 +11,9 @@ export function MermasView({ data, actions }) {
   const [fotoModal, setFotoModal] = useState(null);
 
   // Filtros (default: últimos 30 días)
-  const hace30 = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return todayLocalISO(d);
-  }, []);
-  const hoy = useMemo(() => todayLocalISO(), []);
+  // 098: día de negocio (Mazatlán), no el día del navegador.
+  const hoy = useMemo(() => diaNegocio(), []);
+  const hace30 = useMemo(() => sumarDias(hoy, -30), [hoy]);
   const [fechaInicio, setFechaInicio] = useState(hace30);
   const [fechaFin, setFechaFin] = useState(hoy);
   const [filtroRuta, setFiltroRuta] = useState('');

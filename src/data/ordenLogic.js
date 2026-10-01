@@ -3,7 +3,7 @@
 // Extracted so it can be unit-tested without mocking the entire store.
 // supaStore.js imports and delegates to these functions.
 // ────────────────────────────────────────────────────────────────
-import { s, centavos, todayLocalISO } from '../utils/safe';
+import { s, centavos } from '../utils/safe';
 
 /**
  * Parse a productos string into structured items.
@@ -394,7 +394,7 @@ export function buildOrdenPayload(o, ctx) {
     cliente_id: o.clienteId || null,
     cliente_nombre: ctx.clienteNombre,
     productos: ctx.productosStr,
-    fecha: o.fecha || todayLocalISO(),
+    fecha: o.fecha || null, // 098: sin fecha elegida → el servidor usa fin_hoy()
     total: ctx.total,
     estatus: 'Creada',
     metodo_pago: o.metodoPago || 'Efectivo',

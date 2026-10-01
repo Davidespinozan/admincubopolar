@@ -1,4 +1,5 @@
-import { useState, useMemo, Icons, DataTable, PageHeader, s, fmtDateTime, useDebounce, todayLocalISO, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, DataTable, PageHeader, s, fmtDateTime, useDebounce, PAGE_SIZE, Paginator } from './viewsCommon';
+import { diaNegocio } from '../../utils/fechas';
 
 export function AuditoriaView({ data }) {
   const [filterUsr, setFilterUsr] = useState("");
@@ -23,7 +24,7 @@ export function AuditoriaView({ data }) {
 
   // Estadísticas rápidas
   const stats = useMemo(() => {
-    const hoy = todayLocalISO();
+    const hoy = diaNegocio();
     const accionesHoy = data.auditoria.filter(a => s(a.fecha).startsWith(hoy)).length;
     const usuariosActivos = new Set(data.auditoria.filter(a => s(a.fecha).startsWith(hoy)).map(a => s(a.usuario))).size;
     return { accionesHoy, usuariosActivos, total: data.auditoria.length };

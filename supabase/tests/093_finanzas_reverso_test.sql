@@ -178,9 +178,16 @@ SELECT registrar_recepcion_compra('93000000-0000-0000-0000-00000000a002', 'P93-E
 COMMIT;
 SELECT t93_assert(t93_d('b2', 'flujo', 'salidas') = 0 AND t93_d('b2', 'resultados', 'utilidad') = 0 AND t93_saldo('b2', 'cxp_pendiente') = 100, '093-31 compra de empaque a crédito: solo CxP (sin salida de dinero ni gasto)');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(1);
-UPDATE cuentas_por_pagar SET monto_pagado = 100, saldo_pendiente = 0, estatus = 'Pagada' WHERE proveedor = 'Prov T93 crédito';
-WITH m AS (INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, referencia) VALUES (fin_hoy(), 'Egreso', 'Proveedores', 'Pago a Prov T93 crédito', 100, '') RETURNING id)
-INSERT INTO pagos_proveedores (cxp_id, monto, fecha, metodo_pago, referencia, movimiento_id) SELECT (SELECT id FROM cuentas_por_pagar WHERE proveedor = 'Prov T93 crédito'), 100, fin_hoy(), 'Transferencia', '', id FROM m;
+DO $do$ BEGIN
+  IF has_table_privilege('authenticated', 'public.pagos_proveedores', 'INSERT') THEN
+    UPDATE cuentas_por_pagar SET monto_pagado = 100, saldo_pendiente = 0, estatus = 'Pagada' WHERE proveedor = 'Prov T93 crédito';
+    WITH m AS (INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, referencia) VALUES (fin_hoy(), 'Egreso', 'Proveedores', 'Pago a Prov T93 crédito', 100, '') RETURNING id)
+    INSERT INTO pagos_proveedores (cxp_id, monto, fecha, metodo_pago, referencia, movimiento_id) SELECT (SELECT id FROM cuentas_por_pagar WHERE proveedor = 'Prov T93 crédito'), 100, fin_hoy(), 'Transferencia', '', id FROM m;
+  ELSE
+    -- 099: el pago a proveedor va por el contrato (misma aritmética, fecha del servidor).
+    PERFORM pagar_cuenta_por_pagar('93000000-0000-0000-0000-00000000c0f1', (SELECT id FROM cuentas_por_pagar WHERE proveedor = 'Prov T93 crédito'), 100, 'Transferencia', '');
+  END IF;
+END $do$;
 -- CxP de un servicio (no inventario): gasto al emitirse, dinero al pagarse.
 INSERT INTO cuentas_por_pagar (proveedor, concepto, monto_original, monto_pagado, saldo_pendiente, fecha_emision, categoria, estatus) VALUES ('Prov T93 servicio', 'Mantenimiento T93', 80, 0, 80, fin_hoy(), 'Mantenimiento', 'Pendiente');
 COMMIT;
@@ -188,9 +195,15 @@ SELECT t93_assert(t93_d('b2', 'flujo', 'salidas_pagos_proveedores') = 100 AND t9
 SELECT t93_assert(t93_d('b2', 'resultados', 'gastos_credito') = 80 AND t93_d('b2', 'resultados', 'utilidad') = -80, '093-33 CxP de servicio: gasto una vez al emitirse');
 INSERT INTO t93_ids VALUES ('b3', t93_rep()::text);
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(1);
-UPDATE cuentas_por_pagar SET monto_pagado = 80, saldo_pendiente = 0, estatus = 'Pagada' WHERE proveedor = 'Prov T93 servicio';
-WITH m AS (INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, referencia) VALUES (fin_hoy(), 'Egreso', 'Proveedores', 'Pago a Prov T93 servicio', 80, '') RETURNING id)
-INSERT INTO pagos_proveedores (cxp_id, monto, fecha, metodo_pago, referencia, movimiento_id) SELECT (SELECT id FROM cuentas_por_pagar WHERE proveedor = 'Prov T93 servicio'), 80, fin_hoy(), 'Transferencia', '', id FROM m;
+DO $do$ BEGIN
+  IF has_table_privilege('authenticated', 'public.pagos_proveedores', 'INSERT') THEN
+    UPDATE cuentas_por_pagar SET monto_pagado = 80, saldo_pendiente = 0, estatus = 'Pagada' WHERE proveedor = 'Prov T93 servicio';
+    WITH m AS (INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, referencia) VALUES (fin_hoy(), 'Egreso', 'Proveedores', 'Pago a Prov T93 servicio', 80, '') RETURNING id)
+    INSERT INTO pagos_proveedores (cxp_id, monto, fecha, metodo_pago, referencia, movimiento_id) SELECT (SELECT id FROM cuentas_por_pagar WHERE proveedor = 'Prov T93 servicio'), 80, fin_hoy(), 'Transferencia', '', id FROM m;
+  ELSE
+    PERFORM pagar_cuenta_por_pagar('93000000-0000-0000-0000-00000000c0f2', (SELECT id FROM cuentas_por_pagar WHERE proveedor = 'Prov T93 servicio'), 80, 'Transferencia', '');
+  END IF;
+END $do$;
 COMMIT;
 SELECT t93_assert(t93_d('b3', 'flujo', 'salidas') = 80 AND t93_d('b3', 'resultados', 'utilidad') = 0, '093-34 pago de la CxP de servicio: dinero una vez, sin segundo gasto');
 

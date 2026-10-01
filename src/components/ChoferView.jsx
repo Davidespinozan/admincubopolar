@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
-import { s, n, fmtMoney, fmtDate, extraerTelefono, todayLocalISO, formatDireccion } from '../utils/safe';
+import { diaNegocio } from '../utils/fechas';
+import { s, n, fmtMoney, fmtDate, extraerTelefono, formatDireccion } from '../utils/safe';
 import { validarVentaExpressFactura } from '../data/ventaExpressLogic';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
@@ -117,7 +118,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   // ── MI RUTA ACTIVA (asignada por administración) ──
   const isAdminPreview = user?.rol === 'Admin';
   const miRutaActiva = useMemo(() => {
-    const hoyStr = todayLocalISO();
+    const hoyStr = diaNegocio();
     return (data.rutas || []).find(r => {
       const estatus = s(r.estatus).toLowerCase();
       const estaActiva = estatus === 'programada' || estatus === 'en progreso' || estatus === 'en_progreso' || estatus === 'pendiente firma' || estatus === 'cargada';

@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -2303,6 +2303,126 @@ await conc076();
 await fe076();
 console.log('  concurrencia + frontend↔DB (076, 086, 087, 088, 092, 093) tras 096/097: PASS');
 
+// ═══ 098/099 — escritores de "hoy" con el día de negocio del servidor ═══
+{
+  const nuevo = (await c.query(`SELECT to_regprocedure('public.pagar_cuenta_por_pagar(uuid,bigint,numeric,text,text)') IS NULL
+    AND to_regprocedure('public.pagar_nomina(bigint)') IS NULL AND has_table_privilege('authenticated', 'public.pagos_proveedores', 'INSERT') AS a`)).rows[0].a;
+  console.log(`  DIA_NEGOCIO_ESCRITORES_PARITY_CHECK[pre-098]: ${nuevo ? 'PASS' : 'FAIL'}`);
+  if (!nuevo) process.exit(1);
+  // Paridad con producción (catálogo verificado read-only): 003 crea aquí un
+  // trigger updated_at sobre nomina_periodos, que en producción no existe (ni
+  // la columna). Sin esto, cualquier UPDATE del periodo falla solo en local.
+  await c.query('DROP TRIGGER IF EXISTS trg_nomina_periodos_updated ON nomina_periodos');
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 098 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '098_dia_negocio_escritores.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 098 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 098)'); process.exit(1); }
+const SUITES_098 = [['090', '090_b4_privilegios_test.sql'], ['092', '092_empaque_entrega_test.sql'], ['093', '093_finanzas_reverso_test.sql'], ['095', '095_cliente_obsoleto_test.sql'], ['096', '096_dia_negocio_caja_test.sql']];
+console.log('── PRUEBAS 098 (antes de 099: el frontend anterior aún inserta pagos a proveedor por REST)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/098_dia_negocio_escritores_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (098)'); process.exit(1); }
+}
+await reruns090('098');
+for (const [etq, f] of SUITES_098) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 098)`); process.exit(1); }
+  console.log(`  ${etq} tras 098: PASS`);
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 099 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '099_contencion_pagos_proveedores.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+console.log('── PRUEBAS 098 (tras 099)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/098_dia_negocio_escritores_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (098 tras 099)'); process.exit(1); }
+}
+await reruns090('099');
+for (const [etq, f] of SUITES_098) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 099)`); process.exit(1); }
+  console.log(`  ${etq} tras 099: PASS`);
+}
+async function conc098() {
+  console.log('── 098 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const SUB = (k) => '98c00000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM pagos_proveedores WHERE cxp_id BETWEEN 9861 AND 9869;
+    DELETE FROM costos_historial WHERE concepto LIKE 'Pago nómina C98%';
+    UPDATE nomina_periodos SET movimiento_id = NULL WHERE id BETWEEN 9861 AND 9869;
+    DELETE FROM movimientos_contables WHERE concepto LIKE 'Pago a ProvC98%' OR concepto LIKE 'Pago nómina C98%';
+    DELETE FROM nomina_recibos WHERE periodo_id BETWEEN 9861 AND 9869; DELETE FROM nomina_periodos WHERE id BETWEEN 9861 AND 9869;
+    DELETE FROM empleados WHERE id = 9861; DELETE FROM cuentas_por_pagar WHERE id BETWEEN 9861 AND 9869;
+    DELETE FROM usuarios WHERE id BETWEEN 9861 AND 9869; DELETE FROM auth.users WHERE id::text LIKE '98c00000-%';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) SELECT ('98c00000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'c' || k || '@t98c' FROM generate_series(1, 2) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (9861, 'AdminC98-1', 'c1@t98c', 'Admin', 'Activo', '${SUB(1)}'), (9862, 'AdminC98-2', 'c2@t98c', 'Admin', 'Activo', '${SUB(2)}');
+    INSERT INTO empleados (id, nombre, puesto, depto, salario_diario, fecha_ingreso) VALUES (9861, 'EmpC98', 'Operador', 'Producción', 1, '2026-01-01');
+    INSERT INTO cuentas_por_pagar (id, proveedor, concepto, monto_original, monto_pagado, saldo_pendiente, fecha_emision, estatus) VALUES
+      (9861, 'ProvC98', 'A', 1000, 0, 1000, '2026-09-01', 'Pendiente'), (9862, 'ProvC98', 'B', 1000, 0, 1000, '2026-09-01', 'Pendiente');
+    INSERT INTO nomina_periodos (id, periodo, fecha_pago, estatus) VALUES (9861, 'C98-S1', '2026-09-26', 'Calculada');
+    INSERT INTO nomina_recibos (periodo_id, empleado_id, neto_a_pagar) VALUES (9861, 9861, 250);
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const carrera = async (subA, sqlA, pA, subB, sqlB, pB) => {
+    await actor(a, subA); await actor(b, subB);
+    const ra = await a.query(sqlA, pA).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(sqlB, pB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const CXP = `SELECT pagar_cuenta_por_pagar($1::uuid, $2::bigint, $3::numeric, 'Transferencia', '') AS r`;
+  let r = await carrera(SUB(1), CXP, ['98c10000-0000-0000-0000-000000000001', 9861, 300], SUB(2), CXP, ['98c10000-0000-0000-0000-000000000002', 9861, 200]);
+  ok(r.ra.ok && r.bloqueado && r.rb.ok && r.rb.row.r.saldo_pendiente === 500, `098-C1 dos abonos simultáneos a la misma CxP: se serializan (saldo final 500, sin abono perdido)`);
+  ok(await n(`SELECT count(*) FROM pagos_proveedores WHERE cxp_id = 9861`) === 2 && await n(`SELECT monto_pagado FROM cuentas_por_pagar WHERE id = 9861`) === 500, '098-C1b dos pagos y monto pagado 500');
+  r = await carrera(SUB(1), CXP, ['98c10000-0000-0000-0000-000000000003', 9862, 300], SUB(1), CXP, ['98c10000-0000-0000-0000-000000000003', 9862, 300]);
+  ok(r.ra.ok && r.bloqueado && r.rb.ok && r.rb.row.r.replay === true, '098-C2 mismo abono (mismo UUID) simultáneo: el segundo es replay');
+  ok(await n(`SELECT count(*) FROM pagos_proveedores WHERE cxp_id = 9862`) === 1 && await n(`SELECT count(*) FROM movimientos_contables WHERE concepto LIKE 'Pago a ProvC98 — B'`) === 1
+    && await n(`SELECT monto_pagado FROM cuentas_por_pagar WHERE id = 9862`) === 300, '098-C2b un pago, un egreso, monto pagado 300');
+  const NOM = `SELECT pagar_nomina($1::bigint) AS r`;
+  r = await carrera(SUB(1), NOM, [9861], SUB(2), NOM, [9861]);
+  ok(r.ra.ok && r.bloqueado && r.rb.ok && r.rb.row.r.replay === true, '098-C3 doble pago de nómina simultáneo (dos navegadores): el segundo espera y es replay');
+  ok(await n(`SELECT count(*) FROM movimientos_contables WHERE concepto = 'Pago nómina C98-S1'`) === 1 && await n(`SELECT count(*) FROM costos_historial WHERE concepto = 'Pago nómina C98-S1'`) === 1,
+    '098-C3b una salida de efectivo y un costo');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (098 concurrencia)'); process.exit(1); }
+}
+await conc098();
+console.log('── concurrencia + frontend↔DB tras 098/099');
+await conc096();
+await conc086();
+await fe086();
+await conc087();
+await fe087();
+await conc088();
+await conc092();
+await conc093();
+await conc076();
+await fe076();
+console.log('  concurrencia + frontend↔DB (076, 086, 087, 088, 092, 093, 096) tras 098/099: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -2344,7 +2464,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 093
   'revertir_produccion','ajustar_existencia','reporte_financiero','fin_egreso_no_efectivo','productos_existencia_inicial',
   // 096
-  'cerrar_caja_ruta','rutas_pendientes_caja'];
+  'cerrar_caja_ruta','rutas_pendientes_caja',
+  // 098
+  'pagar_cuenta_por_pagar','pagar_nomina'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

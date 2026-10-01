@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
-import { s, n, eqId, fmtMoney, validarRFC, todayLocalISO } from '../utils/safe';
+import { s, n, eqId, fmtMoney, validarRFC } from '../utils/safe';
 import { validateDireccion, placeSelectionToEntrega } from '../data/direccionLogic';
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
 import { stockDisponiblePorSku } from '../utils/stock';
@@ -322,7 +322,7 @@ export default function NuevaVentaModal({
       const payload = {
         cliente: s(cli?.nombre),
         clienteId: form.clienteId,
-        fecha: form.fecha || todayLocalISO(),
+        fecha: form.fecha || null, // 098: sin fecha elegida → crear_orden usa fin_hoy()
         productos: productosStr,
         total: totalCalc,
         usuarioId: user?.id || null,

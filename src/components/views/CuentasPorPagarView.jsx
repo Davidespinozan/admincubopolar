@@ -1,5 +1,8 @@
 import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 import { diaNegocio, mesNegocio } from '../../utils/fechas';
+import { useRef } from 'react';
+import { resolverOperacion } from '../../data/produccionAtomicaLogic';
+import { claveAbonoCxP } from '../../data/fechaNegocioLogic';
 
 const CATEGORIAS_CXP = ['Proveedores', 'Servicios', 'Renta', 'Otro'];
 const METODOS_PAGO = ['Efectivo', 'Transferencia', 'Cheque', 'Tarjeta'];
@@ -92,7 +95,9 @@ export function CuentasPorPagarView({ data, actions }) {
     }
   };
 
+  const pagoOpRef = useRef(null);
   const openPago = (cxp) => {
+    pagoOpRef.current = null;
     setPagoModal(cxp);
     setPagoForm({ monto: String(n(cxp.saldoPendiente)), metodo: 'Transferencia', referencia: '' });
     setErrors({});
@@ -106,8 +111,14 @@ export function CuentasPorPagarView({ data, actions }) {
     if (Object.keys(e).length) { setErrors(e); return; }
     setPagando(true);
     try {
-      await actions.pagarCuentaPorPagar(pagoModal.id, parseFloat(pagoForm.monto), pagoForm.metodo, pagoForm.referencia);
-      toast?.success('Pago registrado');
+      // 098: mismo intento (reintento, respuesta perdida) → mismo UUID; la
+      // fecha del pago la pone el servidor.
+      const datos = { cxpId: pagoModal.id, monto: parseFloat(pagoForm.monto), metodoPago: pagoForm.metodo, referencia: pagoForm.referencia };
+      const op = resolverOperacion(pagoOpRef.current, claveAbonoCxP(datos));
+      pagoOpRef.current = op;
+      const err = await actions.pagarCuentaPorPagar(datos.cxpId, datos.monto, datos.metodoPago, datos.referencia, { operacionId: op.id });
+      if (err) return; // el store ya mostró el error; el UUID se conserva para el reintento
+      pagoOpRef.current = null;
       setPagoModal(null);
     } catch (ex) {
       toast?.error('Error: ' + (ex?.message || ''));

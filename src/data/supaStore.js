@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
-import { n, s, centavos, todayLocalISO } from '../utils/safe';
+import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI, esPagoEnLinea } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
@@ -28,8 +28,11 @@ import {
   claveStorageMermasRuta, claveStorageCierreInventario, leerOperacion, guardarOperacion, borrarOperacion,
 } from './inventarioRutaLogic';
 import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
+import { traducirError } from '../utils/errorMessages';
 import { TABLAS_CORE_RT, TABLAS_SLICE_RT } from './realtimeLogic';
 import { normalizarReporteFinanciero } from './finanzasLogic';
+import { fechaElegida, camposFechaCosto, buildPagarCxPArgs } from './fechaNegocioLogic';
+import { diaNegocio } from '../utils/fechas';
 
 // ═══════════════════════════════════════════════════════════════
 // useSupaStore — fuente única de verdad para toda la app
@@ -486,7 +489,7 @@ export function useSupaStore(userId, userName, userRol) {
       }
 
       // ── Alertas de CxC próximas a vencer ──
-      const hoyStr = todayLocalISO();
+      const hoyStr = diaNegocio();
       for (const c of (cxc || [])) {
         if (c.estatus === 'Pagada') continue;
         const venc = s(c.fecha_vencimiento);
@@ -2510,9 +2513,12 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // Aplicar costo fijo (genera egreso en movimientos_contables)
+      // 098: la fecha la elige el usuario (se valida como DATE); sin fecha,
+      // el día de negocio lo pone el servidor (fin_hoy()) y el costo usa la
+      // misma fecha que devolvió el egreso.
       aplicarCostoFijo: async (costoFijoId, fecha, referencia) => {
-        const hoy = fecha || todayLocalISO();
-        const periodo = hoy.slice(0, 7); // "2026-03"
+        const fe = fechaElegida(fecha);
+        if (fe.error) { t()?.error(fe.error); return { message: fe.error }; }
 
         // Buscar el costo
         const { data: costo } = await supabase.from('costos_fijos').select('*').eq('id', costoFijoId).single();
@@ -2520,13 +2526,13 @@ export function useSupaStore(userId, userName, userRol) {
 
         // Crear egreso en movimientos_contables
         const { data: movimiento, error: e1 } = await supabase.from('movimientos_contables').insert({
-          fecha: hoy,
+          ...(fe.fecha ? { fecha: fe.fecha } : {}),
           tipo: 'Egreso',
           categoria: costo.categoria,
           concepto: `${costo.nombre} (${costo.frecuencia})`,
           monto: centavos(costo.monto),
           referencia: referencia || '',
-        }).select('id').single();
+        }).select('id, fecha').single();
         if (e1) { t()?.error('Error al registrar egreso'); return e1; }
 
         // Registrar en historial
@@ -2536,8 +2542,7 @@ export function useSupaStore(userId, userName, userRol) {
           categoria: costo.categoria,
           concepto: costo.nombre,
           monto: centavos(costo.monto),
-          periodo,
-          fecha: hoy,
+          ...camposFechaCosto(fe.fecha || movimiento?.fecha || null),
           referencia: referencia || '',
           movimiento_id: movimiento?.id,
         });
@@ -2549,18 +2554,18 @@ export function useSupaStore(userId, userName, userRol) {
 
       // Registrar costo variable (ej: compra de empaques, gastos puntuales)
       registrarCostoVariable: async (categoria, concepto, monto, referencia, fecha) => {
-        const fechaUsar = fecha || todayLocalISO();
-        const periodo = fechaUsar.slice(0, 7);
+        const fe = fechaElegida(fecha);
+        if (fe.error) { t()?.error(fe.error); return { message: fe.error }; }
 
         // Crear egreso
         const { data: movimiento, error: e1 } = await supabase.from('movimientos_contables').insert({
-          fecha: fechaUsar,
+          ...(fe.fecha ? { fecha: fe.fecha } : {}),
           tipo: 'Egreso',
           categoria,
           concepto,
           monto: centavos(monto),
           referencia: referencia || '',
-        }).select('id').single();
+        }).select('id, fecha').single();
         if (e1) { t()?.error('Error al registrar gasto'); return e1; }
 
         // Registrar en historial
@@ -2569,8 +2574,7 @@ export function useSupaStore(userId, userName, userRol) {
           categoria,
           concepto,
           monto: centavos(monto),
-          periodo,
-          fecha: fechaUsar,
+          ...camposFechaCosto(fe.fecha || movimiento?.fecha || null),
           referencia: referencia || '',
           movimiento_id: movimiento?.id,
         });
@@ -2581,6 +2585,8 @@ export function useSupaStore(userId, userName, userRol) {
 
       // ── CUENTAS POR PAGAR (Proveedores) ──
       addCuentaPorPagar: async (cxp) => {
+        const fe = fechaElegida(cxp.fechaEmision);
+        if (fe.error) { t()?.error(fe.error); return { message: fe.error }; }
         const montoOriginal = centavos(n(cxp.montoOriginal || cxp.monto));
         const { error } = await supabase.from('cuentas_por_pagar').insert({
           proveedor: cxp.proveedor,
@@ -2588,7 +2594,7 @@ export function useSupaStore(userId, userName, userRol) {
           monto_original: montoOriginal,
           monto_pagado: 0,
           saldo_pendiente: montoOriginal,
-          fecha_emision: cxp.fechaEmision || todayLocalISO(),
+          ...(fe.fecha ? { fecha_emision: fe.fecha } : {}), // 098: sin fecha → fin_hoy() del servidor
           fecha_vencimiento: cxp.fechaVencimiento || null,
           categoria: cxp.categoria || 'Proveedores',
           referencia: cxp.referencia || '',
@@ -2626,71 +2632,23 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // Abonar a cuenta por pagar (pago a proveedor)
-      pagarCuentaPorPagar: async (cxpId, monto, metodoPago, referencia) => {
-        const hoy = todayLocalISO();
-        const montoNum = centavos(n(monto));
-
-        // Obtener la CxP actual
-        const { data: cxp, error: e1 } = await supabase
-          .from('cuentas_por_pagar')
-          .select('*')
-          .eq('id', cxpId)
-          .single();
-        if (e1 || !cxp) { t()?.error('Cuenta por pagar no encontrada'); return e1; }
-
-        const nuevoMontoPagado = centavos(Number(cxp.monto_pagado) + montoNum);
-        const nuevoSaldo = centavos(Number(cxp.monto_original) - nuevoMontoPagado);
-        const nuevoEstatus = nuevoSaldo <= 0 ? 'Pagada' : (nuevoMontoPagado > 0 ? 'Parcial' : 'Pendiente');
-
-        // Actualizar CxP
-        const { error: e2 } = await supabase
-          .from('cuentas_por_pagar')
-          .update({
-            monto_pagado: nuevoMontoPagado,
-            saldo_pendiente: Math.max(0, nuevoSaldo),
-            estatus: nuevoEstatus,
-          })
-          .eq('id', cxpId);
-        if (e2) { t()?.error('Error al actualizar cuenta'); return e2; }
-
-        // Registrar pago a proveedor
-        const { data: movimiento, error: e3 } = await supabase.from('movimientos_contables').insert({
-          fecha: hoy, tipo: 'Egreso', categoria: 'Proveedores',
-          concepto: `Pago a ${s(cxp.proveedor)} — ${s(cxp.concepto)}`,
-          monto: montoNum,
-          referencia: referencia || '',
-        }).select('id').single();
-        if (e3) {
-          await supabase.from('cuentas_por_pagar').update({
-            monto_pagado: cxp.monto_pagado,
-            saldo_pendiente: cxp.saldo_pendiente,
-            estatus: cxp.estatus,
-          }).eq('id', cxpId);
-          t()?.error('Error al registrar egreso');
-          return e3;
+      // 098: contrato pagar_cuenta_por_pagar — abono, egreso y pago a
+      // proveedor ligados en UNA transacción; la fecha es el día de negocio
+      // del servidor (fin_hoy()). Idempotente por operación. opciones: { operacionId }.
+      pagarCuentaPorPagar: async (cxpId, monto, metodoPago, referencia, opciones = {}) => {
+        const built = buildPagarCxPArgs({ operacionId: opciones.operacionId || nuevoOperacionId(), cxpId, monto, metodoPago, referencia });
+        if (built.error) { t()?.error(built.error); return { message: built.error }; }
+        const { data, error } = await supabase.rpc('pagar_cuenta_por_pagar', built.args);
+        if (error) {
+          console.warn('[pagarCuentaPorPagar] rpc:', error.message);
+          const msg = traducirError(error, 'Error al registrar pago a proveedor');
+          t()?.error(msg);
+          return { error: msg, message: msg };
         }
-
-        const { error: pagoProvError } = await supabase.from('pagos_proveedores').insert({
-          cxp_id: cxpId,
-          monto: montoNum,
-          fecha: hoy,
-          metodo_pago: metodoPago || 'Transferencia',
-          referencia: referencia || '',
-          movimiento_id: movimiento?.id,
-        });
-        if (pagoProvError) {
-          await supabase.from('movimientos_contables').delete().eq('id', movimiento?.id);
-          await supabase.from('cuentas_por_pagar').update({
-            monto_pagado: cxp.monto_pagado,
-            saldo_pendiente: cxp.saldo_pendiente,
-            estatus: cxp.estatus,
-          }).eq('id', cxpId);
-          t()?.error('Error al registrar pago a proveedor');
-          return pagoProvError;
+        if (!data?.replay) {
+          t()?.success(`Pago registrado: $${built.args.p_monto}`);
+          log('Pagar', 'Cuentas por Pagar', `CxP #${cxpId} — $${built.args.p_monto} — ${s(data?.estatus)}`);
         }
-
-        t()?.success(`Pago registrado: $${monto}`);
-        log('Pagar', 'Cuentas por Pagar', `CxP #${cxpId} — $${monto} — ${nuevoEstatus}`);
         rf();
       },
 
@@ -2911,8 +2869,8 @@ export function useSupaStore(userId, userName, userRol) {
             saldoPendienteAntes,
           });
           if (ajuste.accion === 'egreso' && reembolso > 0) {
+            // 098: sin fecha — el día de negocio del reembolso lo pone el servidor.
             const { error: errEgr } = await supabase.from('movimientos_contables').insert({
-              fecha: todayLocalISO(),
               tipo: 'Egreso',
               categoria: 'Devoluciones',
               concepto: ajuste.conceptoEgreso || `Devolución cliente ${folio}`,
@@ -3062,7 +3020,7 @@ export function useSupaStore(userId, userName, userRol) {
         const { error } = await supabase.from('leads').insert({
           nombre: l.nombre, telefono: l.telefono, correo: l.correo,
           mensaje: l.mensaje, origen: l.origen, estatus: 'Nuevo',
-          fecha: todayLocalISO(),
+          // 098: fecha = fin_hoy() del servidor (default de la columna)
         });
         if (error) { t()?.error('Error al guardar lead'); return error; }
         log('Crear', 'Leads', `${l.nombre}`);
@@ -3210,52 +3168,23 @@ export function useSupaStore(userId, userName, userRol) {
         rf();
       },
 
-      // Pagar nómina — registra egreso automático en movimientos_contables
+      // Pagar nómina — 098: contrato pagar_nomina. Egreso, costo de nómina y
+      // periodo Pagado en UNA transacción, con el total de los recibos y la
+      // fecha (fin_hoy()) del servidor. Un periodo se paga una sola vez.
       pagarNomina: async (periodoId) => {
-        const hoy = todayLocalISO();
-        const periodo = hoy.slice(0, 7);
-
-        // Obtener el periodo de nómina
-        const { data: nomPeriodo } = await supabase.from('nomina_periodos').select('*').eq('id', periodoId).single();
-        if (!nomPeriodo) { t()?.error('Período no encontrado'); return { message: 'Período no encontrado' }; }
-
-        // Calcular total de todos los recibos del periodo
-        const { data: recibos } = await supabase.from('nomina_recibos').select('neto_a_pagar').eq('periodo_id', periodoId);
-        const totalNeto = (recibos || []).reduce((sum, r) => sum + Number(r.neto_a_pagar || 0), 0);
-
-        if (totalNeto <= 0) { t()?.error('No hay neto a pagar'); return { message: 'No hay neto' }; }
-
-        // Crear egreso en movimientos_contables
-        const { data: movimiento, error: e1 } = await supabase.from('movimientos_contables').insert({
-          fecha: hoy,
-          tipo: 'Egreso',
-          categoria: 'Nómina',
-          concepto: `Pago nómina ${nomPeriodo.periodo || periodoId}`,
-          monto: centavos(totalNeto),
-        }).select('id').single();
-        if (e1) { t()?.error('Error al registrar egreso'); return e1; }
-
-        // Actualizar periodo como pagado
-        await supabase.from('nomina_periodos').update({
-          total_neto: centavos(totalNeto),
-          estatus: 'Pagado',
-          pagado_at: new Date().toISOString(),
-          movimiento_id: movimiento?.id,
-        }).eq('id', periodoId);
-
-        // Registrar en historial de costos
-        await supabase.from('costos_historial').insert({
-          tipo: 'Nómina',
-          categoria: 'Nómina',
-          concepto: `Pago nómina ${nomPeriodo.periodo || periodoId}`,
-          monto: centavos(totalNeto),
-          periodo,
-          fecha: hoy,
-          movimiento_id: movimiento?.id,
-        });
-
-        t()?.success(`Nómina pagada: $${totalNeto.toLocaleString()}`);
-        log('Pagar', 'Nómina', `Período ${nomPeriodo.periodo || periodoId} — $${totalNeto}`);
+        const { data, error } = await supabase.rpc('pagar_nomina', { p_periodo_id: Number(periodoId) });
+        if (error) {
+          console.warn('[pagarNomina] rpc:', error.message);
+          const msg = traducirError(error, 'Error al pagar la nómina');
+          t()?.error(msg);
+          return { error: msg, message: msg };
+        }
+        const total = Number(data?.total_neto || 0);
+        if (data?.replay) t()?.info('Este periodo ya estaba pagado');
+        else {
+          t()?.success(`Nómina pagada: $${total.toLocaleString()}`);
+          log('Pagar', 'Nómina', `Período ${periodoId} — $${total}`);
+        }
         rf();
       },
 

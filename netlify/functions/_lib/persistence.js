@@ -198,7 +198,7 @@ const syncOrderPayment = async ({ provider, providerReference, payment, rawPaylo
       monto: amount,
       // P0.2: método del catálogo (PAYMENT_FORM_MAP), nunca el proveedor.
       metodo_pago: METODO_PAGO_LINK,
-      fecha: new Date().toISOString().slice(0, 10),
+      // 098: sin fecha — default fin_hoy() (día de negocio en Mazatlán, no UTC).
       referencia,
       saldo_antes: cxcState.saldoAntes,
       saldo_despues: cxcState.saldoDespues,

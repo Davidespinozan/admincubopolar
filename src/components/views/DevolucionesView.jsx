@@ -1,16 +1,14 @@
-import { useState, useMemo, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, todayLocalISO, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, PAGE_SIZE, Paginator } from './viewsCommon';
+import { diaNegocio, sumarDias } from '../../utils/fechas';
 
 export function DevolucionesView({ data }) {
   const [page, setPage] = useState(0);
   const [detalleModal, setDetalleModal] = useState(null);
 
   // Filtros default: últimos 30 días
-  const hace30 = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    return todayLocalISO(d);
-  }, []);
-  const hoy = useMemo(() => todayLocalISO(), []);
+  // 098: día de negocio (Mazatlán), no el día del navegador.
+  const hoy = useMemo(() => diaNegocio(), []);
+  const hace30 = useMemo(() => sumarDias(hoy, -30), [hoy]);
   const [fechaInicio, setFechaInicio] = useState(hace30);
   const [fechaFin, setFechaFin] = useState(hoy);
   const [filtroCliente, setFiltroCliente] = useState('');

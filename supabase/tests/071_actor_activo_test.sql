@@ -225,8 +225,15 @@ BEGIN;
 SELECT t_actor2('authenticated', 'admin@t'); SET LOCAL ROLE authenticated;
 SELECT t_assert(t_count('clientes') = 1 AND t_count('ordenes') = 1 AND t_count('pagos') = 1 AND t_count('cuentas_por_cobrar') = 1 AND t_count('movimientos_contables') = 1 AND t_count('payment_webhook_events') = 1 AND t_count('configuracion_empresa') = 1 AND t_count('cuentas_por_pagar') = 1 AND t_count('costos_fijos') = 1, '21. Admin lee todo');
 INSERT INTO costos_fijos (nombre, monto, categoria) VALUES ('Luz', 100, 'Servicios');
-UPDATE cuentas_por_pagar SET saldo_pendiente = 900, monto_pagado = 100, estatus = 'Parcial' WHERE id = 700;
-INSERT INTO pagos_proveedores (cxp_id, monto, metodo_pago, fecha) VALUES (700, 100, 'Efectivo', CURRENT_DATE);
+DO $do$ BEGIN
+  IF has_table_privilege('authenticated', 'public.pagos_proveedores', 'INSERT') THEN
+    UPDATE cuentas_por_pagar SET saldo_pendiente = 900, monto_pagado = 100, estatus = 'Parcial' WHERE id = 700;
+    INSERT INTO pagos_proveedores (cxp_id, monto, metodo_pago, fecha) VALUES (700, 100, 'Efectivo', CURRENT_DATE);
+  ELSE
+    -- 099: el pago a proveedor se registra con el contrato (fecha del servidor).
+    PERFORM pagar_cuenta_por_pagar('71000000-0000-0000-0000-0000000000a1', 700, 100, 'Efectivo', '');
+  END IF;
+END $do$;
 UPDATE notificaciones SET leida = true WHERE id = 900;
 SELECT t_assert(t_count('costos_fijos') = 2 AND t_count('pagos_proveedores') = 1 AND (SELECT leida FROM notificaciones WHERE id = 900), '21. Admin escribe costos, paga CxP y marca notificación');
 SELECT t_actor2('authenticated', 'ventas@t');

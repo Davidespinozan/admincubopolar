@@ -1,9 +1,10 @@
 import { useMemo, useState, useEffect } from 'react';
+import { diaNegocio, sumarDias } from '../../utils/fechas';
 import { Icons } from '../ui/Icons';
 import { StatusBadge, DataTable, CapacityBar } from '../ui/Components';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { EmptyState } from '../ui/Skeleton';
-import { s, n, fmtDateTime, fmtMoney, fmtPct, todayLocalISO } from '../../utils/safe';
+import { s, n, fmtDateTime, fmtMoney, fmtPct } from '../../utils/safe';
 import { rangoMes, lineasEstadoResultados, lineasFlujoEfectivo } from '../../data/finanzasLogic';
 
 // ── FIX P3: ALL DERIVED STATE NOW MEMOIZED ──
@@ -181,10 +182,10 @@ export default function DashboardView({ data, user, actions, onNavigate }) {
   }, [data.productos]);
 
   const ventasResumen = useMemo(() => {
-    const hoyStr = todayLocalISO();
-    const sem = new Date(); sem.setDate(sem.getDate() - 7);
-    const semStr = todayLocalISO(sem);
-    const mesStr = todayLocalISO(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+    // 098: día, semana y mes de negocio (Mazatlán), no los del navegador.
+    const hoyStr = diaNegocio();
+    const semStr = sumarDias(hoyStr, -7);
+    const mesStr = `${hoyStr.slice(0, 7)}-01`;
     let dia = 0, semana = 0, mes = 0;
     const estatusVenta = new Set(["entregada", "facturada"]);
     for (const ord of (data.ordenes || [])) {
@@ -192,7 +193,7 @@ export default function DashboardView({ data, user, actions, onNavigate }) {
       // 093: la venta cuenta el día que se entregó (delivered_at del
       // servidor); las órdenes anteriores sin ese dato usan su fecha.
       const entregada = ord.deliveredAt || ord.delivered_at;
-      const f = entregada ? todayLocalISO(new Date(entregada)) : s(ord.fecha).slice(0, 10);
+      const f = entregada ? diaNegocio(entregada) : s(ord.fecha).slice(0, 10);
       const tot = n(ord.total);
       if (f === hoyStr) dia += tot;
       if (f >= semStr) semana += tot;

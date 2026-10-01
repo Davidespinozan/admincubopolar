@@ -1,4 +1,5 @@
-import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast, todayLocalISO } from './viewsCommon';
+import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast } from './viewsCommon';
+import { diaNegocio } from '../../utils/fechas';
 
 export function CobrosView({ data, actions }) {
   const toast = useToast();
@@ -22,7 +23,7 @@ export function CobrosView({ data, actions }) {
     [cxcPendientes]
   );
   const totalCobradoHoy = useMemo(() => {
-    const hoy = todayLocalISO();
+    const hoy = diaNegocio();
     return (data.pagos || []).filter(p => s(p.fecha) === hoy).reduce((s, p) => s + n(p.monto), 0);
   }, [data.pagos]);
 

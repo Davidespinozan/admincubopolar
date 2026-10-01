@@ -65,3 +65,14 @@ export function fmtFechaNegocio(v) {
   if (!p) return null;
   return `${String(p.d).padStart(2, '0')}/${String(p.m).padStart(2, '0')}/${p.y}`;
 }
+
+/**
+ * 098: suma días de calendario a una fecha de negocio 'YYYY-MM-DD' sin pasar
+ * por la zona del navegador (ej. "hace 30 días" en filtros).
+ */
+export function sumarDias(fecha, dias) {
+  const p = partesFecha(diaNegocio(fecha));
+  if (!p) return '';
+  const d = new Date(Date.UTC(p.y, p.m - 1, p.d + Number(dias || 0)));
+  return d.toISOString().slice(0, 10);
+}

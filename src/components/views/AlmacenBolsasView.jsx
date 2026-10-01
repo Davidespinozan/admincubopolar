@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { useMemo, useState, PageHeader, EmptyState, s, n, todayLocalISO } from './viewsCommon';
+import { diaNegocio } from '../../utils/fechas';
+import { useMemo, useState, PageHeader, EmptyState, s, n } from './viewsCommon';
 import { clasificarMovEmpaque, efectoEnTotal, normalizarConciliacion } from '../../data/empaqueLogic';
 
 export function AlmacenBolsasView({ data, actions }) {
@@ -10,7 +11,7 @@ export function AlmacenBolsasView({ data, actions }) {
     return map;
   }, [data.productos]);
   const movs = useMemo(() => (data.inventarioMov || []).filter(m => bolsas.some(b => s(b.sku) === s(m.producto))).slice(0, 30), [data.inventarioMov, bolsas]);
-  const prodHoy = useMemo(() => (data.produccion || []).filter(p => s(p.fecha) === todayLocalISO()), [data.produccion]);
+  const prodHoy = useMemo(() => (data.produccion || []).filter(p => s(p.fecha) === diaNegocio()), [data.produccion]);
 
   // 092: control "Salió a Producción vs Usó Producción" calculado en el
   // servidor desde fuentes independientes (eventos de entrega canónicos vs

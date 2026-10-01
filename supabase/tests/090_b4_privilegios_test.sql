@@ -132,7 +132,7 @@ SELECT t90_assert((
       ('empleados','INSERT'), ('empleados','UPDATE'), ('empleados','DELETE'), ('error_log','INSERT'), ('inventario_mov','INSERT'),
       ('leads','INSERT'), ('leads','UPDATE'), ('leads','DELETE'), ('movimientos_contables','INSERT'), ('movimientos_contables','UPDATE'), ('movimientos_contables','DELETE'),
       ('nomina_periodos','INSERT'), ('nomina_periodos','UPDATE'), ('nomina_recibos','INSERT'), ('notificaciones','INSERT'), ('notificaciones','UPDATE'),
-      ('ordenes','UPDATE'), ('ordenes','DELETE'), ('pagos_proveedores','INSERT'), ('precios_esp','INSERT'), ('precios_esp','UPDATE'), ('precios_esp','DELETE'),
+      ('ordenes','UPDATE'), ('ordenes','DELETE'), ('precios_esp','INSERT'), ('precios_esp','UPDATE'), ('precios_esp','DELETE'),
       ('produccion','UPDATE'), ('productos','INSERT'), ('productos','UPDATE'), ('productos','DELETE'),
       ('rutas','INSERT'), ('rutas','UPDATE'), ('rutas','DELETE'), ('usuarios','INSERT'), ('usuarios','UPDATE'), ('usuarios','DELETE')) m(t, op)
     WHERE to_regclass('public.' || t) IS NOT NULL
@@ -142,7 +142,9 @@ SELECT t90_assert((
     UNION ALL  -- 094 retira el DELETE de produccion (se revierte, no se borra)
     SELECT 'produccion:DELETE' WHERE NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_productos_guard_stock')
     UNION ALL  -- 097 retira el INSERT REST de caja (cerrar_caja_ruta)
-    SELECT 'cierres_diarios:INSERT' WHERE has_table_privilege('authenticated', 'cierres_diarios', 'INSERT')) s
+    SELECT 'cierres_diarios:INSERT' WHERE has_table_privilege('authenticated', 'cierres_diarios', 'INSERT')
+    UNION ALL  -- 099 retira el INSERT REST de pago a proveedor (pagar_cuenta_por_pagar)
+    SELECT 'pagos_proveedores:INSERT' WHERE has_table_privilege('authenticated', 'pagos_proveedores', 'INSERT')) s
   ), '090-07 DML de authenticated = exactamente el mapa de llamadores del frontend (pagos sin DML; CxC sin DML tras 091)');
 SELECT t90_assert(NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'S'
   AND (has_sequence_privilege('authenticated', c.oid, 'SELECT') OR has_sequence_privilege('authenticated', c.oid, 'UPDATE')
