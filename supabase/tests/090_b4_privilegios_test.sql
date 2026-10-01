@@ -131,7 +131,7 @@ SELECT t90_assert((
       ('cuentas_por_pagar','INSERT'), ('cuentas_por_pagar','UPDATE'), ('cuentas_por_pagar','DELETE'), ('devoluciones','INSERT'), ('devoluciones','DELETE'),
       ('empleados','INSERT'), ('empleados','UPDATE'), ('empleados','DELETE'), ('error_log','INSERT'), ('inventario_mov','INSERT'),
       ('leads','INSERT'), ('leads','UPDATE'), ('leads','DELETE'), ('movimientos_contables','INSERT'), ('movimientos_contables','UPDATE'), ('movimientos_contables','DELETE'),
-      ('nomina_periodos','INSERT'), ('nomina_periodos','UPDATE'), ('nomina_recibos','INSERT'), ('notificaciones','INSERT'), ('notificaciones','UPDATE'),
+      ('notificaciones','INSERT'), ('notificaciones','UPDATE'),
       ('ordenes','UPDATE'), ('ordenes','DELETE'), ('precios_esp','INSERT'), ('precios_esp','UPDATE'), ('precios_esp','DELETE'),
       ('produccion','UPDATE'), ('productos','INSERT'), ('productos','UPDATE'), ('productos','DELETE'),
       ('rutas','INSERT'), ('rutas','UPDATE'), ('rutas','DELETE'), ('usuarios','INSERT'), ('usuarios','UPDATE'), ('usuarios','DELETE')) m(t, op)
@@ -144,7 +144,10 @@ SELECT t90_assert((
     UNION ALL  -- 097 retira el INSERT REST de caja (cerrar_caja_ruta)
     SELECT 'cierres_diarios:INSERT' WHERE has_table_privilege('authenticated', 'cierres_diarios', 'INSERT')
     UNION ALL  -- 099 retira el INSERT REST de pago a proveedor (pagar_cuenta_por_pagar)
-    SELECT 'pagos_proveedores:INSERT' WHERE has_table_privilege('authenticated', 'pagos_proveedores', 'INSERT')) s
+    SELECT 'pagos_proveedores:INSERT' WHERE has_table_privilege('authenticated', 'pagos_proveedores', 'INSERT')
+    UNION ALL  -- 101 retira la escritura REST de nómina (contratos de 100)
+    SELECT x FROM (VALUES ('nomina_periodos:INSERT'), ('nomina_periodos:UPDATE'), ('nomina_recibos:INSERT')) v(x)
+     WHERE has_table_privilege('authenticated', 'nomina_periodos', 'INSERT')) s
   ), '090-07 DML de authenticated = exactamente el mapa de llamadores del frontend (pagos sin DML; CxC sin DML tras 091)');
 SELECT t90_assert(NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'S'
   AND (has_sequence_privilege('authenticated', c.oid, 'SELECT') OR has_sequence_privilege('authenticated', c.oid, 'UPDATE')

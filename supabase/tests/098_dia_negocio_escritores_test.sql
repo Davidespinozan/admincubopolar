@@ -26,6 +26,12 @@ BEGIN
   DELETE FROM auth.users WHERE id::text LIKE '98000000-%';
 END $$;
 
+-- 100: con el modelo canónico de nómina (fecha_inicio, recibos con snapshot) las
+-- partes de nómina de esta suite quedan cubiertas por la suite 100.
+CREATE OR REPLACE FUNCTION t98_canon() RETURNS BOOLEAN LANGUAGE sql AS $$
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'nomina_periodos' AND column_name = 'fecha_inicio')
+$$;
+GRANT EXECUTE ON FUNCTION t98_canon() TO PUBLIC;
 BEGIN; SELECT t98_limpiar(); COMMIT;
 BEGIN;
 SET LOCAL session_replication_role = replica;
@@ -41,13 +47,17 @@ INSERT INTO cuentas_por_pagar (id, proveedor, concepto, monto_original, monto_pa
   (9812, 'Prov 98', 'Frontera MZT',  100, 0, 100, '2026-09-01', 'Pendiente'),
   (9813, 'Prov 98', 'Frontera CDMX', 100, 0, 100, '2026-09-01', 'Pendiente'),
   (9814, 'Prov 98', 'Frontera MAD',  100, 0, 100, '2026-09-01', 'Pendiente');
-INSERT INTO nomina_periodos (id, periodo, fecha_pago, estatus) VALUES
-  (9801, 'T98-S1', '2026-09-26', 'Calculada'), (9802, 'T98-S2', '2026-09-26', 'Calculada'), (9803, 'T98-S3', '2026-09-26', 'Pagado'),
-  (9811, 'T98-UTC', '2026-09-26', 'Calculada'), (9812, 'T98-MZT', '2026-09-26', 'Calculada'),
-  (9813, 'T98-CDMX', '2026-09-26', 'Calculada'), (9814, 'T98-MAD', '2026-09-26', 'Calculada');
-INSERT INTO nomina_recibos (periodo_id, empleado_id, neto_a_pagar) VALUES
-  (9801, 9801, 300), (9801, 9801, 200.5), (9803, 9801, 100),
-  (9811, 9801, 10), (9812, 9801, 20), (9813, 9801, 30), (9814, 9801, 40);
+DO $do$ BEGIN
+  IF NOT t98_canon() THEN
+    INSERT INTO nomina_periodos (id, periodo, fecha_pago, estatus) VALUES
+      (9801, 'T98-S1', '2026-09-26', 'Calculada'), (9802, 'T98-S2', '2026-09-26', 'Calculada'), (9803, 'T98-S3', '2026-09-26', 'Pagado'),
+      (9811, 'T98-UTC', '2026-09-26', 'Calculada'), (9812, 'T98-MZT', '2026-09-26', 'Calculada'),
+      (9813, 'T98-CDMX', '2026-09-26', 'Calculada'), (9814, 'T98-MAD', '2026-09-26', 'Calculada');
+    INSERT INTO nomina_recibos (periodo_id, empleado_id, neto_a_pagar) VALUES
+      (9801, 9801, 300), (9801, 9801, 200.5), (9803, 9801, 100),
+      (9811, 9801, 10), (9812, 9801, 20), (9813, 9801, 30), (9814, 9801, 40);
+  END IF;
+END $do$;
 INSERT INTO ordenes (id, folio, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, fecha) VALUES
   (9821, 'OV-9821', 'Cliente 98', 'x', 500, 'Entregada', 'Efectivo', 'Contado', '2026-09-20');
 COMMIT;
@@ -110,20 +120,27 @@ SELECT t98_assert((SELECT count(*) = 2 AND bool_and(pp.fecha = fin_hoy() AND m.f
   '098-16 cada abono: un egreso y un pago a proveedor ligados, mismo monto y fecha del servidor (sin duplicado por el replay)');
 
 \echo '── 098: pago de nómina'
-BEGIN; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
-INSERT INTO t98_ids VALUES ('n1', pagar_nomina(9801)::text);
-INSERT INTO t98_ids VALUES ('n1r', pagar_nomina(9801)::text);
-SELECT t98_err($q$SELECT pagar_nomina(9802)$q$, '098-20 periodo sin recibos: no hay neto a pagar', '22023', '%No hay neto%');
-SELECT t98_err($q$SELECT pagar_nomina(9803)$q$, '098-21 periodo ya marcado Pagado: no se paga otra vez', '22023', '%ya está pagado%');
-SELECT t98_err($q$SELECT pagar_nomina(9899)$q$, '098-22 periodo inexistente', '22023', '%no encontrado%');
-COMMIT;
-SELECT t98_assert((t98_j('n1') ->> 'fecha')::date = fin_hoy() AND (t98_j('n1') ->> 'total_neto')::numeric = 500.5
-  AND (t98_j('n1r') ->> 'replay') = 'true' AND (t98_j('n1r') ->> 'movimiento_id') = (t98_j('n1') ->> 'movimiento_id'), '098-23 nómina: fecha = fin_hoy(), total del servidor, segundo pago = replay');
-SELECT t98_assert((SELECT count(*) = 1 AND bool_and(m.fecha = fin_hoy() AND m.monto = 500.5 AND m.categoria = 'Nómina') FROM movimientos_contables m WHERE m.concepto = 'Pago nómina T98-S1')
-  AND (SELECT count(*) = 1 AND bool_and(ch.fecha = fin_hoy() AND ch.periodo = to_char(fin_hoy(), 'YYYY-MM') AND ch.monto = 500.5 AND ch.tipo = 'Nómina'
-         AND ch.movimiento_id = (t98_j('n1') ->> 'movimiento_id')::bigint) FROM costos_historial ch WHERE ch.concepto = 'Pago nómina T98-S1')
-  AND (SELECT estatus = 'Pagado' AND total_neto = 500.5 AND pagado_at IS NOT NULL AND movimiento_id = (t98_j('n1') ->> 'movimiento_id')::bigint FROM nomina_periodos WHERE id = 9801),
-  '098-24 un costo P&L y una salida de efectivo, ligados al periodo');
+DO $do$
+BEGIN
+  IF t98_canon() THEN
+    RAISE NOTICE 'OK: 098-20..24 nómina: cubierto por el modelo canónico (suite 100)';
+    RETURN;
+  END IF;
+  PERFORM t98_actor(1); SET LOCAL ROLE authenticated;
+  INSERT INTO t98_ids VALUES ('n1', pagar_nomina(9801)::text);
+  INSERT INTO t98_ids VALUES ('n1r', pagar_nomina(9801)::text);
+  PERFORM t98_err($q$SELECT pagar_nomina(9802)$q$, '098-20 periodo sin recibos: no hay neto a pagar', '22023', '%No hay neto%');
+  PERFORM t98_err($q$SELECT pagar_nomina(9803)$q$, '098-21 periodo ya marcado Pagado: no se paga otra vez', '22023', '%ya está pagado%');
+  PERFORM t98_err($q$SELECT pagar_nomina(9899)$q$, '098-22 periodo inexistente', '22023', '%no encontrado%');
+  RESET ROLE;
+  PERFORM t98_assert((t98_j('n1') ->> 'fecha')::date = fin_hoy() AND (t98_j('n1') ->> 'total_neto')::numeric = 500.5
+    AND (t98_j('n1r') ->> 'replay') = 'true' AND (t98_j('n1r') ->> 'movimiento_id') = (t98_j('n1') ->> 'movimiento_id'), '098-23 nómina: fecha = fin_hoy(), total del servidor, segundo pago = replay');
+  PERFORM t98_assert((SELECT count(*) = 1 AND bool_and(m.fecha = fin_hoy() AND m.monto = 500.5 AND m.categoria = 'Nómina') FROM movimientos_contables m WHERE m.concepto = 'Pago nómina T98-S1')
+    AND (SELECT count(*) = 1 AND bool_and(ch.fecha = fin_hoy() AND ch.periodo = to_char(fin_hoy(), 'YYYY-MM') AND ch.monto = 500.5 AND ch.tipo = 'Nómina'
+           AND ch.movimiento_id = (t98_j('n1') ->> 'movimiento_id')::bigint) FROM costos_historial ch WHERE ch.concepto = 'Pago nómina T98-S1')
+    AND (SELECT estatus = 'Pagado' AND total_neto = 500.5 AND pagado_at IS NOT NULL AND movimiento_id = (t98_j('n1') ->> 'movimiento_id')::bigint FROM nomina_periodos WHERE id = 9801),
+    '098-24 un costo P&L y una salida de efectivo, ligados al periodo');
+END $do$;
 
 \echo '── 098: fechas del servidor vs fechas elegidas por el usuario'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
@@ -162,28 +179,28 @@ SELECT t98_assert(fin_hoy() = '2033-03-10' AND ('2033-03-11 06:30:00+00'::timest
   '098-40 instante frontera: Mazatlán día 10; UTC, CDMX y Madrid día 11');
 SET LOCAL TimeZone = 'UTC'; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
 SELECT pagar_cuenta_por_pagar('98000000-0000-0000-0000-00000000f001', 9811, 100, 'Transferencia', 'F-UTC');
-SELECT pagar_nomina(9811);
+SELECT CASE WHEN t98_canon() THEN NULL ELSE pagar_nomina(9811) END;
 INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'UTC')::date, 'Egreso', 'Devoluciones', 'T98 frontera UTC', 1, 9821);
 INSERT INTO leads (nombre, estatus) VALUES ('T98 frontera UTC', 'Nuevo');
 INSERT INTO costos_historial (tipo, categoria, concepto, monto) VALUES ('Variable', 'Gasolina', 'T98 frontera UTC', 1);
 RESET ROLE;
 SET LOCAL TimeZone = 'America/Mazatlan'; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
 SELECT pagar_cuenta_por_pagar('98000000-0000-0000-0000-00000000f002', 9812, 100, 'Transferencia', 'F-MZT');
-SELECT pagar_nomina(9812);
+SELECT CASE WHEN t98_canon() THEN NULL ELSE pagar_nomina(9812) END;
 INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mazatlan')::date, 'Egreso', 'Devoluciones', 'T98 frontera MZT', 2, 9821);
 INSERT INTO leads (nombre, estatus) VALUES ('T98 frontera MZT', 'Nuevo');
 INSERT INTO costos_historial (tipo, categoria, concepto, monto) VALUES ('Variable', 'Gasolina', 'T98 frontera MZT', 2);
 RESET ROLE;
 SET LOCAL TimeZone = 'America/Mexico_City'; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
 SELECT pagar_cuenta_por_pagar('98000000-0000-0000-0000-00000000f003', 9813, 100, 'Transferencia', 'F-CDMX');
-SELECT pagar_nomina(9813);
+SELECT CASE WHEN t98_canon() THEN NULL ELSE pagar_nomina(9813) END;
 INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mexico_City')::date, 'Egreso', 'Devoluciones', 'T98 frontera CDMX', 3, 9821);
 INSERT INTO leads (nombre, estatus) VALUES ('T98 frontera CDMX', 'Nuevo');
 INSERT INTO costos_historial (tipo, categoria, concepto, monto) VALUES ('Variable', 'Gasolina', 'T98 frontera CDMX', 3);
 RESET ROLE;
 SET LOCAL TimeZone = 'Europe/Madrid'; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
 SELECT pagar_cuenta_por_pagar('98000000-0000-0000-0000-00000000f004', 9814, 100, 'Transferencia', 'F-MAD');
-SELECT pagar_nomina(9814);
+SELECT CASE WHEN t98_canon() THEN NULL ELSE pagar_nomina(9814) END;
 INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'Europe/Madrid')::date, 'Egreso', 'Devoluciones', 'T98 frontera MAD', 4, 9821);
 INSERT INTO leads (nombre, estatus) VALUES ('T98 frontera MAD', 'Nuevo');
 INSERT INTO costos_historial (tipo, categoria, concepto, monto) VALUES ('Variable', 'Gasolina', 'T98 frontera MAD', 4);
@@ -192,7 +209,7 @@ SET LOCAL TimeZone = 'UTC';
 SELECT t98_assert((SELECT count(*) = 4 AND bool_and(fecha = '2033-03-10') FROM pagos_proveedores WHERE cxp_id BETWEEN 9811 AND 9814)
   AND (SELECT count(*) = 4 AND bool_and(m.fecha = '2033-03-10') FROM pagos_proveedores pp JOIN movimientos_contables m ON m.id = pp.movimiento_id WHERE pp.cxp_id BETWEEN 9811 AND 9814),
   '098-41 pago de CxP desde UTC, Mazatlán, CDMX y Madrid: pago y egreso del día 10 (Mazatlán)');
-SELECT t98_assert((SELECT count(*) = 4 AND bool_and(m.fecha = '2033-03-10' AND ch.fecha = '2033-03-10' AND ch.periodo = '2033-03')
+SELECT t98_assert(t98_canon() OR (SELECT count(*) = 4 AND bool_and(m.fecha = '2033-03-10' AND ch.fecha = '2033-03-10' AND ch.periodo = '2033-03')
                      FROM nomina_periodos np JOIN movimientos_contables m ON m.id = np.movimiento_id JOIN costos_historial ch ON ch.movimiento_id = m.id WHERE np.id BETWEEN 9811 AND 9814),
   '098-42 pago de nómina desde las cuatro zonas: egreso y costo del día 10, periodo 2033-03');
 SELECT t98_assert((SELECT count(*) = 4 AND bool_and(fecha = '2033-03-10') FROM movimientos_contables WHERE concepto LIKE 'T98 frontera %'),
@@ -203,10 +220,10 @@ SELECT t98_assert((SELECT count(*) = 4 AND bool_and(fecha = '2033-03-10') FROM l
 -- El reporte 093 clasifica cada evento una sola vez, en el día 10.
 SELECT set_config('request.jwt.claims', '', true);
 INSERT INTO t98_ids VALUES ('r10', reporte_financiero('2033-03-10', '2033-03-10')::text), ('r11', reporte_financiero('2033-03-11', '2033-03-11')::text);
-SELECT t98_assert((t98_j('r10') -> 'flujo' ->> 'salidas_pagos_proveedores')::numeric = 400 AND (t98_j('r10') -> 'flujo' ->> 'salidas_nomina')::numeric = 100
+SELECT t98_assert((t98_j('r10') -> 'flujo' ->> 'salidas_pagos_proveedores')::numeric = 400 AND (t98_j('r10') -> 'flujo' ->> 'salidas_nomina')::numeric = CASE WHEN t98_canon() THEN 0 ELSE 100 END
   AND (t98_j('r10') -> 'flujo' ->> 'salidas_reembolsos')::numeric = 10 AND (t98_j('r10') -> 'flujo' ->> 'salidas_costos')::numeric = 0
   AND (t98_j('r10') -> 'flujo' ->> 'salidas_otras')::numeric = 0
-  AND (t98_j('r10') -> 'resultados' ->> 'nomina')::numeric = 100 AND (t98_j('r10') -> 'resultados' ->> 'costos_variables')::numeric = 10
+  AND (t98_j('r10') -> 'resultados' ->> 'nomina')::numeric = CASE WHEN t98_canon() THEN 0 ELSE 100 END AND (t98_j('r10') -> 'resultados' ->> 'costos_variables')::numeric = 10
   AND (t98_j('r10') -> 'resultados' ->> 'otros_gastos')::numeric = 0,
   '098-45 reporte del día 10: CxP 400, nómina 100 (una salida y un costo), reembolsos 10, sin otros gastos ni doble conteo');
 SELECT t98_assert((t98_j('r11') -> 'flujo' ->> 'salidas_pagos_proveedores')::numeric = 0 AND (t98_j('r11') -> 'flujo' ->> 'salidas_nomina')::numeric = 0

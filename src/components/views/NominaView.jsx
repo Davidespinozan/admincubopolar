@@ -1,132 +1,164 @@
-import { useState, useMemo, Modal, EmptyState, s, n, fmtMoney, useToast, todayLocalISO } from './viewsCommon';
+import { useState, useMemo, Modal, EmptyState, s, n, fmtMoney, fmtDate, useConfirm } from './viewsCommon';
+import { diaNegocio } from '../../utils/fechas';
+import { periodoNominaDe, etiquetaPeriodoNomina, previewRecibo, camposDeRecibo } from '../../data/nominaLogic';
+
+// 100: nómina canónica. La semana es sábado → viernes (pago el viernes) en días
+// de negocio de Mazatlán; el servidor crea el periodo, toma el snapshot del
+// salario, recalcula los recibos y paga. Un periodo Pagado no se edita.
+const etiqueta = (p) => s(p.periodo) || etiquetaPeriodoNomina(p);
+
+function ReciboEditor({ recibo, empleado, editable, onGuardar }) {
+  const [campos, setCampos] = useState(() => camposDeRecibo(recibo));
+  const [guardando, setGuardando] = useState(false);
+  const prev = previewRecibo(recibo.salarioDiario, campos);
+  const sucio = JSON.stringify(campos) !== JSON.stringify(camposDeRecibo(recibo));
+  const set = (k) => (e) => setCampos(c => ({ ...c, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value }));
+  const input = (k, label, extra = {}) => (
+    <label className="text-xs text-slate-500">
+      {label}
+      <input type="number" inputMode="decimal" min="0" step="0.01" value={campos[k]} onChange={set(k)} disabled={!editable}
+        className="mt-1 w-full px-2 py-2 border border-slate-200 rounded-lg text-base sm:text-sm min-h-[44px] disabled:bg-slate-100" {...extra} />
+    </label>
+  );
+  const guardar = async () => {
+    if (guardando) return;
+    setGuardando(true);
+    try { await onGuardar(recibo.id, campos); } finally { setGuardando(false); }
+  };
+  const mostrado = sucio ? prev : {
+    sueldo: n(recibo.sueldo), septimoDia: n(recibo.septimoDia), totalPercepciones: n(recibo.totalPercepciones),
+    deducciones: n(recibo.deducciones), netoAPagar: n(recibo.netoAPagar),
+  };
+  return (
+    <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="text-sm font-semibold text-slate-800">{empleado ? s(empleado.nombre) : `Empleado #${recibo.empleadoId}`}</p>
+          <p className="text-xs text-slate-400">{empleado ? s(empleado.puesto) : ''} · {fmtMoney(recibo.salarioDiario, { decimals: 2 })}/día (al generar)</p>
+        </div>
+        <div className="text-right">
+          <p className="text-lg font-bold text-emerald-600">{fmtMoney(mostrado.netoAPagar, { decimals: 2 })}</p>
+          <p className="text-[10px] text-slate-400">{sucio ? 'Vista previa — sin guardar' : 'Neto a pagar'}</p>
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
+        <label className="text-xs text-slate-500">
+          Días trabajados
+          <input type="number" inputMode="numeric" min="0" max="7" step="1" value={campos.diasPagados} onChange={set('diasPagados')} disabled={!editable}
+            className="mt-1 w-full px-2 py-2 border border-slate-200 rounded-lg text-base sm:text-sm min-h-[44px] disabled:bg-slate-100" />
+        </label>
+        <label className="text-xs text-slate-500 flex items-center gap-2 min-h-[44px] mt-4">
+          <input type="checkbox" checked={campos.conSeptimo} onChange={set('conSeptimo')} disabled={!editable} className="w-5 h-5" />
+          Séptimo día
+        </label>
+        {input('comisiones', 'Comisiones')}
+        {input('primaDominical', 'Prima dominical')}
+        {input('bonoPuntualidad', 'Bono puntualidad')}
+        {input('bonoProductividad', 'Bono productividad')}
+        {input('otrasPercepciones', 'Otras percepciones')}
+        {input('deducciones', 'Deducciones')}
+      </div>
+      <div className="grid grid-cols-4 gap-2 mt-3 text-xs">
+        <div className="bg-white rounded-lg p-2 text-center"><p className="text-slate-400">Sueldo</p><p className="font-bold text-slate-700">{fmtMoney(mostrado.sueldo, { decimals: 2 })}</p></div>
+        <div className="bg-white rounded-lg p-2 text-center"><p className="text-slate-400">Séptimo</p><p className="font-bold text-slate-700">{fmtMoney(mostrado.septimoDia, { decimals: 2 })}</p></div>
+        <div className="bg-white rounded-lg p-2 text-center"><p className="text-slate-400">Percepciones</p><p className="font-bold text-blue-600">{fmtMoney(mostrado.totalPercepciones, { decimals: 2 })}</p></div>
+        <div className="bg-white rounded-lg p-2 text-center"><p className="text-slate-400">Deducciones</p><p className="font-bold text-red-600">{fmtMoney(mostrado.deducciones, { decimals: 2 })}</p></div>
+      </div>
+      {editable && (
+        <div className="flex gap-2 mt-3">
+          <button onClick={guardar} disabled={!sucio || guardando} className="flex-1 min-h-[44px] bg-blue-600 disabled:bg-slate-300 text-white rounded-lg text-sm font-semibold">
+            {guardando ? 'Guardando…' : 'Guardar recibo'}
+          </button>
+          {sucio && <button onClick={() => setCampos(camposDeRecibo(recibo))} className="min-h-[44px] px-4 bg-slate-200 text-slate-700 rounded-lg text-sm font-semibold">Descartar</button>}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function NominaView({ data, actions }) {
-  const toast = useToast();
+  const [askConfirm, ConfirmEl] = useConfirm();
   const emps = data.empleados || [];
-  const periodos = data.nominaPeriodos || [];
+  const periodos = useMemo(() => [...(data.nominaPeriodos || [])].sort((a, b) => s(b.fechaInicio).localeCompare(s(a.fechaInicio))), [data.nominaPeriodos]);
   const recibos = data.nominaRecibos || [];
   const deptos = ["Ventas y Distribución", "Producción", "Administración", "Staff"];
-  const [periodoSeleccionado, setPeriodoSeleccionado] = useState(null);
+  const [periodoId, setPeriodoId] = useState(null);
+  const [otraFecha, setOtraFecha] = useState('');
+  const [ocupado, setOcupado] = useState(false);
 
+  // Solo para mostrar: la semana actual en Mazatlán. El servidor la decide al crear.
+  const semanaActual = useMemo(() => periodoNominaDe(diaNegocio()), []);
+
+  const empsActivos = emps.filter(e => s(e.estatus) === "Activo");
   const empsPorDepto = {};
-  for (const d of deptos) empsPorDepto[d] = emps.filter(e => s(e.depto) === d && s(e.estatus) === "Activo");
-  const totalSemanal = emps.filter(e => s(e.estatus) === "Activo").reduce((s, e) => s + n(e.salarioDiario) * 7, 0);
+  for (const d of deptos) empsPorDepto[d] = empsActivos.filter(e => s(e.depto) === d);
+  const totalSemanal = empsActivos.reduce((sum, e) => sum + n(e.salarioDiario) * 7, 0);
 
-  const periodosPendientes = periodos.filter(p => s(p.estatus) !== "Pagado");
+  const periodosBorrador = periodos.filter(p => s(p.estatus) !== "Pagado");
   const periodosPagados = periodos.filter(p => s(p.estatus) === "Pagado").slice(0, 10);
+  const periodoSel = periodos.find(p => n(p.id) === n(periodoId)) || null;
+  const recibosDe = (pid) => recibos.filter(r => n(r.periodoId) === n(pid));
+  const recibosSel = useMemo(() => (periodoSel ? recibos.filter(r => n(r.periodoId) === n(periodoSel.id)) : []), [recibos, periodoSel]);
 
-  // Recibos del período seleccionado
-  const recibosPeriodo = useMemo(() => {
-    if (!periodoSeleccionado) return [];
-    return recibos.filter(r => n(r.periodoId) === n(periodoSeleccionado.id));
-  }, [recibos, periodoSeleccionado]);
-
-  const generarNuevaSemana = async () => {
-    const hoy = new Date();
-    const inicioSemana = new Date(hoy);
-    inicioSemana.setDate(hoy.getDate() - hoy.getDay()); // Domingo
-    const finSemana = new Date(inicioSemana);
-    finSemana.setDate(inicioSemana.getDate() + 6); // Sábado
-
-    // Calcular número de semana y ejercicio (año)
-    const startOfYear = new Date(hoy.getFullYear(), 0, 1);
-    const daysSinceStart = Math.floor((inicioSemana - startOfYear) / (24 * 60 * 60 * 1000));
-    const numeroSemana = Math.ceil((daysSinceStart + startOfYear.getDay() + 1) / 7);
-    const ejercicio = hoy.getFullYear();
-
-    // Verificar si ya existe período de esta semana
-    const existente = periodos.find(p => n(p.numeroSemana) === numeroSemana && n(p.ejercicio) === ejercicio);
-    if (existente) {
-      toast?.error("Ya existe un período para esta semana");
-      return;
-    }
-
-    // Crear período de nómina con empleados activos
-    const empsActivos = emps.filter(e => s(e.estatus) === "Activo");
-    const nuevoTotal = empsActivos.reduce((sum, e) => sum + n(e.salarioDiario) * 7, 0);
-    const result = await actions.addNominaPeriodo({
-      numero_semana: numeroSemana,
-      ejercicio: ejercicio,
-      fecha_inicio: todayLocalISO(inicioSemana),
-      fecha_fin: todayLocalISO(finSemana),
-      fecha_pago: todayLocalISO(finSemana), // Pagas el sábado
-      dias_pago: 7,
-      total_percepciones: nuevoTotal,
-      total_deducciones: 0,
-      total_neto: nuevoTotal,
-      estatus: "Borrador", // Enum: Borrador, Calculada, Pagado
-    });
-    if (result !== null) return; // Error toast ya mostrado en store
-    toast?.success(`Nómina semana ${numeroSemana} generada: ${fmtMoney(nuevoTotal)}`);
+  const correr = async (fn) => {
+    if (ocupado) return;
+    setOcupado(true);
+    try { await fn(); } finally { setOcupado(false); }
   };
-
-  const pagarPeriodo = async (p) => {
-    await actions.pagarNomina(p.id);
+  const crear = (fecha) => correr(async () => { await actions.crearPeriodoNomina(fecha || null); });
+  const generar = (p) => correr(async () => { await actions.generarRecibosNomina(p.id); });
+  const pagar = (p) => {
+    askConfirm('Pagar nómina',
+      `${etiqueta(p)} — se registrará un egreso de ${fmtMoney(p.totalNeto, { decimals: 2 })} con fecha de hoy. El periodo quedará cerrado y sus recibos ya no se podrán editar.`,
+      () => correr(async () => { await actions.pagarNomina(p.id); }));
   };
-
-  const generarRecibosEmpleados = async (periodo) => {
-    const empsActivos = emps.filter(e => s(e.estatus) === "Activo");
-    let generados = 0;
-    for (const emp of empsActivos) {
-      // Verificar si ya tiene recibo para este período
-      const yaExiste = recibos.some(r => n(r.periodoId) === n(periodo.id) && n(r.empleadoId) === n(emp.id));
-      if (yaExiste) continue;
-
-      const dias = n(periodo.diasPago) || 7;
-      const percepciones = n(emp.salarioDiario) * dias;
-      const deducciones = Math.round(percepciones * 0.02 * 100) / 100; // 2% IMSS estimado
-      const neto = percepciones - deducciones;
-
-      await actions.addNominaRecibo({
-        periodo_id: periodo.id,
-        empleado_id: emp.id,
-        dias_pagados: dias,
-        salario_base: n(emp.salarioDiario),
-        percepciones: percepciones,
-        isr: 0,
-        imss: deducciones,
-        otras_deducciones: 0,
-        neto_a_pagar: neto,
-      });
-      generados++;
-    }
-    if (generados > 0) {
-      toast?.success(`${generados} recibos generados`);
-    } else {
-      toast?.info("Todos los empleados ya tienen recibo");
-    }
-  };
+  // El store ya avisa del resultado (éxito o error traducido).
+  const guardarRecibo = (reciboId, campos) => actions.editarReciboNomina(reciboId, campos);
 
   return (<div className="space-y-4">
-    <div className="flex justify-between items-center">
-      <h2 className="text-lg font-bold text-slate-800">Nómina</h2>
-      <button onClick={generarNuevaSemana} className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-xs font-semibold">+ Generar nómina semana</button>
+    {ConfirmEl}
+    <div className="flex flex-wrap justify-between items-center gap-2">
+      <div>
+        <h2 className="text-lg font-bold text-slate-800">Nómina</h2>
+        {semanaActual && <p className="text-xs text-slate-400">Semana actual: {etiquetaPeriodoNomina(semanaActual)} · pago el viernes</p>}
+      </div>
+      <button onClick={() => crear(null)} disabled={ocupado} className="bg-emerald-600 disabled:bg-slate-300 text-white px-4 min-h-[44px] rounded-lg text-sm font-semibold">+ Nómina de esta semana</button>
     </div>
+    <details className="bg-white rounded-xl p-3 border border-slate-100">
+      <summary className="text-xs text-slate-500 cursor-pointer min-h-[32px]">Crear la nómina de otra semana</summary>
+      <div className="flex flex-wrap gap-2 mt-2 items-end">
+        <label className="text-xs text-slate-500">
+          Cualquier día de esa semana
+          <input type="date" value={otraFecha} onChange={e => setOtraFecha(e.target.value)} className="block mt-1 px-3 py-2 border border-slate-200 rounded-lg text-base sm:text-sm min-h-[44px]" />
+        </label>
+        <button onClick={() => otraFecha && crear(otraFecha)} disabled={!otraFecha || ocupado} className="bg-slate-700 disabled:bg-slate-300 text-white px-4 min-h-[44px] rounded-lg text-sm font-semibold">Crear</button>
+        {otraFecha && periodoNominaDe(otraFecha) && <p className="text-xs text-slate-400 w-full">Se creará: {etiquetaPeriodoNomina(periodoNominaDe(otraFecha))}</p>}
+      </div>
+    </details>
     <div className="bg-white rounded-xl p-5 border border-slate-100">
       <p className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-1">Total semanal estimado</p>
       <p className="text-3xl font-extrabold text-slate-800">{fmtMoney(totalSemanal, { decimals: 2 })}</p>
-      <p className="text-xs text-slate-400 mt-1">{emps.filter(e => s(e.estatus) === "Activo").length} empleados activos · Salario × 7 días</p>
+      <p className="text-xs text-slate-400 mt-1">{empsActivos.length} empleados activos · Salario × 7 días (6 + séptimo). Referencia; el pago usa los recibos.</p>
     </div>
 
-    {/* Períodos pendientes de pago */}
-    {periodosPendientes.length > 0 && (<div>
-      <h3 className="text-xs font-bold text-amber-600 uppercase tracking-wider mt-4 mb-2">Períodos pendientes de pago</h3>
+    {periodosBorrador.length > 0 && (<div>
+      <h3 className="text-xs font-bold text-amber-600 uppercase tracking-wider mt-4 mb-2">Borradores pendientes de pago</h3>
       <div className="space-y-2">
-        {periodosPendientes.map(p => {
-          const recibosP = recibos.filter(r => n(r.periodoId) === n(p.id));
-          const empsActivos = emps.filter(e => s(e.estatus) === "Activo").length;
+        {periodosBorrador.map(p => {
+          const recP = recibosDe(p.id);
           return (
           <div key={p.id} className="bg-amber-50 rounded-xl p-4 border border-amber-200">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-wrap justify-between items-center gap-2">
               <div>
-                <p className="text-sm font-semibold text-slate-800">Semana {n(p.numeroSemana)} — {n(p.ejercicio)}</p>
-                <p className="text-xs text-slate-500">{s(p.fechaInicio)} al {s(p.fechaFin)} · {fmtMoney(p.totalNeto)}</p>
-                <p className="text-xs text-slate-400 mt-1">{recibosP.length}/{empsActivos} recibos generados</p>
+                <p className="text-sm font-semibold text-slate-800">{etiqueta(p)}</p>
+                <p className="text-xs text-slate-500">Pago: {fmtDate(p.fechaPago)} · Neto {fmtMoney(p.totalNeto, { decimals: 2 })}
+                  {n(p.totalDeducciones) > 0 ? ` (deducciones ${fmtMoney(p.totalDeducciones, { decimals: 2 })})` : ''}</p>
+                <p className="text-xs text-slate-400 mt-1">{recP.length} recibo{recP.length === 1 ? '' : 's'} · {empsActivos.length} empleados activos</p>
               </div>
-              <div className="flex gap-2">
-                <button onClick={() => generarRecibosEmpleados(p)} className="bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-semibold">Generar recibos</button>
-                <button onClick={() => setPeriodoSeleccionado(p)} className="bg-slate-600 text-white px-3 py-2 rounded-lg text-xs font-semibold">Ver</button>
-                <button onClick={() => pagarPeriodo(p)} className="bg-emerald-600 text-white px-3 py-2 rounded-lg text-xs font-semibold">Pagar</button>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => generar(p)} disabled={ocupado} className="bg-blue-600 disabled:bg-slate-300 text-white px-3 min-h-[44px] rounded-lg text-xs font-semibold">Generar recibos</button>
+                <button onClick={() => setPeriodoId(p.id)} className="bg-slate-600 text-white px-3 min-h-[44px] rounded-lg text-xs font-semibold">Capturar</button>
+                <button onClick={() => pagar(p)} disabled={ocupado || recP.length === 0 || n(p.totalNeto) <= 0} className="bg-emerald-600 disabled:bg-slate-300 text-white px-3 min-h-[44px] rounded-lg text-xs font-semibold">Pagar</button>
               </div>
             </div>
           </div>
@@ -134,27 +166,25 @@ export function NominaView({ data, actions }) {
       </div>
     </div>)}
 
-    {/* Períodos pagados recientes */}
     {periodosPagados.length > 0 && (<div>
       <h3 className="text-xs font-bold text-emerald-600 uppercase tracking-wider mt-4 mb-2">Pagados recientemente</h3>
       <div className="space-y-1.5">
         {periodosPagados.map(p => (
-          <div key={p.id} className="bg-emerald-50 rounded-xl p-3 border border-emerald-100 flex justify-between items-center">
+          <button key={p.id} onClick={() => setPeriodoId(p.id)} className="w-full text-left bg-emerald-50 rounded-xl p-3 border border-emerald-100 flex justify-between items-center min-h-[44px]">
             <div>
-              <p className="text-sm font-semibold text-slate-800">Semana {n(p.numeroSemana)} — {n(p.ejercicio)}</p>
-              <p className="text-xs text-slate-400">{s(p.fechaInicio)} al {s(p.fechaFin)}</p>
+              <p className="text-sm font-semibold text-slate-800">{etiqueta(p)}</p>
+              <p className="text-xs text-slate-400">Pagado · {recibosDe(p.id).length} recibos</p>
             </div>
-            <p className="text-sm font-bold text-emerald-700">{fmtMoney(p.totalNeto)}</p>
-          </div>
+            <p className="text-sm font-bold text-emerald-700">{fmtMoney(p.totalNeto, { decimals: 2 })}</p>
+          </button>
         ))}
       </div>
     </div>)}
 
-    {/* Empleados por departamento */}
     {deptos.map(d => {
       const dEmps = empsPorDepto[d] || [];
       if (dEmps.length === 0) return null;
-      const totalDepto = dEmps.reduce((s, e) => s + n(e.salarioDiario) * 7, 0);
+      const totalDepto = dEmps.reduce((sum, e) => sum + n(e.salarioDiario) * 7, 0);
       return (<div key={d}>
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-4 mb-2">{d} — {dEmps.length} empleados · {fmtMoney(totalDepto)}/sem</h3>
         <div className="space-y-1.5">
@@ -174,52 +204,33 @@ export function NominaView({ data, actions }) {
       </div>);
     })}
 
-    {/* Modal de recibos del período */}
-    {periodoSeleccionado && (
-      <Modal onClose={() => setPeriodoSeleccionado(null)} title={`Recibos Semana ${n(periodoSeleccionado.numeroSemana)}`}>
-        <div className="space-y-3 max-h-96 overflow-y-auto">
-          {recibosPeriodo.length === 0 ? (
-            <EmptyState
-              message="Aún no hay recibos generados"
-              hint="Usa el botón 'Generar recibos' para crear los del período actual"
-            />
+    {periodoSel && (
+      <Modal onClose={() => setPeriodoId(null)} title={`Recibos — ${etiqueta(periodoSel)}`}>
+        <p className="text-xs text-slate-500 mb-3">
+          {s(periodoSel.estatus) === 'Pagado'
+            ? 'Periodo pagado: los recibos son históricos y no se editan.'
+            : 'Captura los valores reales de la semana. El servidor recalcula percepciones, deducciones y neto con el salario del recibo.'}
+        </p>
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+          {recibosSel.length === 0 ? (
+            <EmptyState message="Aún no hay recibos" hint="Usa 'Generar recibos' para crear los de los empleados activos" />
           ) : (
-            recibosPeriodo.map(r => {
-              const emp = emps.find(e => n(e.id) === n(r.empleadoId));
-              return (
-                <div key={r.id} className="bg-slate-50 rounded-xl p-4 border border-slate-200">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">{emp ? s(emp.nombre) : `Empleado #${r.empleadoId}`}</p>
-                      <p className="text-xs text-slate-400">{emp ? s(emp.puesto) : ""}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-emerald-600">{fmtMoney(r.netoAPagar || r.neto_a_pagar)}</p>
-                      <p className="text-[10px] text-slate-400">Neto a pagar</p>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2 mt-3 text-xs">
-                    <div className="bg-white rounded-lg p-2 text-center">
-                      <p className="text-slate-400">Días</p>
-                      <p className="font-bold text-slate-700">{n(r.diasPagados || r.dias_pagados)}</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-2 text-center">
-                      <p className="text-slate-400">Percepciones</p>
-                      <p className="font-bold text-blue-600">{fmtMoney(r.percepciones)}</p>
-                    </div>
-                    <div className="bg-white rounded-lg p-2 text-center">
-                      <p className="text-slate-400">Deducciones</p>
-                      <p className="font-bold text-red-600">{fmtMoney(r.imss)}</p>
-                    </div>
-                  </div>
-                </div>
-              );
-            })
+            recibosSel.map(r => (
+              <ReciboEditor key={`${r.id}-${s(r.updatedAt)}`} recibo={r} empleado={emps.find(e => n(e.id) === n(r.empleadoId))}
+                editable={s(periodoSel.estatus) === 'Borrador'} onGuardar={guardarRecibo} />
+            ))
           )}
         </div>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+          <div className="bg-slate-50 rounded-lg p-2 text-center"><p className="text-slate-400">Percepciones</p><p className="font-bold">{fmtMoney(periodoSel.totalPercepciones, { decimals: 2 })}</p></div>
+          <div className="bg-slate-50 rounded-lg p-2 text-center"><p className="text-slate-400">Deducciones</p><p className="font-bold">{fmtMoney(periodoSel.totalDeducciones, { decimals: 2 })}</p></div>
+          <div className="bg-slate-50 rounded-lg p-2 text-center"><p className="text-slate-400">Neto (servidor)</p><p className="font-bold text-emerald-700">{fmtMoney(periodoSel.totalNeto, { decimals: 2 })}</p></div>
+        </div>
         <div className="flex gap-2 mt-4">
-          <button onClick={() => generarRecibosEmpleados(periodoSeleccionado)} className="flex-1 py-3 bg-blue-600 text-white font-semibold rounded-xl">Generar faltantes</button>
-          <button onClick={() => setPeriodoSeleccionado(null)} className="flex-1 py-3 bg-slate-200 text-slate-700 font-semibold rounded-xl">Cerrar</button>
+          {s(periodoSel.estatus) === 'Borrador' && (
+            <button onClick={() => generar(periodoSel)} disabled={ocupado} className="flex-1 min-h-[44px] bg-blue-600 disabled:bg-slate-300 text-white font-semibold rounded-xl">Generar faltantes</button>
+          )}
+          <button onClick={() => setPeriodoId(null)} className="flex-1 min-h-[44px] bg-slate-200 text-slate-700 font-semibold rounded-xl">Cerrar</button>
         </div>
       </Modal>
     )}

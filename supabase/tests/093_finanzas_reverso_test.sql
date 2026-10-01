@@ -143,8 +143,13 @@ SELECT registrar_recepcion_compra('93000000-0000-0000-0000-00000000a001', 'P93-E
 -- Renta (costo fijo aplicado: egreso + historial ligado) y nómina pagada.
 WITH m AS (INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, referencia) VALUES (fin_hoy(), 'Egreso', 'Renta', 'Renta T93 (Mensual)', 400, '') RETURNING id)
 INSERT INTO costos_historial (tipo, categoria, concepto, monto, periodo, fecha, referencia, movimiento_id) SELECT 'Fijo', 'Renta', 'Renta T93', 400, to_char(fin_hoy(), 'YYYY-MM'), fin_hoy(), '', id FROM m;
-WITH m AS (INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto) VALUES (fin_hoy(), 'Egreso', 'Nómina', 'Pago nómina T93', 600) RETURNING id)
-INSERT INTO costos_historial (tipo, categoria, concepto, monto, periodo, fecha, movimiento_id) SELECT 'Nómina', 'Nómina', 'Pago nómina T93', 600, to_char(fin_hoy(), 'YYYY-MM'), fin_hoy(), id FROM m;
+DO $do$ BEGIN
+  -- 100: el egreso y el costo de nómina por API se niegan (los registra
+  -- pagar_nomina); aquí son un fixture de confianza con la misma forma.
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'nomina_periodos' AND column_name = 'fecha_inicio') THEN RESET ROLE; END IF;
+  WITH m AS (INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto) VALUES (fin_hoy(), 'Egreso', 'Nómina', 'Pago nómina T93', 600) RETURNING id)
+  INSERT INTO costos_historial (tipo, categoria, concepto, monto, periodo, fecha, movimiento_id) SELECT 'Nómina', 'Nómina', 'Pago nómina T93', 600, to_char(fin_hoy(), 'YYYY-MM'), fin_hoy(), id FROM m;
+END $do$;
 COMMIT;
 -- Consumo de empaque (producción de 100 → 100 × 1.5 = 150) y merma de 10 × 5 = 50.
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(4);

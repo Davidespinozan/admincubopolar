@@ -98,9 +98,8 @@ describe('090: el mapa de grants cubre exactamente las escrituras directas del f
   mapa.produccion = mapa.produccion.filter(op => op !== 'DELETE'); // 094: la producción se revierte, no se borra
   delete mapa.cierres_diarios; // 097: la caja se cierra con cerrar_caja_ruta
   delete mapa.pagos_proveedores; // 099: el pago a proveedor se registra con pagar_cuenta_por_pagar
-  // 098: la nómina se paga con pagar_nomina; el UPDATE de nomina_periodos se
-  // conserva a propósito para bundles anteriores (revocarlo dejaría pagos a medias).
-  if (!(escrituras.nomina_periodos || []).includes('UPDATE')) mapa.nomina_periodos = mapa.nomina_periodos.filter(op => op !== 'UPDATE');
+  delete mapa.nomina_periodos; // 101: la nómina se escribe con sus contratos (100)
+  delete mapa.nomina_recibos;
   const normal = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, [...v].sort()]).sort(([a], [b]) => a.localeCompare(b)));
 
   it('cada tabla y operación escrita por el frontend tiene su grant, y no sobra ninguno', () => {

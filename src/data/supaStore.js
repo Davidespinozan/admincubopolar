@@ -32,6 +32,7 @@ import { traducirError } from '../utils/errorMessages';
 import { TABLAS_CORE_RT, TABLAS_SLICE_RT } from './realtimeLogic';
 import { normalizarReporteFinanciero } from './finanzasLogic';
 import { fechaElegida, camposFechaCosto, buildPagarCxPArgs } from './fechaNegocioLogic';
+import { buildEditarReciboArgs } from './nominaLogic';
 import { diaNegocio } from '../utils/fechas';
 
 // ═══════════════════════════════════════════════════════════════
@@ -3149,28 +3150,71 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── NÓMINA ──
-      addNominaPeriodo: async (p) => {
-        const { error } = await supabase.from('nomina_periodos').insert(p).select().single();
-        if (error) { 
-          console.error('[addNominaPeriodo]', error.message, error.code, error.details);
-          t()?.error('Error al crear período de nómina: ' + error.message); 
-          return { error }; // Devolver objeto con error para distinguir de éxito
+      // ── NÓMINA ── (100: modelo canónico; sin escritura REST directa)
+      // crear_periodo_nomina: el servidor deriva la semana sábado→viernes del
+      // día de negocio (Mazatlán) o de la fecha elegida; es idempotente por
+      // fecha_inicio. Luego genera los recibos faltantes con el snapshot del
+      // salario. fecha: 'YYYY-MM-DD' opcional (null = semana actual).
+      crearPeriodoNomina: async (fecha = null) => {
+        const fe = fechaElegida(fecha);
+        if (fe.error) { t()?.error(fe.error); return { error: fe.error, message: fe.error }; }
+        const { data, error } = await supabase.rpc('crear_periodo_nomina', { p_fecha: fe.fecha });
+        if (error) {
+          console.warn('[crearPeriodoNomina] rpc:', error.message);
+          const msg = traducirError(error, 'Error al crear el periodo de nómina');
+          t()?.error(msg);
+          return { error: msg, message: msg };
         }
-        log('Crear', 'Nómina', `Período ${p.fecha_inicio || ''} — ${p.fecha_fin || ''}`);
+        if (data?.estatus === 'Borrador') {
+          const { error: eRec } = await supabase.rpc('generar_recibos_nomina', { p_periodo_id: Number(data.periodo_id) });
+          if (eRec) {
+            console.warn('[crearPeriodoNomina] generar_recibos:', eRec.message);
+            const msg = 'Periodo creado, pero los recibos no se generaron. Usa "Generar recibos".';
+            t()?.error(msg);
+            rf();
+            return { error: msg, message: msg, partial: true };
+          }
+        }
+        if (data?.replay) t()?.info(`El periodo ${s(data?.periodo)} ya existía`);
+        else t()?.success(`Nómina creada: ${s(data?.periodo)}`);
         rf();
-        return null; // null = éxito
       },
 
-      addNominaRecibo: async (r) => {
-        const { error } = await supabase.from('nomina_recibos').insert(r);
-        if (error) { t()?.error('Error al guardar recibo de nómina'); return error; }
-        log('Crear', 'Nómina Recibo', `Empleado ${r.empleado_id}`);
+      // generar_recibos_nomina: un recibo por empleado elegible; repetir solo
+      // crea los faltantes y nunca reescribe un recibo existente.
+      generarRecibosNomina: async (periodoId) => {
+        const { data, error } = await supabase.rpc('generar_recibos_nomina', { p_periodo_id: Number(periodoId) });
+        if (error) {
+          console.warn('[generarRecibosNomina] rpc:', error.message);
+          const msg = traducirError(error, 'Error al generar recibos');
+          t()?.error(msg);
+          return { error: msg, message: msg };
+        }
+        const creados = Number(data?.creados || 0);
+        if (creados > 0) t()?.success(`${creados} recibo${creados === 1 ? '' : 's'} generado${creados === 1 ? '' : 's'}`);
+        else t()?.info('Todos los empleados elegibles ya tienen recibo');
         rf();
       },
 
-      // Pagar nómina — 098: contrato pagar_nomina. Egreso, costo de nómina y
-      // periodo Pagado en UNA transacción, con el total de los recibos y la
-      // fecha (fin_hoy()) del servidor. Un periodo se paga una sola vez.
+      // editar_recibo_nomina: valores reales de un recibo en Borrador; el
+      // servidor recalcula con el salario del snapshot (sin totales del cliente).
+      editarReciboNomina: async (reciboId, campos) => {
+        const built = buildEditarReciboArgs(reciboId, campos);
+        if (built.error) { t()?.error(built.error); return { error: built.error, message: built.error }; }
+        const { error } = await supabase.rpc('editar_recibo_nomina', built.args);
+        if (error) {
+          console.warn('[editarReciboNomina] rpc:', error.message);
+          const msg = traducirError(error, 'Error al guardar el recibo');
+          t()?.error(msg);
+          return { error: msg, message: msg };
+        }
+        t()?.success('Recibo actualizado');
+        rf();
+      },
+
+      // Pagar nómina — 098/100: contrato pagar_nomina. Egreso, costo de nómina
+      // y periodo Pagado (inmutable) en UNA transacción, con el neto de los
+      // recibos y la fecha (fin_hoy()) del servidor. Un periodo se paga una vez.
       pagarNomina: async (periodoId) => {
         const { data, error } = await supabase.rpc('pagar_nomina', { p_periodo_id: Number(periodoId) });
         if (error) {
