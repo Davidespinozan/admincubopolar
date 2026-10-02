@@ -151,10 +151,22 @@ DO $do$ BEGIN
   INSERT INTO costos_historial (tipo, categoria, concepto, monto, periodo, fecha, movimiento_id) SELECT 'Nómina', 'Nómina', 'Pago nómina T93', 600, to_char(fin_hoy(), 'YYYY-MM'), fin_hoy(), id FROM m;
 END $do$;
 COMMIT;
+-- 102/103: la merma de cuarto indica el cuarto (registrar_merma_cuarto) cuando existe.
+CREATE OR REPLACE FUNCTION t93_merma_cuarto(p_cuarto TEXT, p_sku TEXT, p_cant INTEGER, p_causa TEXT, p_origen TEXT DEFAULT NULL) RETURNS JSONB LANGUAGE plpgsql AS $mc$
+DECLARE r JSONB;
+BEGIN
+  IF to_regprocedure('public.registrar_merma_cuarto(uuid,text,text,integer,text,text)') IS NULL THEN
+    EXECUTE 'SELECT registrar_merma($1, $2, $3, $4)' INTO r USING p_sku, p_cant, p_causa, p_origen;
+  ELSE
+    EXECUTE 'SELECT registrar_merma_cuarto(gen_random_uuid(), $1, $2, $3, $4)' INTO r USING p_cuarto, p_sku, p_cant, p_causa;
+  END IF;
+  RETURN r;
+END $mc$;
+GRANT EXECUTE ON FUNCTION t93_merma_cuarto(TEXT, TEXT, INTEGER, TEXT, TEXT) TO PUBLIC;
 -- Consumo de empaque (producción de 100 → 100 × 1.5 = 150) y merma de 10 × 5 = 50.
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(4);
 SELECT registrar_produccion('93000000-0000-0000-0000-00000000b001', 'Turno 1', 'Máquina 93', 'P93-HIELO', 100, 'CF-93A');
-SELECT registrar_merma('P93-HIELO', 10, 'Bolsa rota');
+SELECT t93_merma_cuarto('CF-93A', 'P93-HIELO', 10, 'Bolsa rota');
 COMMIT;
 SELECT t93_assert(t93_d('b0', 'resultados', 'ventas_entregadas') = 1500, '093-20 ingreso por entrega: contado 1000 + crédito 500 = 1500 (el cobro de 300 NO es otro ingreso)');
 SELECT t93_assert(t93_d('b0', 'resultados', 'costo_ventas') = 150, '093-21 costo de ventas: consumo de empaque 150 (la compra de 200 no es gasto)');
@@ -398,7 +410,7 @@ SELECT t93_assert(t93_cf('CF-93A', 'P93-HIELO') + t93_cf('CF-93B', 'P93-HIELO') 
 -- Alta de un insumo con existencia inicial: evento de kardex.
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(1);
 INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('P93-NUEVA', 'Bolsa nueva 93', 'Empaque', 0, 40, 1);
-SELECT t93_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, referencia) VALUES ('Entrada', 'P93-EMPB', 5, 'ajuste_existencia/P93-EMPB')$q$, '093-101 Admin: kardex con referencia de ajuste reservada', '42501', '%reservado%');
+SELECT t93_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, referencia) VALUES ('Entrada', 'P93-EMPB', 5, 'ajuste_existencia/P93-EMPB')$q$, '093-101 Admin: kardex con referencia de ajuste reservada', '42501', CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN '%reservado%' END);
 SELECT t93_err($q$INSERT INTO costos_historial (tipo, categoria, concepto, monto, fecha) VALUES ('Reverso producción', 'Costo de Ventas', 'T93 falso', 1, CURRENT_DATE)$q$, '093-102 Admin: costo de reverso manual reservado', '42501');
 COMMIT;
 SELECT t93_assert((SELECT count(*) = 1 AND bool_and(tipo = 'Entrada' AND cantidad = 40 AND referencia = 'existencia_inicial/P93-NUEVA' AND usuario = 'Admin 93') FROM inventario_mov WHERE producto = 'P93-NUEVA'), '093-103 alta con existencia inicial: un kardex de entrada con el actor');

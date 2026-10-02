@@ -5,10 +5,10 @@ import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI, esPagoEnLinea } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
-import { buildRegistrarMermaArgs, mensajeErrorMerma } from './mermasLogic';
+import { mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
-import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
+import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, buildAjusteCuartoArgs, buildMermaCuartoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
 import {
   normalizarEntregasCierre, claveCierreFinanciero, buildCerrarFinancieroArgs, interpretarCierreFinanciero,
   mensajeErrorCierreFinanciero, leerOperacionCierre, guardarOperacionCierre, borrarOperacionCierre,
@@ -1710,99 +1710,25 @@ export function useSupaStore(userId, userName, userRol) {
         }
       },
 
-      ajustarStockCuarto: async ({ cuartoId, ajustes, motivo }) => {
+      // 102: ajuste por conteo físico de UN SKU en UN cuarto
+      // (ajustar_existencia_cuarto). Se manda la existencia contada; el
+      // servidor bloquea el cuarto, calcula el delta, deja kardex
+      // (ajuste_cuarto/<op>) y auditoría. Sin efecto financiero. Idempotente
+      // por operación (el UUID lo conserva la vista entre reintentos).
+      ajustarExistenciaCuarto: async ({ operacionId, cuartoId, sku, existencia, motivo } = {}) => {
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
-        try {
-          if (!cuartoId) return { message: 'Cuarto frío requerido' };
-          if (!Array.isArray(ajustes) || ajustes.length === 0) return { message: 'Sin ajustes' };
-          const motivoTxt = String(motivo || '').trim();
-          if (!motivoTxt) return { message: 'Motivo requerido' };
-
-          const { data: cuarto, error: cfErr } = await supabase
-            .from('cuartos_frios')
-            .select('id,nombre,stock')
-            .eq('id', cuartoId)
-            .single();
-          if (cfErr || !cuarto) { t()?.error('Error al leer cuarto frío'); return cfErr || { message: 'Cuarto no encontrado' }; }
-
-          const stockPrev = (cuarto.stock && typeof cuarto.stock === 'object') ? { ...cuarto.stock } : {};
-          const stockNuevo = { ...stockPrev };
-          const cambiosReales = [];
-
-          for (const a of ajustes) {
-            const sku = String(a?.sku || '').trim();
-            if (!sku) continue;
-            const nueva = Number(a?.nuevaCantidad);
-            if (!Number.isFinite(nueva) || nueva < 0) continue;
-            const actual = Number(stockPrev[sku] || 0);
-            if (nueva === actual) continue;
-            if (nueva === 0) {
-              delete stockNuevo[sku];
-            } else {
-              stockNuevo[sku] = nueva;
-            }
-            cambiosReales.push({ sku, actual, nueva, delta: nueva - actual });
-          }
-
-          if (cambiosReales.length === 0) return { message: 'Sin cambios reales' };
-
-          const { error: updErr } = await supabase
-            .from('cuartos_frios')
-            .update({ stock: stockNuevo })
-            .eq('id', cuartoId);
-          if (updErr) { t()?.error('Error al actualizar stock del cuarto frío'); return updErr; }
-
-          const movRows = cambiosReales.map(c => ({
-            tipo: c.delta >= 0 ? 'Entrada' : 'Salida',
-            producto: c.sku,
-            cantidad: Math.abs(c.delta),
-            origen: `Ajuste ${s(cuarto.nombre)}: ${motivoTxt}`,
-            usuario: uname(),
-          }));
-          const { error: movErr } = await supabase.from('inventario_mov').insert(movRows);
-          if (movErr) {
-            console.warn('[ajustarStockCuarto] insert inventario_mov (no crítico):', movErr.message);
-            t()?.error('Stock ajustado, pero el movimiento de inventario no se registró.');
-          }
-
-          // Sincronizar productos.stock con la suma global (solo SKUs afectados)
-          const skusAfectados = cambiosReales.map(c => c.sku);
-          const { data: cuartosTodos, error: cfTodosErr } = await supabase
-            .from('cuartos_frios')
-            .select('stock');
-          if (!cfTodosErr && Array.isArray(cuartosTodos)) {
-            const totales = {};
-            for (const sku of skusAfectados) totales[sku] = 0;
-            for (const cf of cuartosTodos) {
-              const st = (cf.stock && typeof cf.stock === 'object') ? cf.stock : {};
-              for (const sku of skusAfectados) {
-                totales[sku] += Number(st[sku] || 0);
-              }
-            }
-            const updates = skusAfectados.map(sku =>
-              supabase.from('productos').update({ stock: totales[sku] }).eq('sku', sku)
-            );
-            const results = await Promise.all(updates);
-            const failed = results.find(r => r.error);
-            if (failed?.error) {
-              console.warn('[ajustarStockCuarto] sync productos.stock:', failed.error.message);
-              t()?.error('Stock ajustado, pero la sincronización de productos falló.');
-            }
-          }
-
-          const detalle = cambiosReales
-            .map(c => `${c.sku}: ${c.actual} → ${c.nueva}`)
-            .join(', ');
-          await log('Ajustar', 'Cuartos Fríos', `${s(cuarto.nombre)} — ${detalle}. Motivo: ${motivoTxt}`);
-
-          rf();
-          return undefined;
-        } catch (e) {
-          console.error('[ajustarStockCuarto] excepción:', e);
-          t()?.error('Error inesperado al ajustar stock del cuarto');
-          return { error: e?.message || 'Error inesperado' };
+        const built = buildAjusteCuartoArgs({ operacionId: operacionId || nuevoOperacionId(), cuartoId, sku, existencia, motivo });
+        if (built.error) { t()?.error(built.error); return { error: built.error, message: built.error }; }
+        const { data, error } = await supabase.rpc('ajustar_existencia_cuarto', built.args);
+        if (error) {
+          console.warn('[ajustarExistenciaCuarto] rpc:', error.message);
+          const msg = mensajeErrorStock(error);
+          t()?.error(msg);
+          return { error: msg, message: msg };
         }
+        rf();
+        return { data };
       },
 
       // 093: ajuste manual por contrato del servidor (ajustar_existencia):
@@ -2660,26 +2586,28 @@ export function useSupaStore(userId, userName, userRol) {
       // el shell. El chofer registra solo al cerrar ruta
       // (lote registrar_mermas_ruta en prepararCierreRuta; 087: descuenta del
       // camión, no de cuartos fríos).
-      registrarMerma: async (sku, cantidad, causa, origen, fotoUrl) => {
+      // 102: merma física en el cuarto elegido (registrar_merma_cuarto): solo
+      // ese cuarto (sin FIFO), un efecto exacto, kardex con cuarto, auditoría
+      // y valuación vigente. Idempotente por operación. Admin y Producción.
+      registrarMermaCuarto: async ({ operacionId, cuartoId, sku, cantidad, causa, foto } = {}) => {
         const guard = requireRol(['Admin', 'Producción']);
         if (guard) { t()?.error(guard.error); return guard; }
-        const built = buildRegistrarMermaArgs({ sku, cantidad, causa, origen, foto: fotoUrl });
+        const built = buildMermaCuartoArgs({ operacionId: operacionId || nuevoOperacionId(), cuartoId, sku, cantidad, causa, foto });
         if (built.error) { t()?.error(built.error); return { error: built.error }; }
         try {
-          const { error } = await supabase.rpc('registrar_merma', built.args);
+          const { error } = await supabase.rpc('registrar_merma_cuarto', built.args);
           if (error) {
             const msg = mensajeErrorMerma(error);
-            console.warn('[registrarMerma] rpc registrar_merma:', error.message);
+            console.warn('[registrarMermaCuarto] rpc registrar_merma_cuarto:', error.message);
             t()?.error(msg);
             return { error: msg };
           }
-          notify('merma', 'Merma registrada', `${built.args.p_cantidad}× ${built.args.p_sku} — ${causa || origen || 'Sin causa'}`, '⚠️', built.args.p_sku);
-          log('Registrar', 'Mermas', `${built.args.p_cantidad}×${built.args.p_sku} — ${causa}`);
+          notify('merma', 'Merma registrada', `${built.args.p_cantidad}× ${built.args.p_sku} en ${built.args.p_cuarto_id} — ${causa || 'Sin causa'}`, '⚠️', built.args.p_sku);
           await checkStockBajo([built.args.p_sku]);
           rf();
           return undefined;
         } catch (e) {
-          console.error('[registrarMerma] excepción:', e);
+          console.error('[registrarMermaCuarto] excepción:', e);
           t()?.error('Error inesperado al registrar merma');
           return { error: e?.message || 'Error inesperado' };
         }

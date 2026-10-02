@@ -157,7 +157,13 @@ DO $do$ BEGIN
     PERFORM t77_assert(t77_rows($q$UPDATE productos SET stock = 25 WHERE sku = 'P77-BARRA'$q$) = 1, '077-42 Admin: ajuste manual de stock');
   END IF;
 END $do$;
-INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Entrada', 'P77-BARRA', 13, 'Ajuste manual', 'Admin 77');
+DO $do$ BEGIN
+  IF has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN
+    INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Entrada', 'P77-BARRA', 13, 'Ajuste manual', 'Admin 77');
+  ELSE  -- 103: el kardex lo escriben los contratos
+    PERFORM t77_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Entrada', 'P77-BARRA', 13, 'Ajuste manual', 'Admin 77')$q$, '077-42b (103) Admin: kardex directo negado', '42501');
+  END IF;
+END $do$;
 SELECT t77_assert(t77_rows($q$UPDATE produccion SET turno = 'Turno 2' WHERE folio = 'OP-77FIX'$q$) = 1, '077-43 Admin: edición de producción');
 -- 094: la producción no se borra (se revierte con revertir_produccion).
 DO $do$ BEGIN
@@ -169,7 +175,7 @@ DO $do$ BEGIN
 END $do$;
 SELECT rename_sku((SELECT id FROM productos WHERE sku = 'P77-TRIT'), 'P77-TRIT', 'P77-TRIT2');
 COMMIT;
-SELECT t77_assert((SELECT count(*) = 1 FROM inventario_mov WHERE producto = 'P77-BARRA' AND origen = 'Ajuste manual'), '077-45 Admin: kardex del ajuste manual');
+SELECT t77_assert((SELECT count(*) = CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN 1 ELSE 0 END FROM inventario_mov WHERE producto = 'P77-BARRA' AND origen = 'Ajuste manual'), '077-45 Admin: kardex del ajuste manual (sin INSERT REST desde 103)');
 SELECT t77_assert(EXISTS (SELECT 1 FROM productos WHERE sku = 'P77-TRIT2') AND (SELECT (stock ->> 'P77-TRIT2')::int FROM cuartos_frios WHERE id = 'CF-77') = 6, '077-46 Admin: rename_sku sigue funcionando (cascada al cuarto)');
 
 \echo '── 077: deuda B3 documentada (sin cambios en esta fase)'

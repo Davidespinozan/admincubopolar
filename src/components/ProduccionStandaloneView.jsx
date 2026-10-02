@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { diaNegocio } from '../utils/fechas';
 import { resolverOperacion, claveProduccion, claveTransformacion } from '../data/produccionAtomicaLogic';
-import { claveSalida, claveTraspaso, MOTIVOS_SALIDA_MANUAL } from '../data/stockContratosLogic';
+import { claveSalida, claveTraspaso, claveMermaCuarto, MOTIVOS_SALIDA_MANUAL, motivoSalidaManual } from '../data/stockContratosLogic';
 import { mermasActivas } from '../data/mermasLogic';
 import { supabase } from '../lib/supabase';
 import { s, n, fmtDate, fmtPct, todayLocalISO } from '../utils/safe';
@@ -30,7 +30,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const [guardandoProd, setGuardandoProd] = useState(false);
   const [tForm, setTForm] = useState({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
   const [haciendoTraspaso, setHaciendoTraspaso] = useState(false);
-  const [sacarForm, setSacarForm] = useState({ sku: "", cantidad: "", motivo: "" }); // R2 (084): sin motivo por defecto; la carga de ruta ya no es una salida manual
+  const [sacarForm, setSacarForm] = useState({ sku: "", cantidad: "", motivo: "", detalle: "" }); // R2 (084): sin motivo por defecto; la carga de ruta ya no es una salida manual
   const [haciendoSalida, setHaciendoSalida] = useState(false);
 
   // Simulated pending cargas from chofers (vacío — no usar mock data con SKUs hardcodeados)
@@ -48,6 +48,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const opProdRef = useRef(null);
   const opTransRef = useRef(null);
   const opSalidaRef = useRef(null);   // R2 (084)
+  // 102: merma de cuarto — UUID del intento y foto ya subida se conservan entre
+  // reintentos (una respuesta perdida no duplica la pérdida).
+  const opMermaRef = useRef(null);
+  const fotoMermaSubidaRef = useRef(null);
   const opTraspasoRef = useRef(null); // R2 (084)
   const enVueloProd = useRef(false);
   const enVueloTrans = useRef(false);
@@ -135,40 +139,50 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const registrarMerma = async () => {
     if (!mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMermaFile) return;
+    if (!s(mForm.congelador)) { showToast('Selecciona el congelador donde ocurrió la merma'); return; }
     if (fotoMermaFile.size > 5 * 1024 * 1024) {
       showToast('Foto muy grande, máx 5MB');
       return;
     }
     const cant = n(mForm.cantidad);
-    const authOwner = s(user?.auth_id || user?.id || 'usuario');
-    const ext = (fotoMermaFile.name?.split('.').pop() || 'jpg').toLowerCase();
-    const safeExt = /^[a-z0-9]+$/.test(ext) ? ext : 'jpg';
-    const filePath = `${authOwner}/${todayLocalISO()}/${Date.now()}-${mForm.sku}.${safeExt}`;
 
     setGuardandoMerma(true);
     try {
-      const { error: uploadErr } = await supabase.storage
-        .from('mermas')
-        .upload(filePath, fotoMermaFile, {
-          cacheControl: '3600',
-          upsert: false,
-          contentType: fotoMermaFile.type || 'image/jpeg',
-        });
-      if (uploadErr) {
-        showToast('No se pudo subir la foto');
-        return;
+      let filePath = fotoMermaSubidaRef.current?.file === fotoMermaFile ? fotoMermaSubidaRef.current.path : null;
+      if (!filePath) {
+        const authOwner = s(user?.auth_id || user?.id || 'usuario');
+        const ext = (fotoMermaFile.name?.split('.').pop() || 'jpg').toLowerCase();
+        const safeExt = /^[a-z0-9]+$/.test(ext) ? ext : 'jpg';
+        filePath = `${authOwner}/${todayLocalISO()}/${Date.now()}-${mForm.sku}.${safeExt}`;
+        const { error: uploadErr } = await supabase.storage
+          .from('mermas')
+          .upload(filePath, fotoMermaFile, {
+            cacheControl: '3600',
+            upsert: false,
+            contentType: fotoMermaFile.type || 'image/jpeg',
+          });
+        if (uploadErr) {
+          showToast('No se pudo subir la foto');
+          return;
+        }
+        fotoMermaSubidaRef.current = { file: fotoMermaFile, path: filePath };
       }
 
-      // registrarMerma descuenta del CF internamente (vía update_stocks_atomic)
-      // — NO llamar sacarDeCuartoFrio antes o se descontaría dos veces.
-      const mermaErr = await actions.registrarMerma(mForm.sku, cant, mForm.causa, s(user?.nombre), filePath);
+      // 102: solo el congelador elegido (registrar_merma_cuarto). Si falla se
+      // conservan la foto y el UUID: reintentar no registra otra pérdida.
+      const datos = { cuartoId: s(mForm.congelador), sku: mForm.sku, cantidad: cant, causa: mForm.causa, foto: filePath };
+      const op = resolverOperacion(opMermaRef.current, claveMermaCuarto(datos));
+      opMermaRef.current = op;
+      const mermaErr = await actions.registrarMermaCuarto({ ...datos, operacionId: op.id });
       if (mermaErr) {
-        await supabase.storage.from('mermas').remove([filePath]);
-        showToast('No se pudo registrar la merma. Intenta de nuevo.');
+        showToast(mermaErr.error || 'No se pudo registrar la merma. Intenta de nuevo.');
         return;
       }
+      opMermaRef.current = null;
+      fotoMermaSubidaRef.current = null;
 
-      showToast("Merma: " + cant + "× " + mForm.sku + " registrada");
+      const cfNom = s(cuartos.find(c => s(c.id) === s(mForm.congelador))?.nombre) || s(mForm.congelador);
+      showToast("Merma: " + cant + "× " + mForm.sku + " en " + cfNom + " registrada");
       setMermaModal(false);
       clearFotoMerma();
       setMForm({ sku: "", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" });
@@ -456,8 +470,10 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       }
       opProdRef.current = null;
 
-      // 3. Registrar merma (descuenta del CF internamente)
-      const mermaErr = await actions.registrarMerma(form.sku, merma, form.mermaCausa, s(user?.nombre), filePath);
+      // 3. Merma en el mismo congelador de destino de la producción (102).
+      const datosMerma = { cuartoId: s(form.destino), sku: form.sku, cantidad: merma, causa: form.mermaCausa, foto: filePath };
+      const opMerma = resolverOperacion(null, claveMermaCuarto(datosMerma));
+      const mermaErr = await actions.registrarMermaCuarto({ ...datosMerma, operacionId: opMerma.id });
       if (mermaErr) {
         showToast('Producción OK, pero la merma no se registró. Hazlo desde Mermas.');
         setModal(false);
@@ -503,13 +519,15 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const hacerSalida = async () => {
     if (haciendoSalida) return;
     if (!sacarForm.cantidad || n(sacarForm.cantidad) <= 0 || !sacarModal) return;
-    if (!s(sacarForm.motivo)) { showToast('Selecciona el motivo'); return; }
+    // 103: motivos cerrados; "Otro" lleva detalle. Merma y conteo tienen su propio registro.
+    const mot = motivoSalidaManual(sacarForm.motivo, sacarForm.detalle);
+    if (mot.error) { showToast(mot.error); return; }
     setHaciendoSalida(true);
     try {
-      const op = resolverOperacion(opSalidaRef.current, claveSalida({ cuartoId: sacarModal.cfId, sku: sacarForm.sku, cantidad: sacarForm.cantidad, motivo: sacarForm.motivo }));
+      const op = resolverOperacion(opSalidaRef.current, claveSalida({ cuartoId: sacarModal.cfId, sku: sacarForm.sku, cantidad: sacarForm.cantidad, motivo: mot.motivo }));
       opSalidaRef.current = op;
       const r = actions.sacarDeCuartoFrio
-        ? await actions.sacarDeCuartoFrio(sacarModal.cfId, sacarForm.sku, sacarForm.cantidad, sacarForm.motivo, { operacionId: op.id })
+        ? await actions.sacarDeCuartoFrio(sacarModal.cfId, sacarForm.sku, sacarForm.cantidad, mot.motivo, { operacionId: op.id })
         : null;
       if (r && (r.error || r.message)) {
         showToast('Error: ' + (r.error || r.message));
@@ -518,7 +536,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       opSalidaRef.current = null;
       showToast("Salida: " + sacarForm.cantidad + " " + sacarForm.sku + " de " + sacarModal.cfNombre);
       setSacarModal(null);
-      setSacarForm({ sku: "", cantidad: "", motivo: "" });
+      setSacarForm({ sku: "", cantidad: "", motivo: "", detalle: "" });
     } catch (e) {
       console.error('Error en salida:', e);
       showToast('Error al sacar del congelador. Verifica tu conexión.');
@@ -761,7 +779,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   <div className="px-4 pb-3"><div className="bg-slate-50 rounded-lg p-3 text-center"><p className="text-sm text-slate-400">Vacío</p></div></div>
                 )}
                 <div className="border-t border-slate-100">
-                  <button onClick={() => { setSacarModal({ cfId: s(cf.id), cfNombre: s(cf.nombre) }); setSacarForm({ sku: "", cantidad: "", motivo: "" }); }}
+                  <button onClick={() => { setSacarModal({ cfId: s(cf.id), cfNombre: s(cf.nombre) }); setSacarForm({ sku: "", cantidad: "", motivo: "", detalle: "" }); }}
                     className="w-full py-3 text-xs font-bold text-amber-600 active:bg-amber-50">
                     − Sacar hielo (carga a ruta / otro)
                   </button>
@@ -1056,6 +1074,11 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     </button>
                   ))}
                 </div>
+                {sacarForm.motivo === 'Otro' && (
+                  <input value={sacarForm.detalle || ''} onChange={e => setSacarForm(f => ({ ...f, detalle: e.target.value }))}
+                    placeholder="¿Para qué sale? (mínimo 5 caracteres)" className="mt-2 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-base sm:text-sm" />
+                )}
+                <p className="text-[11px] text-slate-400 mt-2">Producto dañado o perdido: usa <b>Merma</b>. Diferencia de conteo: la ajusta Admin en Inventario.</p>
               </div>
             </div>
             <button onClick={hacerSalida} disabled={haciendoSalida || !sacarForm.cantidad || n(sacarForm.cantidad) <= 0 || !s(sacarForm.motivo)}

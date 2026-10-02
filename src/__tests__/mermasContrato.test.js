@@ -140,7 +140,9 @@ describe('callers de mermas (072)', () => {
 
   it('el store usa los RPC del contrato', () => {
     const store = leer('src/data/supaStore.js');
-    expect(store).toMatch(/rpc\('registrar_merma'/);
+    // 102: la merma de cuarto indica el cuarto (sin FIFO); la de ruta, por lote.
+    expect(store).toMatch(/rpc\('registrar_merma_cuarto'/);
+    expect(store).not.toMatch(/rpc\('registrar_merma'/);
     expect(store).toMatch(/rpc\('registrar_mermas_ruta'/);
     expect(store).toMatch(/rpc\('revertir_merma'/);
     expect(store).not.toMatch(/borrarMermaConReverso|deleteMerma/);

@@ -314,14 +314,26 @@ ROLLBACK;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t87_actor(5);
 SELECT t87_err($q$SELECT finalizar_inventario_ruta('87000000-0000-0000-0000-00000000004c', 8707, '{}')$q$, '087-P4 Ventas no finaliza', '42501');
 ROLLBACK;
+-- 102/103: la merma de cuarto indica el cuarto (registrar_merma_cuarto) cuando existe.
+CREATE OR REPLACE FUNCTION t87_merma_cuarto(p_cuarto TEXT, p_sku TEXT, p_cant INTEGER, p_causa TEXT, p_origen TEXT DEFAULT NULL) RETURNS JSONB LANGUAGE plpgsql AS $mc$
+DECLARE r JSONB;
+BEGIN
+  IF to_regprocedure('public.registrar_merma_cuarto(uuid,text,text,integer,text,text)') IS NULL THEN
+    EXECUTE 'SELECT registrar_merma($1, $2, $3, $4)' INTO r USING p_sku, p_cant, p_causa, p_origen;
+  ELSE
+    EXECUTE 'SELECT registrar_merma_cuarto(gen_random_uuid(), $1, $2, $3, $4)' INTO r USING p_cuarto, p_sku, p_cant, p_causa;
+  END IF;
+  RETURN r;
+END $mc$;
+GRANT EXECUTE ON FUNCTION t87_merma_cuarto(TEXT, TEXT, INTEGER, TEXT, TEXT) TO PUBLIC;
 INSERT INTO t87_ids VALUES ('R0', t87_cf('CF-87A', 'P87-B')::text);
 BEGIN; SET LOCAL ROLE authenticated; SELECT t87_actor(2);
 SELECT t87_err($q$SELECT registrar_mermas_ruta('87000000-0000-0000-0000-00000000005c'::uuid, 8707, '[{"sku":"P87-A","cant":1}]')$q$, '087-P5 Producción no registra lotes de ruta', '42501');
-INSERT INTO t87_ids VALUES ('R1', registrar_merma('P87-B', 1, 'Bolsa rota', 'Prod 87')::text);
+INSERT INTO t87_ids VALUES ('R1', t87_merma_cuarto('CF-87A', 'P87-B', 1, 'Bolsa rota', 'Prod 87')::text);
 ROLLBACK;
 SELECT t87_assert(t87_cf('CF-87A', 'P87-B') = t87_v('R0')::int, '087-P6 (merma de cuarto en transacción revertida: sin efectos persistidos)');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t87_actor(2);
-INSERT INTO t87_ids VALUES ('R2', registrar_merma('P87-B', 1, 'Bolsa rota', 'Prod 87')::text);
+INSERT INTO t87_ids VALUES ('R2', t87_merma_cuarto('CF-87A', 'P87-B', 1, 'Bolsa rota', 'Prod 87')::text);
 COMMIT;
 SELECT t87_assert(t87_cf('CF-87A', 'P87-B') = t87_v('R0')::int - 1 AND (SELECT count(*) = 1 FROM mermas_efectos WHERE merma_id = (t87_j('R2') ->> 'id')::bigint) AND (t87_j('R2') ->> 'inventario') = 'cuarto', '087-P7 merma de cuarto (Producción, sin ruta): FIFO de 072 intacto, con efectos');
 

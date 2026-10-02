@@ -100,6 +100,7 @@ describe('090: el mapa de grants cubre exactamente las escrituras directas del f
   delete mapa.pagos_proveedores; // 099: el pago a proveedor se registra con pagar_cuenta_por_pagar
   delete mapa.nomina_periodos; // 101: la nómina se escribe con sus contratos (100)
   delete mapa.nomina_recibos;
+  delete mapa.inventario_mov; // 103: el kardex lo escriben los contratos (102)
   const normal = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, [...v].sort()]).sort(([a], [b]) => a.localeCompare(b)));
 
   it('cada tabla y operación escrita por el frontend tiene su grant, y no sobra ninguno', () => {

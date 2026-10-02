@@ -15,9 +15,21 @@ export { nuevoOperacionId, resolverOperacion };
 
 const txt = (v) => (v == null ? '' : String(v)).trim();
 
-/** Motivos neutros para la salida manual de Producción. Ninguno es una carga
- *  de ruta: eso lo registra confirmar_carga_ruta al firmar. */
-export const MOTIVOS_SALIDA_MANUAL = ['Venta directa', 'Consumo interno', 'Ajuste físico', 'Otro'];
+/** Motivos de la salida manual (103: lista cerrada en el servidor). No son
+ *  carga de ruta (confirmar_carga_ruta), ni merma física (registrar_merma_cuarto),
+ *  ni corrección de conteo (ajustar_existencia_cuarto), ni traspaso. "Otro"
+ *  exige detalle: se envía como "Otro: <detalle>". */
+export const MOTIVOS_SALIDA_MANUAL = ['Venta directa', 'Consumo interno', 'Otro'];
+
+/** Motivo final de la salida manual; "Otro" requiere detalle (≥ 5 caracteres). */
+export function motivoSalidaManual(base, detalle) {
+  const b = txt(base);
+  if (!MOTIVOS_SALIDA_MANUAL.includes(b)) return { error: 'Selecciona el motivo' };
+  if (b !== 'Otro') return { motivo: b };
+  const d = txt(detalle);
+  if (d.length < 5) return { error: 'Describe el motivo (mínimo 5 caracteres)' };
+  return { motivo: `Otro: ${d}` };
+}
 
 /** Motivo que el servidor rechaza porque corresponde a la firma de carga. */
 export function esMotivoDeRuta(motivo) {
@@ -36,6 +48,12 @@ export function claveSalida({ cuartoId, sku, cantidad, motivo } = {}) {
 }
 export function claveTraspaso({ origen, destino, sku, cantidad } = {}) {
   return ['TRASP', txt(origen), txt(destino), txt(sku), Number(cantidad)].join('|');
+}
+export function claveAjusteCuarto({ cuartoId, sku, existencia, motivo } = {}) {
+  return ['AJCF', txt(cuartoId), txt(sku), Number(existencia), txt(motivo)].join('|');
+}
+export function claveMermaCuarto({ cuartoId, sku, cantidad, causa, foto } = {}) {
+  return ['MERMACF', txt(cuartoId), txt(sku), Number(cantidad), txt(causa), txt(foto)].join('|');
 }
 
 function entero(v, etiqueta) {
@@ -103,6 +121,37 @@ export function buildSalidaManualArgs({ operacionId, cuartoId, sku, cantidad, mo
   };
 }
 
+/**
+ * Parámetros de ajustar_existencia_cuarto (102): corrección por conteo físico
+ * de UN SKU en UN cuarto. Se envía la existencia contada (absoluta); el
+ * servidor calcula el delta bajo bloqueo. Sin tipo/referencia/origen.
+ * @returns {{args:Object}|{error:string}}
+ */
+export function buildAjusteCuartoArgs({ operacionId, cuartoId, sku, existencia, motivo } = {}) {
+  if (!txt(operacionId)) return { error: 'Falta el identificador de la operación' };
+  if (!txt(cuartoId)) return { error: 'Cuarto frío requerido' };
+  if (!txt(sku)) return { error: 'SKU requerido' };
+  const e = Number(existencia);
+  if (existencia === '' || existencia == null || !Number.isInteger(e) || e < 0) return { error: 'La existencia contada debe ser un entero 0 o mayor' };
+  if (txt(motivo).length < 5) return { error: 'El motivo del ajuste es obligatorio (mínimo 5 caracteres)' };
+  return { args: { p_operacion_id: txt(operacionId), p_cuarto_id: txt(cuartoId), p_sku: txt(sku), p_existencia: e, p_motivo: txt(motivo) } };
+}
+
+/**
+ * Parámetros de registrar_merma_cuarto (102): pérdida física en el cuarto
+ * elegido (sin FIFO entre cuartos).
+ * @returns {{args:Object}|{error:string}}
+ */
+export function buildMermaCuartoArgs({ operacionId, cuartoId, sku, cantidad, causa, foto } = {}) {
+  if (!txt(operacionId)) return { error: 'Falta el identificador de la operación' };
+  if (!txt(cuartoId)) return { error: 'Selecciona el cuarto donde ocurrió la merma' };
+  if (!txt(sku)) return { error: 'Selecciona el producto de la merma' };
+  const c = entero(cantidad, 'La cantidad');
+  if (c.error) return { error: c.error };
+  return { args: { p_operacion_id: txt(operacionId), p_cuarto_id: txt(cuartoId), p_sku: txt(sku), p_cantidad: c.q,
+                   p_causa: txt(causa) || null, p_foto: txt(foto) || null } };
+}
+
 /** Parámetros de traspaso_cuartos. */
 export function buildTraspasoArgs({ operacionId, origen, destino, sku, cantidad } = {}) {
   if (!txt(operacionId)) return { error: 'Falta el identificador de la operación' };
@@ -152,6 +201,9 @@ export function mensajeErrorStock(error) {
   if (/no se puede marcar desde/i.test(msg)) return 'La orden no está en ruta.';
   if (/no está en una ruta/i.test(msg)) return 'La orden no está asignada a una ruta.';
   if (/carga a ruta se registra al firmar/i.test(msg)) return 'La carga a ruta se registra al firmar la carga, no como salida manual.';
+  if (/motivo no permitido/i.test(msg)) return 'Motivo no permitido: usa Venta directa, Consumo interno u Otro con detalle. Las mermas y los ajustes de conteo tienen su propio registro.';
+  if (/motivo del ajuste es obligatorio/i.test(msg)) return 'Escribe el motivo del ajuste (mínimo 5 caracteres).';
+  if (/no es un producto terminado/i.test(msg)) return 'Solo se ajustan productos terminados en los cuartos fríos.';
   if (/SKU no encontrado/i.test(msg)) return 'El producto no existe.';
   if (/cuarto fr[ií]o no encontrado/i.test(msg)) return 'El cuarto frío no existe.';
   if (/origen y destino deben ser distintos/i.test(msg)) return 'Origen y destino deben ser diferentes.';

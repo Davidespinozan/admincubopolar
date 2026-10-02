@@ -91,7 +91,7 @@ CREATE OR REPLACE FUNCTION t84_denegado(p_tag TEXT, p_ruta_ok BOOLEAN) RETURNS V
 BEGIN
   PERFORM t84_err($q$SELECT confirmar_carga_ruta('84000000-0000-0000-0000-0000000000f1', 8401, 'firma')$q$, p_tag || ': confirmar_carga_ruta denegado', '42501');
   PERFORM t84_err($q$SELECT registrar_no_entrega('84000000-0000-0000-0000-0000000000f2', 8420, 'Local cerrado')$q$, p_tag || ': registrar_no_entrega denegado', '42501');
-  PERFORM t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000f3', 'CF-84B', 'P84-A', 1, 'Venta mostrador')$q$, p_tag || ': salida_cuarto_manual denegado', '42501');
+  PERFORM t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000f3', 'CF-84B', 'P84-A', 1, 'Venta directa')$q$, p_tag || ': salida_cuarto_manual denegado', '42501');
   PERFORM t84_err($q$SELECT traspaso_cuartos('84000000-0000-0000-0000-0000000000f4', 'CF-84B', 'CF-84C', 'P84-A', 1)$q$, p_tag || ': traspaso_cuartos denegado', '42501');
 END $$;
 GRANT EXECUTE ON FUNCTION t84_denegado(TEXT, BOOLEAN) TO anon, authenticated;
@@ -100,7 +100,9 @@ GRANT EXECUTE ON FUNCTION t84_denegado(TEXT, BOOLEAN) TO anon, authenticated;
 SELECT t84_assert((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.stock_operaciones'::regclass) AND (SELECT string_agg(policyname, ',' ORDER BY policyname) = CASE WHEN to_regprocedure('public.b4_escritura_api()') IS NULL THEN 'admin_all,read_all' ELSE 'read_all' END FROM pg_policies WHERE tablename = 'stock_operaciones')  -- 090 retira admin_all (inutilizable)
   AND NOT has_table_privilege('anon', 'public.stock_operaciones', 'SELECT') AND has_table_privilege('authenticated', 'public.stock_operaciones', 'SELECT') AND NOT has_table_privilege('authenticated', 'public.stock_operaciones', 'INSERT'), '084-01 stock_operaciones: RLS, admin_all + read_all, anon sin acceso, authenticated solo lectura');
 SELECT t84_assert((SELECT string_agg(column_name, ',' ORDER BY column_name) = 'cuarto_id,operacion_id,ruta_id' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'inventario_mov' AND column_name IN ('cuarto_id', 'ruta_id', 'operacion_id') AND is_nullable = 'YES')
-  AND (SELECT count(*) = 3 FROM pg_constraint WHERE conrelid = 'public.inventario_mov'::regclass AND conname IN ('inventario_mov_cuarto_id_fkey', 'inventario_mov_ruta_id_fkey', 'inventario_mov_operacion_id_fkey') AND confdeltype = 'n'), '084-02 kardex: cuarto_id, ruta_id, operacion_id nullables con FK ON DELETE SET NULL');
+  AND (SELECT count(*) = 2 FROM pg_constraint WHERE conrelid = 'public.inventario_mov'::regclass AND conname IN ('inventario_mov_ruta_id_fkey', 'inventario_mov_operacion_id_fkey') AND confdeltype = 'n')
+  -- 102: el kardex ya no pierde su cuarto al borrarlo (RESTRICT en lugar de SET NULL).
+  AND (SELECT confdeltype IN ('n', 'r') FROM pg_constraint WHERE conname = 'inventario_mov_cuarto_id_fkey'), '084-02 kardex: cuarto_id, ruta_id, operacion_id nullables con FK (cuarto RESTRICT desde 102)');
 SELECT t84_assert((SELECT bool_and(prosecdef AND array_to_string(proconfig, ';') = 'search_path=public, pg_temp' AND NOT has_function_privilege('public', oid, 'EXECUTE') AND NOT has_function_privilege('anon', oid, 'EXECUTE')
     AND has_function_privilege('authenticated', oid, 'EXECUTE') AND has_function_privilege('service_role', oid, 'EXECUTE')) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('confirmar_carga_ruta', 'registrar_no_entrega', 'salida_cuarto_manual', 'traspaso_cuartos'))
   AND (SELECT count(*) = 4 FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN ('confirmar_carga_ruta', 'registrar_no_entrega', 'salida_cuarto_manual', 'traspaso_cuartos')), '084-03 4 contratos: SECURITY DEFINER, search_path fijo, EXECUTE solo authenticated/service_role');
@@ -217,13 +219,13 @@ SELECT t84_assert((SELECT estatus = 'No entregada' FROM ordenes WHERE id = 8421)
 \echo '── 084: salida_cuarto_manual'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t84_actor('authenticated', 'prod84@t', '84000000-0000-0000-0000-000000000002');
 SELECT t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000c0', 'CF-84B', 'P84-A', 1, 'Carga a ruta')$q$, '084-60 motivo "Carga a ruta" rechazado (la carga la firma confirmar_carga_ruta)', '22023');
-SELECT t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000c0', 'CF-84B', 'P84-A', 0, 'Venta mostrador')$q$, '084-61 cantidad 0 rechazada', '22023');
+SELECT t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000c0', 'CF-84B', 'P84-A', 0, 'Venta directa')$q$, '084-61 cantidad 0 rechazada', '22023');
 SELECT t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000c0', 'CF-84B', 'P84-A', 1, '')$q$, '084-62 motivo vacío rechazado', '22023');
-SELECT t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000c0', 'CF-84B', 'P84-ZZ', 1, 'Venta mostrador')$q$, '084-63 SKU inexistente rechazado (no crea llaves)', '22023');
-SELECT t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000c0', 'CF-84B', 'P84-A', 99, 'Venta mostrador')$q$, '084-64 stock insuficiente rechazado', 'P0001');
-INSERT INTO t84_ids VALUES ('s1', salida_cuarto_manual('84000000-0000-0000-0000-0000000000c1', 'CF-84B', 'P84-A', 3, 'Venta mostrador')::text);
-INSERT INTO t84_ids VALUES ('s1r', salida_cuarto_manual('84000000-0000-0000-0000-0000000000c1', 'CF-84B', 'P84-A', 3, 'Venta mostrador')::text);
-SELECT t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000c1', 'CF-84B', 'P84-A', 4, 'Venta mostrador')$q$, '084-65 mismo operacion_id con otra cantidad → 23505', '23505');
+SELECT t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000c0', 'CF-84B', 'P84-ZZ', 1, 'Venta directa')$q$, '084-63 SKU inexistente rechazado (no crea llaves)', '22023');
+SELECT t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000c0', 'CF-84B', 'P84-A', 99, 'Venta directa')$q$, '084-64 stock insuficiente rechazado', 'P0001');
+INSERT INTO t84_ids VALUES ('s1', salida_cuarto_manual('84000000-0000-0000-0000-0000000000c1', 'CF-84B', 'P84-A', 3, 'Venta directa')::text);
+INSERT INTO t84_ids VALUES ('s1r', salida_cuarto_manual('84000000-0000-0000-0000-0000000000c1', 'CF-84B', 'P84-A', 3, 'Venta directa')::text);
+SELECT t84_err($q$SELECT salida_cuarto_manual('84000000-0000-0000-0000-0000000000c1', 'CF-84B', 'P84-A', 4, 'Venta directa')$q$, '084-65 mismo operacion_id con otra cantidad → 23505', '23505');
 COMMIT;
 SELECT t84_assert(t84_cf('CF-84B', 'P84-A') = 10 AND ((SELECT v FROM t84_ids WHERE k = 's1r')::jsonb ->> 'replay') = 'true' AND t84_kardex('84000000-0000-0000-0000-0000000000c1') = 'Salida:CF-84B:P84-A:3:salida_manual/CF-84B', '084-66 salida 13 → 10 una sola vez, kardex con cuarto y referencia');
 SELECT t84_assert((SELECT stock ? 'P84-ZZ' = false FROM cuartos_frios WHERE id = 'CF-84B'), '084-67 ninguna llave de SKU inexistente en el cuarto');

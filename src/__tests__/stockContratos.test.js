@@ -144,7 +144,8 @@ describe('auditoría estática del cutover (R2 fase 2A)', () => {
     const boton = sinComentarios(src('../components/BotonFirmasPendientes.jsx'));
     expect(boton).toMatch(/firmarCarga\?\.\(rutaSeleccionada\.id, firmaBase64, \{ operacionId: op\.id \}\)/);
     const prod = sinComentarios(src('../components/ProduccionStandaloneView.jsx'));
-    expect(prod).toMatch(/sacarDeCuartoFrio\(sacarModal\.cfId, sacarForm\.sku, sacarForm\.cantidad, sacarForm\.motivo, \{ operacionId: op\.id \}\)/);
+    expect(prod).toMatch(/sacarDeCuartoFrio\(sacarModal\.cfId, sacarForm\.sku, sacarForm\.cantidad, mot\.motivo, \{ operacionId: op\.id \}\)/);
+    expect(prod).toMatch(/registrarMermaCuarto\(\{ \.\.\.datos, operacionId: op\.id \}\)/);
     expect(prod).toMatch(/traspasoEntreUbicaciones\(\{ \.\.\.tForm, operacionId: op\.id \}\)/);
     expect(prod).not.toMatch(/Carga a ruta/);
     expect(prod).toMatch(/MOTIVOS_SALIDA_MANUAL/);

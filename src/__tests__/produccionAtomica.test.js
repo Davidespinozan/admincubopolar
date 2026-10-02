@@ -187,12 +187,13 @@ describe('auditoría de callers (compuerta 077): escrituras directas restantes',
   it('productos: solo acciones de Admin', () => {
     expect(escrituras('productos')).toEqual([
       // 093: ajustarExistenciaManual usa el contrato ajustar_existencia.
-      'addProducto:insert', 'ajustarStockCuarto:update', 'deleteDemoProducts:delete',
+      'addProducto:insert', 'deleteDemoProducts:delete',
       'deleteProducto:delete', 'updateProducto:update', 'updateStockMinimo:update',
     ]);
   });
-  it('inventario_mov: solo los ajustes manuales de Admin', () => {
-    expect(escrituras('inventario_mov')).toEqual(['ajustarStockCuarto:insert']);
+  it('inventario_mov: ninguna escritura directa (102: el kardex lo escriben los contratos)', () => {
+    expect(escrituras('inventario_mov')).toEqual([]);
+    expect(escrituras('cuartos_frios').filter(x => /ajustar/i.test(x))).toEqual([]);
   });
   it('produccion: solo Admin corrige turno/máquina; sin borrado físico (093); sin helper de costo desde 085', () => {
     expect(escrituras('produccion')).toEqual(['updateProduccion:update']);

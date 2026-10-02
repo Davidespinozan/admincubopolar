@@ -114,11 +114,17 @@ SELECT t95_assert((SELECT (stock ->> 'P95-H')::int = 0 FROM cuartos_frios WHERE 
 -- Ajuste manual de existencia y operación de cuarto (REST del ajuste por cuarto).
 BEGIN; SET LOCAL ROLE authenticated; SELECT t95_actor(1);
 INSERT INTO t95_ids VALUES ('aj', ajustar_existencia('95000000-0000-0000-0000-00000000c001', 'P95-EMP', 190, 'conteo 095')::text);
-UPDATE cuartos_frios SET stock = jsonb_set(stock, '{P95-H}', '43') WHERE id = 'CF-95B';
-INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Salida', 'P95-H', 1, 'Ajuste Cuarto 95 B: conteo', 'Admin 95');
+DO $do$ BEGIN
+  IF has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN
+    UPDATE cuartos_frios SET stock = jsonb_set(stock, '{P95-H}', '43') WHERE id = 'CF-95B';
+    INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Salida', 'P95-H', 1, 'Ajuste Cuarto 95 B: conteo', 'Admin 95');
+  ELSE  -- 102/103: el ajuste por cuarto es el contrato ajustar_existencia_cuarto
+    PERFORM ajustar_existencia_cuarto(gen_random_uuid(), 'CF-95B', 'P95-H', 43, 'Ajuste Cuarto 95 B: conteo');
+  END IF;
+END $do$;
 COMMIT;
 SELECT t95_assert((SELECT stock = 190 FROM productos WHERE sku = 'P95-EMP') AND (SELECT (stock ->> 'P95-H')::int = 43 FROM cuartos_frios WHERE id = 'CF-95B')
-  AND (SELECT count(*) = 1 FROM inventario_mov WHERE producto = 'P95-H' AND origen = 'Ajuste Cuarto 95 B: conteo'), '095-24 ajuste de existencia y ajuste por cuarto siguen funcionando');
+  AND (SELECT count(*) = 1 FROM inventario_mov WHERE producto = 'P95-H' AND origen LIKE '%Ajuste Cuarto 95 B: conteo'), '095-24 ajuste de existencia y ajuste por cuarto siguen funcionando');
 -- Autoridades de confianza: service_role y SQL conservan salidas por el RPC.
 BEGIN; SET LOCAL ROLE service_role; SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
 SELECT update_stocks_atomic('[{"cuarto_id":"CF-95B","sku":"P95-H","delta":-3,"tipo":"Salida","origen":"mantenimiento 95"}]'::jsonb);

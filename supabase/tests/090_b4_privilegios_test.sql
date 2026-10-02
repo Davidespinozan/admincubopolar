@@ -129,7 +129,7 @@ SELECT t90_assert((
       ('configuracion_empresa','UPDATE'), ('costos_fijos','INSERT'), ('costos_fijos','UPDATE'), ('costos_fijos','DELETE'), ('costos_historial','INSERT'),
       ('cuartos_frios','INSERT'), ('cuartos_frios','UPDATE'), ('cuartos_frios','DELETE'),
       ('cuentas_por_pagar','INSERT'), ('cuentas_por_pagar','UPDATE'), ('cuentas_por_pagar','DELETE'), ('devoluciones','INSERT'), ('devoluciones','DELETE'),
-      ('empleados','INSERT'), ('empleados','UPDATE'), ('empleados','DELETE'), ('error_log','INSERT'), ('inventario_mov','INSERT'),
+      ('empleados','INSERT'), ('empleados','UPDATE'), ('empleados','DELETE'), ('error_log','INSERT'),
       ('leads','INSERT'), ('leads','UPDATE'), ('leads','DELETE'), ('movimientos_contables','INSERT'), ('movimientos_contables','UPDATE'), ('movimientos_contables','DELETE'),
       ('notificaciones','INSERT'), ('notificaciones','UPDATE'),
       ('ordenes','UPDATE'), ('ordenes','DELETE'), ('precios_esp','INSERT'), ('precios_esp','UPDATE'), ('precios_esp','DELETE'),
@@ -145,6 +145,8 @@ SELECT t90_assert((
     SELECT 'cierres_diarios:INSERT' WHERE has_table_privilege('authenticated', 'cierres_diarios', 'INSERT')
     UNION ALL  -- 099 retira el INSERT REST de pago a proveedor (pagar_cuenta_por_pagar)
     SELECT 'pagos_proveedores:INSERT' WHERE has_table_privilege('authenticated', 'pagos_proveedores', 'INSERT')
+    UNION ALL  -- 103 retira el INSERT REST de kardex (contratos de 102)
+    SELECT 'inventario_mov:INSERT' WHERE has_table_privilege('authenticated', 'inventario_mov', 'INSERT')
     UNION ALL  -- 101 retira la escritura REST de nómina (contratos de 100)
     SELECT x FROM (VALUES ('nomina_periodos:INSERT'), ('nomina_periodos:UPDATE'), ('nomina_recibos:INSERT')) v(x)
      WHERE has_table_privilege('authenticated', 'nomina_periodos', 'INSERT')) s
@@ -253,14 +255,16 @@ SELECT t90_assert((SELECT count(*) FROM rutas WHERE id BETWEEN 9001 AND 9004) = 
 BEGIN; SET LOCAL ROLE authenticated; SELECT t90_actor(1);
 SELECT t90_err($q$UPDATE inventario_mov SET cantidad = 99 WHERE producto = 'P90-A'$q$, '090-70 Admin: UPDATE del kardex denegado (sin privilegio; la guarda es segunda capa)', '42501');
 SELECT t90_err($q$DELETE FROM inventario_mov WHERE producto = 'P90-A'$q$, '090-71 Admin: DELETE del kardex denegado (sin privilegio; la guarda es segunda capa)', '42501');
-SELECT t90_assert(t90_rows($q$INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Entrada', 'P90-A', 2, 'Ajuste manual: T90', 'Admin 90')$q$) = 1, '090-72 Admin: ajuste manual (Entrada/Salida sin referencia) permitido');
-SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, ruta_id) VALUES ('Salida', 'P90-A', 1, 9004)$q$, '090-73 Admin: movimiento con ruta_id denegado', '42501', '%reservado%');
-SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, operacion_id) VALUES ('Salida', 'P90-A', 1, gen_random_uuid())$q$, '090-74 Admin: movimiento con operacion_id denegado', '42501', '%reservado%');
-SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, referencia) VALUES ('Salida', 'P90-A', 1, 'carga_ruta/9004')$q$, '090-75 Admin: referencia carga_ruta/ denegada', '42501', '%reservado%');
-SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, referencia) VALUES ('Entrada', 'P90-A', 1, 'produccion/T90')$q$, '090-76 Admin: referencia produccion/ denegada', '42501', '%reservado%');
-SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, referencia) VALUES ('Salida', 'P90-A', 1, 'MERMA-T90')$q$, '090-77 Admin: referencia MERMA- denegada', '42501', '%reservado%');
-SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad) VALUES ('Merma', 'P90-A', 1)$q$, '090-78 Admin: tipo Merma denegado', '42501', '%reservado%');
-SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad) VALUES ('Traspaso entrada', 'P90-A', 1)$q$, '090-79 Admin: tipo Traspaso entrada denegado', '42501', '%reservado%');
+-- 103: sin INSERT REST en el kardex (lo escriben los contratos); antes, el ajuste manual sin referencia se permitía.
+SELECT t90_assert(CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN t90_rows($q$INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Entrada', 'P90-A', 2, 'Ajuste manual: T90', 'Admin 90')$q$) = 1 ELSE true END, '090-72 Admin: ajuste manual sin referencia (permitido antes de 103)');
+DO $do$ BEGIN IF NOT has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN PERFORM t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, origen, usuario) VALUES ('Entrada', 'P90-A', 2, 'Ajuste manual: T90', 'Admin 90')$q$, '090-72b (103) Admin: kardex directo negado', '42501'); END IF; END $do$;
+SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, ruta_id) VALUES ('Salida', 'P90-A', 1, 9004)$q$, '090-73 Admin: movimiento con ruta_id denegado', '42501', CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN '%reservado%' END);
+SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, operacion_id) VALUES ('Salida', 'P90-A', 1, gen_random_uuid())$q$, '090-74 Admin: movimiento con operacion_id denegado', '42501', CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN '%reservado%' END);
+SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, referencia) VALUES ('Salida', 'P90-A', 1, 'carga_ruta/9004')$q$, '090-75 Admin: referencia carga_ruta/ denegada', '42501', CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN '%reservado%' END);
+SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, referencia) VALUES ('Entrada', 'P90-A', 1, 'produccion/T90')$q$, '090-76 Admin: referencia produccion/ denegada', '42501', CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN '%reservado%' END);
+SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, referencia) VALUES ('Salida', 'P90-A', 1, 'MERMA-T90')$q$, '090-77 Admin: referencia MERMA- denegada', '42501', CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN '%reservado%' END);
+SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad) VALUES ('Merma', 'P90-A', 1)$q$, '090-78 Admin: tipo Merma denegado', '42501', CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN '%reservado%' END);
+SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad) VALUES ('Traspaso entrada', 'P90-A', 1)$q$, '090-79 Admin: tipo Traspaso entrada denegado', '42501', CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN '%reservado%' END);
 ROLLBACK;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t90_actor(2);
 SELECT t90_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad) VALUES ('Entrada', 'P90-A', 1)$q$, '090-80 Ventas: INSERT en el kardex denegado', '42501');

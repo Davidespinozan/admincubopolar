@@ -1,8 +1,7 @@
 import { useRef } from 'react';
-import { resolverOperacion, claveTraspaso } from '../../data/stockContratosLogic';
+import { resolverOperacion, claveTraspaso, claveAjusteCuarto } from '../../data/stockContratosLogic';
 import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtPct, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
-import { traducirError } from '../../utils/errorMessages';
 
 export function InventarioView({ data, actions }) {
   const toast = useToast();
@@ -23,6 +22,7 @@ export function InventarioView({ data, actions }) {
   const [savingCf, setSavingCf] = useState(false);
   const [ajustando, setAjustando] = useState(false);
   const [stockModal, setStockModal] = useState(null);
+  const opsAjusteRef = useRef({});
   const [stockForm, setStockForm] = useState({ cantidades: {}, motivo: '' });
   const [stockErrors, setStockErrors] = useState({});
   const [savingStock, setSavingStock] = useState(false);
@@ -127,18 +127,28 @@ export function InventarioView({ data, actions }) {
     if (Object.keys(e).length) { setStockErrors(e); return; }
     if (ajustes.length === 0) { toast?.error('No hay cambios para guardar'); return; }
 
+    if (s(stockForm.motivo).trim().length < 5) { setStockErrors({ motivo: 'Mínimo 5 caracteres' }); return; }
+
+    // 102: un ajuste por conteo por SKU (ajustar_existencia_cuarto). Cada
+    // intento conserva su UUID: reintentar el mismo conteo no duplica.
     setSavingStock(true);
     try {
-      const err = await actions.ajustarStockCuarto?.({
-        cuartoId: stockModal.id,
-        ajustes,
-        motivo: s(stockForm.motivo).trim(),
-      });
-      if (err) {
-        toast?.error(traducirError(err, 'No se pudo ajustar el stock'));
-        return;
+      const motivo = s(stockForm.motivo).trim();
+      let hechos = 0;
+      for (const a of ajustes) {
+        const datos = { cuartoId: stockModal.id, sku: a.sku, existencia: a.nuevaCantidad, motivo };
+        const clave = claveAjusteCuarto(datos);
+        const op = resolverOperacion(opsAjusteRef.current[clave], clave);
+        opsAjusteRef.current[clave] = op;
+        const r = await actions.ajustarExistenciaCuarto({ ...datos, operacionId: op.id });
+        if (r?.error) {
+          toast?.error(`${a.sku}: ${r.error}${hechos ? ` (${hechos} de ${ajustes.length} ya ajustados)` : ''}`);
+          return;
+        }
+        delete opsAjusteRef.current[clave];
+        hechos += 1;
       }
-      toast?.success(`Stock actualizado (${ajustes.length} ${ajustes.length === 1 ? 'cambio' : 'cambios'})`);
+      toast?.success(`Conteo registrado (${hechos} ${hechos === 1 ? 'producto' : 'productos'})`);
       setStockModal(null);
     } finally {
       setSavingStock(false);
@@ -348,10 +358,10 @@ export function InventarioView({ data, actions }) {
     </Modal>
 
     {/* Modal: Ajuste granular de stock por cuarto frío */}
-    <Modal open={!!stockModal} onClose={()=>setStockModal(null)} title={"Ajustar stock — " + s(stockModal?.nombre)}>
+    <Modal open={!!stockModal} onClose={()=>setStockModal(null)} title={"Conteo físico — " + s(stockModal?.nombre)}>
       <div className="space-y-3">
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
-          <p className="text-xs text-blue-700">Edita la cantidad de cada SKU en este cuarto frío. Solo se guardan los cambios.</p>
+          <p className="text-xs text-blue-700">Captura el <b>conteo físico</b> de cada producto en este cuarto. Solo se registran las diferencias, con su motivo, como ajuste de inventario (sin efecto contable). Para producto dañado o perdido usa <b>Merma</b>.</p>
         </div>
         <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-1">
           {prodTerminados.length === 0 ? (

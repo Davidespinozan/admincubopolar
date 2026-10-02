@@ -115,9 +115,21 @@ SELECT t74_assert((SELECT NOT has_function_privilege('public', oid, 'EXECUTE') A
 SELECT t74_assert((SELECT pg_get_functiondef(oid) ~ 'fin_actor_permitido\(ARRAY\[''Admin''\]\)' AND pg_get_functiondef(oid) ~ 'erp_actor_etiqueta\(\)' AND pg_get_functiondef(oid) !~ 'REPLACE\(productos' FROM pg_proc WHERE oid = 'public.rename_sku(bigint,text,text)'::regprocedure), '074-03 guard Admin canónico + actor canónico + sin REPLACE no anclado');
 SELECT t74_assert((SELECT pg_get_function_result(oid) = 'void' FROM pg_proc WHERE oid = 'public.rename_sku(bigint,text,text)'::regprocedure), '074-04 firma y retorno intactos (bigint, text, text) → void');
 
+-- 102/103: la merma de cuarto indica el cuarto (registrar_merma_cuarto) cuando existe.
+CREATE OR REPLACE FUNCTION t74_merma_cuarto(p_cuarto TEXT, p_sku TEXT, p_cant INTEGER, p_causa TEXT, p_origen TEXT DEFAULT NULL) RETURNS JSONB LANGUAGE plpgsql AS $mc$
+DECLARE r JSONB;
+BEGIN
+  IF to_regprocedure('public.registrar_merma_cuarto(uuid,text,text,integer,text,text)') IS NULL THEN
+    EXECUTE 'SELECT registrar_merma($1, $2, $3, $4)' INTO r USING p_sku, p_cant, p_causa, p_origen;
+  ELSE
+    EXECUTE 'SELECT registrar_merma_cuarto(gen_random_uuid(), $1, $2, $3, $4)' INTO r USING p_cuarto, p_sku, p_cant, p_causa;
+  END IF;
+  RETURN r;
+END $mc$;
+GRANT EXECUTE ON FUNCTION t74_merma_cuarto(TEXT, TEXT, INTEGER, TEXT, TEXT) TO PUBLIC;
 -- Merma del contrato 072 (con efectos y egreso) antes del rename, como Admin
 BEGIN; SET LOCAL ROLE authenticated; SELECT t74_actor('authenticated', 'admin74@t', '74000000-0000-0000-0000-000000000001');
-INSERT INTO t74_ids VALUES ('merma', (registrar_merma('R74-SKU', 4, 'Bolsa rota', 'QA 074') ->> 'id'));
+INSERT INTO t74_ids VALUES ('merma', (t74_merma_cuarto('CF-R74', 'R74-SKU', 4, 'Bolsa rota', 'QA 074') ->> 'id'));
 COMMIT;
 INSERT INTO t74_ids SELECT 'merma_efectos', string_agg(cuarto_id || ':' || cantidad || ':' || inv_mov_id, ',' ORDER BY id) FROM mermas_efectos WHERE merma_id = (SELECT v::bigint FROM t74_ids WHERE k = 'merma');
 INSERT INTO t74_ids SELECT 'merma_mov', mov_contable_id::text FROM mermas WHERE id = (SELECT v::bigint FROM t74_ids WHERE k = 'merma');
