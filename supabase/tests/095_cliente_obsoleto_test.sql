@@ -65,8 +65,9 @@ GRANT ALL ON t95_ids TO anon, authenticated, service_role;
 \echo '── 095: estado físico'
 SELECT t95_assert(NOT has_function_privilege('authenticated', 'public.update_productos_stock_atomic(jsonb)', 'EXECUTE')
   AND has_function_privilege('service_role', 'public.update_productos_stock_atomic(jsonb)', 'EXECUTE'), '095-01 update_productos_stock_atomic sin EXECUTE para authenticated; service_role lo conserva');
-SELECT t95_assert(has_function_privilege('authenticated', 'public.update_stocks_atomic(jsonb)', 'EXECUTE')
-  AND pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'solo se permiten entradas a cuarto', '095-02 update_stocks_atomic sigue disponible solo para entradas desde la aplicación');
+SELECT t95_assert(pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'solo se permiten entradas a cuarto'
+  AND (has_function_privilege('authenticated', 'public.update_stocks_atomic(jsonb)', 'EXECUTE') OR to_regprocedure('public.registrar_devolucion(uuid,bigint,jsonb,text,text,text,text,text)') IS NOT NULL),
+  '095-02 update_stocks_atomic solo para entradas desde la aplicación (desde 105, sin EXECUTE de la API: lo reemplaza registrar_devolucion)');
 
 \echo '── 095: producción del contrato (fixture)'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t95_actor(2);
@@ -78,7 +79,7 @@ INSERT INTO t95_ids VALUES ('h0', t95_huella());
 -- Paso 1 del flujo viejo: reverso FIFO (cuartos en orden de id con existencia).
 BEGIN; SET LOCAL ROLE authenticated; SELECT t95_actor(1);
 SELECT t95_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-95A","sku":"P95-H","delta":-30,"tipo":"Reverso producción","origen":"Reverso OP","usuario":"Admin 95"}]'::jsonb)$q$,
-  '095-10 paso 1 (reverso FIFO del cuarto): denegado', '42501', '%solo se permiten entradas%');
+  '095-10 paso 1 (reverso FIFO del cuarto): denegado', '42501', CASE WHEN has_function_privilege('authenticated', 'public.update_stocks_atomic(jsonb)', 'EXECUTE') THEN '%solo se permiten entradas%' END);
 SELECT t95_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-95A","sku":"P95-H","delta":-20,"tipo":"Reverso producción"},{"cuarto_id":"CF-95B","sku":"P95-H","delta":-10,"tipo":"Reverso producción"}]'::jsonb)$q$,
   '095-11 reverso FIFO en dos cuartos: denegado completo', '42501');
 SELECT t95_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-95B","sku":"P95-H","delta":5},{"cuarto_id":"CF-95A","sku":"P95-H","delta":-5}]'::jsonb)$q$,
@@ -94,15 +95,23 @@ SELECT t95_assert(t95_huella() = (SELECT v FROM t95_ids WHERE k = 'h0'), '095-16
 \echo '── 095: flujos vigentes intactos'
 -- Devolución de cliente: entrada al cuarto (único llamador vigente del RPC).
 BEGIN; SET LOCAL ROLE authenticated; SELECT t95_actor(1);
-SELECT update_stocks_atomic('[{"cuarto_id":"CF-95B","sku":"P95-H","delta":4,"tipo":"Devolución cliente","origen":"Devolución OV-95","usuario":"Admin 95"}]'::jsonb);
+DO $do$ BEGIN
+  IF has_function_privilege('authenticated', 'public.update_stocks_atomic(jsonb)', 'EXECUTE') THEN
+    PERFORM update_stocks_atomic('[{"cuarto_id":"CF-95B","sku":"P95-H","delta":4,"tipo":"Devolución cliente","origen":"Devolución OV-95","usuario":"Admin 95"}]'::jsonb);
+  ELSE  -- 105: la API ya no lo ejecuta (la devolución es registrar_devolucion); mismo movimiento como SQL de confianza.
+    PERFORM t95_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-95B","sku":"P95-H","delta":4}]'::jsonb)$q$, '095-19b (105) Admin: genérico sin EXECUTE de la API', '42501');
+    RESET ROLE;
+    PERFORM update_stocks_atomic('[{"cuarto_id":"CF-95B","sku":"P95-H","delta":4,"tipo":"Devolución cliente","origen":"Devolución OV-95","usuario":"Admin 95"}]'::jsonb);
+  END IF;
+END $do$;
 COMMIT;
 SELECT t95_assert((SELECT (stock ->> 'P95-H')::int = 44 FROM cuartos_frios WHERE id = 'CF-95B')
   AND (SELECT count(*) = 1 FROM inventario_mov WHERE producto = 'P95-H' AND tipo = 'Devolución cliente' AND cantidad = 4), '095-20 devolución de cliente (Admin): entrada al cuarto con kardex');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t95_actor(2);
-SELECT t95_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-95B","sku":"P95-H","delta":1}]'::jsonb)$q$, '095-21 Producción: RPC genérico denegado (sin cambio)', '42501', '%no autorizado%');
+SELECT t95_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-95B","sku":"P95-H","delta":1}]'::jsonb)$q$, '095-21 Producción: RPC genérico denegado (sin cambio)', '42501', CASE WHEN has_function_privilege('authenticated', 'public.update_stocks_atomic(jsonb)', 'EXECUTE') THEN '%no autorizado%' END);
 ROLLBACK;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t95_actor(3);
-SELECT t95_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-95B","sku":"P95-H","delta":1}]'::jsonb)$q$, '095-22 Ventas: RPC genérico denegado (sin cambio)', '42501', '%no autorizado%');
+SELECT t95_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-95B","sku":"P95-H","delta":1}]'::jsonb)$q$, '095-22 Ventas: RPC genérico denegado (sin cambio)', '42501', CASE WHEN has_function_privilege('authenticated', 'public.update_stocks_atomic(jsonb)', 'EXECUTE') THEN '%no autorizado%' END);
 ROLLBACK;
 -- Reverso canónico de la misma producción.
 BEGIN; SET LOCAL ROLE authenticated; SELECT t95_actor(1);

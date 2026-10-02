@@ -203,7 +203,15 @@ RESET ROLE;
 SELECT t_assert((SELECT stock = CASE WHEN t88_fase() THEN 50 ELSE 150 END FROM productos WHERE sku = 'EMP-5') AND (SELECT count(*) = CASE WHEN t88_fase() THEN 1 ELSE 2 END FROM cuentas_por_pagar) AND (SELECT count(*) = 0 FROM cuentas_por_pagar WHERE categoria = 'Nómina'), 'I. Almacén Bolsas: stock de empaques y CxP de compra; otra categoría denegada');
 -- H. Admin: reverso de merma (flujo borrarMermaConReverso) y devolución de ruta
 SELECT t_actor2('authenticated', 'admin@t'); SET LOCAL ROLE authenticated;
-SELECT update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":5,"tipo":"Entrada","origen":"Reverso merma"}]'::jsonb);
+-- 105: la API ya no ejecuta el genérico; el mismo movimiento como SQL de confianza.
+DO $$ BEGIN
+  IF has_function_privilege('authenticated', 'public.update_stocks_atomic(jsonb)', 'EXECUTE') THEN
+    PERFORM update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":5,"tipo":"Entrada","origen":"Reverso merma"}]'::jsonb);
+  ELSE
+    RESET ROLE;
+    PERFORM update_stocks_atomic('[{"cuarto_id":"CF-T","sku":"HPC-5K","delta":5,"tipo":"Entrada","origen":"Reverso merma"}]'::jsonb);
+  END IF;
+END $$;
 RESET ROLE;
 SELECT t_assert((SELECT (stock->>'HPC-5K')::int = CASE WHEN t_contenido() THEN 25 ELSE 30 END FROM cuartos_frios WHERE id = 'CF-T') AND (SELECT usuario = 'Admin T' FROM inventario_mov ORDER BY id DESC LIMIT 1), 'H. Admin: entrada y atribución real');
 -- Anidado: cerrar_ruta_atomic (Admin) → update_stocks_atomic en contexto rpc conserva auth.uid()

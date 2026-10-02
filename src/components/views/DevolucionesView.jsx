@@ -127,7 +127,7 @@ export function DevolucionesView({ data }) {
                 const uuid = r.cfdiNotaCreditoUuid || r.cfdi_nota_credito_uuid;
                 if (!req) return <span className="text-[10px] text-slate-400">—</span>;
                 if (uuid) return <span className="text-[10px] font-bold text-emerald-600">✓ Timbrada</span>;
-                return <span className="text-[10px] font-bold text-amber-600">⏳ Pendiente</span>;
+                return <span className="text-[10px] font-bold text-amber-600">⏳ NOTA FISCAL PENDIENTE</span>;
               }},
               { key: 'usuario', label: 'Por', hideOnMobile: true, render: v => <span className="text-xs text-slate-500">{s(v)}</span> },
             ]}
@@ -168,8 +168,16 @@ export function DevolucionesView({ data }) {
                   <p className="font-semibold">{s(detalleModal.tipoReembolso || detalleModal.tipo_reembolso)}</p>
                 </div>
                 <div className="bg-emerald-50 rounded-lg p-3">
-                  <p className="text-[10px] text-emerald-500 uppercase">Total</p>
+                  <p className="text-[10px] text-emerald-500 uppercase">Valor devuelto</p>
                   <p className="font-bold text-emerald-700">{fmtMoney(detalleModal.total, { decimals: 2 })}</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-[10px] text-slate-400 uppercase">Producto</p>
+                  <p className="font-semibold">{s(detalleModal.disposicion) === 'Merma' ? 'Merma (no vendible)' : `Reintegrado a ${s(detalleModal.cuartoDestino || detalleModal.cuarto_destino) || '—'}`}</p>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-[10px] text-slate-400 uppercase">CxC / reembolso</p>
+                  <p className="font-semibold">−{fmtMoney(detalleModal.cxcReducido ?? detalleModal.cxc_reducido ?? 0, { decimals: 2 })} / {fmtMoney(detalleModal.reembolso ?? 0, { decimals: 2 })}</p>
                 </div>
               </div>
 
@@ -187,7 +195,7 @@ export function DevolucionesView({ data }) {
 
               {(detalleModal.requiereNotaCredito || detalleModal.requiere_nota_credito) && (
                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
-                  <strong>Nota de crédito CFDI tipo E pendiente.</strong> {detalleModal.cfdiNotaCreditoUuid || detalleModal.cfdi_nota_credito_uuid ? `Timbrada (UUID ${s(detalleModal.cfdiNotaCreditoUuid || detalleModal.cfdi_nota_credito_uuid)}).` : 'Aún no se ha emitido.'}
+                  <strong>NOTA DE CRÉDITO FISCAL PENDIENTE</strong> (CFDI de egreso; el sistema aún no lo emite). {detalleModal.cfdiNotaCreditoUuid || detalleModal.cfdi_nota_credito_uuid ? `Timbrada (UUID ${s(detalleModal.cfdiNotaCreditoUuid || detalleModal.cfdi_nota_credito_uuid)}).` : 'Aún no se ha emitido.'}
                 </div>
               )}
 

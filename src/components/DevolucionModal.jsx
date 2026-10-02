@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { s, n, fmtMoney } from '../utils/safe';
 import { useToast } from './ui/Toast';
 import { supabase } from '../lib/supabase';
-import { TIPOS_REEMBOLSO, calcTotalDevolucion } from '../data/devolucionesLogic';
+import { TIPOS_REEMBOLSO, DISPOSICIONES, calcTotalDevolucion, claveDevolucion, esVentaCredito, validateDevolucion } from '../data/devolucionesLogic';
+import { resolverOperacion } from '../data/produccionAtomicaLogic';
 
 // Modal de captura de devolución. Recibe la orden ya seleccionada
 // (estatus 'Entregada' o 'Facturada' validado por el caller).
@@ -14,6 +15,9 @@ export default function DevolucionModal({ open, orden, actions, data, onClose, o
   const [motivo, setMotivo] = useState('');
   const [tipoReembolso, setTipoReembolso] = useState('Efectivo');
   const [cuartoDestino, setCuartoDestino] = useState('');
+  const [disposicion, setDisposicion] = useState('Reintegrar');
+  // 104: UUID del intento lógico (mismo intento → mismo UUID en reintentos).
+  const opRef = useRef(null);
   const [notas, setNotas] = useState('');
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState({});
@@ -29,6 +33,8 @@ export default function DevolucionModal({ open, orden, actions, data, onClose, o
     setNotas('');
     setErrors({});
     setCantidades({});
+    setDisposicion('Reintegrar');
+    opRef.current = null;
     setCuartoDestino(s(cuartos[0]?.id) || '');
     setLoadingLineas(true);
     (async () => {
@@ -61,7 +67,7 @@ export default function DevolucionModal({ open, orden, actions, data, onClose, o
     const out = [];
     for (const l of lineas) {
       const qty = n(cantidades[l.sku] || 0);
-      if (qty > 0) out.push({ sku: l.sku, cantidad: qty, precio_unitario: l.precio_unitario });
+      if (qty > 0) out.push({ sku: l.sku, cantidad: qty });
     }
     return out;
   }, [lineas, cantidades]);
@@ -71,42 +77,31 @@ export default function DevolucionModal({ open, orden, actions, data, onClose, o
   }, [itemsAGuardar, lineas]);
 
   const facturada = s(orden?.estatus) === 'Facturada';
+  const credito = esVentaCredito(orden);
 
   const guardar = async () => {
     if (saving) return;
-    const e = {};
-    if (itemsAGuardar.length === 0) e.items = 'Captura al menos una cantidad a devolver';
-    if (!motivo.trim()) e.motivo = 'Motivo requerido';
-    if (!cuartoDestino) e.cuartoDestino = 'Selecciona cuarto frío';
-    // Validar que ninguna cantidad exceda lo entregado
-    for (const l of lineas) {
-      const qty = n(cantidades[l.sku] || 0);
-      if (qty > l.cantidadOriginal) {
-        e.items = `${l.sku}: máximo ${l.cantidadOriginal} (entregado originalmente)`;
-        break;
-      }
-    }
-    if (Object.keys(e).length) { setErrors(e); return; }
+    const datos = { ordenId: orden.id, items: itemsAGuardar, tipoReembolso, disposicion, cuartoDestino, motivo: motivo.trim(), notas: notas.trim() || null };
+    const v = validateDevolucion({ orden, items: itemsAGuardar, lineasOriginales: lineas.map(l => ({ sku: l.sku, cantidad: l.cantidadOriginal })),
+      motivo, tipoReembolso, disposicion, cuartoDestino });
+    if (v) { setErrors({ items: v.error }); return; }
     setErrors({});
     setSaving(true);
     try {
-      const result = await actions.registrarDevolucion?.({
-        ordenId: orden.id,
-        items: itemsAGuardar,
-        motivo: motivo.trim(),
-        tipoReembolso,
-        cuartoDestino,
-        notas: notas.trim() || null,
-      });
-      if (result?.error && !result?.partial) {
+      const op = resolverOperacion(opRef.current, claveDevolucion(datos));
+      opRef.current = op;
+      const result = await actions.registrarDevolucion?.({ ...datos, operacionId: op.id });
+      if (result?.error) {
         toast?.error(result.error);
-        return;
+        return; // se conserva el UUID: reintentar no duplica
       }
-      if (result?.partial) {
-        toast?.error(result.error);
-      } else {
-        toast?.success('Devolución registrada');
-      }
+      opRef.current = null;
+      const d = result?.data || {};
+      const partes = [`Devolución ${fmtMoney(d.total, { decimals: 2 })}`];
+      if (Number(d.cxc_reducido) > 0) partes.push(`CxC −${fmtMoney(d.cxc_reducido, { decimals: 2 })}`);
+      if (Number(d.reembolso) > 0) partes.push(`reembolso ${fmtMoney(d.reembolso, { decimals: 2 })}${d.reembolso_manual ? ' (registrado manualmente)' : ''}`);
+      if (d.requiere_nota_credito) partes.push('nota de crédito fiscal PENDIENTE');
+      toast?.success(partes.join(' · '));
       onSuccess?.(result?.devolucionId);
       onClose?.();
     } finally {
@@ -126,7 +121,7 @@ export default function DevolucionModal({ open, orden, actions, data, onClose, o
 
         {facturada && (
           <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 text-xs text-purple-800">
-            Esta orden está facturada. Si eliges <strong>Nota crédito</strong>, quedará pendiente generar el CFDI tipo E (integración futura). Por ahora se marca como pendiente.
+            Esta orden está facturada: la devolución queda con <strong>nota de crédito fiscal pendiente</strong> (el CFDI de egreso aún no se emite desde el sistema).
           </div>
         )}
 
@@ -161,41 +156,62 @@ export default function DevolucionModal({ open, orden, actions, data, onClose, o
         </div>
 
         <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex justify-between items-baseline">
-          <span className="text-xs font-semibold text-emerald-700 uppercase">Total a devolver</span>
+          <span className="text-xs font-semibold text-emerald-700 uppercase">Valor devuelto (vista previa)</span>
           <span className="text-xl font-extrabold text-emerald-700">{fmtMoney(totalDevolver, { decimals: 2 })}</span>
         </div>
 
-        <FormSelect
-          label="Cuarto frío destino *"
-          options={[{ value: '', label: 'Seleccionar…' }, ...cuartos.map(c => ({ value: s(c.id), label: s(c.nombre) || s(c.id) }))]}
-          value={cuartoDestino}
-          onChange={e => setCuartoDestino(e.target.value)}
-          error={errors.cuartoDestino}
-        />
-
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de reembolso *</label>
-          <div className="grid grid-cols-3 gap-2">
-            {TIPOS_REEMBOLSO.map(t => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTipoReembolso(t)}
-                className={`py-2.5 rounded-xl text-xs font-bold border-2 ${tipoReembolso === t ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}`}
-              >
-                {t === 'Nota credito' ? 'Nota crédito' : t === 'Reposicion' ? 'Reposición' : t}
+          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿Qué pasa con el producto? *</label>
+          <div className="grid grid-cols-2 gap-2">
+            {DISPOSICIONES.map(d => (
+              <button key={d.value} type="button" onClick={() => setDisposicion(d.value)}
+                className={`py-2.5 min-h-[44px] rounded-xl text-xs font-bold border-2 ${disposicion === d.value ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}`}>
+                {d.label}
               </button>
             ))}
           </div>
-          {tipoReembolso === 'Reposicion' && (
-            <p className="text-[11px] text-slate-500 mt-1.5">No ajusta finanzas — solo regresa stock al cuarto.</p>
-          )}
+          <p className="text-[11px] text-slate-500 mt-1.5">{disposicion === 'Merma'
+            ? 'No entra a inventario ni descuenta ningún cuarto: queda registrado como producto dañado en la devolución.'
+            : 'El producto regresa como inventario vendible solo al cuarto que elijas.'}</p>
+        </div>
+
+        {disposicion === 'Reintegrar' && (
+          <FormSelect
+            label="Cuarto frío destino *"
+            options={[{ value: '', label: 'Seleccionar…' }, ...cuartos.map(c => ({ value: s(c.id), label: s(c.nombre) || s(c.id) }))]}
+            value={cuartoDestino}
+            onChange={e => setCuartoDestino(e.target.value)}
+            error={errors.cuartoDestino}
+          />
+        )}
+
+        <div>
+          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Tipo de reembolso *</label>
+          <div className="grid grid-cols-2 gap-2">
+            {TIPOS_REEMBOLSO.map(t => {
+              const bloqueado = t === 'Nota credito' && !credito;
+              return (
+                <button
+                  key={t}
+                  type="button"
+                  disabled={bloqueado}
+                  onClick={() => setTipoReembolso(t)}
+                  className={`py-2.5 min-h-[44px] rounded-xl text-xs font-bold border-2 disabled:opacity-40 ${tipoReembolso === t ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}`}
+                >
+                  {t === 'Nota credito' ? 'Nota crédito' : t}
+                </button>
+              );
+            })}
+          </div>
           {tipoReembolso === 'Efectivo' && (
-            <p className="text-[11px] text-slate-500 mt-1.5">Genera egreso contable en categoría &quot;Devoluciones&quot;{s(orden.metodoPago || orden.metodo_pago).toLowerCase().includes('crédito') ? ' y reduce la CxC del cliente.' : '.'}</p>
+            <p className="text-[11px] text-slate-500 mt-1.5">{credito
+              ? 'Primero baja lo pendiente de la cuenta por cobrar; solo lo ya cobrado se reembolsa.'
+              : 'Se reembolsa como máximo lo que realmente se cobró de esta orden.'} El sistema calcula el monto.</p>
           )}
           {tipoReembolso === 'Nota credito' && (
-            <p className="text-[11px] text-slate-500 mt-1.5">{facturada ? 'Marca pendiente de emitir CFDI tipo E.' : 'La orden no está facturada — se trata como nota interna.'}</p>
+            <p className="text-[11px] text-slate-500 mt-1.5">Reduce lo pendiente de la cuenta por cobrar; no sale dinero.</p>
           )}
+          {!credito && <p className="text-[11px] text-slate-400 mt-1">Nota crédito solo aplica a ventas a crédito. La reposición aún no está disponible.</p>}
         </div>
 
         <FormInput
@@ -214,7 +230,7 @@ export default function DevolucionModal({ open, orden, actions, data, onClose, o
 
         <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
           <FormBtn onClick={onClose} disabled={saving}>Cancelar</FormBtn>
-          <FormBtn primary onClick={guardar} disabled={saving || itemsAGuardar.length === 0 || !motivo.trim() || !cuartoDestino} loading={saving}>
+          <FormBtn primary onClick={guardar} disabled={saving || itemsAGuardar.length === 0 || !motivo.trim() || (disposicion === 'Reintegrar' && !cuartoDestino)} loading={saving}>
             {saving ? 'Registrando…' : 'Registrar devolución'}
           </FormBtn>
         </div>

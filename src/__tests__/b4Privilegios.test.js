@@ -37,10 +37,10 @@ describe('090: cuentas por cobrar solo por contrato', () => {
     const b = accion('cancelarOrden');
     expect(b).toMatch(/rpc\('anular_cxc_orden', \{ p_orden_id: Number\(ordenId\) \}\)/);
   });
-  it('registrarDevolucion ajusta la CxC con ajustar_cxc_devolucion y no toca el saldo aparte', () => {
+  it('registrarDevolucion: un solo contrato (104), sin ajustar_cxc_devolucion ni saldo aparte', () => {
     const b = accion('registrarDevolucion');
-    expect(b).toMatch(/rpc\('ajustar_cxc_devolucion', \{ p_orden_id: Number\(ordenId\), p_monto: total \}\)/);
-    expect(b).not.toMatch(/increment_saldo/);
+    expect(b).toMatch(/rpc\('registrar_devolucion', built\.args\)/);
+    expect(b).not.toMatch(/ajustar_cxc_devolucion|increment_saldo|update_stocks_atomic|from\('devoluciones'\)|from\('movimientos_contables'\)/);
   });
   it('addRuta sigue pidiendo solo folio_r_seq', () => {
     const usos = store.match(/rpc\('nextval', \{ seq_name: '[^']+' \}\)/g) || [];
@@ -101,6 +101,7 @@ describe('090: el mapa de grants cubre exactamente las escrituras directas del f
   delete mapa.nomina_periodos; // 101: la nómina se escribe con sus contratos (100)
   delete mapa.nomina_recibos;
   delete mapa.inventario_mov; // 103: el kardex lo escriben los contratos (102)
+  delete mapa.devoluciones;   // 105: la devolución la registra registrar_devolucion (104)
   const normal = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, [...v].sort()]).sort(([a], [b]) => a.localeCompare(b)));
 
   it('cada tabla y operación escrita por el frontend tiene su grant, y no sobra ninguno', () => {

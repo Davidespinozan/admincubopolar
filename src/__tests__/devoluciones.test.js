@@ -1,407 +1,87 @@
-// devoluciones.test.js
-// Tests para validateDevolucion + calcDevolucionChanges + calcAjustePago +
-// calcTotalDevolucion. Lógica pura sin Supabase.
+// devoluciones.test.js — 104: devolución de cliente por contrato.
+// La lógica del cliente solo valida la captura (UX), muestra la vista previa y
+// arma los parámetros (SKU + cantidad). Todo lo autoritativo vive en
+// registrar_devolucion (suite SQL 104).
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
-  validateDevolucion,
-  calcDevolucionChanges,
-  calcAjustePago,
-  calcReembolsoEfectivo,
-  calcTotalDevolucion,
-  TIPOS_REEMBOLSO,
-  ESTATUS_DEVOLVIBLES,
+  validateDevolucion, calcTotalDevolucion, buildRegistrarDevolucionArgs, claveDevolucion, esVentaCredito, mensajeErrorDevolucion,
+  TIPOS_REEMBOLSO, ESTATUS_DEVOLVIBLES, DISPOSICIONES,
 } from '../data/devolucionesLogic';
 
-const lineasOriginales = [
-  { sku: 'HC-25K', cantidad: 10, precio_unitario: 50 },
-  { sku: 'HC-5K',  cantidad: 20, precio_unitario: 12 },
-];
+const src = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
+const lineasOriginales = [
+  { sku: 'A', cantidad: 10, precio_unitario: 20 },
+  { sku: 'B', cantidad: 5, precio_unitario: 30 },
+];
 const baseOk = {
-  orden: { estatus: 'Entregada', metodo_pago: 'Efectivo', total: 740, tiene_devolucion: false, folio: 'OV-100' },
-  items: [{ sku: 'HC-25K', cantidad: 2 }],
-  lineasOriginales,
-  motivo: 'Hielo derretido',
-  tipoReembolso: 'Efectivo',
-  cuartoDestino: 'CF-1',
+  orden: { estatus: 'Entregada', metodo_pago: 'Efectivo', tipo_cobro: 'Contado', tiene_devolucion: false },
+  items: [{ sku: 'A', cantidad: 3 }, { sku: 'B', cantidad: 1 }],
+  lineasOriginales, motivo: 'Hielo derretido', tipoReembolso: 'Efectivo', disposicion: 'Reintegrar', cuartoDestino: 'CF-1',
 };
 
-// ─── validateDevolucion ────────────────────────────────────────
-describe('validateDevolucion', () => {
-  it('null cuando todo es válido (Entregada, items, motivo, tipo, cuarto)', () => {
-    expect(validateDevolucion(baseOk)).toBeNull();
+describe('validateDevolucion (UX)', () => {
+  it('devolución parcial válida', () => { expect(validateDevolucion(baseOk)).toBeNull(); });
+  it('solo Entregada/Facturada y una por orden', () => {
+    expect(validateDevolucion({ ...baseOk, orden: { ...baseOk.orden, estatus: 'Facturada' } })).toBeNull();
+    for (const est of ['Creada', 'Asignada', 'Cancelada']) expect(validateDevolucion({ ...baseOk, orden: { ...baseOk.orden, estatus: est } }).error).toMatch(/Entregadas o Facturadas/);
+    expect(validateDevolucion({ ...baseOk, orden: { ...baseOk.orden, tiene_devolucion: true } }).error).toMatch(/ya tiene/);
   });
-
-  it('null también para Facturada', () => {
-    const out = validateDevolucion({ ...baseOk, orden: { ...baseOk.orden, estatus: 'Facturada' } });
-    expect(out).toBeNull();
+  it('partidas: cantidad entera ≤ entregado, SKU de la orden, sin repetir', () => {
+    expect(validateDevolucion({ ...baseOk, items: [{ sku: 'A', cantidad: 11 }] }).error).toMatch(/máximo 10/);
+    expect(validateDevolucion({ ...baseOk, items: [{ sku: 'C', cantidad: 1 }] }).error).toMatch(/no estaba/);
+    expect(validateDevolucion({ ...baseOk, items: [{ sku: 'A', cantidad: 1.5 }] }).error).toMatch(/inválida/);
+    expect(validateDevolucion({ ...baseOk, items: [{ sku: 'A', cantidad: 1 }, { sku: 'A', cantidad: 1 }] }).error).toMatch(/repetido/);
   });
-
-  it('error si estatus es Creada', () => {
-    const r = validateDevolucion({ ...baseOk, orden: { ...baseOk.orden, estatus: 'Creada' } });
-    expect(r?.error).toMatch(/Entregadas o Facturadas/);
+  it('reposición bloqueada; nota de crédito solo a crédito', () => {
+    expect(validateDevolucion({ ...baseOk, tipoReembolso: 'Reposicion' }).error).toMatch(/reposición/i);
+    expect(validateDevolucion({ ...baseOk, tipoReembolso: 'Nota credito' }).error).toMatch(/solo en ventas a crédito/);
+    expect(validateDevolucion({ ...baseOk, tipoReembolso: 'Nota credito', orden: { ...baseOk.orden, tipo_cobro: 'Credito', metodo_pago: 'Crédito' } })).toBeNull();
   });
-
-  it('error si estatus es Asignada', () => {
-    const r = validateDevolucion({ ...baseOk, orden: { ...baseOk.orden, estatus: 'Asignada' } });
-    expect(r?.error).toMatch(/Entregadas o Facturadas/);
-  });
-
-  it('error si estatus es Cancelada', () => {
-    const r = validateDevolucion({ ...baseOk, orden: { ...baseOk.orden, estatus: 'Cancelada' } });
-    expect(r?.error).toMatch(/Entregadas o Facturadas/);
-  });
-
-  it('error si la orden ya tiene devolucion (snake)', () => {
-    const r = validateDevolucion({ ...baseOk, orden: { ...baseOk.orden, tiene_devolucion: true } });
-    expect(r?.error).toMatch(/ya tiene una devolución/i);
-  });
-
-  it('error si la orden ya tiene devolucion (camel)', () => {
-    const r = validateDevolucion({ ...baseOk, orden: { ...baseOk.orden, tieneDevolucion: true } });
-    expect(r?.error).toMatch(/ya tiene una devolución/i);
-  });
-
-  it('error si items vacío', () => {
-    const r = validateDevolucion({ ...baseOk, items: [] });
-    expect(r?.error).toMatch(/al menos un producto/i);
-  });
-
-  it('error si items no es array', () => {
-    const r = validateDevolucion({ ...baseOk, items: null });
-    expect(r?.error).toMatch(/al menos un producto/i);
-  });
-
-  it('error si motivo vacío', () => {
-    const r = validateDevolucion({ ...baseOk, motivo: '' });
-    expect(r?.error).toMatch(/motivo/i);
-  });
-
-  it('error si motivo es solo whitespace', () => {
-    const r = validateDevolucion({ ...baseOk, motivo: '   \n\t' });
-    expect(r?.error).toMatch(/motivo/i);
-  });
-
-  it('error si tipoReembolso no está en la lista', () => {
-    const r = validateDevolucion({ ...baseOk, tipoReembolso: 'PayPal' });
-    expect(r?.error).toMatch(/tipo de reembolso/i);
-  });
-
-  it('error si cuartoDestino vacío', () => {
-    const r = validateDevolucion({ ...baseOk, cuartoDestino: '' });
-    expect(r?.error).toMatch(/cuarto frío/i);
-  });
-
-  it('error si cantidad excede lo originalmente entregado', () => {
-    const r = validateDevolucion({
-      ...baseOk,
-      items: [{ sku: 'HC-25K', cantidad: 15 }], // original = 10
-    });
-    expect(r?.error).toMatch(/HC-25K.*máximo 10/);
-  });
-
-  it('error si SKU del item no estaba en la orden', () => {
-    const r = validateDevolucion({
-      ...baseOk,
-      items: [{ sku: 'HC-FAKE', cantidad: 1 }],
-    });
-    expect(r?.error).toMatch(/HC-FAKE.*no estaba/);
-  });
-
-  it('error si item sin SKU', () => {
-    const r = validateDevolucion({
-      ...baseOk,
-      items: [{ cantidad: 1 }],
-    });
-    expect(r?.error).toMatch(/sin SKU/i);
-  });
-
-  it('error si item con cantidad 0', () => {
-    const r = validateDevolucion({
-      ...baseOk,
-      items: [{ sku: 'HC-25K', cantidad: 0 }],
-    });
-    expect(r?.error).toMatch(/cantidad inválida/i);
-  });
-
-  it('error si item con cantidad negativa', () => {
-    const r = validateDevolucion({
-      ...baseOk,
-      items: [{ sku: 'HC-25K', cantidad: -3 }],
-    });
-    expect(r?.error).toMatch(/cantidad inválida/i);
-  });
-
-  it('acepta devolución parcial (cantidad < original)', () => {
-    expect(validateDevolucion({
-      ...baseOk,
-      items: [{ sku: 'HC-25K', cantidad: 1 }, { sku: 'HC-5K', cantidad: 5 }],
-    })).toBeNull();
-  });
-
-  it('acepta devolución completa (cantidad === original)', () => {
-    expect(validateDevolucion({
-      ...baseOk,
-      items: [{ sku: 'HC-25K', cantidad: 10 }],
-    })).toBeNull();
+  it('merma no requiere cuarto; reintegrar sí', () => {
+    expect(validateDevolucion({ ...baseOk, disposicion: 'Merma', cuartoDestino: '' })).toBeNull();
+    expect(validateDevolucion({ ...baseOk, cuartoDestino: '' }).error).toMatch(/cuarto/);
   });
 });
 
-// ─── calcDevolucionChanges ─────────────────────────────────────
-describe('calcDevolucionChanges', () => {
-  it('genera change por cada item con delta POSITIVO', () => {
-    const items = [{ sku: 'HC-25K', cantidad: 5 }, { sku: 'HC-5K', cantidad: 3 }];
-    const { changes } = calcDevolucionChanges(items, 'CF-1', 'Admin', 'OV-100');
-    expect(changes).toHaveLength(2);
-    for (const c of changes) expect(c.delta).toBeGreaterThan(0);
+describe('vista previa y parámetros', () => {
+  it('vista previa 3×20 + 1×30 = 90 (el servidor recalcula)', () => {
+    expect(calcTotalDevolucion(baseOk.items, lineasOriginales)).toBe(90);
   });
-
-  it('shape correcto del change', () => {
-    const items = [{ sku: 'HC-25K', cantidad: 5 }];
-    const { changes } = calcDevolucionChanges(items, 'CF-2', 'David', 'OV-200');
-    expect(changes[0]).toEqual({
-      cuarto_id: 'CF-2',
-      sku: 'HC-25K',
-      delta: 5,
-      tipo: 'Devolución cliente',
-      origen: 'Devolución OV-200',
-      usuario: 'David',
-    });
+  it('solo SKU y cantidad viajan al contrato (sin precio, total, cliente ni montos)', () => {
+    const r = buildRegistrarDevolucionArgs({ operacionId: 'u', ordenId: 7, items: [{ sku: 'A', cantidad: 3, precio_unitario: 999, subtotal: 5000 }],
+      tipoReembolso: 'Efectivo', disposicion: 'Reintegrar', cuartoDestino: 'CF-1', motivo: ' mal sabor ' });
+    expect(r.args).toEqual({ p_operacion_id: 'u', p_orden_id: 7, p_items: [{ sku: 'A', cantidad: 3 }], p_tipo_reembolso: 'Efectivo',
+      p_disposicion: 'Reintegrar', p_cuarto_id: 'CF-1', p_motivo: 'mal sabor', p_notas: null });
+    expect(buildRegistrarDevolucionArgs({ operacionId: 'u', ordenId: 7, items: [{ sku: 'A', cantidad: 3 }], disposicion: 'Merma', cuartoDestino: 'CF-1' }).args.p_cuarto_id).toBeNull();
+    expect(buildRegistrarDevolucionArgs({ ordenId: 7, items: [{ sku: 'A', cantidad: 3 }] }).error).toBeTruthy();
   });
-
-  it('ignora items con cantidad <= 0', () => {
-    const items = [
-      { sku: 'A', cantidad: 0 },
-      { sku: 'B', cantidad: -2 },
-      { sku: 'C', cantidad: 3 },
-    ];
-    const { changes } = calcDevolucionChanges(items, 'CF-1', 'Admin', 'OV');
-    expect(changes).toHaveLength(1);
-    expect(changes[0].sku).toBe('C');
+  it('mismo intento → misma clave (orden de partidas indiferente)', () => {
+    const a = { ordenId: 7, items: [{ sku: 'B', cantidad: 1 }, { sku: 'A', cantidad: 3 }], tipoReembolso: 'Efectivo', disposicion: 'Reintegrar', cuartoDestino: 'CF-1', motivo: 'x' };
+    expect(claveDevolucion(a)).toBe(claveDevolucion({ ...a, items: [{ sku: 'A', cantidad: 3 }, { sku: 'B', cantidad: 1 }] }));
+    expect(claveDevolucion(a)).not.toBe(claveDevolucion({ ...a, disposicion: 'Merma' }));
   });
-
-  it('ignora items sin SKU', () => {
-    const items = [{ cantidad: 5 }, { sku: 'A', cantidad: 3 }];
-    const { changes } = calcDevolucionChanges(items, 'CF-1', 'Admin', 'OV');
-    expect(changes).toHaveLength(1);
-    expect(changes[0].sku).toBe('A');
-  });
-
-  it('cuartoDestino vacío → 0 changes', () => {
-    const items = [{ sku: 'A', cantidad: 5 }];
-    expect(calcDevolucionChanges(items, '', 'Admin', 'OV').changes).toEqual([]);
-    expect(calcDevolucionChanges(items, null, 'Admin', 'OV').changes).toEqual([]);
-  });
-
-  it('items null/undefined → 0 changes', () => {
-    expect(calcDevolucionChanges(null, 'CF-1', 'Admin', 'OV').changes).toEqual([]);
-    expect(calcDevolucionChanges(undefined, 'CF-1', 'Admin', 'OV').changes).toEqual([]);
-  });
-
-  it('default usuario "Admin" si no se pasa', () => {
-    const { changes } = calcDevolucionChanges([{ sku: 'A', cantidad: 1 }], 'CF-1', null, 'OV');
-    expect(changes[0].usuario).toBe('Admin');
-  });
-
-  it('default origen "Devolución orden" si no se pasa ref', () => {
-    const { changes } = calcDevolucionChanges([{ sku: 'A', cantidad: 1 }], 'CF-1', 'Admin', null);
-    expect(changes[0].origen).toBe('Devolución orden');
-  });
-});
-
-// ─── calcAjustePago ────────────────────────────────────────────
-describe('calcAjustePago', () => {
-  describe('Reposicion', () => {
-    it('no toca finanzas', () => {
-      const r = calcAjustePago({
-        orden: { estatus: 'Entregada', metodo_pago: 'Efectivo', folio: 'OV' },
-        totalDevuelto: 500,
-        tipoReembolso: 'Reposicion',
-      });
-      expect(r.accion).toBe('ninguna');
-      expect(r.ajustaCxC).toBe(false);
-      expect(r.requiereNotaCredito).toBe(false);
-    });
-
-    it('reposicion ignora método de pago original', () => {
-      const r = calcAjustePago({
-        orden: { estatus: 'Entregada', metodo_pago: 'Crédito', folio: 'OV' },
-        totalDevuelto: 500,
-        tipoReembolso: 'Reposicion',
-      });
-      expect(r.accion).toBe('ninguna');
-      expect(r.ajustaCxC).toBe(false);
-    });
-  });
-
-  describe('Efectivo (contado)', () => {
-    it('genera egreso, no toca CxC', () => {
-      const r = calcAjustePago({
-        orden: { estatus: 'Entregada', metodo_pago: 'Efectivo', folio: 'OV-100' },
-        totalDevuelto: 250,
-        tipoReembolso: 'Efectivo',
-      });
-      expect(r.accion).toBe('egreso');
-      expect(r.ajustaCxC).toBe(false);
-      expect(r.monto).toBe(250);
-      expect(r.conceptoEgreso).toMatch(/OV-100/);
-      expect(r.requiereNotaCredito).toBe(false);
-    });
-
-    it('Transferencia se trata como contado (no crédito)', () => {
-      const r = calcAjustePago({
-        orden: { estatus: 'Entregada', metodo_pago: 'Transferencia', folio: 'OV' },
-        totalDevuelto: 100,
-        tipoReembolso: 'Efectivo',
-      });
-      expect(r.ajustaCxC).toBe(false);
-    });
-  });
-
-  describe('Efectivo sobre venta a crédito', () => {
-    it('genera egreso Y reduce CxC (Crédito)', () => {
-      const r = calcAjustePago({
-        orden: { estatus: 'Entregada', metodo_pago: 'Crédito', folio: 'OV' },
-        totalDevuelto: 200,
-        tipoReembolso: 'Efectivo',
-      });
-      expect(r.accion).toBe('egreso');
-      expect(r.ajustaCxC).toBe(true);
-    });
-
-    it('detecta "credito" sin acento', () => {
-      const r = calcAjustePago({
-        orden: { metodo_pago: 'credito', folio: 'OV' },
-        totalDevuelto: 200,
-        tipoReembolso: 'Efectivo',
-      });
-      expect(r.ajustaCxC).toBe(true);
-    });
-
-    it('detecta "fiado"', () => {
-      const r = calcAjustePago({
-        orden: { metodo_pago: 'fiado', folio: 'OV' },
-        totalDevuelto: 200,
-        tipoReembolso: 'Efectivo',
-      });
-      expect(r.ajustaCxC).toBe(true);
-    });
-  });
-
-  describe('Nota credito', () => {
-    it('marca requiere_nota_credito si la orden estaba Facturada', () => {
-      const r = calcAjustePago({
-        orden: { estatus: 'Facturada', metodo_pago: 'Efectivo', folio: 'OV' },
-        totalDevuelto: 500,
-        tipoReembolso: 'Nota credito',
-      });
-      expect(r.accion).toBe('nota_credito');
-      expect(r.requiereNotaCredito).toBe(true);
-      expect(r.ajustaCxC).toBe(false);
-    });
-
-    it('NO marca requiere_nota_credito si solo estaba Entregada', () => {
-      const r = calcAjustePago({
-        orden: { estatus: 'Entregada', metodo_pago: 'Efectivo', folio: 'OV' },
-        totalDevuelto: 500,
-        tipoReembolso: 'Nota credito',
-      });
-      expect(r.accion).toBe('nota_credito');
-      expect(r.requiereNotaCredito).toBe(false);
-    });
-  });
-
-  describe('Nota credito sobre venta a crédito (093)', () => {
-    it('reduce la CxC y no es salida de dinero', () => {
-      const r = calcAjustePago({
-        orden: { estatus: 'Entregada', metodo_pago: 'Crédito', folio: 'OV' },
-        totalDevuelto: 80,
-        tipoReembolso: 'Nota credito',
-      });
-      expect(r.accion).toBe('nota_credito');
-      expect(r.ajustaCxC).toBe(true);
-    });
-  });
-
-  describe('shape común', () => {
-    it('monto se redondea con centavos()', () => {
-      const r = calcAjustePago({
-        orden: { metodo_pago: 'Efectivo' },
-        totalDevuelto: 100.339999,
-        tipoReembolso: 'Efectivo',
-      });
-      expect(r.monto).toBe(100.34);
-    });
-  });
-});
-
-// ─── calcTotalDevolucion ───────────────────────────────────────
-describe('calcTotalDevolucion', () => {
-  it('suma cantidad × precio_unitario por item', () => {
-    const items = [{ sku: 'HC-25K', cantidad: 2 }];
-    const total = calcTotalDevolucion(items, lineasOriginales);
-    expect(total).toBe(100); // 2 × 50
-  });
-
-  it('suma múltiples items', () => {
-    const items = [
-      { sku: 'HC-25K', cantidad: 2 }, // 100
-      { sku: 'HC-5K',  cantidad: 5 }, // 60
-    ];
-    expect(calcTotalDevolucion(items, lineasOriginales)).toBe(160);
-  });
-
-  it('preferenicia precio_unitario del item si viene', () => {
-    const items = [{ sku: 'HC-25K', cantidad: 1, precio_unitario: 60 }];
-    expect(calcTotalDevolucion(items, lineasOriginales)).toBe(60);
-  });
-
-  it('items con cantidad <= 0 no suman', () => {
-    const items = [
-      { sku: 'HC-25K', cantidad: 0 },
-      { sku: 'HC-5K', cantidad: -2 },
-      { sku: 'HC-25K', cantidad: 1 }, // suma
-    ];
-    expect(calcTotalDevolucion(items, lineasOriginales)).toBe(50);
-  });
-
-  it('items vacíos → 0', () => {
-    expect(calcTotalDevolucion([], lineasOriginales)).toBe(0);
-  });
-
-  it('items null/undefined → 0', () => {
-    expect(calcTotalDevolucion(null, lineasOriginales)).toBe(0);
-    expect(calcTotalDevolucion(undefined, lineasOriginales)).toBe(0);
-  });
-});
-
-// ─── Constantes ────────────────────────────────────────────────
-describe('constantes exportadas', () => {
-  it('TIPOS_REEMBOLSO contiene los 3 tipos', () => {
-    expect(TIPOS_REEMBOLSO).toEqual(['Efectivo', 'Nota credito', 'Reposicion']);
-  });
-
-  it('ESTATUS_DEVOLVIBLES son Entregada y Facturada', () => {
+  it('constantes y detección de crédito', () => {
+    expect(TIPOS_REEMBOLSO).toEqual(['Efectivo', 'Nota credito']);
     expect(ESTATUS_DEVOLVIBLES).toEqual(['Entregada', 'Facturada']);
+    expect(DISPOSICIONES.map(d => d.value)).toEqual(['Reintegrar', 'Merma']);
+    expect(esVentaCredito({ tipo_cobro: 'Credito' })).toBe(true);
+    expect(esVentaCredito({ metodoPago: 'Efectivo', tipoCobro: 'Contado' })).toBe(false);
+    expect(mensajeErrorDevolucion({ message: 'La orden OV-1 ya tiene una devolución registrada (una por orden)' })).toMatch(/una por orden/);
   });
 });
 
-// ─── calcReembolsoEfectivo (093) ─────────────────────────────────
-describe('calcReembolsoEfectivo', () => {
-  it('contado: se devuelve el total en efectivo', () => {
-    expect(calcReembolsoEfectivo({ tipoReembolso: 'Efectivo', esCredito: false, total: 100, saldoPendienteAntes: null })).toBe(100);
+describe('104: el frontend usa el contrato', () => {
+  it('modal sin Reposición, con disposición y UUID por intento', () => {
+    const m = src('../components/DevolucionModal.jsx');
+    expect(m).toMatch(/resolverOperacion\(opRef\.current, claveDevolucion\(datos\)\)/);
+    expect(m).toMatch(/DISPOSICIONES\.map/);
+    expect(m).not.toMatch(/'Reposicion'/);
+    expect(m).not.toMatch(/precio_unitario: l\.precio_unitario \}\)/);
   });
-  it('crédito no cobrado: ninguna salida de dinero (solo baja la CxC)', () => {
-    expect(calcReembolsoEfectivo({ tipoReembolso: 'Efectivo', esCredito: true, total: 50, saldoPendienteAntes: 200 })).toBe(0);
-  });
-  it('crédito parcialmente cobrado: sale solo lo que excede el saldo pendiente', () => {
-    expect(calcReembolsoEfectivo({ tipoReembolso: 'Efectivo', esCredito: true, total: 150, saldoPendienteAntes: 100 })).toBe(50);
-  });
-  it('crédito liquidado: se devuelve el total', () => {
-    expect(calcReembolsoEfectivo({ tipoReembolso: 'Efectivo', esCredito: true, total: 70, saldoPendienteAntes: 0 })).toBe(70);
-  });
-  it('nota de crédito y reposición nunca sacan dinero', () => {
-    expect(calcReembolsoEfectivo({ tipoReembolso: 'Nota credito', esCredito: false, total: 70, saldoPendienteAntes: null })).toBe(0);
-    expect(calcReembolsoEfectivo({ tipoReembolso: 'Reposicion', esCredito: true, total: 70, saldoPendienteAntes: 0 })).toBe(0);
+  it('la vista muestra la nota fiscal pendiente', () => {
+    expect(src('../components/views/DevolucionesView.jsx')).toMatch(/NOTA DE CRÉDITO FISCAL PENDIENTE/);
   });
 });

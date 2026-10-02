@@ -166,7 +166,16 @@ SELECT t102_assert(NOT EXISTS (SELECT 1 FROM cuartos_frios WHERE id IN ('CF-102Z
 
 \echo '── 102: devolución de cliente (095, sin cambio)'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t102_actor(1);
-SELECT update_stocks_atomic('[{"cuarto_id":"CF-102A","sku":"P102-X","delta":2,"tipo":"Devolución cliente","origen":"Devolución OV-T102"}]');
+DO $do$ BEGIN
+  IF has_function_privilege('authenticated', 'public.update_stocks_atomic(jsonb)', 'EXECUTE') THEN
+    PERFORM update_stocks_atomic('[{"cuarto_id":"CF-102A","sku":"P102-X","delta":2,"tipo":"Devolución cliente","origen":"Devolución OV-T102"}]');
+  ELSE  -- 105: la devolución es registrar_devolucion; el genérico ya no es de la API (mismo movimiento como SQL de confianza).
+    PERFORM t102_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-102A","sku":"P102-X","delta":2}]')$q$, '102-50b (105) genérico sin EXECUTE de la API', '42501');
+    RESET ROLE;
+    PERFORM update_stocks_atomic('[{"cuarto_id":"CF-102A","sku":"P102-X","delta":2,"tipo":"Devolución cliente","origen":"Devolución OV-T102"}]');
+    SET LOCAL ROLE authenticated;
+  END IF;
+END $do$;
 SELECT t102_err($q$SELECT update_stocks_atomic('[{"cuarto_id":"CF-102A","sku":"P102-X","delta":-2}]')$q$, '102-50 095: salida por el RPC genérico sigue negada', '42501');
 COMMIT;
 SELECT t102_assert(t102_cf('CF-102A', 'P102-X') = 95, '102-51 la devolución de cliente vigente sigue sumando al cuarto (+2)');

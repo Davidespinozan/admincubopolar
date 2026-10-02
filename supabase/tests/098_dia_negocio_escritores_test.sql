@@ -145,9 +145,9 @@ END $do$;
 \echo '── 098: fechas del servidor vs fechas elegidas por el usuario'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
 -- Reembolso de devolución (cliente anterior manda su fecha local): el servidor pone la suya.
-INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES ('2000-01-01', 'Egreso', 'Devoluciones', 'T98 reembolso', 50, 9821);
+DO $dv$ BEGIN IF NOT has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') THEN PERFORM t98_err($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES ('2000-01-01', 'Egreso', 'Devoluciones', 'T98 reembolso', 50, 9821)$q$, '098 (105) reembolso ligado a orden por API: negado', '42501'); ELSE INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES ('2000-01-01', 'Egreso', 'Devoluciones', 'T98 reembolso', 50, 9821); END IF; END $dv$;
 -- Frontend nuevo: sin fecha.
-INSERT INTO movimientos_contables (tipo, categoria, concepto, monto, orden_id) VALUES ('Egreso', 'Devoluciones', 'T98 reembolso nuevo', 20, 9821);
+DO $dv$ BEGIN IF NOT has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') THEN PERFORM t98_err($q$INSERT INTO movimientos_contables (tipo, categoria, concepto, monto, orden_id) VALUES ('Egreso', 'Devoluciones', 'T98 reembolso nuevo', 20, 9821)$q$, '098 (105) reembolso ligado a orden por API: negado', '42501'); ELSE INSERT INTO movimientos_contables (tipo, categoria, concepto, monto, orden_id) VALUES ('Egreso', 'Devoluciones', 'T98 reembolso nuevo', 20, 9821); END IF; END $dv$;
 -- Asientos manuales con fecha elegida por el usuario: se conservan.
 INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto) VALUES ('2026-08-15', 'Egreso', 'Devoluciones', 'T98 manual devoluciones', 5);
 INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto) VALUES ('2026-08-15', 'Egreso', 'Nómina', 'T98 manual nómina', 5);
@@ -160,7 +160,7 @@ INSERT INTO leads (nombre, estatus) VALUES ('T98 lead', 'Nuevo');
 INSERT INTO cuentas_por_pagar (proveedor, concepto, monto_original, saldo_pendiente) VALUES ('Prov 98', 'T98 sin emisión', 10, 10);
 INSERT INTO cuentas_por_pagar (proveedor, concepto, monto_original, saldo_pendiente, fecha_emision) VALUES ('Prov 98', 'T98 con emisión', 10, 10, '2026-08-15');
 COMMIT;
-SELECT t98_assert((SELECT bool_and(fecha = fin_hoy()) AND count(*) = 2 FROM movimientos_contables WHERE orden_id = 9821), '098-30 egreso de reembolso de devolución: fecha = fin_hoy() aunque el cliente envíe otra');
+SELECT t98_assert(NOT has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') OR (SELECT bool_and(fecha = fin_hoy()) AND count(*) = 2 FROM movimientos_contables WHERE orden_id = 9821), '098-30 egreso de reembolso de devolución: fecha = fin_hoy() aunque el cliente envíe otra');
 SELECT t98_assert((SELECT bool_and(fecha = '2026-08-15') AND count(*) = 2 FROM movimientos_contables WHERE concepto IN ('T98 manual devoluciones', 'T98 manual nómina')), '098-31 asientos manuales: la fecha elegida por el usuario se conserva');
 SELECT t98_assert((SELECT periodo = '2026-08' FROM costos_historial WHERE concepto = 'T98 gasto con fecha')
   AND (SELECT fecha = fin_hoy() AND periodo = to_char(fin_hoy(), 'YYYY-MM') FROM costos_historial WHERE concepto = 'T98 gasto sin fecha')
@@ -180,28 +180,28 @@ SELECT t98_assert(fin_hoy() = '2033-03-10' AND ('2033-03-11 06:30:00+00'::timest
 SET LOCAL TimeZone = 'UTC'; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
 SELECT pagar_cuenta_por_pagar('98000000-0000-0000-0000-00000000f001', 9811, 100, 'Transferencia', 'F-UTC');
 SELECT CASE WHEN t98_canon() THEN NULL ELSE pagar_nomina(9811) END;
-INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'UTC')::date, 'Egreso', 'Devoluciones', 'T98 frontera UTC', 1, 9821);
+DO $dv$ BEGIN IF NOT has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') THEN PERFORM t98_err($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'UTC')::date, 'Egreso', 'Devoluciones', 'T98 frontera UTC', 1, 9821)$q$, '098 (105) reembolso ligado a orden por API: negado', '42501'); ELSE INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'UTC')::date, 'Egreso', 'Devoluciones', 'T98 frontera UTC', 1, 9821); END IF; END $dv$;
 INSERT INTO leads (nombre, estatus) VALUES ('T98 frontera UTC', 'Nuevo');
 INSERT INTO costos_historial (tipo, categoria, concepto, monto) VALUES ('Variable', 'Gasolina', 'T98 frontera UTC', 1);
 RESET ROLE;
 SET LOCAL TimeZone = 'America/Mazatlan'; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
 SELECT pagar_cuenta_por_pagar('98000000-0000-0000-0000-00000000f002', 9812, 100, 'Transferencia', 'F-MZT');
 SELECT CASE WHEN t98_canon() THEN NULL ELSE pagar_nomina(9812) END;
-INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mazatlan')::date, 'Egreso', 'Devoluciones', 'T98 frontera MZT', 2, 9821);
+DO $dv$ BEGIN IF NOT has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') THEN PERFORM t98_err($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mazatlan')::date, 'Egreso', 'Devoluciones', 'T98 frontera MZT', 2, 9821)$q$, '098 (105) reembolso ligado a orden por API: negado', '42501'); ELSE INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mazatlan')::date, 'Egreso', 'Devoluciones', 'T98 frontera MZT', 2, 9821); END IF; END $dv$;
 INSERT INTO leads (nombre, estatus) VALUES ('T98 frontera MZT', 'Nuevo');
 INSERT INTO costos_historial (tipo, categoria, concepto, monto) VALUES ('Variable', 'Gasolina', 'T98 frontera MZT', 2);
 RESET ROLE;
 SET LOCAL TimeZone = 'America/Mexico_City'; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
 SELECT pagar_cuenta_por_pagar('98000000-0000-0000-0000-00000000f003', 9813, 100, 'Transferencia', 'F-CDMX');
 SELECT CASE WHEN t98_canon() THEN NULL ELSE pagar_nomina(9813) END;
-INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mexico_City')::date, 'Egreso', 'Devoluciones', 'T98 frontera CDMX', 3, 9821);
+DO $dv$ BEGIN IF NOT has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') THEN PERFORM t98_err($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mexico_City')::date, 'Egreso', 'Devoluciones', 'T98 frontera CDMX', 3, 9821)$q$, '098 (105) reembolso ligado a orden por API: negado', '42501'); ELSE INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mexico_City')::date, 'Egreso', 'Devoluciones', 'T98 frontera CDMX', 3, 9821); END IF; END $dv$;
 INSERT INTO leads (nombre, estatus) VALUES ('T98 frontera CDMX', 'Nuevo');
 INSERT INTO costos_historial (tipo, categoria, concepto, monto) VALUES ('Variable', 'Gasolina', 'T98 frontera CDMX', 3);
 RESET ROLE;
 SET LOCAL TimeZone = 'Europe/Madrid'; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
 SELECT pagar_cuenta_por_pagar('98000000-0000-0000-0000-00000000f004', 9814, 100, 'Transferencia', 'F-MAD');
 SELECT CASE WHEN t98_canon() THEN NULL ELSE pagar_nomina(9814) END;
-INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'Europe/Madrid')::date, 'Egreso', 'Devoluciones', 'T98 frontera MAD', 4, 9821);
+DO $dv$ BEGIN IF NOT has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') THEN PERFORM t98_err($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'Europe/Madrid')::date, 'Egreso', 'Devoluciones', 'T98 frontera MAD', 4, 9821)$q$, '098 (105) reembolso ligado a orden por API: negado', '42501'); ELSE INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'Europe/Madrid')::date, 'Egreso', 'Devoluciones', 'T98 frontera MAD', 4, 9821); END IF; END $dv$;
 INSERT INTO leads (nombre, estatus) VALUES ('T98 frontera MAD', 'Nuevo');
 INSERT INTO costos_historial (tipo, categoria, concepto, monto) VALUES ('Variable', 'Gasolina', 'T98 frontera MAD', 4);
 RESET ROLE;
@@ -212,7 +212,7 @@ SELECT t98_assert((SELECT count(*) = 4 AND bool_and(fecha = '2033-03-10') FROM p
 SELECT t98_assert(t98_canon() OR (SELECT count(*) = 4 AND bool_and(m.fecha = '2033-03-10' AND ch.fecha = '2033-03-10' AND ch.periodo = '2033-03')
                      FROM nomina_periodos np JOIN movimientos_contables m ON m.id = np.movimiento_id JOIN costos_historial ch ON ch.movimiento_id = m.id WHERE np.id BETWEEN 9811 AND 9814),
   '098-42 pago de nómina desde las cuatro zonas: egreso y costo del día 10, periodo 2033-03');
-SELECT t98_assert((SELECT count(*) = 4 AND bool_and(fecha = '2033-03-10') FROM movimientos_contables WHERE concepto LIKE 'T98 frontera %'),
+SELECT t98_assert(NOT has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') OR (SELECT count(*) = 4 AND bool_and(fecha = '2033-03-10') FROM movimientos_contables WHERE concepto LIKE 'T98 frontera %'),
   '098-43 reembolso de devolución: el cliente envió 11/10/11/11 según su zona; se guardó el 10 en las cuatro');
 SELECT t98_assert((SELECT count(*) = 4 AND bool_and(fecha = '2033-03-10') FROM leads WHERE nombre LIKE 'T98 frontera %')
   AND (SELECT count(*) = 4 AND bool_and(fecha = '2033-03-10' AND periodo = '2033-03') FROM costos_historial WHERE concepto LIKE 'T98 frontera %'),
@@ -221,7 +221,7 @@ SELECT t98_assert((SELECT count(*) = 4 AND bool_and(fecha = '2033-03-10') FROM l
 SELECT set_config('request.jwt.claims', '', true);
 INSERT INTO t98_ids VALUES ('r10', reporte_financiero('2033-03-10', '2033-03-10')::text), ('r11', reporte_financiero('2033-03-11', '2033-03-11')::text);
 SELECT t98_assert((t98_j('r10') -> 'flujo' ->> 'salidas_pagos_proveedores')::numeric = 400 AND (t98_j('r10') -> 'flujo' ->> 'salidas_nomina')::numeric = CASE WHEN t98_canon() THEN 0 ELSE 100 END
-  AND (t98_j('r10') -> 'flujo' ->> 'salidas_reembolsos')::numeric = 10 AND (t98_j('r10') -> 'flujo' ->> 'salidas_costos')::numeric = 0
+  AND (t98_j('r10') -> 'flujo' ->> 'salidas_reembolsos')::numeric = CASE WHEN NOT has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') THEN 0 ELSE 10 END AND (t98_j('r10') -> 'flujo' ->> 'salidas_costos')::numeric = 0
   AND (t98_j('r10') -> 'flujo' ->> 'salidas_otras')::numeric = 0
   AND (t98_j('r10') -> 'resultados' ->> 'nomina')::numeric = CASE WHEN t98_canon() THEN 0 ELSE 100 END AND (t98_j('r10') -> 'resultados' ->> 'costos_variables')::numeric = 10
   AND (t98_j('r10') -> 'resultados' ->> 'otros_gastos')::numeric = 0,

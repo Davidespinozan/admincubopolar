@@ -128,7 +128,7 @@ SELECT t90_assert((
       ('clientes','INSERT'), ('clientes','UPDATE'), ('clientes','DELETE'), ('comodatos','INSERT'), ('comodatos','UPDATE'), ('comodatos','DELETE'),
       ('configuracion_empresa','UPDATE'), ('costos_fijos','INSERT'), ('costos_fijos','UPDATE'), ('costos_fijos','DELETE'), ('costos_historial','INSERT'),
       ('cuartos_frios','INSERT'), ('cuartos_frios','UPDATE'), ('cuartos_frios','DELETE'),
-      ('cuentas_por_pagar','INSERT'), ('cuentas_por_pagar','UPDATE'), ('cuentas_por_pagar','DELETE'), ('devoluciones','INSERT'), ('devoluciones','DELETE'),
+      ('cuentas_por_pagar','INSERT'), ('cuentas_por_pagar','UPDATE'), ('cuentas_por_pagar','DELETE'), 
       ('empleados','INSERT'), ('empleados','UPDATE'), ('empleados','DELETE'), ('error_log','INSERT'),
       ('leads','INSERT'), ('leads','UPDATE'), ('leads','DELETE'), ('movimientos_contables','INSERT'), ('movimientos_contables','UPDATE'), ('movimientos_contables','DELETE'),
       ('notificaciones','INSERT'), ('notificaciones','UPDATE'),
@@ -145,6 +145,8 @@ SELECT t90_assert((
     SELECT 'cierres_diarios:INSERT' WHERE has_table_privilege('authenticated', 'cierres_diarios', 'INSERT')
     UNION ALL  -- 099 retira el INSERT REST de pago a proveedor (pagar_cuenta_por_pagar)
     SELECT 'pagos_proveedores:INSERT' WHERE has_table_privilege('authenticated', 'pagos_proveedores', 'INSERT')
+    UNION ALL  -- 105 retira la escritura REST de devoluciones (contrato de 104)
+    SELECT x FROM (VALUES ('devoluciones:INSERT'), ('devoluciones:DELETE')) v(x) WHERE has_table_privilege('authenticated', 'devoluciones', 'INSERT')
     UNION ALL  -- 103 retira el INSERT REST de kardex (contratos de 102)
     SELECT 'inventario_mov:INSERT' WHERE has_table_privilege('authenticated', 'inventario_mov', 'INSERT')
     UNION ALL  -- 101 retira la escritura REST de nómina (contratos de 100)
@@ -311,8 +313,18 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t90_actor(1);
 INSERT INTO t90_ids VALUES ('a1', anular_cxc_orden(9024)::text), ('a0', anular_cxc_orden(9021)::text);
 SELECT t90_err($q$SELECT anular_cxc_orden(9026)$q$, '090-104 CxC con cobros: no se anula', '22023', '%cobros%');
 SELECT t90_err($q$SELECT anular_cxc_orden(9099)$q$, '090-105 orden inexistente rechazada', '22023');
-INSERT INTO t90_ids VALUES ('d1', ajustar_cxc_devolucion(9025, 30)::text);
-SELECT t90_err($q$SELECT ajustar_cxc_devolucion(9025, 0)$q$, '090-106 monto 0 rechazado', '22023');
+-- 105: ajustar_cxc_devolucion sin EXECUTE de la API (lo hace registrar_devolucion); el mismo ajuste como SQL de confianza.
+DO $do$ BEGIN
+  IF has_function_privilege('authenticated', 'public.ajustar_cxc_devolucion(bigint,numeric)', 'EXECUTE') THEN
+    INSERT INTO t90_ids VALUES ('d1', ajustar_cxc_devolucion(9025, 30)::text);
+  ELSE
+    PERFORM t90_err($q$SELECT ajustar_cxc_devolucion(9025, 30)$q$, '090-105b (105) Admin: ajustar CxC por API negado', '42501');
+    RESET ROLE;
+    INSERT INTO t90_ids VALUES ('d1', ajustar_cxc_devolucion(9025, 30)::text);
+    SET LOCAL ROLE authenticated;
+  END IF;
+END $do$;
+SELECT t90_err($q$SELECT ajustar_cxc_devolucion(9025, 0)$q$, '090-106 monto 0 rechazado', CASE WHEN has_function_privilege('authenticated', 'public.ajustar_cxc_devolucion(bigint,numeric)', 'EXECUTE') THEN '22023' ELSE '42501' END);
 COMMIT;
 SELECT t90_assert((SELECT v::jsonb ->> 'anulada' FROM t90_ids WHERE k = 'a1') = 'true' AND NOT EXISTS (SELECT 1 FROM cuentas_por_cobrar WHERE orden_id = 9024)
   AND (SELECT v::jsonb ->> 'motivo' FROM t90_ids WHERE k = 'a0') = 'sin_cxc', '090-107 anular: CxC sin cobros eliminada; orden sin CxC → sin_cxc');
@@ -332,7 +344,9 @@ SELECT t90_err($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, con
 SELECT t90_err($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (CURRENT_DATE, 'Ingreso', 'Cobranza', 'T90 c', 1, 9022)$q$, '090-125 Admin: ingreso de cobranza de una orden denegado', '42501', '%contrato%');
 SELECT t90_err($q$UPDATE movimientos_contables SET referencia = 'MERMA-T90b' WHERE concepto = 'T90 manual'$q$, '090-126 Admin: convertir un asiento manual en uno de contrato denegado', '42501', '%contrato%');
 SELECT t90_assert(t90_rows($q$UPDATE movimientos_contables SET monto = 13 WHERE concepto = 'T90 manual'$q$) = 1, '090-127 Admin: editar asiento manual permitido');
-SELECT t90_assert(t90_rows($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (CURRENT_DATE, 'Egreso', 'Devoluciones', 'T90 devolución', 30, 9025)$q$) = 1, '090-128 Admin: egreso manual de devolución ligado a orden permitido');
+SELECT t90_assert(CASE WHEN has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') THEN t90_rows($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (CURRENT_DATE, 'Egreso', 'Devoluciones', 'T90 devolución', 30, 9025)$q$) = 1 ELSE true END, '090-128 Admin: egreso de devolución ligado a orden (manual antes de 105)');
+SELECT t90_assert(has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') OR t90_rows($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto) VALUES (CURRENT_DATE, 'Egreso', 'Devoluciones', 'T90 devolución sin orden', 30)$q$) = 1, '090-128b (105) Admin: egreso manual de Devoluciones sin orden permitido');
+DO $do$ BEGIN IF NOT has_table_privilege('authenticated', 'public.devoluciones', 'INSERT') THEN PERFORM t90_err($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (CURRENT_DATE, 'Egreso', 'Devoluciones', 'T90 devolución', 30, 9025)$q$, '090-128c (105) Admin: reembolso ligado a orden forjado negado', '42501'); END IF; END $do$;
 SELECT t90_assert(t90_rows($q$INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto) VALUES (CURRENT_DATE, 'Ingreso', 'Ventas', 'T90 ingreso manual', 5)$q$) = 1, '090-129 Admin: ingreso manual sin orden permitido');
 SELECT t90_assert(t90_rows($q$DELETE FROM movimientos_contables WHERE concepto = 'T90 manual'$q$) = 1, '090-130 Admin: borrar asiento manual permitido');
 ROLLBACK;

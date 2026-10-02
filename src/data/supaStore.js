@@ -14,7 +14,7 @@ import {
   mensajeErrorCierreFinanciero, leerOperacionCierre, guardarOperacionCierre, borrarOperacionCierre,
   resolverOperacion as resolverOperacionCierre,
 } from './cierreFinancieroLogic';
-import { validateDevolucion, calcDevolucionChanges, calcAjustePago, calcTotalDevolucion, calcReembolsoEfectivo } from './devolucionesLogic';
+import { buildRegistrarDevolucionArgs, mensajeErrorDevolucion } from './devolucionesLogic';
 import {
   validateConfirmarCarga,
   validateFirmarCarga,
@@ -2643,207 +2643,31 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── DEVOLUCIONES POST-ENTREGA ──
-      // Registra una devolución de cliente: regresa stock al cuarto frío
-      // destino y ajusta finanzas según tipo de reembolso.
-      // Solo Admin (require_admin). Una orden solo puede tener UNA devolución
-      // (MVP) — la flag `tiene_devolucion` bloquea la siguiente.
-      // Si la orden estaba Facturada, se marca requiere_nota_credito=true
-      // y queda pendiente generar CFDI tipo E (integración futura).
+      // 104: contrato registrar_devolucion (Admin). UNA devolución por orden,
+      // partidas validadas contra la orden, precio de la orden, disposición
+      // (reintegrar al cuarto elegido o merma), CxC primero y reembolso con
+      // tope de lo cobrado, un egreso, kardex y nota fiscal pendiente — todo en
+      // una transacción e idempotente por operación. Sin compensaciones del
+      // navegador.
       registrarDevolucion: async (payload = {}) => {
         const guard = requireAdmin();
         if (guard) { t()?.error(guard.error); return guard; }
-
-        const { ordenId, items, motivo, tipoReembolso, cuartoDestino, notas } = payload;
+        const built = buildRegistrarDevolucionArgs({ ...payload, operacionId: payload.operacionId || nuevoOperacionId() });
+        if (built.error) { t()?.error(built.error); return { error: built.error }; }
         try {
-          if (!ordenId) return { error: 'Orden requerida' };
-
-          // 1. SELECT orden + lineas en paralelo
-          const [{ data: orden, error: errOrd }, { data: lineas, error: errLin }] = await Promise.all([
-            supabase
-              .from('ordenes')
-              .select('id, folio, estatus, metodo_pago, total, cliente_id, tiene_devolucion')
-              .eq('id', ordenId)
-              .single(),
-            supabase
-              .from('orden_lineas')
-              .select('sku, cantidad, precio_unit, subtotal')
-              .eq('orden_id', ordenId),
-          ]);
-          if (errOrd || !orden) {
-            return { error: errOrd?.message || 'Orden no encontrada' };
+          const { data, error } = await supabase.rpc('registrar_devolucion', built.args);
+          if (error) {
+            const msg = mensajeErrorDevolucion(error);
+            console.warn('[registrarDevolucion] rpc registrar_devolucion:', error.message);
+            t()?.error(msg);
+            return { error: msg };
           }
-          if (errLin) {
-            console.warn('[registrarDevolucion] select orden_lineas:', errLin.message);
-            t()?.error('No se pudieron leer las líneas de la orden');
-            return { error: errLin.message };
+          if (data?.requiere_nota_credito) {
+            notify('credito', 'Nota de crédito fiscal pendiente',
+              `${s(data?.folio)} — la orden está facturada: falta emitir el CFDI de egreso.`, '📄', s(data?.folio));
           }
-
-          // Normalizar líneas para usar precio_unitario en helpers
-          const lineasOriginales = (lineas || []).map(l => ({
-            sku: l.sku,
-            cantidad: Number(l.cantidad),
-            precio_unitario: Number(l.precio_unit),
-          }));
-
-          // 2. Validación pura
-          const validErr = validateDevolucion({
-            orden,
-            items,
-            lineasOriginales,
-            motivo,
-            tipoReembolso,
-            cuartoDestino,
-          });
-          if (validErr) {
-            t()?.error(validErr.error);
-            return validErr;
-          }
-
-          const folio = s(orden.folio) || `ID ${ordenId}`;
-          const usuario = uname() || 'Admin';
-          const total = calcTotalDevolucion(items, lineasOriginales);
-          if (total <= 0) {
-            return { error: 'Total devuelto inválido' };
-          }
-
-          // 3. Calcular changes de stock + ajuste financiero
-          const { changes } = calcDevolucionChanges(items, cuartoDestino, usuario, folio);
-          const ajuste = calcAjustePago({
-            orden,
-            totalDevuelto: total,
-            tipoReembolso,
-          });
-
-          // 4. INSERT devoluciones (registro principal)
-          const itemsConPrecio = items.map(it => {
-            const orig = lineasOriginales.find(l => l.sku === it.sku);
-            const precio = Number(it.precio_unitario ?? orig?.precio_unitario ?? 0);
-            return {
-              sku: it.sku,
-              cantidad: Number(it.cantidad),
-              precio_unitario: precio,
-              subtotal: centavos(Number(it.cantidad) * precio),
-            };
-          });
-          const { data: devRow, error: errDev } = await supabase
-            .from('devoluciones')
-            .insert({
-              orden_id: ordenId,
-              cliente_id: orden.cliente_id || null,
-              motivo: String(motivo).trim(),
-              tipo_reembolso: tipoReembolso,
-              total,
-              items: itemsConPrecio,
-              cuarto_destino: cuartoDestino,
-              usuario,
-              notas: s(notas).trim() || null,
-              requiere_nota_credito: ajuste.requiereNotaCredito,
-            })
-            .select('id')
-            .single();
-          if (errDev || !devRow) {
-            console.warn('[registrarDevolucion] insert devoluciones:', errDev?.message);
-            t()?.error('No se pudo registrar la devolución');
-            return { error: errDev?.message || 'Error al registrar devolución' };
-          }
-          const devolucionId = devRow.id;
-
-          // 5. Aplicar reverso de stock (delta positivo)
-          if (changes.length > 0) {
-            const { error: errRpc } = await supabase.rpc('update_stocks_atomic', { p_changes: changes });
-            if (errRpc) {
-              // Rollback: borrar la devolución insertada
-              await supabase.from('devoluciones').delete().eq('id', devolucionId);
-              console.warn('[registrarDevolucion] rpc update_stocks_atomic:', errRpc.message);
-              t()?.error('No se pudo regresar el stock — devolución revertida');
-              return { error: 'No se pudo regresar el stock — devolución revertida. ' + (errRpc.message || '') };
-            }
-          }
-
-          // 6. Ajuste financiero según tipo
-          let ajustePartial = false;
-          let ajusteMsg = null;
-
-          // 093: primero se revierte lo que realmente existía.
-          //   - Venta a crédito (Efectivo o Nota de crédito): baja la CxC.
-          //   - Salida de dinero SOLO por lo que efectivamente se devuelve
-          //     (contado, o lo ya cobrado de un crédito). Un crédito no
-          //     cobrado no genera un egreso falso.
-          //   El ingreso del estado de resultados se reduce desde la fila de
-          //   devoluciones (servidor), no desde este egreso.
-          let saldoPendienteAntes = null;
-          if (ajuste.ajustaCxC && orden.cliente_id) {
-            const { data: cxc, error: errCxc } = await supabase
-              .from('cuentas_por_cobrar')
-              .select('id, saldo_pendiente')
-              .eq('orden_id', ordenId)
-              .maybeSingle();
-            if (!errCxc && cxc) {
-              saldoPendienteAntes = Number(cxc.saldo_pendiente || 0);
-              // 090: la CxC y el saldo del cliente se ajustan con el contrato
-              // ajustar_cxc_devolucion (misma aritmética, una transacción).
-              const { error: errUpdCxc } = await supabase.rpc('ajustar_cxc_devolucion', { p_orden_id: Number(ordenId), p_monto: total });
-              if (errUpdCxc) {
-                console.warn('[registrarDevolucion] rpc ajustar_cxc_devolucion (parcial):', errUpdCxc.message);
-                ajustePartial = true;
-                ajusteMsg = 'Devolución registrada pero la CxC no se ajustó. Revísala manualmente.';
-              }
-            }
-          }
-
-          const reembolso = calcReembolsoEfectivo({
-            tipoReembolso,
-            esCredito: ajuste.ajustaCxC,
-            total,
-            saldoPendienteAntes,
-          });
-          if (ajuste.accion === 'egreso' && reembolso > 0) {
-            // 098: sin fecha — el día de negocio del reembolso lo pone el servidor.
-            const { error: errEgr } = await supabase.from('movimientos_contables').insert({
-              tipo: 'Egreso',
-              categoria: 'Devoluciones',
-              concepto: ajuste.conceptoEgreso || `Devolución cliente ${folio}`,
-              monto: reembolso,
-              orden_id: ordenId,
-            });
-            if (errEgr) {
-              // Stock + devolución ya están bien; el egreso es secundario.
-              console.warn('[registrarDevolucion] insert egreso (parcial):', errEgr.message);
-              notify('advertencia', 'Asiento contable pendiente',
-                `Devolución ${folio} — el reembolso en efectivo no se registró, regístralo manual.`,
-                '⚠️', folio);
-              ajustePartial = true;
-              ajusteMsg = 'Devolución registrada y stock regresado, pero el reembolso en efectivo no. Regístralo manual.';
-            }
-          }
-
-          // 7. Marcar la orden con flag (idempotente: si falla, devolución
-          //    ya está bien — no rompemos por esto).
-          const { error: errFlag } = await supabase
-            .from('ordenes')
-            .update({ tiene_devolucion: true })
-            .eq('id', ordenId);
-          if (errFlag) {
-            console.warn('[registrarDevolucion] update orden.tiene_devolucion (no crítico):', errFlag.message);
-          }
-
-          // 8. Audit
-          const itemsTxt = items.map(it => `${it.cantidad}×${it.sku}`).join(', ');
-          await log('Devolución', 'Órdenes',
-            `${folio} — ${tipoReembolso} — ${itemsTxt} — $${total} — ${s(motivo).trim()}`
-          );
-
-          if (ajuste.requiereNotaCredito) {
-            notify('credito', 'Nota de crédito pendiente',
-              `${folio} — Genera CFDI tipo E desde Facturación cuando esté integrado.`,
-              '📄', folio);
-          }
-
           rf();
-          if (ajustePartial) {
-            return { partial: true, error: ajusteMsg, devolucionId };
-          }
-          return { devolucionId };
+          return { devolucionId: data?.devolucion_id, data };
         } catch (e) {
           console.error('[registrarDevolucion] excepción:', e);
           t()?.error('Error inesperado al registrar devolución');

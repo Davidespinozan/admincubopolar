@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -2707,6 +2707,171 @@ await conc076();
 await fe076();
 console.log('  concurrencia + frontend↔DB (076, 086, 087, 088, 092, 093, 096, 100) tras 102/103: PASS');
 
+// ═══ 104/105 — devolución de cliente por contrato ═══
+{
+  const ok = (await c.query(`SELECT to_regprocedure('public.registrar_devolucion(uuid,bigint,jsonb,text,text,text,text,text)') IS NULL
+    AND has_table_privilege('authenticated', 'public.devoluciones', 'INSERT')
+    AND has_function_privilege('authenticated', 'public.update_stocks_atomic(jsonb)', 'EXECUTE') AS a`)).rows[0].a;
+  console.log(`  DEVOLUCIONES_PARITY_CHECK[pre-104]: ${ok ? 'PASS' : 'FAIL'}`);
+  if (!ok) process.exit(1);
+  // Paridad con producción (catálogo verificado read-only): 003 deja aquí un
+  // CHECK monto_original > 0 en cuentas_por_cobrar que producción no tiene; una
+  // venta a crédito devuelta completa queda legítimamente en original 0.
+  await c.query('ALTER TABLE cuentas_por_cobrar DROP CONSTRAINT IF EXISTS cuentas_por_cobrar_monto_original_check');
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 104 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '104_devolucion_canonica.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 104 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 104)'); process.exit(1); }
+const SUITES_104 = [['090', '090_b4_privilegios_test.sql'], ['092', '092_empaque_entrega_test.sql'], ['093', '093_finanzas_reverso_test.sql'],
+  ['095', '095_cliente_obsoleto_test.sql'], ['096', '096_dia_negocio_caja_test.sql'], ['098', '098_dia_negocio_escritores_test.sql'],
+  ['100', '100_nomina_canonica_test.sql'], ['102', '102_cuartos_inventario_test.sql']];
+console.log('── PRUEBAS 104 (antes de 105)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/104_devoluciones_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (104)'); process.exit(1); }
+}
+await reruns090('104', ['072']);
+for (const [etq, f] of SUITES_104) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 104)`); process.exit(1); }
+  console.log(`  ${etq} tras 104: PASS`);
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 105 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '105_contencion_devoluciones.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+console.log('── PRUEBAS 104 (tras 105)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/104_devoluciones_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (104 tras 105)'); process.exit(1); }
+}
+await reruns090('105', ['072']);
+for (const [etq, f] of SUITES_104) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 105)`); process.exit(1); }
+  console.log(`  ${etq} tras 105: PASS`);
+}
+async function conc104() {
+  console.log('── 104 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const SUB = (k) => 'a4c00000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM devoluciones WHERE orden_id BETWEEN 10461 AND 10469;
+    DELETE FROM movimientos_contables WHERE orden_id BETWEEN 10461 AND 10469;
+    DELETE FROM mermas_efectos WHERE merma_id IN (SELECT id FROM mermas WHERE sku LIKE 'C104-%'); DELETE FROM mermas WHERE sku LIKE 'C104-%';
+    DELETE FROM inventario_mov WHERE producto LIKE 'C104-%';
+    DELETE FROM stock_operaciones WHERE operacion_id::text LIKE 'a4c1%' OR orden_id BETWEEN 10461 AND 10469;
+    DELETE FROM pagos WHERE orden_id BETWEEN 10461 AND 10469;
+    DELETE FROM cuentas_por_cobrar WHERE orden_id BETWEEN 10461 AND 10469;
+    DELETE FROM orden_lineas WHERE orden_id BETWEEN 10461 AND 10469; DELETE FROM ordenes WHERE id BETWEEN 10461 AND 10469;
+    DELETE FROM auditoria WHERE usuario LIKE 'AdminC104%' OR detalle LIKE 'OV-1046%';
+    DELETE FROM cuartos_frios WHERE id = 'CF-C104'; DELETE FROM productos WHERE sku LIKE 'C104-%';
+    DELETE FROM clientes WHERE id = 10461;
+    DELETE FROM usuarios WHERE id BETWEEN 10461 AND 10469; DELETE FROM auth.users WHERE id::text LIKE 'a4c00000-%';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) SELECT ('a4c00000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'c' || k || '@t104c' FROM generate_series(1, 2) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (10461, 'AdminC104-1', 'c1@t104c', 'Admin', 'Activo', '${SUB(1)}'), (10462, 'AdminC104-2', 'c2@t104c', 'Admin', 'Activo', '${SUB(2)}');
+    INSERT INTO clientes (id, nombre, rfc, saldo) VALUES (10461, 'Cliente C104', 'XAXX010101000', 100);
+    INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('C104-A', 'Hielo C104', 'Producto Terminado', 10, 0, 0);
+    INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-C104', 'Cuarto C104', '{"C104-A": 100}');
+    INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro) VALUES
+      (10461, 'OV-10461', 10461, 'Cliente C104', 'x', 100, 'Entregada', 'Efectivo', 'Contado'),
+      (10462, 'OV-10462', 10461, 'Cliente C104', 'x', 100, 'Entregada', 'Efectivo', 'Contado'),
+      (10463, 'OV-10463', 10461, 'Cliente C104', 'x', 200, 'Entregada', 'Crédito',  'Credito'),
+      (10464, 'OV-10464', 10461, 'Cliente C104', 'x', 100, 'Entregada', 'Efectivo', 'Contado'),
+      (10465, 'OV-10465', 10461, 'Cliente C104', 'x', 100, 'Entregada', 'Efectivo', 'Contado'),
+      (10466, 'OV-10466', 10461, 'Cliente C104', 'x', 100, 'Entregada', 'Efectivo', 'Contado');
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) SELECT id, 'C104-A', 10, 10, 100 FROM ordenes WHERE id IN (10461, 10462, 10464, 10465, 10466);
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) VALUES (10463, 'C104-A', 20, 10, 200);
+    INSERT INTO pagos (cliente_id, orden_id, monto, metodo_pago, fecha, referencia, saldo_antes, saldo_despues)
+      SELECT 10461, id, 100, 'Efectivo', fin_hoy(), 'C104-' || id, 0, 0 FROM ordenes WHERE id IN (10461, 10462, 10464, 10465, 10466);
+    INSERT INTO pagos (cliente_id, orden_id, monto, metodo_pago, fecha, referencia, saldo_antes, saldo_despues) VALUES (10461, 10463, 100, 'Efectivo', fin_hoy(), 'C104-10463', 200, 100);
+    INSERT INTO cuentas_por_cobrar (cliente_id, orden_id, fecha_venta, monto_original, monto_pagado, saldo_pendiente, estatus) VALUES (10461, 10463, fin_hoy(), 200, 100, 100, 'Parcial');
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const carrera = async (subA, sqlA, pA, subB, sqlB, pB) => {
+    if (subA) await actor(a, subA); else { await a.query('BEGIN'); await a.query('SET LOCAL ROLE service_role'); await a.query(`SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true)`); }
+    await actor(b, subB);
+    const ra = await a.query(sqlA, pA).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(sqlB, pB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const cf = async () => n(`SELECT COALESCE((stock->>'C104-A')::int, 0) FROM cuartos_frios WHERE id = 'CF-C104'`);
+  const DEV = `SELECT registrar_devolucion($1::uuid, $2::bigint, $3::jsonb, $4, $5, $6, 'prueba concurrente') AS r`;
+  // 1. Dos navegadores devuelven la misma orden a la vez (operaciones distintas).
+  let r = await carrera(SUB(1), DEV, ['a4c10000-0000-0000-0000-000000000001', 10461, '[{"sku":"C104-A","cantidad":2}]', 'Efectivo', 'Reintegrar', 'CF-C104'],
+                        SUB(2), DEV, ['a4c10000-0000-0000-0000-000000000002', 10461, '[{"sku":"C104-A","cantidad":3}]', 'Efectivo', 'Reintegrar', 'CF-C104']);
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && r.rb.code === '23505' && await n(`SELECT count(*) FROM devoluciones WHERE orden_id = 10461`) === 1
+     && await n(`SELECT count(*) FROM movimientos_contables WHERE orden_id = 10461`) === 1 && await cf() === 102,
+     '104-C1 dos devoluciones simultáneas de la misma orden: una sola (+2 al cuarto, un reembolso); la otra espera y se rechaza');
+  // 2. Misma operación simultánea: replay.
+  r = await carrera(SUB(1), DEV, ['a4c10000-0000-0000-0000-000000000003', 10462, '[{"sku":"C104-A","cantidad":1}]', 'Efectivo', 'Merma', null],
+                    SUB(1), DEV, ['a4c10000-0000-0000-0000-000000000003', 10462, '[{"sku":"C104-A","cantidad":1}]', 'Efectivo', 'Merma', null]);
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && r.rb.row.r.replay === true && await n(`SELECT count(*) FROM movimientos_contables WHERE orden_id = 10462`) === 1,
+     '104-C2 misma devolución (mismo UUID) simultánea: un efecto, la segunda es replay');
+  // 3. Devolución vs abono de CxC (crédito): se serializan sobre la CxC.
+  const cxcId = await n(`SELECT id FROM cuentas_por_cobrar WHERE orden_id = 10463`);
+  r = await carrera(SUB(2), `SELECT abonar_cxc($1::bigint, 50, 'Efectivo') AS r`, [cxcId],
+                    SUB(1), DEV, ['a4c10000-0000-0000-0000-000000000004', 10463, '[{"sku":"C104-A","cantidad":10}]', 'Efectivo', 'Reintegrar', 'CF-C104']);
+  const cxc = (await c.query(`SELECT monto_original::float AS o, monto_pagado::float AS p, saldo_pendiente::float AS s FROM cuentas_por_cobrar WHERE id = $1`, [cxcId])).rows[0];
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && Number(r.rb.row.r.cxc_reducido) === 50 && Number(r.rb.row.r.reembolso) === 50
+     && cxc.s === 0 && Math.abs(cxc.o - cxc.p - cxc.s) < 0.001 && await n(`SELECT saldo FROM clientes WHERE id = 10461`) === 0,
+     '104-C3 abono de 50 y devolución de 100 a la vez: la devolución ve saldo 50 → CxC −50, reembolso 50; CxC coherente y saldo del cliente 0');
+  // 4. Devolución vs ajuste de conteo en el mismo cuarto.
+  const base = await cf();
+  r = await carrera(SUB(2), `SELECT ajustar_existencia_cuarto('a4c10000-0000-0000-0000-000000000005', 'CF-C104', 'C104-A', 50, 'Conteo físico C104') AS r`, [],
+                    SUB(1), DEV, ['a4c10000-0000-0000-0000-000000000006', 10464, '[{"sku":"C104-A","cantidad":4}]', 'Efectivo', 'Reintegrar', 'CF-C104']);
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && await cf() === 54, `104-C4 ajuste a 50 y devolución de 4 al mismo cuarto: serializados (50 + 4 = 54; antes ${base})`);
+  // 5. Devolución vs merma de cuarto.
+  r = await carrera(SUB(2), `SELECT registrar_merma_cuarto('a4c10000-0000-0000-0000-000000000007', 'CF-C104', 'C104-A', 10, 'Bolsa rota') AS r`, [],
+                    SUB(1), DEV, ['a4c10000-0000-0000-0000-000000000008', 10465, '[{"sku":"C104-A","cantidad":5}]', 'Efectivo', 'Reintegrar', 'CF-C104']);
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && await cf() === 49 && await n(`SELECT count(*) FROM cuartos_frios WHERE (stock->>'C104-A')::int < 0`) === 0,
+     '104-C5 merma de 10 y devolución de 5 al mismo cuarto: serializadas (54 − 10 + 5 = 49), sin negativos');
+  // 6. Devolución mientras el backend factura la orden.
+  r = await carrera(null, `UPDATE ordenes SET estatus = 'Facturada' WHERE id = 10466 RETURNING id AS r`, [],
+                    SUB(1), DEV, ['a4c10000-0000-0000-0000-000000000009', 10466, '[{"sku":"C104-A","cantidad":1}]', 'Efectivo', 'Merma', null]);
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && r.rb.row.r.requiere_nota_credito === true,
+     '104-C6 facturación concurrente: la devolución espera la orden y ve Facturada (nota fiscal pendiente)');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (104 concurrencia)'); process.exit(1); }
+}
+await conc104();
+console.log('── concurrencia + frontend↔DB tras 104/105');
+await conc102();
+await conc100();
+await conc096();
+await conc086();
+await fe086();
+await conc087();
+await fe087();
+await conc088();
+await conc092();
+await conc093();
+await conc076();
+await fe076();
+console.log('  concurrencia + frontend↔DB (076, 086, 087, 088, 092, 093, 096, 100, 102) tras 104/105: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -2754,7 +2919,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 100
   'crear_periodo_nomina','generar_recibos_nomina','editar_recibo_nomina',
   // 102
-  'ajustar_existencia_cuarto','registrar_merma_cuarto','cuarto_tiene_historia'];
+  'ajustar_existencia_cuarto','registrar_merma_cuarto','cuarto_tiene_historia',
+  // 104
+  'registrar_devolucion'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
@@ -2775,7 +2942,7 @@ console.log('  SEARCH_PATH_CHECK:', spOk ? 'PASS' : 'FAIL', `(${sp.filter(f=>f.c
 const objs = (await c.query(`SELECT n.nspname, c.relname AS name FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname IN ('public','pg_catalog')
   UNION SELECT n.nspname, p.proname FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname IN ('public','pg_catalog')`)).rows;
 const where = new Map(); for (const o of objs) { if (!where.has(o.name)) where.set(o.name, new Set()); where.get(o.name).add(o.nspname); }
-const KW = new Set(['except','intersect','if','exists','coalesce','nullif','greatest','least','case','when','then','else','end','and','or','not','in','select','from','where','values','returning','into','set','update','insert','delete','for','loop','perform','raise','exception','return','begin','declare','found','is','null','true','false','as','on','using','errcode','array','row','distinct','all','any','some','cast','interval','date','numeric','text','bigint','int','integer','boolean','jsonb','varchar','record','rowtype','type','with','check','lateral','limit','order','by','group','having','each','statement','new','old','trigger','language','plpgsql','sql','stable','security','definer','search_path','pg_temp','public','function','replace','create','returns','void','diagnostics','get','row_count','strict','conflict','nothing','filter']);
+const KW = new Set(['except','intersect','if','exists','coalesce','nullif','greatest','least','case','when','then','else','end','and','or','not','in','select','from','where','values','returning','into','set','update','insert','delete','for','loop','perform','raise','exception','return','begin','declare','found','is','null','true','false','as','on','using','errcode','array','row','distinct','all','any','some','cast','interval','date','numeric','text','bigint','int','integer','boolean','jsonb','varchar','record','rowtype','type','with','check','lateral','limit','order','by','group','having','each','statement','new','old','trigger','language','plpgsql','sql','stable','security','definer','search_path','pg_temp','public','function','replace','create','returns','void','diagnostics','get','row_count','strict','conflict','nothing','filter','join']);
 const refs = {};
 for (const f of sp) {
   const body = f.def.split('$function$')[1] || f.def;

@@ -1,214 +1,129 @@
-// devolucionesLogic.js — lógica pura de devoluciones post-entrega.
-// Estos helpers son determinísticos y sin Supabase: todos los tests viven
-// en src/__tests__/devoluciones.test.js.
+// devolucionesLogic.js — 104: devolución de cliente por contrato
+// (registrar_devolucion). El servidor decide todo lo autoritativo: precio
+// (línea original de la orden), total, cantidades máximas, CxC, saldo del
+// cliente, reembolso (tope = lo cobrado), egreso, kardex y nota fiscal. El
+// cliente solo arma SKU + cantidad, tipo, disposición, cuarto y motivo, y
+// conserva el UUID del intento. Tests en src/__tests__/devoluciones.test.js.
 import { centavos } from '../utils/safe';
 
 export const ESTATUS_DEVOLVIBLES = ['Entregada', 'Facturada'];
-export const TIPOS_REEMBOLSO = ['Efectivo', 'Nota credito', 'Reposicion'];
+// 104: 'Reposicion' bloqueada hasta que exista el flujo de reposición (salida
+// del producto de reemplazo). 'Nota credito' solo en ventas a crédito.
+export const TIPOS_REEMBOLSO = ['Efectivo', 'Nota credito'];
+export const DISPOSICIONES = [
+  { value: 'Reintegrar', label: 'Reintegrar a inventario' },
+  { value: 'Merma', label: 'Merma (dañado / no vendible)' },
+];
+
+const txt = (v) => (v == null ? '' : String(v)).trim();
+
+/** ¿La orden es venta a crédito? (aviso de UI; el servidor decide por su CxC). */
+export function esVentaCredito(orden) {
+  const tc = txt(orden?.tipoCobro ?? orden?.tipo_cobro).toLowerCase();
+  const mp = txt(orden?.metodoPago ?? orden?.metodo_pago).toLowerCase();
+  return tc === 'credito' || tc === 'crédito' || mp.includes('crédito') || mp.includes('credito');
+}
 
 /**
- * Valida que una devolución pueda registrarse.
- *
- * @param {Object} params
- * @param {Object} params.orden            — { estatus, tiene_devolucion, metodo_pago }
- * @param {Array}  params.items            — [{ sku, cantidad, precio_unitario, ... }]
- * @param {Array}  params.lineasOriginales — [{ sku, cantidad }] de la orden
- * @param {string} params.motivo
- * @param {string} params.tipoReembolso
- * @param {string} params.cuartoDestino
+ * Validación de captura (UX). El servidor vuelve a validar todo.
  * @returns {{ error: string }|null}
  */
-export function validateDevolucion({ orden, items, lineasOriginales, motivo, tipoReembolso, cuartoDestino }) {
-  const est = String(orden?.estatus || '').trim();
+export function validateDevolucion({ orden, items, lineasOriginales, motivo, tipoReembolso, disposicion, cuartoDestino }) {
+  const est = txt(orden?.estatus);
   if (!ESTATUS_DEVOLVIBLES.includes(est)) {
     return { error: `Solo se devuelven órdenes Entregadas o Facturadas (estatus actual: ${est || 'desconocido'})` };
   }
   if (orden?.tiene_devolucion || orden?.tieneDevolucion) {
     return { error: 'Esta orden ya tiene una devolución registrada' };
   }
-  if (!Array.isArray(items) || items.length === 0) {
-    return { error: 'Captura al menos un producto a devolver' };
-  }
-  if (!String(motivo || '').trim()) {
-    return { error: 'Motivo requerido' };
-  }
+  if (!Array.isArray(items) || items.length === 0) return { error: 'Captura al menos un producto a devolver' };
+  if (txt(motivo).length < 3) return { error: 'Motivo requerido' };
   if (!TIPOS_REEMBOLSO.includes(tipoReembolso)) {
-    return { error: 'Tipo de reembolso inválido' };
+    return { error: tipoReembolso === 'Reposicion' ? 'La reposición no está disponible todavía' : 'Tipo de reembolso inválido' };
   }
-  if (!String(cuartoDestino || '').trim()) {
-    return { error: 'Selecciona el cuarto frío destino' };
+  if (tipoReembolso === 'Nota credito' && !esVentaCredito(orden)) {
+    return { error: 'Nota de crédito solo en ventas a crédito (no existe saldo a favor del cliente)' };
   }
+  if (!DISPOSICIONES.some(d => d.value === disposicion)) return { error: 'Elige qué pasa con el producto devuelto' };
+  if (disposicion === 'Reintegrar' && !txt(cuartoDestino)) return { error: 'Selecciona el cuarto frío destino' };
 
-  // Cantidad por SKU no debe exceder lo originalmente entregado
   const originalPorSku = {};
   for (const l of (lineasOriginales || [])) {
-    const sku = String(l?.sku || '');
-    if (!sku) continue;
-    originalPorSku[sku] = (originalPorSku[sku] || 0) + Number(l?.cantidad || 0);
+    const sku = txt(l?.sku);
+    if (sku) originalPorSku[sku] = (originalPorSku[sku] || 0) + Number(l?.cantidad || 0);
   }
+  const vistos = new Set();
   for (const it of items) {
-    const sku = String(it?.sku || '');
-    const qty = Number(it?.cantidad || 0);
+    const sku = txt(it?.sku);
+    const qty = Number(it?.cantidad);
     if (!sku) return { error: 'Item sin SKU' };
-    if (!Number.isFinite(qty) || qty <= 0) {
-      return { error: `Cantidad inválida para ${sku}` };
-    }
+    if (vistos.has(sku)) return { error: `${sku} repetido` };
+    vistos.add(sku);
+    if (!Number.isInteger(qty) || qty <= 0) return { error: `Cantidad inválida para ${sku}` };
     const max = originalPorSku[sku] || 0;
-    if (max <= 0) {
-      return { error: `${sku} no estaba en la orden original` };
-    }
-    if (qty > max) {
-      return { error: `${sku}: máximo ${max} (entregado originalmente), pediste ${qty}` };
-    }
+    if (max <= 0) return { error: `${sku} no estaba en la orden original` };
+    if (qty > max) return { error: `${sku}: máximo ${max} (entregado originalmente), pediste ${qty}` };
   }
-
   return null;
 }
 
-/**
- * Calcula los changes para `update_stocks_atomic` (delta POSITIVO: regresa
- * stock al cuarto destino).
- *
- * @param {Array}  items          — [{ sku, cantidad }, ...]
- * @param {string} cuartoDestino  — id del cuarto frío
- * @param {string} usuario
- * @param {string} ordenRef       — folio o "ID N" para origen
- * @returns {{ changes: Array }}
- */
-export function calcDevolucionChanges(items, cuartoDestino, usuario, ordenRef) {
-  const changes = [];
-  if (!Array.isArray(items)) return { changes };
-  const cf = String(cuartoDestino || '').trim();
-  if (!cf) return { changes };
-  const user = String(usuario || 'Admin');
-  const ref = String(ordenRef || 'orden');
-
-  for (const it of items) {
-    const sku = String(it?.sku || '');
-    const qty = Number(it?.cantidad || 0);
-    if (!sku || qty <= 0) continue;
-    changes.push({
-      cuarto_id: cf,
-      sku,
-      delta: qty,
-      tipo: 'Devolución cliente',
-      origen: `Devolución ${ref}`,
-      usuario: user,
-    });
-  }
-  return { changes };
-}
-
-/**
- * Calcula el ajuste financiero según tipo de reembolso. Solo describe la
- * intención (qué tabla mover y con qué payload base); el caller en
- * supaStore.js es quien ejecuta la mutación real con SQL.
- *
- * Tipos:
- *   - 'Reposicion'   → no toca finanzas (solo se entrega producto físico)
- *   - 'Efectivo'     → genera Egreso contable categoría 'Devoluciones'
- *   - 'Nota credito' → marca requiere_nota_credito=true (CFDI tipo E pendiente);
- *                      si la orden NO estaba facturada, se trata como Efectivo.
- *   - Crédito (orden a crédito + tipo Efectivo): adicional, reduce CxC
- *
- * @param {Object} params
- * @param {Object} params.orden           — { estatus, metodo_pago, total }
- * @param {number} params.totalDevuelto
- * @param {string} params.tipoReembolso
- * @returns {{
- *   accion: 'ninguna'|'egreso'|'nota_credito',
- *   ajustaCxC: boolean,
- *   monto: number,
- *   requiereNotaCredito: boolean,
- *   conceptoEgreso?: string,
- * }}
- */
-export function calcAjustePago({ orden, totalDevuelto, tipoReembolso }) {
-  const monto = centavos(Number(totalDevuelto || 0));
-  const metodo = String(orden?.metodo_pago || orden?.metodoPago || '').toLowerCase();
-  const esCredito = metodo.includes('crédito') || metodo.includes('credito') || metodo.includes('fiado');
-  const folio = String(orden?.folio || '');
-  const conceptoEgreso = `Devolución cliente ${folio ? folio + ' ' : ''}— $${monto}`;
-
-  if (tipoReembolso === 'Reposicion') {
-    return { accion: 'ninguna', ajustaCxC: false, monto, requiereNotaCredito: false };
-  }
-
-  if (tipoReembolso === 'Nota credito') {
-    // Marca el flag para CFDI tipo E pendiente. Si la orden estaba Facturada
-    // (CFDI tipo I emitido), Santiago necesita disparar la nota crédito desde
-    // facturación cuando se integre.
-    // 093: en una venta a crédito la nota de crédito reduce lo que el cliente
-    // debe (CxC); nunca es salida de dinero.
-    const facturada = String(orden?.estatus || '').trim() === 'Facturada';
-    return {
-      accion: 'nota_credito',
-      ajustaCxC: esCredito,
-      monto,
-      requiereNotaCredito: facturada,
-    };
-  }
-
-  // tipoReembolso === 'Efectivo'
-  // - Si era venta a crédito: además de egreso, reducir CxC pendiente.
-  // - Si era venta de contado: solo egreso contable.
-  return {
-    accion: 'egreso',
-    ajustaCxC: esCredito,
-    monto,
-    requiereNotaCredito: false,
-    conceptoEgreso,
-  };
-}
-
-/**
- * Calcula el total de los items a partir de líneas originales (precio).
- * Cantidad × precio_unitario por línea, sumado.
- *
- * @param {Array} items             — [{ sku, cantidad, precio_unitario? }]
- * @param {Array} lineasOriginales  — [{ sku, precio_unitario }] de la orden
- * @returns {number}
- */
+/** Vista previa del total con los precios de la orden (el servidor recalcula). */
 export function calcTotalDevolucion(items, lineasOriginales) {
   if (!Array.isArray(items)) return 0;
   const precioPorSku = {};
   for (const l of (lineasOriginales || [])) {
     const sku = String(l?.sku || '');
     if (!sku) continue;
-    const precio = Number(l?.precio_unitario ?? l?.precioUnit ?? l?.precio ?? 0);
-    precioPorSku[sku] = precio;
+    precioPorSku[sku] = Number(l?.precio_unitario ?? l?.precioUnit ?? l?.precio ?? 0);
   }
   let total = 0;
   for (const it of items) {
     const sku = String(it?.sku || '');
     const qty = Number(it?.cantidad || 0);
     if (!sku || qty <= 0) continue;
-    const precio = Number(it?.precio_unitario ?? it?.precioUnit ?? precioPorSku[sku] ?? 0);
-    total += qty * precio;
+    total += qty * Number(precioPorSku[sku] ?? 0);
   }
   return centavos(total);
 }
 
+/** Clave estable del intento (mismo intento → mismo UUID entre reintentos). */
+export function claveDevolucion({ ordenId, items, tipoReembolso, disposicion, cuartoDestino, motivo, notas } = {}) {
+  const partidas = (Array.isArray(items) ? items : []).map(it => `${txt(it?.sku)}:${Number(it?.cantidad)}`).sort().join(',');
+  return ['DEV', txt(ordenId), partidas, txt(tipoReembolso), txt(disposicion), disposicion === 'Reintegrar' ? txt(cuartoDestino) : '', txt(motivo), txt(notas)].join('|');
+}
+
 /**
- * 093: dinero que REALMENTE se devuelve al cliente (salida de efectivo).
- *
- *   - Solo el reembolso tipo 'Efectivo' puede sacar dinero.
- *   - Venta de contado: se devuelve el total.
- *   - Venta a crédito: primero se reduce lo que el cliente debe (CxC); solo
- *     lo que exceda el saldo pendiente ya se había cobrado y sale en efectivo.
- *     Una venta a crédito no cobrada NO genera salida de dinero.
- *
- * @param {Object} p
- * @param {string} p.tipoReembolso
- * @param {boolean} p.esCredito
- * @param {number} p.total                    — total devuelto
- * @param {number|null} p.saldoPendienteAntes — saldo de la CxC antes del ajuste (null = sin CxC)
- * @returns {number}
+ * Parámetros de registrar_devolucion: solo SKU y cantidad por partida (nunca
+ * precio, total, cliente, cobrado, CxC ni reembolso).
+ * @returns {{args:Object}|{error:string}}
  */
-export function calcReembolsoEfectivo({ tipoReembolso, esCredito, total, saldoPendienteAntes }) {
-  const monto = centavos(Number(total || 0));
-  if (tipoReembolso !== 'Efectivo' || !(monto > 0)) return 0;
-  if (!esCredito) return monto;
-  if (saldoPendienteAntes === null || saldoPendienteAntes === undefined) return monto;
-  return centavos(Math.max(0, monto - Number(saldoPendienteAntes || 0)));
+export function buildRegistrarDevolucionArgs({ operacionId, ordenId, items, tipoReembolso, disposicion, cuartoDestino, motivo, notas } = {}) {
+  if (!txt(operacionId)) return { error: 'Falta el identificador de la operación' };
+  const id = Number(ordenId);
+  if (!Number.isInteger(id) || id <= 0) return { error: 'Orden requerida' };
+  const partidas = (Array.isArray(items) ? items : []).map(it => ({ sku: txt(it?.sku), cantidad: Number(it?.cantidad) }));
+  if (partidas.length === 0 || partidas.some(p => !p.sku || !Number.isInteger(p.cantidad) || p.cantidad <= 0)) {
+    return { error: 'Cada partida necesita SKU y una cantidad entera mayor a 0' };
+  }
+  return {
+    args: {
+      p_operacion_id: txt(operacionId),
+      p_orden_id: id,
+      p_items: partidas,
+      p_tipo_reembolso: txt(tipoReembolso),
+      p_disposicion: txt(disposicion),
+      p_cuarto_id: disposicion === 'Reintegrar' ? (txt(cuartoDestino) || null) : null,
+      p_motivo: txt(motivo),
+      p_notas: txt(notas) || null,
+    },
+  };
+}
+
+/** Mensaje en español para errores del contrato. */
+export function mensajeErrorDevolucion(error) {
+  const msg = txt(typeof error === 'string' ? error : error?.message);
+  if (/ya tiene una devolución/i.test(msg)) return 'Esta orden ya tiene una devolución registrada (una por orden).';
+  if (/operacion_id ya usado con otros datos/i.test(msg)) return 'Este intento ya se registró con otros datos. Cierra y vuelve a abrir la devolución.';
+  if (/no autorizado/i.test(msg)) return 'Solo Admin registra devoluciones.';
+  return msg || 'No se pudo registrar la devolución';
 }

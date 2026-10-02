@@ -231,18 +231,39 @@ UPDATE ordenes SET estatus = 'Entregada' WHERE folio = 'OV-9304';
 SELECT crear_cxc_orden(t93_o('OV-9304'), 30);
 COMMIT;
 INSERT INTO t93_ids VALUES ('b5', t93_rep()::text);
+-- 104: con el contrato, las líneas de la orden fijan precio y tope (fixture de confianza).
+DO $do$ BEGIN
+  IF to_regprocedure('public.registrar_devolucion(uuid,bigint,jsonb,text,text,text,text,text)') IS NOT NULL THEN
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) VALUES (t93_o('OV-9304'), 'P93-HIELO', 20, 10, 200), (t93_o('OV-9301'), 'P93-HIELO', 100, 10, 1000);
+  END IF;
+END $do$;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(1);
 -- Crédito no cobrado, reembolso 'Efectivo': solo se reduce la CxC (sin egreso).
-INSERT INTO devoluciones (orden_id, cliente_id, motivo, tipo_reembolso, total, items, usuario) VALUES (t93_o('OV-9304'), 9340, 'T93 mal estado', 'Efectivo', 50, '[]', 'Admin 93');
-SELECT ajustar_cxc_devolucion(t93_o('OV-9304'), 50);
+DO $do$ BEGIN
+  IF to_regprocedure('public.registrar_devolucion(uuid,bigint,jsonb,text,text,text,text,text)') IS NULL THEN
+    INSERT INTO devoluciones (orden_id, cliente_id, motivo, tipo_reembolso, total, items, usuario) VALUES (t93_o('OV-9304'), 9340, 'T93 mal estado', 'Efectivo', 50, '[]', 'Admin 93');
+    PERFORM ajustar_cxc_devolucion(t93_o('OV-9304'), 50);
+  ELSE
+    EXECUTE 'SELECT registrar_devolucion($1, $2, $3, ''Efectivo'', ''Merma'', NULL, ''T93 mal estado'')'
+      USING '93000000-0000-0000-0000-00000000e001'::uuid, t93_o('OV-9304'), '[{"sku":"P93-HIELO","cantidad":5}]'::jsonb;
+  END IF;
+END $do$;
 COMMIT;
 SELECT t93_assert(t93_d('b5', 'resultados', 'devoluciones') = 50 AND t93_d('b5', 'resultados', 'utilidad') = -50
   AND t93_d('b5', 'flujo', 'salidas') = 0 AND t93_saldo('b5', 'cxc_pendiente') = -50, '093-40 devolución de crédito no cobrado: ingreso −50 y CxC −50, sin salida de dinero');
 INSERT INTO t93_ids VALUES ('b6', t93_rep()::text);
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(1);
-INSERT INTO devoluciones (orden_id, cliente_id, motivo, tipo_reembolso, total, items, usuario) VALUES (t93_o('OV-9301'), 9340, 'T93 reembolso', 'Efectivo', 100, '[]', 'Admin 93');
-INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (fin_hoy(), 'Egreso', 'Devoluciones', 'Devolución cliente OV-9301 T93', 100, t93_o('OV-9301'));
-INSERT INTO devoluciones (orden_id, cliente_id, motivo, tipo_reembolso, total, items, usuario) VALUES (t93_o('OV-9301'), 9340, 'T93 reposición', 'Reposicion', 30, '[]', 'Admin 93');
+DO $do$ BEGIN
+  IF to_regprocedure('public.registrar_devolucion(uuid,bigint,jsonb,text,text,text,text,text)') IS NULL THEN
+    INSERT INTO devoluciones (orden_id, cliente_id, motivo, tipo_reembolso, total, items, usuario) VALUES (t93_o('OV-9301'), 9340, 'T93 reembolso', 'Efectivo', 100, '[]', 'Admin 93');
+    INSERT INTO movimientos_contables (fecha, tipo, categoria, concepto, monto, orden_id) VALUES (fin_hoy(), 'Egreso', 'Devoluciones', 'Devolución cliente OV-9301 T93', 100, t93_o('OV-9301'));
+    INSERT INTO devoluciones (orden_id, cliente_id, motivo, tipo_reembolso, total, items, usuario) VALUES (t93_o('OV-9301'), 9340, 'T93 reposición', 'Reposicion', 30, '[]', 'Admin 93');
+  ELSE
+    -- 104: una devolución por orden; la reposición está bloqueada.
+    EXECUTE 'SELECT registrar_devolucion($1, $2, $3, ''Efectivo'', ''Merma'', NULL, ''T93 reembolso'')'
+      USING '93000000-0000-0000-0000-00000000e002'::uuid, t93_o('OV-9301'), '[{"sku":"P93-HIELO","cantidad":10}]'::jsonb;
+  END IF;
+END $do$;
 COMMIT;
 SELECT t93_assert(t93_d('b6', 'flujo', 'salidas_reembolsos') = 100 AND t93_d('b6', 'flujo', 'salidas') = 100
   AND t93_d('b6', 'resultados', 'devoluciones') = 100 AND t93_d('b6', 'resultados', 'otros_gastos') = 0 AND t93_d('b6', 'resultados', 'utilidad') = -100, '093-41 reembolso real en efectivo: salida una vez e ingreso −100 una vez; la reposición no mueve nada');

@@ -111,7 +111,7 @@ SELECT t84_assert((SELECT bool_and(pg_get_functiondef(oid) !~ 'update_stocks_ato
 -- 084-06: en fase 084 el RPC genérico y el guard 078 conservan el md5 de
 -- producción; tras 085 (contención) cambian a propósito y se verifica que el
 -- genérico exige Admin y el guard la marca app.carga_ctx. El guard 069 no cambia.
-SELECT t84_assert((SELECT md5(pg_get_functiondef(oid)) = '99fb6cfe4933dc702e3531669b0c6ec3' FROM pg_proc WHERE oid = 'public.ordenes_guard_financiero()'::regprocedure)
+SELECT t84_assert(/* 105 solo añade la marca tiene_devolucion */ (SELECT md5(regexp_replace(pg_get_functiondef(oid), E'\n     -- 105: la marca de devolución la pone solo registrar_devolucion\\.\n     OR NEW\\.tiene_devolucion IS DISTINCT FROM OLD\\.tiene_devolucion', '')) = '99fb6cfe4933dc702e3531669b0c6ec3' FROM pg_proc WHERE oid = 'public.ordenes_guard_financiero()'::regprocedure)
   AND CASE WHEN pg_get_functiondef('public.update_stocks_atomic(jsonb)'::regprocedure) ~ 'ARRAY\[''Admin''\]'
     THEN pg_get_functiondef('public.rutas_guard_chofer()'::regprocedure) ~ 'app\.carga_ctx'
     ELSE (SELECT md5(pg_get_functiondef(oid)) = '9bfe3e6327d081a39f467279ef654868' FROM pg_proc WHERE oid = 'public.update_stocks_atomic(jsonb)'::regprocedure)
