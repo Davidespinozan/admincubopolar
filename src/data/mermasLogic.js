@@ -127,3 +127,23 @@ export function mensajeErrorMerma(error) {
   if (/cuarto .* ya no existe/i.test(msg)) return 'El cuarto frío original ya no existe; no se puede revertir automáticamente.';
   return msg || 'Error en la operación de mermas';
 }
+
+/**
+ * 106: costo de empaque ESTIMADO por unidad de un producto terminado, para
+ * análisis de mermas (memo). Es el costo promedio ACTUAL del empaque que usa
+ * el producto: no es el costo histórico exacto de las unidades perdidas, no
+ * es costo completo de manufactura y no genera asiento (el empaque ya se
+ * reconoció como costo al producir).
+ * @param {string} sku
+ * @param {Array} productos — catálogo ({ sku, tipo, empaqueSku|empaque_sku, costoUnitario|costo_unitario })
+ * @returns {number}
+ */
+export function costoEmpaqueEstimado(sku, productos) {
+  const lista = Array.isArray(productos) ? productos : [];
+  const p = lista.find(x => String(x?.sku ?? '') === String(sku ?? ''));
+  const empSku = String(p?.empaqueSku ?? p?.empaque_sku ?? '').trim();
+  if (!p || !empSku) return 0;
+  const emp = lista.find(x => String(x?.sku ?? '') === empSku && String(x?.tipo ?? '') === 'Empaque');
+  const c = Number(emp?.costoUnitario ?? emp?.costo_unitario ?? 0);
+  return Number.isFinite(c) && c > 0 ? c : 0;
+}

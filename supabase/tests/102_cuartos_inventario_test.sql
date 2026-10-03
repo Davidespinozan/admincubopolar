@@ -131,8 +131,10 @@ SELECT t102_assert((SELECT count(*) = 1 AND bool_and(e.cuarto_id = 'CF-102B' AND
   AND (SELECT count(*) = 1 FROM auditoria WHERE usuario = 'Prod 102' AND detalle LIKE 'Merma #' || (t102_j('m1') ->> 'id') || '%en Cuarto 102B%'),
   '102-25 exactamente un efecto CF-102B / X / 10, kardex con cuarto y operación, una merma, auditoría');
 SELECT t102_assert((t102_j('m1') ->> 'mov_contable_id') IS NULL
-  AND (SELECT monto = 10 AND categoria = 'Mermas' FROM movimientos_contables WHERE id = (t102_j('mc') ->> 'mov_contable_id')::bigint)
-  AND ((t102_j('rep1') -> 'resultados' ->> 'mermas')::numeric - (t102_j('rep0') -> 'resultados' ->> 'mermas')::numeric) = 10
+  -- 106: sin valuación de producto terminado (antes: costo 5 × 2 = 10 como merma no-efectivo).
+  AND CASE WHEN (pg_get_functiondef('public.registrar_merma_cuarto(uuid,text,text,integer,text,text)'::regprocedure) !~ 'v_costo := 0;') THEN (SELECT monto = 10 AND categoria = 'Mermas' FROM movimientos_contables WHERE id = (t102_j('mc') ->> 'mov_contable_id')::bigint)
+    ELSE (t102_j('mc') ->> 'mov_contable_id') IS NULL END
+  AND ((t102_j('rep1') -> 'resultados' ->> 'mermas')::numeric - (t102_j('rep0') -> 'resultados' ->> 'mermas')::numeric) = CASE WHEN (pg_get_functiondef('public.registrar_merma_cuarto(uuid,text,text,integer,text,text)'::regprocedure) !~ 'v_costo := 0;') THEN 10 ELSE 0 END
   AND (t102_j('rep1') -> 'flujo' ->> 'salidas') = (t102_j('rep0') -> 'flujo' ->> 'salidas'),
   '102-26 valuación vigente: costo 0 → sin egreso; costo 5 × 2 → 10 en mermas (no efectivo, sin salida de caja)');
 

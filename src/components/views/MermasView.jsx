@@ -1,6 +1,6 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 import { diasEntre, diaNegocio, sumarDias } from '../../utils/fechas';
-import { esMermaActiva, puedeRevertirMerma } from '../../data/mermasLogic';
+import { esMermaActiva, puedeRevertirMerma, costoEmpaqueEstimado } from '../../data/mermasLogic';
 
 export function MermasView({ data, actions }) {
   const toast = useToast();
@@ -23,7 +23,8 @@ export function MermasView({ data, actions }) {
   const productosBySku = useMemo(() => {
     const map = {};
     (data?.productos || []).forEach(p => {
-      if (p?.sku) map[s(p.sku)] = { nombre: s(p.nombre), costo: n(p.costoUnitario || p.costo_unitario) };
+      // 106: memo — empaque estimado al costo promedio actual (no es asiento ni costo histórico).
+      if (p?.sku) map[s(p.sku)] = { nombre: s(p.nombre), costo: costoEmpaqueEstimado(p.sku, data?.productos) };
     });
     return map;
   }, [data?.productos]);
@@ -132,8 +133,9 @@ export function MermasView({ data, actions }) {
     {/* KPI */}
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-        <p className="text-[10px] text-amber-500 uppercase font-bold">Total en período</p>
+        <p className="text-[10px] text-amber-500 uppercase font-bold">Empaque estimado en período (referencia)</p>
         <p className="text-2xl font-extrabold text-amber-700">{fmtMoney(kpi.total)}</p>
+        <p className="text-[10px] text-amber-500">Unidades × costo promedio actual del empaque. No es un gasto adicional: el empaque ya se reconoció al producir.</p>
         <p className="text-xs text-amber-500 mt-0.5">{kpi.count} {kpi.count === 1 ? 'merma' : 'mermas'}{kpi.revertidas > 0 ? ` · ${kpi.revertidas} revertida${kpi.revertidas === 1 ? '' : 's'} (no suman)` : ''}</p>
       </div>
       <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between">
@@ -224,7 +226,7 @@ export function MermasView({ data, actions }) {
                   </button>
                 );
               }},
-              { key: 'costo', label: 'Costo $', render: (_, r) => {
+              { key: 'costo', label: 'Empaque est. $', render: (_, r) => {
                 const costo = productosBySku[s(r.sku)]?.costo || 0;
                 const totalLinea = n(r.cantidad) * costo;
                 return <span className={`font-bold ${esMermaActiva(r) ? 'text-slate-800' : 'text-slate-400 line-through'}`}>{fmtMoney(totalLinea)}</span>;
@@ -293,9 +295,9 @@ export function MermasView({ data, actions }) {
                 Se regresarán <span className="font-bold">{n(borrarModal.cantidad)}×</span> <span className="font-bold">{info?.nombre || s(borrarModal.sku)}</span> a los mismos cuartos fríos de donde se descontaron.
               </p>
               <p className="text-xs">
-                Causa: <span className="font-semibold">{s(borrarModal.causa)}</span> · Fecha: <span className="font-semibold">{fmtDate(borrarModal.fecha)}</span> · Costo recuperado: <span className="font-semibold">{fmtMoney(total)}</span>
+                Causa: <span className="font-semibold">{s(borrarModal.causa)}</span> · Fecha: <span className="font-semibold">{fmtDate(borrarModal.fecha)}</span> · Empaque estimado: <span className="font-semibold">{fmtMoney(total)}</span>
               </p>
-              <p className="text-xs">Se elimina el egreso contable ligado a esta merma. La merma queda en el historial como «Revertida» y la foto se conserva como evidencia.</p>
+              <p className="text-xs">Si la merma tenía un egreso contable ligado, se elimina. La merma queda en el historial como «Revertida» y la foto se conserva como evidencia.</p>
             </div>
             <div>
               <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Motivo (opcional)</label>

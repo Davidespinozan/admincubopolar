@@ -202,7 +202,7 @@ SELECT t74_assert((SELECT count(*) = 1 AND bool_and(usuario = 'Admin 74' AND det
 
 \echo '── 074: regresión 072 (mermas)'
 SELECT t74_assert((SELECT string_agg(cuarto_id || ':' || cantidad || ':' || inv_mov_id, ',' ORDER BY id) FROM mermas_efectos WHERE merma_id = (SELECT v::bigint FROM t74_ids WHERE k = 'merma')) = (SELECT v FROM t74_ids WHERE k = 'merma_efectos'), '074-60 efectos de la merma sin cambios');
-SELECT t74_assert((SELECT mov_contable_id::text = (SELECT v FROM t74_ids WHERE k = 'merma_mov') AND estatus = 'Activa' AND cantidad = 4 FROM mermas WHERE id = (SELECT v::bigint FROM t74_ids WHERE k = 'merma')), '074-61 merma: egreso ligado, estatus y cantidad sin cambios');
+SELECT t74_assert((SELECT mov_contable_id::text IS NOT DISTINCT FROM (SELECT v FROM t74_ids WHERE k = 'merma_mov') AND estatus = 'Activa' AND cantidad = 4 FROM mermas WHERE id = (SELECT v::bigint FROM t74_ids WHERE k = 'merma')), '074-61 merma: egreso ligado, estatus y cantidad sin cambios');
 SELECT t74_err(format('UPDATE mermas SET cantidad = 99 WHERE id = %s', (SELECT v FROM t74_ids WHERE k = 'merma')), '074-62 guard 072 sigue bloqueando cambios que no sean de SKU', '42501');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t74_actor('authenticated', 'admin74@t', '74000000-0000-0000-0000-000000000001');
 SELECT revertir_merma((SELECT v::bigint FROM t74_ids WHERE k = 'merma'), 'post-rename');

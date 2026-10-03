@@ -164,19 +164,23 @@ BEGIN
 END $mc$;
 GRANT EXECUTE ON FUNCTION t93_merma_cuarto(TEXT, TEXT, INTEGER, TEXT, TEXT) TO PUBLIC;
 -- Consumo de empaque (producción de 100 → 100 × 1.5 = 150) y merma de 10 × 5 = 50.
+-- 106: el costo del empaque es el promedio ponderado vigente (la compra de 100
+-- por 200 lo mueve de 1.5 a 1.545455); el esperado se deriva del promedio.
+CREATE OR REPLACE FUNCTION t93_emp(p_q INTEGER) RETURNS NUMERIC LANGUAGE sql SECURITY DEFINER AS $e$ SELECT round(p_q * costo_unitario, 2) FROM productos WHERE sku = 'P93-EMP' $e$;
+GRANT EXECUTE ON FUNCTION t93_emp(INTEGER) TO PUBLIC;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(4);
 SELECT registrar_produccion('93000000-0000-0000-0000-00000000b001', 'Turno 1', 'Máquina 93', 'P93-HIELO', 100, 'CF-93A');
 SELECT t93_merma_cuarto('CF-93A', 'P93-HIELO', 10, 'Bolsa rota');
 COMMIT;
 SELECT t93_assert(t93_d('b0', 'resultados', 'ventas_entregadas') = 1500, '093-20 ingreso por entrega: contado 1000 + crédito 500 = 1500 (el cobro de 300 NO es otro ingreso)');
-SELECT t93_assert(t93_d('b0', 'resultados', 'costo_ventas') = 150, '093-21 costo de ventas: consumo de empaque 150 (la compra de 200 no es gasto)');
-SELECT t93_assert(t93_d('b0', 'resultados', 'costos_fijos') = 400 AND t93_d('b0', 'resultados', 'nomina') = 600 AND t93_d('b0', 'resultados', 'mermas') = 50, '093-22 renta 400, nómina 600, merma 50: una vez cada uno');
+SELECT t93_assert(t93_d('b0', 'resultados', 'costo_ventas') = t93_emp(100) AND t93_emp(100) IN (150, 154.55), '093-21 costo de ventas: consumo de empaque 100 × costo vigente (150; 154.55 con promedio ponderado); la compra de 200 no es gasto');
+SELECT t93_assert(t93_d('b0', 'resultados', 'costos_fijos') = 400 AND t93_d('b0', 'resultados', 'nomina') = 600 AND t93_d('b0', 'resultados', 'mermas') = CASE WHEN COALESCE((SELECT pg_get_functiondef(p.oid) !~ 'v_costo := 0;' FROM pg_proc p WHERE p.oid = to_regprocedure('public.registrar_merma_cuarto(uuid,text,text,integer,text,text)')), true) THEN 50 ELSE 0 END, '093-22 renta 400, nómina 600, merma 50 una vez (0 desde 106: sin valuación de producto terminado)');
 SELECT t93_assert(t93_d('b0', 'resultados', 'otros_gastos') = 0 AND t93_d('b0', 'resultados', 'otros_ingresos') = 0 AND t93_d('b0', 'resultados', 'gastos_credito') = 0, '093-23 ni el egreso ligado ni el ingreso contable duplican el estado de resultados');
-SELECT t93_assert(t93_d('b0', 'resultados', 'utilidad') = 300, '093-24 utilidad = 1500 − 150 − 400 − 600 − 50 = 300');
+SELECT t93_assert(t93_d('b0', 'resultados', 'utilidad') = 500 - t93_emp(100) - CASE WHEN COALESCE((SELECT pg_get_functiondef(p.oid) !~ 'v_costo := 0;' FROM pg_proc p WHERE p.oid = to_regprocedure('public.registrar_merma_cuarto(uuid,text,text,integer,text,text)')), true) THEN 50 ELSE 0 END, '093-24 utilidad = 1500 − 150 − 400 − 600 − merma (50; 0 desde 106)');
 SELECT t93_assert(t93_d('b0', 'flujo', 'entradas_pagos') = 1300 AND t93_d('b0', 'flujo', 'entradas') = 1300, '093-25 entradas de efectivo: pago de contado 1000 + cobro 300 = 1300 (crédito no cobrado: 0)');
 SELECT t93_assert(t93_d('b0', 'flujo', 'salidas_compras_contado') = 200 AND t93_d('b0', 'flujo', 'salidas_costos') = 400 AND t93_d('b0', 'flujo', 'salidas_nomina') = 600
   AND t93_d('b0', 'flujo', 'salidas') = 1200, '093-26 salidas: compra 200 + renta 400 + nómina 600 = 1200');
-SELECT t93_assert(t93_d('b0', 'flujo', 'excluido_no_efectivo') = 50 AND t93_d('b0', 'flujo', 'neto') = 100, '093-27 merma y consumo sin salida de dinero; neto 1300 − 1200 = 100');
+SELECT t93_assert(t93_d('b0', 'flujo', 'excluido_no_efectivo') = CASE WHEN COALESCE((SELECT pg_get_functiondef(p.oid) !~ 'v_costo := 0;' FROM pg_proc p WHERE p.oid = to_regprocedure('public.registrar_merma_cuarto(uuid,text,text,integer,text,text)')), true) THEN 50 ELSE 0 END AND t93_d('b0', 'flujo', 'neto') = 100, '093-27 merma y consumo sin salida de dinero; neto 1300 − 1200 = 100');
 SELECT t93_assert(t93_saldo('b0', 'cxc_pendiente') = 200, '093-28 CxC pendiente +200 (500 − 300)');
 
 \echo '── 093: pago por webhook (service_role)'
@@ -307,7 +311,7 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(4);
 INSERT INTO t93_ids VALUES ('p1', registrar_produccion('93000000-0000-0000-0000-00000000b002', 'Turno 2', 'Máquina 93', 'P93-HIELO', 20, 'CF-93A')::text);
 COMMIT;
 INSERT INTO t93_ids VALUES ('e0', t93_st('P93-EMP')::text), ('eb0', t93_st('P93-EMPB')::text), ('a0', t93_cf('CF-93A', 'P93-HIELO')::text), ('bb0', t93_cf('CF-93B', 'P93-HIELO')::text);
-SELECT t93_assert(t93_d('cogs0', 'resultados', 'costo_ventas') = 30, '093-60 producción de 20: costo 30 (20 × 1.5)');
+SELECT t93_assert(t93_d('cogs0', 'resultados', 'costo_ventas') = t93_emp(20) AND t93_emp(20) IN (30, 31.34), '093-60 producción de 20: costo 20 × costo vigente (30; 31.34 con promedio ponderado)');
 -- El catálogo cambia de empaque después de producir.
 UPDATE productos SET empaque_sku = 'P93-EMPB' WHERE sku = 'P93-HIELO';
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(4);
@@ -327,7 +331,7 @@ SELECT t93_assert((t93_j('r1r') ->> 'replay') = 'true' AND (SELECT count(*) = 2 
 SELECT t93_assert(t93_d('cogs0', 'resultados', 'costo_ventas') = 0 AND (SELECT count(*) = 1 FROM costos_historial WHERE referencia = 'PROD-' || (t93_j('p1') ->> 'id')), '093-68 costo neto: original + reverso = 0; el costo original sigue en la historia');
 SELECT t93_assert((SELECT estatus = 'Revertida' AND revertida_por = 9301 AND revertida_at IS NOT NULL AND motivo_reverso = 'error de captura'
   AND reverso_operacion_id = '93000000-0000-0000-0000-00000000c001' AND cantidad = 20 AND cuarto_id = 'CF-93A' AND empaque_sku = 'P93-EMP' AND empaque_cantidad = 20
-  AND costo_total = 30 AND operacion_id = '93000000-0000-0000-0000-00000000b002' FROM produccion WHERE id = (t93_j('p1') ->> 'id')::bigint), '093-69 la producción sigue existiendo con sus datos originales y el registro del reverso');
+  AND costo_total = t93_emp(20) AND operacion_id = '93000000-0000-0000-0000-00000000b002' FROM produccion WHERE id = (t93_j('p1') ->> 'id')::bigint), '093-69 la producción sigue existiendo con sus datos originales y el registro del reverso');
 SELECT t93_assert((SELECT count(*) = 1 FROM auditoria WHERE accion = 'Revertir' AND modulo = 'Producción' AND detalle LIKE (t93_j('p1') ->> 'folio') || '%'), '093-70 auditoría del reverso (quién, qué, motivo)');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(4);
 INSERT INTO t93_ids VALUES ('p1b', registrar_produccion('93000000-0000-0000-0000-00000000b002', 'Turno 2', 'Máquina 93', 'P93-HIELO', 20, 'CF-93A')::text);

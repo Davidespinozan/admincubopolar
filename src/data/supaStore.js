@@ -831,7 +831,8 @@ export function useSupaStore(userId, userName, userRol) {
           sku: p.sku, nombre: p.nombre, tipo: p.tipo,
           stock: Number(p.stock) || 0, ubicacion: p.ubicacion,
           precio: Number(p.precio) || 0,
-          costo_unitario: Number(p.costo_unitario || p.costoUnitario) || 0,
+          // 106: solo el Empaque declara costo (apertura) al darse de alta.
+          costo_unitario: p.tipo === 'Empaque' ? (Number(p.costo_unitario || p.costoUnitario) || 0) : 0,
           proveedor: p.proveedor || null,
           empaque_sku: p.empaque_sku || p.empaqueSku || null,
           // Tanda 4 🔴-7: claves SAT del producto (mig 060).
@@ -871,7 +872,7 @@ export function useSupaStore(userId, userName, userRol) {
         const update = {
           nombre: p.nombre, tipo: p.tipo, ubicacion: p.ubicacion,
           precio: Number(p.precio) || 0,
-          costo_unitario: Number(p.costo_unitario || p.costoUnitario) || 0,
+          // 106: el costo no se edita por catálogo (promedio ponderado de compras).
           proveedor: p.proveedor || null,
           empaque_sku: p.empaque_sku || p.empaqueSku || null,
         };
@@ -3050,6 +3051,10 @@ export function useSupaStore(userId, userName, userRol) {
             // 092: la "salida" es una entrega a Producción (traslado); no descuenta el total.
             log(tipo === 'Entrada' ? (esCredito ? 'Compra crédito' : 'Compra') : 'Entrega a Producción', 'Almacén Bolsas',
               `${sku} x${qty} — ${tipo === 'Entrada' ? `$${centavos(Number(costo))}${proveedor ? ' — ' + proveedor : ''}` : (motivo || 'Producción')}`);
+            // 106: la compra recalcula el costo promedio del empaque en el servidor.
+            if (tipo === 'Entrada' && res.data?.costo_promedio != null) {
+              t()?.info(`Costo promedio de ${sku}: $${Number(res.data.costo_promedio).toFixed(2)} (antes $${Number(res.data.costo_promedio_anterior ?? 0).toFixed(2)})`);
+            }
           }
           rf();
           return undefined;

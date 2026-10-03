@@ -189,11 +189,15 @@ COMMIT;
 SELECT t87_assert(t87_cf('CF-87A', 'P87-A') = t87_v('B0')::int AND t87_rest(8702, 'P87-A') = 6
   AND (SELECT count(*) = 0 FROM mermas_efectos e JOIN mermas m ON m.id = e.merma_id WHERE m.ruta_id = 8702)
   AND (SELECT count(*) = 1 AND bool_and(cuarto_id IS NULL AND tipo = 'Merma' AND cantidad = 2 AND usuario = 'Chofer 87-11') FROM inventario_mov WHERE ruta_id = 8702 AND referencia LIKE 'MERMA-%')
-  AND (SELECT count(*) = 1 AND bool_and(mc.monto = 4 AND mc.categoria = 'Mermas') FROM mermas m JOIN movimientos_contables mc ON mc.id = m.mov_contable_id WHERE m.ruta_id = 8702), '087-B1 merma de ruta: sin cuartos ni efectos, kardex del camión, egreso 2×2; balance 8 → 6');
+  -- 106: sin valuación de producto terminado (el empaque ya se reconoció al producir).
+  AND CASE WHEN pg_get_functiondef('public.registrar_merma(text,integer,text,text,text,bigint,boolean)'::regprocedure) ~ 'v_costo := 0;'
+    THEN NOT EXISTS (SELECT 1 FROM mermas m JOIN movimientos_contables mc ON mc.id = m.mov_contable_id WHERE m.ruta_id = 8702)
+    ELSE (SELECT count(*) = 1 AND bool_and(mc.monto = 4 AND mc.categoria = 'Mermas') FROM mermas m JOIN movimientos_contables mc ON mc.id = m.mov_contable_id WHERE m.ruta_id = 8702) END,
+  '087-B1 merma de ruta: sin cuartos ni efectos, kardex del camión, egreso 2×2 (sin egreso desde 106); balance 8 → 6');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t87_actor(1);
 INSERT INTO t87_ids VALUES ('Brv', revertir_merma((t87_j('Bm0') -> 'registradas' -> 0 ->> 'id')::bigint, 'se contó dos veces')::text);
 COMMIT;
-SELECT t87_assert((t87_j('Brv') ->> 'estatus') = 'Revertida' AND (t87_j('Brv') ->> 'egreso_borrado') = 'true' AND t87_cf('CF-87A', 'P87-A') = t87_v('B0')::int AND t87_rest(8702, 'P87-A') = 8
+SELECT t87_assert((t87_j('Brv') ->> 'estatus') = 'Revertida' AND (t87_j('Brv') ->> 'egreso_borrado') = CASE WHEN (pg_get_functiondef('public.registrar_merma(text,integer,text,text,text,bigint,boolean)'::regprocedure) !~ 'v_costo := 0;') THEN 'true' ELSE 'false' END AND t87_cf('CF-87A', 'P87-A') = t87_v('B0')::int AND t87_rest(8702, 'P87-A') = 8
   AND (SELECT count(*) = 1 AND bool_and(cuarto_id IS NULL AND ruta_id = 8702 AND cantidad = 2) FROM inventario_mov WHERE tipo = 'Reverso merma' AND referencia = 'MERMA-' || (t87_j('Bm0') -> 'registradas' -> 0 ->> 'id')), '087-B2 reverso de merma de ruta: cero efectos válido, sin cuarto, egreso borrado, vuelve al balance (8)');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t87_actor(11);
 INSERT INTO t87_ids VALUES ('Bm1', registrar_mermas_ruta('87000000-0000-0000-0000-0000000000b1'::uuid, 8702, '[{"sku":"P87-A","cant":3,"causa":"Bolsa rota","foto":"data:image/jpeg;base64,BBBB"}]')::text);

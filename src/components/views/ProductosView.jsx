@@ -32,7 +32,10 @@ export function ProductosView({ data, actions }) {
       ...(modal === "new" ? { stock: Number(form.stock) || 0 } : {}),
       ubicacion: form.ubicacion,
       precio: form.tipo === "Producto Terminado" ? Number(form.precio) || 0 : 0,
-      costo_unitario: form.tipo === "Empaque" ? Number(form.costoUnitario) || 0 : 0,
+      // 106: el costo solo se declara al dar de alta un Empaque (apertura);
+      // después lo fija la recepción de compra (promedio ponderado). El
+      // producto terminado no tiene costo unitario.
+      ...(modal === "new" && form.tipo === "Empaque" ? { costo_unitario: Number(form.costoUnitario) || 0 } : {}),
       proveedor: form.proveedor || null,
       empaque_sku: form.tipo === "Producto Terminado" ? form.empaqueSku || null : null,
       // Tanda 4 🔴-7: clave SAT por producto (mig 060). El backend usa
@@ -100,7 +103,7 @@ export function ProductosView({ data, actions }) {
         {key:"nombre",label:"Producto",bold:true},
         {key:"tipo",label:"Tipo",badge:true,render:v=><StatusBadge status={v}/>},
         {key:"stock",label:"Stock",render:(v,r)=><span className={`font-semibold ${s(r.tipo)==="Empaque"&&n(v)<200?"text-red-600":"text-slate-800"}`}>{n(v).toLocaleString()}</span>},
-        {key:"costo_unitario",label:"Costo",render:(v,r)=>s(r.tipo)==="Empaque" && n(v)>0?<span className="text-amber-600 font-semibold">{fmtMoney(v, { decimals: 2 })}</span>:"—"},
+        {key:"costo_unitario",label:"Costo prom.",render:(v,r)=>s(r.tipo)==="Empaque" && n(v)>0?<span className="text-amber-600 font-semibold">{fmtMoney(v, { decimals: 2 })}</span>:"—"},
         {key:"precio",label:"Precio",render:(v,r)=>s(r.tipo)==="Producto Terminado" && n(v)>0?fmtMoney(v, { decimals: 2 }):"—"},
       ]} data={paginated} onRowClick={r=>openEdit(r)}
         emptyMessage={(search?.trim() || filterTipo) ? "Sin resultados" : "Aún no tienes productos"}
@@ -114,7 +117,7 @@ export function ProductosView({ data, actions }) {
       <div className="space-y-3">
         <FormInput label="SKU *" value={form.sku} onChange={e=>setForm({...form,sku:e.target.value.toUpperCase()})} placeholder="Ej: HPC-25K" error={errors.sku} />
         <FormInput label="Nombre *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} error={errors.nombre} />
-        <FormSelect label="Tipo" options={["Producto Terminado","Empaque"]} value={form.tipo} onChange={e=>{const t=e.target.value;setForm({...form,tipo:t,precio:t==="Empaque"?0:form.precio,costoUnitario:t==="Producto Terminado"?0:form.costoUnitario,empaqueSku:t==="Empaque"?"":form.empaqueSku})}} />
+        <FormSelect label="Tipo" disabled={modal !== "new"} options={["Producto Terminado","Empaque"]} value={form.tipo} onChange={e=>{const t=e.target.value;setForm({...form,tipo:t,precio:t==="Empaque"?0:form.precio,costoUnitario:t==="Producto Terminado"?0:form.costoUnitario,empaqueSku:t==="Empaque"?"":form.empaqueSku})}} />
         {modal === "new" ? (
           <FormInput label="Stock inicial" type="number" min="0" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} />
         ) : (
@@ -125,14 +128,23 @@ export function ProductosView({ data, actions }) {
           <>
             <FormInput label="Precio público ($)" type="number" min="0" step="0.01" value={form.precio} onChange={e=>setForm({...form,precio:e.target.value})} />
             <FormSelect label="Empaque que usa" options={["", ...empaques.map(e => e.sku)]} value={form.empaqueSku} onChange={e=>setForm({...form,empaqueSku:e.target.value})} />
-            <p className="text-xs text-slate-400 -mt-2">Selecciona el empaque para calcular costos automáticamente</p>
+            <p className="text-xs text-slate-400 -mt-2">El costo que reconoce cada producción es el promedio del empaque elegido</p>
           </>
         )}
         {form.tipo==="Empaque" && (
           <>
-            <FormInput label="Costo unitario ($)" type="number" min="0" step="0.01" value={form.costoUnitario} onChange={e=>setForm({...form,costoUnitario:e.target.value})} placeholder="Costo por unidad" />
+            {modal === "new" ? (
+              <FormInput label="Costo inicial por unidad ($)" type="number" min="0" step="0.01" value={form.costoUnitario} onChange={e=>setForm({...form,costoUnitario:e.target.value})} placeholder="Costo de apertura" />
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Costo promedio actual</label>
+                <p className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700">{fmtMoney(form.costoUnitario, { decimals: 2 })}</p>
+              </div>
+            )}
             <FormInput label="Proveedor" value={form.proveedor} onChange={e=>setForm({...form,proveedor:e.target.value})} placeholder="Ej: Bolsas del Norte" />
-            <p className="text-xs text-slate-400 -mt-2">Este costo se usa para calcular el costo de producción</p>
+            <p className="text-xs text-slate-400 -mt-2">{modal === "new"
+              ? "Costo de apertura declarado. Después se actualiza solo con cada compra recibida (promedio ponderado)."
+              : "Se calcula con las compras recibidas (promedio ponderado) y es el costo que toma cada producción. No se edita aquí."}</p>
           </>
         )}
 
