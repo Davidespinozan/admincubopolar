@@ -26,6 +26,9 @@ const STATUS_COLORS = {
   "Traspaso": "bg-sky-100/90 text-sky-900 border-sky-200/80",
   "Devolución": "bg-violet-100/80 text-violet-900 border-violet-200/80",
   "Merma": "bg-amber-100/80 text-amber-900 border-amber-200/80",
+  // Fase A: nivel de existencia (vistas por rol).
+  "OK": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
+  "Bajo": "bg-red-100/80 text-red-900 border-red-200/80",
 };
 const DEFAULT_STATUS_COLOR = "bg-slate-100/90 text-slate-700 border-slate-200/90";
 export const StatusBadge = ({ status }) => (
@@ -194,5 +197,73 @@ export const StatCard = ({ label, value, unit, change, up, icon: IconComp }) => 
 export const CapacityBar = ({ pct }) => (
   <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200/80">
     <div className={`h-full rounded-full transition-all ${pct > 80 ? "bg-amber-500" : pct > 50 ? "bg-sky-600" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, pct)}%` }} />
+  </div>
+);
+
+// ─── CARD ───
+// Fase A: la tarjeta de contenido del shell de Administración (misma familia
+// que StatCard / DataTable móvil) para que las vistas por rol no repitan
+// bordes, radios y sombras a mano.
+export const Card = ({ children, className = "", padding = "p-4 sm:p-5", tone }) => (
+  <div className={`rounded-card border shadow-card ${
+    tone === "success" ? "border-emerald-200/80 bg-emerald-50/80" :
+    tone === "warning" ? "border-amber-200/80 bg-amber-50/80" :
+    tone === "danger" ? "border-red-200/80 bg-red-50/80" :
+    "border-slate-200/80 bg-white/80"
+  } ${padding} ${className}`}>
+    {children}
+  </div>
+);
+
+// ─── SECTION LABEL ───
+// Etiqueta de sección en mayúsculas (la misma de DataTable y StatCard).
+export const SectionLabel = ({ children, className = "" }) => (
+  <p className={`text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 ${className}`}>{children}</p>
+);
+
+// ─── ROLE HEADER ───
+// Fase A: cabecera de las vistas por rol (Almacén Bolsas, Ventas, Producción,
+// Chofer) con el lenguaje del shell de Administración: el mismo degradado
+// oscuro del aside, kicker, título display y el nombre del usuario. El rol
+// solo aporta un acento de color; el marco es el mismo producto.
+//   kicker/title/subtitle: textos. accent: 'amber' | 'emerald' | 'sky' | 'cyan'.
+//   onLogout/logoutLabel: botón de salida (en "Ver como" devuelve a Admin).
+//   right: nodos extra junto al botón (p. ej. firmas pendientes).
+//   children: contenido bajo el título (KPIs, nota).
+const ACCENTS = {
+  amber:   "text-amber-200/80",
+  emerald: "text-emerald-200/80",
+  sky:     "text-sky-200/80",
+  cyan:    "text-cyan-200/80",
+};
+export const RoleHeader = ({ kicker, title, subtitle, accent = "cyan", onLogout, logoutLabel = "Salir", right, children }) => (
+  <header className="bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 px-4 pb-5 text-slate-100 shadow-[0_20px_50px_rgba(8,20,27,0.18)]"
+    style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
+    <div className="mx-auto w-full max-w-[640px] md:max-w-3xl lg:max-w-5xl">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          {kicker && <p className={`erp-kicker ${ACCENTS[accent] || ACCENTS.cyan}`}>{kicker}</p>}
+          <h1 className="font-display text-[1.6rem] font-bold tracking-[-0.04em] text-white sm:text-[1.8rem]">{title}</h1>
+          {subtitle && <p className="truncate text-xs text-slate-300">{subtitle}</p>}
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          {right}
+          {onLogout && (
+            <button onClick={onLogout} className="inline-flex min-h-[36px] items-center justify-center rounded-[13px] border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/15">
+              {logoutLabel}
+            </button>
+          )}
+        </div>
+      </div>
+      {children && <div className="mt-4">{children}</div>}
+    </div>
+  </header>
+);
+
+// Tarjeta de cifra para el RoleHeader (fondo oscuro).
+export const HeaderStat = ({ label, value, className = "" }) => (
+  <div className={`rounded-[22px] border border-white/10 bg-white/8 p-3.5 backdrop-blur-xl ${className}`}>
+    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-300">{label}</p>
+    <p className="mt-1.5 font-display text-2xl font-bold tracking-[-0.04em] text-white">{value}</p>
   </div>
 );

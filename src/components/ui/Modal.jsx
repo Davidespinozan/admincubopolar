@@ -26,7 +26,10 @@ export function useBodyScrollLock(active) {
   }, [active]);
 }
 
-export default function Modal({ open, onClose, title, wide, children, closeOnEscape = true }) {
+// Fase A: `kicker` (etiqueta sobre el título) y `safeBottom` (relleno inferior
+// con safe-area para hojas de captura a una mano) son opcionales; sin ellos el
+// modal es idéntico al de siempre.
+export default function Modal({ open, onClose, title, kicker, wide, safeBottom = false, children, closeOnEscape = true }) {
   // Tanda 16 P0: lock body scroll mientras el modal está abierto.
   useBodyScrollLock(open);
 
@@ -58,26 +61,30 @@ export default function Modal({ open, onClose, title, wide, children, closeOnEsc
         <div className="mx-auto mt-3 h-1 w-10 rounded-full bg-slate-200 md:hidden" />
         <div className="sticky top-0 z-10 flex items-start justify-between gap-3 rounded-t-[28px] border-b border-slate-200/80 bg-white px-4 py-3.5">
           <div className="min-w-0 flex-1">
+            {kicker && <p className="erp-kicker text-slate-400">{kicker}</p>}
             <h2 className="font-display truncate text-sm font-bold tracking-[-0.03em] text-slate-900 sm:text-base">{title}</h2>
           </div>
           <button onClick={onClose} className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 sm:h-11 sm:w-11" aria-label="Cerrar modal" title="Cerrar modal">
             <Icons.X />
           </button>
         </div>
-        <div className="p-4 md:p-5">{children}</div>
+        <div className="p-4 md:p-5" style={safeBottom ? { paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" } : undefined}>{children}</div>
       </div>
     </div>
   );
 }
 
-export function FormInput({ label, error, ...props }) {
+// Fase A: `hint` (ayuda bajo el campo) e `inputClassName` (clases extra, p. ej.
+// cifra grande centrada en captura de campo) son opcionales.
+export function FormInput({ label, error, hint, inputClassName = "", ...props }) {
   return (
     <div>
       <label className="mb-1.5 block text-sm font-medium text-slate-700">{label}</label>
       <input className={`min-h-[44px] w-full rounded-[16px] border px-3.5 py-3 text-sm transition-all focus:outline-none focus:ring-2 md:py-2.5 ${
         error ? "border-red-300 focus:border-red-400 focus:ring-red-50" : "border-slate-200 bg-white/80 focus:border-cyan-600 focus:ring-cyan-50"
-      }`} {...props} />
+      } ${inputClassName}`} {...props} />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+      {!error && hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
     </div>
   );
 }
@@ -112,12 +119,19 @@ export function FormTextarea({ label, error, rows = 3, ...props }) {
   );
 }
 
-export function FormBtn({ children, primary, danger, ghost, onClick, disabled, loading, className = "" }) {
+// Fase A: tonos `success` / `warning` (acciones de campo con semántica de
+// entrada / entrega) y `size="lg"` (objetivo táctil grande para roles
+// operativos). Sin esas props el botón es el de siempre.
+export function FormBtn({ children, primary, danger, success, warning, ghost, size, onClick, disabled, loading, className = "" }) {
   return (
     <button onClick={onClick} disabled={disabled || loading}
-      className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-[16px] px-5 py-3 text-sm font-semibold transition-all md:py-2.5 ${
+      className={`inline-flex items-center justify-center gap-1.5 font-semibold transition-all ${
+        size === "lg" ? "min-h-[56px] rounded-[20px] px-6 py-4 text-base active:scale-[0.98]" : "min-h-[44px] rounded-[16px] px-5 py-3 text-sm md:py-2.5"
+      } ${
         primary ? "bg-slate-900 text-white shadow-[0_18px_28px_rgba(8,20,27,0.16)] hover:bg-slate-800" :
         danger ? "bg-red-600 text-white hover:bg-red-700" :
+        success ? "bg-emerald-600 text-white shadow-[0_18px_28px_rgba(5,150,105,0.16)] hover:bg-emerald-700" :
+        warning ? "bg-amber-600 text-white shadow-[0_18px_28px_rgba(217,119,6,0.16)] hover:bg-amber-700" :
         ghost ? "bg-slate-100 text-slate-700 hover:bg-slate-200" :
         "border border-slate-200 bg-white/80 text-slate-700 hover:bg-slate-50"
       } ${(disabled || loading) ? "opacity-50 cursor-not-allowed" : ""} ${className}`}>

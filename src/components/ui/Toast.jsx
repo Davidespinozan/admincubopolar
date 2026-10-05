@@ -11,6 +11,8 @@ const ToastCtx = createContext(null);
 // AFTER: toast object is stable via useRef. Only the render container uses
 // the toasts array state. Consumer components get a stable ref that never changes.
 
+// Fase A: el contenedor va en z-[96], por encima de Modal (90) y de
+// ConfirmDialog (95): un aviso de validación dentro de una hoja abierta se ve.
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
 
@@ -33,7 +35,7 @@ export function ToastProvider({ children }) {
   return (
     <ToastCtx.Provider value={toastRef.current}>
       {children}
-      <div className="fixed top-16 right-4 left-4 sm:left-auto z-[60] space-y-2 sm:w-72 pointer-events-none" aria-live="polite" aria-atomic="true">
+      <div className="fixed top-16 right-4 left-4 sm:left-auto z-[96] space-y-2 sm:w-72 pointer-events-none" aria-live="polite" aria-atomic="true">
         {toasts.map(t => (
           <div key={t.id} className={`pointer-events-auto px-4 py-3 rounded-xl shadow-lg text-sm font-medium animate-slide-in ${
             t.type === "success" ? "bg-emerald-600 text-white" :
