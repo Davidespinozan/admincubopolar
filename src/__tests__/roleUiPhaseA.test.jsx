@@ -60,7 +60,7 @@ describe('A1: primitivas — la salida por defecto no cambia', () => {
     expect(h).toMatch(/Salir/);
     expect(h).toMatch(/nota/);
     expect(html(<RoleHeader title="Sin salir" />)).not.toMatch(/Salir/);
-    expect(html(<HeaderStat label="Vendido hoy" value="$1,000" />)).toMatch(/bg-white\/8/);
+    expect(html(<HeaderStat label="Vendido hoy" value="$1,000" />)).toMatch(/bg-white\/10/);   // B2: /8 no existe en la escala de Tailwind
     expect(html(<StatusBadge status="Bajo" />)).toMatch(/bg-red-100\/80/);
     expect(html(<StatusBadge status="OK" />)).toMatch(/bg-emerald-100\/80/);
     expect(html(<StatusBadge status="Creada" />)).toMatch(/bg-amber-100\/80/);   // sin cambio
@@ -78,7 +78,7 @@ describe('A2: Almacén de Bolsas — presentación nueva, negocio idéntico', ()
   const v = sinComentarios(src('../components/BolsasView.jsx'));
   it('usa las primitivas compartidas y ya no dibuja cabecera, hoja ni aviso propios', () => {
     expect(v).toMatch(/import Modal, \{ FormInput, FormBtn \} from '\.\/ui\/Modal'/);
-    expect(v).toMatch(/import \{ Card, SectionLabel, StatusBadge, RoleHeader, PageHeader \} from '\.\/ui\/Components'/);
+    expect(v).toMatch(/import \{ Card, SectionLabel, StatusBadge, RoleHeader \} from '\.\/ui\/Components'/);
     expect(v).toMatch(/useToast\(\)/);
     expect(v).toMatch(/<ModoPruebaBanner \/>/);
     expect(v).toMatch(/<RoleHeader kicker="Almacén" title="Almacén de Bolsas"/);

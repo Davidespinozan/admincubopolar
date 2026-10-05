@@ -161,3 +161,53 @@ describe('A5: Chofer — modo enfoque con la identidad del producto; flujo, offl
     expect(v).toMatch(/localStorage\.removeItem\('mermas_ruta_' \+ miRutaActiva\.id\);\s*localStorage\.removeItem\('entregas_ruta_' \+ miRutaActiva\.id\);/);
   });
 });
+
+describe('B2: pulido visual e integración en el shell (solo presentación)', () => {
+  it('BarraVistaPrevia: una línea de 36px con PREVIEW, rol, aviso de datos sin recorte y "Volver a Admin"', async () => {
+    const { default: BarraVistaPrevia, ALTO_BARRA_VISTA_PREVIA } = await import('../components/ui/BarraVistaPrevia');
+    const h = html(<BarraVistaPrevia rol="Chofer" onVolver={() => {}} />);
+    expect(ALTO_BARRA_VISTA_PREVIA).toBe(36);
+    expect(h).toMatch(/h-9/);
+    expect(h).toMatch(/Vista previa/);
+    expect(h).toMatch(/Chofer/);
+    expect(h).toMatch(/Ves TODOS los datos como Admin; cada usuario real solo ve lo suyo/);
+    expect(h).toMatch(/Volver a Admin/);
+    expect(h).toMatch(/z-\[110\]/);
+    expect(h).toMatch(/bg-slate-950\/95/);
+    const app = src('../App.jsx');
+    expect(app).toMatch(/<BarraVistaPrevia rol=\{adminViewAs\} onVolver=\{\(\) => setAdminViewAs\(null\)\} \/>/);
+    expect(app).toMatch(/offsetSuperior=\{topPaddingPx\}/);
+    expect(app).toMatch(/if \(isAdmin && adminViewAs\) \{\s*setAdminViewAs\(null\)\s*return\s*\}/);   // volver a Admin: misma semántica
+  });
+  it('RoleHeader compact: menos alto, marca CUBOPOLAR + rol; sin compact es el de siempre', async () => {
+    const { RoleHeader } = await import('../components/ui/Components');
+    const c = html(<RoleHeader compact kicker="Chofer" title="En ruta" subtitle="X" onLogout={() => {}} />);
+    expect(c).toMatch(/CUBOPOLAR/);
+    expect(c).toMatch(/pb-3/);
+    expect(c).toMatch(/0\.75rem/);
+    expect(c).toMatch(/text-\[1\.25rem\]/);
+    const n = html(<RoleHeader kicker="Ventas" title="Ventas del día" />);
+    expect(n).not.toMatch(/CUBOPOLAR/);
+    expect(n).toMatch(/44px/);
+    expect(n).toMatch(/text-\[1\.6rem\]/);
+  });
+  it('dentro del shell la vista no repite el título de página y ocupa el workspace', () => {
+    for (const f of ['../components/VentasStandaloneView.jsx', '../components/ProduccionStandaloneView.jsx', '../components/BolsasView.jsx']) {
+      const v = src(f);
+      expect(v, f).not.toMatch(/<PageHeader/);
+      expect(v, f).toMatch(/CONTENIDO_SHELL = "w-full space-y-[34]"/);
+    }
+    expect(src('../components/ChoferView.jsx').match(/<RoleHeader compact /g)?.length).toBe(5);
+    const shell = src('../components/CuboPolarERP.jsx');
+    expect(shell).toMatch(/offsetSuperior = 0/);
+    expect(shell).toMatch(/calc\(100% - \$\{offsetSuperior\}px\)/);
+  });
+  it('ninguna clase de opacidad fuera de la escala de Tailwind en los archivos del programa (no se generan)', () => {
+    const escala = new Set(['0', '5', '10', '15', '20', '25', '30', '40', '50', '60', '70', '75', '80', '90', '95', '100']);
+    for (const f of ['../components/ui/Components.jsx', '../components/ui/BarraVistaPrevia.jsx', '../components/ui/Modal.jsx', '../components/CuboPolarERP.jsx',
+      '../components/ChoferView.jsx', '../components/VentasStandaloneView.jsx', '../components/ProduccionStandaloneView.jsx', '../components/BolsasView.jsx']) {
+      const malas = [...src(f).matchAll(/(?:bg|text|border|from|via|to|ring|divide)-[a-z]+(?:-[0-9]{2,3})?\/([0-9]+)\b/g)].map(m => m[1]).filter(v => !escala.has(v));
+      expect(malas, f).toEqual([]);
+    }
+  });
+});

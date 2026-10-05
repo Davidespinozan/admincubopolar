@@ -3,7 +3,7 @@ import { diaNegocio } from '../utils/fechas';
 import { s, n } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
-import { Card, SectionLabel, StatusBadge, RoleHeader, PageHeader } from './ui/Components';
+import { Card, SectionLabel, StatusBadge, RoleHeader } from './ui/Components';
 import { Icons } from './ui/Icons';
 import { useToast } from './ui/Toast';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
@@ -17,6 +17,8 @@ import { clasificarMovEmpaque, resumenDiaEmpaque } from '../data/empaqueLogic';
 //   embedded (Fase B): la vista vive dentro del shell compartido, sin cabecera propia.
 const BOLSAS_SHELL = "min-h-dvh w-full text-slate-900";
 const CONTENIDO = "mx-auto w-full max-w-[640px] space-y-4 md:max-w-3xl lg:max-w-5xl";
+// B2: dentro del shell el contenido ocupa el workspace como las vistas de Admin.
+const CONTENIDO_SHELL = "w-full space-y-4";
 const NOTA = "Registra lo que llega y lo que entregas a Producción. El inventario es el total de la empresa: baja cuando Producción usa las bolsas.";
 const SKU_BTN = "rounded-[16px] border-2 px-3 py-3 text-left text-sm font-semibold transition-colors";
 
@@ -115,16 +117,15 @@ export default function BolsasView({ user, data, actions, onLogout, embedded = f
     <div className={embedded ? "text-slate-900" : BOLSAS_SHELL} data-testid="bolsas-shell">
       {!embedded && <ModoPruebaBanner />}
       {embedded ? (
-        <div className={CONTENIDO}>
-          <PageHeader title="Almacén de Bolsas" subtitle={NOTA} />
-        </div>
+        /* B2: el shell pone el título de página; aquí solo la nota operativa. */
+        <p className="text-sm text-slate-500">{NOTA}</p>
       ) : (
         <RoleHeader kicker="Almacén" title="Almacén de Bolsas" subtitle={s(user?.nombre)} accent="amber" onLogout={onLogout}>
           <p className="text-sm text-slate-300">{NOTA}</p>
         </RoleHeader>
       )}
 
-      <div className={`${CONTENIDO} ${embedded ? "pt-4" : "px-4 pt-4"}`}>
+      <div className={embedded ? `${CONTENIDO_SHELL} pt-3` : `${CONTENIDO} px-4 pt-4`}>
         {(!empaques || empaques.length === 0) && (
           <EmptyState
             icon="Package"
@@ -132,6 +133,7 @@ export default function BolsasView({ user, data, actions, onLogout, embedded = f
             hint="Pide a Admin que agregue empaques (EMP-25, EMP-5) al catálogo"
           />
         )}
+        <div className={embedded ? "grid grid-cols-1 gap-4 lg:grid-cols-2" : "space-y-4"}>
         {empaques.map(p => {
           const mov = movHoy[s(p.sku)] || { entradas: 0, entregas: 0 };
           const bajo = n(p.stock) < 200;
@@ -160,6 +162,7 @@ export default function BolsasView({ user, data, actions, onLogout, embedded = f
             </Card>
           );
         })}
+        </div>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <FormBtn success size="lg" onClick={() => { setModal("entrada"); setForm({ sku: "EMP-25", cantidad: "", destino: "", costo: "", proveedor: "", esCredito: false }); }}>
@@ -173,7 +176,7 @@ export default function BolsasView({ user, data, actions, onLogout, embedded = f
         {historial.length > 0 && (
           <div>
             <SectionLabel className="mb-2">Movimientos de hoy</SectionLabel>
-            <div className="space-y-2">
+            <div className={embedded ? "grid grid-cols-1 gap-2 lg:grid-cols-2" : "space-y-2"}>
               {historial.map(h => (
                 <Card key={h.id} padding="p-3" tone={h.tipo === "entrada" ? "success" : h.tipo === "entrega" ? "warning" : "danger"}>
                   <div className="flex items-center justify-between gap-2">

@@ -9,7 +9,7 @@ import { compressImage } from '../utils/compressImage';
 import { puedeAgregarAlCuarto, tarimasOcupadasEnCuarto, colorTarimasUso } from '../utils/tarimas';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
-import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton, KpiTile, PageHeader, CapacityBar } from './ui/Components';
+import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton, KpiTile, CapacityBar } from './ui/Components';
 import { Icons } from './ui/Icons';
 import { useToast } from './ui/Toast';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
@@ -24,7 +24,9 @@ import { EmptyState } from './ui/Skeleton';
 //   tab/onTab: pestaña controlada por el shell (menú por rol); sin ellas, estado interno.
 // empaqueMap se deriva dinámicamente de data.productos.empaque_sku
 const TABS = [{ k: "producir", l: "Producción", icon: "Factory" }, { k: "cuartos", l: "Congeladores", icon: "Warehouse" }, { k: "mermas", l: "Mermas", icon: "AlertTriangle" }, { k: "trans", l: "Trans.", icon: "Snowflake" }];
+// B2: dentro del shell el contenido ocupa el workspace como las vistas de Admin.
 const CONTENIDO = "mx-auto w-full max-w-[640px] space-y-3 md:max-w-3xl lg:max-w-5xl";
+const CONTENIDO_SHELL = "w-full space-y-3";
 const LABEL = "mb-1.5 block text-sm font-medium text-slate-700";
 
 export default function ProduccionStandaloneView({ user, data, actions, onLogout, embedded = false, tab: tabProp, onTab }) {
@@ -553,11 +555,9 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     <div className={embedded ? "text-slate-900" : "min-h-dvh w-full text-slate-900"} data-testid="produccion-shell">
       {!embedded && <ModoPruebaBanner />}
       {embedded ? (
-        <div className={CONTENIDO}>
-          <PageHeader title="Producción del día" subtitle={s(user?.nombre)} />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {kpis.map(k => <KpiTile key={k.label} label={k.label} value={k.value} />)}
-          </div>
+        /* B2: el shell pone el título de página; la vista empieza en cifras. */
+        <div className={`${CONTENIDO_SHELL} grid grid-cols-1 gap-3 sm:grid-cols-3`}>
+          {kpis.map((k, i) => <KpiTile key={k.label} label={k.label} value={k.value} hint={i === 0 ? s(user?.nombre) : undefined} />)}
         </div>
       ) : (
         <RoleHeader kicker="Producción" title="Producción del día" subtitle={s(user?.nombre)} accent="sky" onLogout={onLogout}
@@ -576,7 +576,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         mostrarBannerUrgente={true}
       />
 
-      <div className={`${CONTENIDO} ${embedded ? "pt-4" : "px-4 pt-3"}`}>
+      <div className={embedded ? `${CONTENIDO_SHELL} pt-3` : `${CONTENIDO} px-4 pt-3`}>
         {/* En el shell compartido el menú lateral ya lista estas pestañas (lg+). */}
         <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="blue" className={`mb-1 ${embedded ? "lg:hidden" : ""}`} />
 
@@ -704,6 +704,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             </Card>
           )}
 
+          <div className={embedded ? "grid grid-cols-1 gap-3 lg:grid-cols-2" : "space-y-3"}>
           {cuartos.map(cf => {
             const stockEntries = cf.stock ? Object.entries(cf.stock) : [];
             const total = stockEntries.reduce((s, [, v]) => s + n(v), 0);
@@ -766,6 +767,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               </Card>
             );
           })}
+          </div>
         </>)}
 
         {/* ═══ TAB: TRANSFORMACIONES ═══ */}
@@ -787,6 +789,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           ) : (
             <div className="space-y-2">
               <SectionLabel>Historial ({transformaciones.length})</SectionLabel>
+              <div className={embedded ? "grid grid-cols-1 gap-2 lg:grid-cols-2" : "space-y-2"}>
               {transformaciones.slice().reverse().map(t => {
                 const rend = Number(t.rendimiento || 0);
                 const rendColor = rend >= 80 ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : rend >= 65 ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
@@ -815,6 +818,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   </Card>
                 );
               })}
+              </div>
             </div>
           )}
         </>)}

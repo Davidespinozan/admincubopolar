@@ -188,7 +188,10 @@ const AREA_META = {
 // "Ver como" para Admin); `usuarioRol` es el usuario con id/auth_id resueltos
 // que reciben las vistas por rol (igual que antes en App.jsx). La
 // autorización no cambia: `actions` sigue corriendo con el rol real.
-export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions, onLogout, onViewAs }) {
+// `offsetSuperior` (px): alto de las barras fijas de App (vista previa / sin
+// conexión) para que el aside fijo, la cabecera pegajosa y el drawer no queden tapados.
+export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions, onLogout, onViewAs, offsetSuperior = 0 }) {
+  const topFijo = { top: offsetSuperior ? `${offsetSuperior}px` : 0 };
   const rol = rolVista || user?.rol;
   const nav = useMemo(() => navParaRol(rol), [rol]);
   const IDS_MODULOS = useMemo(() => idsModulos(nav), [nav]);
@@ -362,10 +365,10 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       </div>
 
       {/* ═══ SIDEBAR — desktop ═══ */}
-      <aside className="fixed left-0 top-0 z-40 hidden h-full w-[300px] flex-col overflow-hidden border-r border-blue-200/60 bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 text-slate-100 shadow-[0_20px_50px_rgba(8,20,27,0.18)] lg:flex xl:w-[320px]">
-        <div className="flex-shrink-0 border-b border-white/8 px-6 pb-5 pt-6">
+      <aside className="fixed left-0 top-0 z-40 hidden w-[300px] flex-col overflow-hidden border-r border-blue-200/60 bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 text-slate-100 shadow-[0_20px_50px_rgba(8,20,27,0.18)] lg:flex xl:w-[320px]" style={{ ...topFijo, height: offsetSuperior ? `calc(100% - ${offsetSuperior}px)` : "100%" }}>
+        <div className="flex-shrink-0 border-b border-white/10 px-6 pb-5 pt-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-white/10 bg-white/8 shadow-[0_18px_32px_rgba(2,10,15,0.28)]">
+            <div className="flex h-12 w-12 items-center justify-center rounded-[18px] border border-white/10 bg-white/10 shadow-[0_18px_32px_rgba(2,10,15,0.28)]">
               <img src="/icon-192.png" alt="CuboPolar" className="h-8 w-8" />
             </div>
             <div>
@@ -382,9 +385,9 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
               <div key={area.id} className="mb-3">
                 <button
                   onClick={() => toggleArea(area.id)}
-                  className="mb-2 flex w-full items-center gap-2 rounded-[12px] px-3 py-1.5 transition-colors hover:bg-white/6 group"
+                  className="mb-2 flex w-full items-center gap-2 rounded-[12px] px-3 py-1.5 transition-colors hover:bg-white/5 group"
                 >
-                  <span className={`h-2 w-2 rounded-full transition-colors ${expandida ? 'bg-cyan-300' : 'bg-white/28'}`} />
+                  <span className={`h-2 w-2 rounded-full transition-colors ${expandida ? 'bg-cyan-300' : 'bg-white/30'}`} />
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400 group-hover:text-slate-200 flex-1 text-left">{area.label}</p>
                   <svg
                     className={`w-3.5 h-3.5 text-slate-400 transition-transform ${expandida ? 'rotate-90' : ''}`}
@@ -400,9 +403,9 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
                       const active = view === item.id;
                       return (
                         <button key={item.id} onClick={() => go(item.id)}
-                          className={`w-full rounded-[18px] px-3 py-2.5 text-left text-sm transition-all ${active ? 'bg-blue-50 text-blue-900 shadow-[0_16px_28px_rgba(2,10,15,0.16)]' : 'text-slate-300/82 hover:bg-white/6 hover:text-white'}`}>
+                          className={`w-full rounded-[18px] px-3 py-2.5 text-left text-sm transition-all ${active ? 'bg-blue-50 text-blue-900 shadow-[0_16px_28px_rgba(2,10,15,0.16)]' : 'text-slate-300/80 hover:bg-white/5 hover:text-white'}`}>
                           <span className="flex items-center gap-3">
-                            <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[14px] ${active ? 'bg-blue-600 text-white' : 'bg-white/6 text-slate-300'}`}><Ic /></span>
+                            <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[14px] ${active ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-300'}`}><Ic /></span>
                           <span className="truncate flex-1">{item.label}</span>
                           {item.id === 'bandeja' && urgentesBandeja > 0 && (
                             <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">{urgentesBandeja}</span>
@@ -419,26 +422,26 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
         </nav>
 
         {onViewAs && nav.chrome.verComo && (
-          <div className="flex-shrink-0 border-t border-white/8 px-4 py-4">
+          <div className="flex-shrink-0 border-t border-white/10 px-4 py-4">
             <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Ver como...</p>
             <div className="grid grid-cols-2 gap-1">
               {["Chofer","Ventas","Producción","Almacén Bolsas"].map(r => (
-                <button key={r} onClick={()=>onViewAs(r)} className="rounded-[14px] border border-white/10 bg-white/6 px-2 py-2 text-[11px] font-semibold text-white transition-all hover:bg-white/10">{r}</button>
+                <button key={r} onClick={()=>onViewAs(r)} className="rounded-[14px] border border-white/10 bg-white/5 px-2 py-2 text-[11px] font-semibold text-white transition-all hover:bg-white/10">{r}</button>
               ))}
             </div>
           </div>
         )}
-        <div className="flex h-[76px] flex-shrink-0 items-center justify-between border-t border-white/8 px-5">
+        <div className="flex h-[76px] flex-shrink-0 items-center justify-between border-t border-white/10 px-5">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-cyan-200 text-sm font-bold text-slate-950">{user?.nombre?.[0] || "A"}</div>
             <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{user?.nombre || "Admin"}</p><p className="truncate text-xs text-slate-400" data-testid="role-badge">{user?.rol}</p></div>
           </div>
-          {onLogout && <button onClick={onLogout} className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/8 hover:text-white" title="Cerrar sesión" aria-label="Cerrar sesión"><Icons.X /></button>}
+          {onLogout && <button onClick={onLogout} className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white" title="Cerrar sesión" aria-label="Cerrar sesión"><Icons.X /></button>}
         </div>
       </aside>
 
       {/* ═══ TOPBAR ═══ */}
-      <header className="sticky top-0 z-30 px-3 pt-2 lg:ml-[300px] lg:px-6 lg:pt-4 xl:ml-[320px]" style={{paddingTop: "max(env(safe-area-inset-top, 0px), 0.5rem)"}}>
+      <header className="sticky z-30 px-3 pt-2 lg:ml-[300px] lg:px-6 lg:pt-4 xl:ml-[320px]" style={{ ...topFijo, paddingTop: "max(env(safe-area-inset-top, 0px), 0.5rem)" }}>
         <div className="erp-panel erp-shell-blur flex items-center justify-between gap-2 rounded-[22px] px-4 py-2.5 lg:rounded-[28px] lg:px-5 lg:py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <button
@@ -540,7 +543,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
           <aside
             // Tanda 16 P0: overscroll-contain previene que el scroll
             // del drawer se propague al body en iOS Safari.
-            className="lg:hidden fixed top-0 left-0 bottom-0 w-[85%] max-w-[320px] bg-white z-50 shadow-2xl overflow-y-auto overscroll-contain animate-slideInLeft flex flex-col"
+            className="lg:hidden fixed left-0 bottom-0 w-[85%] max-w-[320px] bg-white z-50 shadow-2xl overflow-y-auto overscroll-contain animate-slideInLeft flex flex-col" style={topFijo}
             role="dialog"
             aria-modal="true"
             aria-label="Menú principal"

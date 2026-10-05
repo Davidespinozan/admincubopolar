@@ -870,11 +870,11 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   if (step === "cargar") return (
     <div className={CHOFER_SHELL} data-testid="chofer-shell">
       <ModoPruebaBanner />
-      <RoleHeader kicker="Chofer" title="Cargar camión" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout}>
-        <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">Paso 1 de 3</p>
-          <h2 className="font-display mt-2 text-[1.55rem] font-bold tracking-[-0.04em] text-white">Marca cuánto cargaste</h2>
-          <p className="mt-1.5 text-sm text-slate-300">Producción debe firmar antes de salir.</p>
+      <RoleHeader compact kicker="Chofer" title="Cargar camión" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[16px] border border-white/10 bg-white/10 px-3 py-2">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">Paso 1 de 3</span>
+          <span className="text-sm font-semibold text-white">Marca cuánto cargaste</span>
+          <span className="text-xs text-slate-300">· Producción debe firmar antes de salir.</span>
         </div>
       </RoleHeader>
       <div className={`${CONTENIDO} space-y-3`}>
@@ -936,7 +936,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     return (
       <div className={CHOFER_SHELL} data-testid="chofer-shell">
         <ModoPruebaBanner />
-        <RoleHeader kicker="Esperando firma" title="Producción debe autorizar" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} />
+        <RoleHeader compact kicker="Chofer · Paso 2 de 3" title="Producción debe autorizar" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} />
         <div className={`${CONTENIDO} space-y-4`}>
           <Card tone="warning" className="text-center">
             <p className="mb-2 flex justify-center text-amber-700 [&>svg]:h-10 [&>svg]:w-10"><Icons.Clock /></p>
@@ -1070,7 +1070,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     return (
       <div className={CHOFER_SHELL} data-testid="chofer-shell">
         <ModoPruebaBanner />
-        <RoleHeader kicker="Lista para salir" title="Carga firmada ✓" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} />
+        <RoleHeader compact kicker="Chofer · Lista para salir" title="Carga firmada ✓" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} />
         <div className={`${CONTENIDO} space-y-4`}>
           <Card tone="success" className="text-center">
             <p className="mb-2 flex justify-center text-emerald-700 [&>svg]:h-10 [&>svg]:w-10"><Icons.Check /></p>
@@ -1099,7 +1099,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     <div className={CHOFER_SHELL} data-testid="chofer-shell" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
       <ModoPruebaBanner />
       <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
-      <RoleHeader kicker="Chofer" title="En ruta" subtitle={s(user?.nombre)} accent="cyan"
+      <RoleHeader compact kicker="Chofer" title="En ruta" subtitle={s(user?.nombre)} accent="cyan"
         right={<>
           <button type="button" onClick={() => setMapaVisible(v => !v)}
             className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-[13px] px-4 py-2.5 text-xs font-bold transition-all ${mapaVisible ? 'bg-blue-500 text-white' : 'bg-white/15 text-cyan-200'}`}>
@@ -1107,7 +1107,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           </button>
           <div className="text-right"><p className="font-display text-lg font-bold text-white">{fmtMoney(totalCobrado)}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>
         </>}>
-        <div className="flex items-center gap-3 rounded-[18px] border border-white/10 bg-white/8 p-3">
+        <div className="flex items-center gap-3 rounded-[18px] border border-white/10 bg-white/10 p-3">
           <div className="flex-1"><div className="h-2 overflow-hidden rounded-full bg-white/20"><div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${ordenesConDetalle.length > 0 ? (entregadasList.length / ordenesConDetalle.length) * 100 : 0}%` }} /></div></div>
           <span className="text-sm font-bold text-white">{entregadasList.length}/{ordenesConDetalle.length}</span>
         </div>
@@ -1239,7 +1239,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       </div>
 
       {/* Bottom bar */}
-      <div className="fixed bottom-0 left-1/2 z-40 w-full max-w-[640px] -translate-x-1/2 border-t border-white/10 bg-slate-950/92 px-4 py-3 backdrop-blur-xl md:max-w-3xl lg:max-w-5xl" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
+      <div className="fixed bottom-0 left-1/2 z-40 w-full max-w-[640px] -translate-x-1/2 border-t border-white/10 bg-slate-950/95 px-4 py-3 backdrop-blur-xl md:max-w-3xl lg:max-w-5xl" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
         {/* Ver ruta completa en Maps si hay pendientes con coords */}
         {(() => {
           const conCoords = pendientes.filter(o => o.latitud && o.longitud);
@@ -1486,7 +1486,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       <div className={CHOFER_SHELL} data-testid="chofer-shell">
         <ModoPruebaBanner />
         <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
-        <RoleHeader kicker="Paso 3 de 3" title="Cierre de ruta" subtitle={`${s(user?.nombre)} · ${fmtDate(new Date())}`} accent="cyan"
+        <RoleHeader compact kicker="Chofer · Paso 3 de 3" title="Cierre de ruta" subtitle={`${s(user?.nombre)} · ${fmtDate(new Date())}`} accent="cyan"
           right={!rutaCerrada && <button type="button" onClick={() => setStep("ruta")} className="inline-flex min-h-[44px] items-center rounded-[13px] border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white">← Volver</button>} />
         <div className={`${CONTENIDO} space-y-4`}>
           <Card>

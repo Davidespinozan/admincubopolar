@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useRef, Suspense } from 'react'
 import LoginScreen from './components/Login'
 import CuboPolarERP from './components/CuboPolarERP'
+import BarraVistaPrevia, { ALTO_BARRA_VISTA_PREVIA } from './components/ui/BarraVistaPrevia'
 import { useSupaStore } from './data/supaStore'
 import { supabase } from './lib/supabase'
 import { setUserContext, Sentry } from './lib/sentry'
@@ -323,17 +324,9 @@ function App() {
     setUser(null)
   }
 
-  const adminBar = isAdmin && adminViewAs ? (
-    <div className="fixed top-0 left-0 right-0 z-[110] border-b border-white/10 bg-slate-950/92 px-4 py-2 text-cyan-50 erp-shell-blur shadow-[0_14px_30px_rgba(8,20,27,0.28)]">
-      <div className="flex items-center justify-between">
-        <span className="text-xs font-bold tracking-[0.14em] uppercase">Vista previa: {adminViewAs}</span>
-        <button onClick={() => setAdminViewAs(null)} className="rounded-full border border-white/12 bg-white/8 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-white/14">
-          ← Volver a Admin
-        </button>
-      </div>
-      <p className="text-[10px] text-amber-300 mt-1">Estás viendo TODOS los datos como Admin. Cada usuario real solo ve lo suyo.</p>
-    </div>
-  ) : null
+  // B2: barra de vista previa compacta (una línea, 36px). Misma semántica:
+  // indica PREVIEW, el rol, el aviso de datos sin recorte y "Volver a Admin".
+  const adminBar = isAdmin && adminViewAs ? <BarraVistaPrevia rol={adminViewAs} onVolver={() => setAdminViewAs(null)} /> : null
 
   // Banner sticky de offline + toast efímero "Conexión restaurada"
   const offlineBar = isOffline ? (
@@ -355,7 +348,8 @@ function App() {
   ) : null
 
   const globalTop = offlineBar || reconectadoBar
-  const topPadding = (globalTop && adminBar) ? '108px' : (globalTop ? '40px' : (adminBar ? '56px' : '0'))
+  const topPaddingPx = (globalTop && adminBar) ? 40 + ALTO_BARRA_VISTA_PREVIA : (globalTop ? 40 : (adminBar ? ALTO_BARRA_VISTA_PREVIA : 0))
+  const topPadding = `${topPaddingPx}px`
 
   const withGlobalBars = (view) => (globalTop || adminBar)
     ? <>{globalTop}{adminBar}<div style={{ paddingTop: topPadding }}>{view}</div></>
@@ -378,6 +372,7 @@ function App() {
         actions={actions}
         onLogout={handleLogout}
         onViewAs={isAdmin ? setAdminViewAs : null}
+        offsetSuperior={topPaddingPx}
       />
     </Suspense>
   )

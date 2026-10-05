@@ -115,7 +115,7 @@ export const DataTable = ({
         {data.map((row, i) => {
           const badgeCol = columns.find(c => c.badge);
           return (
-          <div key={i} onClick={() => onRowClick?.(row)} className="cursor-pointer rounded-[20px] border border-slate-200/80 bg-white/78 p-3 shadow-[0_8px_20px_rgba(8,20,27,0.05)] transition-colors active:bg-slate-50 sm:p-4">
+          <div key={i} onClick={() => onRowClick?.(row)} className="cursor-pointer rounded-[20px] border border-slate-200/80 bg-white/80 p-3 shadow-[0_8px_20px_rgba(8,20,27,0.05)] transition-colors active:bg-slate-50 sm:p-4">
             {/* Card header: primary value + badge top-right */}
             <div className="flex items-start justify-between gap-2 mb-1.5">
               <div className="min-w-0 flex-1">
@@ -155,7 +155,7 @@ export const DataTable = ({
 // Mobile: stacked, full-width action button
 // Desktop: row with inline button
 export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon, extraButtons }) => (
-  <div className="mb-3 flex flex-col gap-3 rounded-[22px] border border-slate-200/80 bg-white/62 px-3 py-2.5 shadow-[0_12px_24px_rgba(8,20,27,0.05)] backdrop-blur-xl sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:rounded-[28px] sm:px-5 sm:py-4.5">
+  <div className="mb-3 flex flex-col gap-3 rounded-[22px] border border-slate-200/80 bg-white/60 px-3 py-2.5 shadow-[0_12px_24px_rgba(8,20,27,0.05)] backdrop-blur-xl sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:rounded-[28px] sm:px-5 sm:py-4.5">
     <div className="min-w-0">
       <h1 className="font-display text-base font-bold tracking-[-0.03em] text-slate-900 sm:text-[1.6rem]">{title}</h1>
       {subtitle && <p className="hidden text-xs text-slate-500 sm:block sm:mt-1 sm:text-sm">{subtitle}</p>}
@@ -236,14 +236,16 @@ const ACCENTS = {
   sky:     "text-sky-200/80",
   cyan:    "text-cyan-200/80",
 };
-export const RoleHeader = ({ kicker, title, subtitle, accent = "cyan", onLogout, logoutLabel = "Salir", right, children }) => (
-  <header className="bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 px-4 pb-5 text-slate-100 shadow-[0_20px_50px_rgba(8,20,27,0.18)]"
-    style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
+//   compact (B2): modo operativo (Chofer): menos alto, marca CUBOPOLAR + rol en
+//   una línea, título más chico; el contenido operativo aparece antes.
+export const RoleHeader = ({ kicker, title, subtitle, accent = "cyan", onLogout, logoutLabel = "Salir", right, children, compact = false }) => (
+  <header className={`bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 px-4 text-slate-100 shadow-[0_20px_50px_rgba(8,20,27,0.18)] ${compact ? "pb-3" : "pb-5"}`}
+    style={{ paddingTop: compact ? "max(env(safe-area-inset-top, 0px), 0.75rem)" : "max(env(safe-area-inset-top, 44px), 44px)" }}>
     <div className="mx-auto w-full max-w-[640px] md:max-w-3xl lg:max-w-5xl">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          {kicker && <p className={`erp-kicker ${ACCENTS[accent] || ACCENTS.cyan}`}>{kicker}</p>}
-          <h1 className="font-display text-[1.6rem] font-bold tracking-[-0.04em] text-white sm:text-[1.8rem]">{title}</h1>
+          {kicker && <p className={`erp-kicker ${ACCENTS[accent] || ACCENTS.cyan}`}>{compact ? <><span className="text-white/60">CUBOPOLAR</span> · {kicker}</> : kicker}</p>}
+          <h1 className={`font-display font-bold tracking-[-0.04em] text-white ${compact ? "text-[1.25rem] sm:text-[1.4rem]" : "text-[1.6rem] sm:text-[1.8rem]"}`}>{title}</h1>
           {subtitle && <p className="truncate text-xs text-slate-300">{subtitle}</p>}
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
@@ -255,14 +257,14 @@ export const RoleHeader = ({ kicker, title, subtitle, accent = "cyan", onLogout,
           )}
         </div>
       </div>
-      {children && <div className="mt-4">{children}</div>}
+      {children && <div className={compact ? "mt-3" : "mt-4"}>{children}</div>}
     </div>
   </header>
 );
 
 // Tarjeta de cifra para el RoleHeader (fondo oscuro).
 export const HeaderStat = ({ label, value, className = "" }) => (
-  <div className={`rounded-[22px] border border-white/10 bg-white/8 p-3.5 backdrop-blur-xl ${className}`}>
+  <div className={`rounded-[22px] border border-white/10 bg-white/10 p-3.5 backdrop-blur-xl ${className}`}>
     <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-300">{label}</p>
     <p className="mt-1.5 font-display text-2xl font-bold tracking-[-0.04em] text-white">{value}</p>
   </div>
@@ -279,7 +281,7 @@ const SEG_ACTIVE = {
   amber:   "bg-amber-600 text-white shadow-[0_12px_22px_rgba(217,119,6,0.14)]",
 };
 export const SegmentedTabs = ({ items, value, onChange, accent = "slate", className = "" }) => (
-  <div className={`grid gap-1 rounded-[20px] border border-slate-200/80 bg-white/72 p-1.5 shadow-panel ${className}`}
+  <div className={`grid gap-1 rounded-[20px] border border-slate-200/80 bg-white/70 p-1.5 shadow-panel ${className}`}
     style={{ gridTemplateColumns: `repeat(${Math.max(1, items.length)}, minmax(0, 1fr))` }} role="tablist">
     {items.map(t => {
       const Ic = t.icon ? Icons[t.icon] : null;

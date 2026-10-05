@@ -6,7 +6,7 @@ import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
-import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton, KpiTile, PageHeader } from './ui/Components';
+import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton, KpiTile } from './ui/Components';
 import { Icons } from './ui/Icons';
 
 // Fase A3 (convergencia visual por rol): esta vista usa las primitivas del
@@ -18,7 +18,10 @@ import { Icons } from './ui/Icons';
 //   tab/onTab: pestaña controlada por el shell (menú por rol); sin ellas, estado interno.
 const PAGOS = ["Efectivo", "Transferencia SPEI", "Tarjeta (terminal)", "QR / Link de pago", "Crédito (fiado)"];
 const TABS = [{ k: "ventas", l: "Por cobrar", icon: "DollarSign" }, { k: "hoy", l: "Hoy", icon: "Clock" }, { k: "todas", l: "Todas", icon: "List" }];
+// B2: dentro del shell el contenido ocupa el workspace como las vistas de Admin
+// (sin columna angosta); solo la vista suelta conserva el ancho móvil centrado.
 const CONTENIDO = "mx-auto w-full max-w-[640px] space-y-4 md:max-w-3xl lg:max-w-5xl";
+const CONTENIDO_SHELL = "w-full space-y-4";
 
 export default function VentasStandaloneView({ user, data, actions, onLogout, embedded = false, tab: tabProp, onTab }) {
   const toast = useToast();
@@ -106,11 +109,12 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
     <div className={embedded ? "text-slate-900" : "min-h-dvh w-full text-slate-900"} data-testid="ventas-shell">
       {!embedded && <ModoPruebaBanner />}
       {embedded ? (
-        <div className={CONTENIDO}>
-          <PageHeader title="Ventas del día" subtitle={s(user?.nombre)} extraButtons={nuevaVentaBtn} />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <KpiTile label="Vendido hoy" value={fmtMoney(ventasHoy)} />
-            <KpiTile label="Pendientes" value={pendientes.length} hint="órdenes por cobrar" />
+        /* B2: el shell pone el título de página; la vista empieza en cifras y acción. */
+        <div className={`${CONTENIDO_SHELL} grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-stretch`}>
+          <KpiTile label="Vendido hoy" value={fmtMoney(ventasHoy)} hint={s(user?.nombre)} />
+          <KpiTile label="Pendientes" value={pendientes.length} hint="órdenes por cobrar" />
+          <div className="flex items-stretch sm:col-span-2 lg:col-span-1">
+            <FormBtn success size="lg" className="w-full lg:min-w-[220px]" onClick={abrirNuevaVenta}><Icons.Plus /> Nueva venta</FormBtn>
           </div>
         </div>
       ) : (
@@ -122,13 +126,13 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
         </RoleHeader>
       )}
 
-      <div className={`${CONTENIDO} ${embedded ? "pt-4" : "px-4 pt-4"}`}>
+      <div className={embedded ? `${CONTENIDO_SHELL} pt-4` : `${CONTENIDO} px-4 pt-4`}>
         {!embedded && nuevaVentaBtn}
 
         {/* En el shell compartido el menú lateral ya lista estas pestañas (lg+). */}
         <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="emerald" className={embedded ? "lg:hidden" : ""} />
 
-        <div className="space-y-2">
+        <div className={embedded ? "grid grid-cols-1 gap-2 xl:grid-cols-2" : "space-y-2"}>
           {lista.map(o => (
             <Card key={o.id} padding="p-4">
               <div className="flex items-start justify-between gap-3">
@@ -158,7 +162,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
             </Card>
           ))}
           {lista.length === 0 && (
-            <Card>
+            <Card className="xl:col-span-2">
               {tab === "ventas" && (
                 <EmptyState
                   icon="DollarSign"
