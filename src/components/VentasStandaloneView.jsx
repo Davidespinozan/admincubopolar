@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { diaNegocio } from '../utils/fechas';
-import { s, n, fmtMoney, extraerTelefono } from '../utils/safe';
+import { s, fmtMoney, fmtDate, extraerTelefono } from '../utils/safe';
+import { resumenPorCobrar, resumenVentasHoy, resumenHistorial, textoDesglose } from '../data/ventasResumenLogic';
 import { EmptyState } from './ui/Skeleton';
 import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
@@ -93,31 +94,87 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
   };
 
   const hoy = diaNegocio();
-  const ordenesHoy = useMemo(() => ordenesUsuario.filter(o => o.fecha && o.fecha.slice(0, 10) === hoy), [ordenesUsuario, hoy]);
-  const pendientes = useMemo(() => ordenesUsuario.filter(o => o.estatus === "Creada"), [ordenesUsuario]);
-  const ventasHoy = useMemo(() => ordenesHoy.filter(o => o.estatus === "Entregada").reduce((s, o) => s + n(o.total), 0), [ordenesHoy]);
+  // B3.4: cada módulo tiene su contexto, derivado del MISMO `ordenesUsuario`
+  // que pinta sus listas (propias, o todas en la vista previa de Admin).
+  const porCobrar = useMemo(() => resumenPorCobrar(ordenesUsuario), [ordenesUsuario]);
+  const resumenHoy = useMemo(() => resumenVentasHoy(ordenesUsuario, hoy), [ordenesUsuario, hoy]);
+  const historial = useMemo(() => resumenHistorial(ordenesUsuario), [ordenesUsuario]);
+  const ordenesHoy = resumenHoy.ordenesHoy;
+  const pendientes = porCobrar.directo.ordenes;   // estatus === "Creada" (cabecera suelta: misma cifra de siempre)
+  const ventasHoy = resumenHoy.vendidoHoy;
 
   const abrirNuevaVenta = () => setModal(true);
-  const lista = tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : ordenesUsuario;
+  const lista = tab === "hoy" ? ordenesHoy : ordenesUsuario;
   const nuevaVentaBtn = (
-    <FormBtn success size={embedded ? undefined : "lg"} className={embedded ? "" : "w-full sm:w-auto sm:px-10"} onClick={abrirNuevaVenta}>
+    <FormBtn success size="lg" className={embedded ? "w-full" : "w-full sm:w-auto sm:px-10"} onClick={abrirNuevaVenta}>
       <Icons.Plus /> Nueva venta
     </FormBtn>
   );
+  const REJILLA_LISTA = embedded ? "grid grid-cols-1 gap-2 xl:grid-cols-2" : "space-y-2";
+
+  // Tarjeta de orden: mismo contenido y MISMAS acciones por estatus que antes
+  // (Creada: Cobrar / Enviar a ruta; Asignada: Cobrar entrega). Verla en otro
+  // módulo no le da acciones nuevas.
+  const tarjetaOrden = (o) => (
+    <Card key={o.id} padding="p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs font-bold text-blue-700">{s(o.folio)}</span>
+            {o.requiereFactura && <span className="rounded-full border border-violet-200/80 bg-violet-100/80 px-2 py-0.5 text-[10px] font-bold text-violet-900">FACTURA</span>}
+          </div>
+          <p className="mt-0.5 truncate text-sm font-bold text-slate-800">{s(o.cliente)}</p>
+          <p className="mt-0.5 text-xs text-slate-400">{s(o.productos)}</p>
+        </div>
+        <div className="flex flex-shrink-0 flex-col items-end gap-1">
+          <p className="font-display text-base font-bold tracking-[-0.03em] text-slate-900">{fmtMoney(o.total)}</p>
+          <StatusBadge status={s(o.estatus)} />
+        </div>
+      </div>
+      {o.estatus === "Creada" && (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <FormBtn success onClick={() => cobrar(o)}>Cobrar</FormBtn>
+          <FormBtn onClick={() => { actions.updateOrdenEstatus(o.id, "Asignada"); showToast("Asignada a ruta"); }}
+            className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"><Icons.Truck /> Enviar a ruta</FormBtn>
+        </div>
+      )}
+      {o.estatus === "Asignada" && (
+        <FormBtn onClick={() => cobrar(o)} className="mt-3 w-full border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">Cobrar entrega</FormBtn>
+      )}
+    </Card>
+  );
+
+  // Contexto por módulo (sin fila genérica repetida; sin cifras en $0 de relleno).
+  const grupoMonto = (g) => g.count > 0 ? fmtMoney(g.monto) : "—";
+  const grupoHint = (g, txt) => g.count > 0 ? `${g.count} ${g.count === 1 ? "orden" : "órdenes"} · ${txt}` : "Sin órdenes";
+  const contextoModulo =
+    tab === "ventas" ? (porCobrar.vacio ? null : (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="contexto-por-cobrar">
+        <KpiTile label="Por cobrar directo" value={grupoMonto(porCobrar.directo)} hint={grupoHint(porCobrar.directo, "sin asignar a ruta")} />
+        <KpiTile label="En ruta por cobrar" value={grupoMonto(porCobrar.enRuta)} hint={grupoHint(porCobrar.enRuta, "asignadas a ruta")} />
+      </div>
+    )) :
+    tab === "hoy" ? (resumenHoy.count === 0 ? null : (
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-testid="contexto-hoy">
+        <KpiTile label="Vendido hoy" value={fmtMoney(resumenHoy.vendidoHoy)} hint="órdenes de hoy entregadas" />
+        <KpiTile label="Órdenes hoy" value={resumenHoy.count} hint={textoDesglose(resumenHoy.porEstatus)} />
+        <KpiTile label="Última venta de hoy" compact value={`${resumenHoy.ultima.folio} · ${fmtMoney(resumenHoy.ultima.total)}`}
+          hint={[resumenHoy.ultima.cliente, resumenHoy.ultima.estatus].filter(Boolean).join(" · ")} />
+      </div>
+    )) :
+    (historial.count === 0 ? null : (
+      <p className="px-1 text-sm text-slate-500" data-testid="contexto-todas">
+        <span className="font-semibold text-slate-700">{historial.count} {historial.count === 1 ? "orden" : "órdenes"}</span>
+        {historial.desde && <> · desde {fmtDate(historial.desde)}</>}
+      </p>
+    ));
 
   return (
     <div className={embedded ? "text-slate-900" : "min-h-dvh w-full text-slate-900"} data-testid="ventas-shell">
       {!embedded && <ModoPruebaBanner />}
-      {embedded ? (
-        /* B2: el shell pone el título de página; la vista empieza en cifras y acción. */
-        <div className={`${CONTENIDO_SHELL} grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-stretch`}>
-          <KpiTile label="Vendido hoy" value={fmtMoney(ventasHoy)} hint={s(user?.nombre)} />
-          <KpiTile label="Pendientes" value={pendientes.length} hint="órdenes por cobrar" />
-          <div className="flex items-stretch sm:col-span-2 lg:col-span-1">
-            <FormBtn success size="lg" className="w-full lg:min-w-[220px]" onClick={abrirNuevaVenta}><Icons.Plus /> Nueva venta</FormBtn>
-          </div>
-        </div>
-      ) : (
+      {/* B2: el shell pone el título de página. B3.4: dentro del shell cada módulo
+          abre con su propio contexto (abajo); la cabecera suelta no cambia. */}
+      {!embedded && (
         <RoleHeader kicker="Ventas" title="Ventas del día" subtitle={s(user?.nombre)} accent="emerald" onLogout={onLogout}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <HeaderStat label="Vendido hoy" value={fmtMoney(ventasHoy)} />
@@ -126,42 +183,34 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
         </RoleHeader>
       )}
 
-      <div className={embedded ? `${CONTENIDO_SHELL} pt-4` : `${CONTENIDO} px-4 pt-4`}>
+      <div className={embedded ? CONTENIDO_SHELL : `${CONTENIDO} px-4 pt-4`}>
         {!embedded && nuevaVentaBtn}
 
         {/* B3: dentro del shell navegan el sidebar (lg+) y la barra inferior (móvil); las pestañas solo en la vista suelta. */}
         {!embedded && <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="emerald" />}
 
-        <div className={embedded ? "grid grid-cols-1 gap-2 xl:grid-cols-2" : "space-y-2"}>
-          {lista.map(o => (
-            <Card key={o.id} padding="p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-blue-700">{s(o.folio)}</span>
-                    {o.requiereFactura && <span className="rounded-full border border-violet-200/80 bg-violet-100/80 px-2 py-0.5 text-[10px] font-bold text-violet-900">FACTURA</span>}
-                  </div>
-                  <p className="mt-0.5 truncate text-sm font-bold text-slate-800">{s(o.cliente)}</p>
-                  <p className="mt-0.5 text-xs text-slate-400">{s(o.productos)}</p>
-                </div>
-                <div className="flex flex-shrink-0 flex-col items-end gap-1">
-                  <p className="font-display text-base font-bold tracking-[-0.03em] text-slate-900">{fmtMoney(o.total)}</p>
-                  <StatusBadge status={s(o.estatus)} />
-                </div>
-              </div>
-              {o.estatus === "Creada" && (
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <FormBtn success onClick={() => cobrar(o)}>Cobrar</FormBtn>
-                  <FormBtn onClick={() => { actions.updateOrdenEstatus(o.id, "Asignada"); showToast("Asignada a ruta"); }}
-                    className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"><Icons.Truck /> Enviar a ruta</FormBtn>
-                </div>
-              )}
-              {o.estatus === "Asignada" && (
-                <FormBtn onClick={() => cobrar(o)} className="mt-3 w-full border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">Cobrar entrega</FormBtn>
-              )}
-            </Card>
-          ))}
-          {lista.length === 0 && (
+        {/* B3.4: contexto del módulo → Nueva venta → contenido. */}
+        {contextoModulo}
+        {embedded && nuevaVentaBtn}
+
+        {tab === "ventas" && !porCobrar.vacio && (<>
+          {porCobrar.directo.count > 0 && (
+            <div className="space-y-2" data-testid="grupo-por-cobrar-directo">
+              <SectionLabel>Por cobrar directo ({porCobrar.directo.count})</SectionLabel>
+              <div className={REJILLA_LISTA}>{porCobrar.directo.ordenes.map(tarjetaOrden)}</div>
+            </div>
+          )}
+          {porCobrar.enRuta.count > 0 && (
+            <div className="space-y-2" data-testid="grupo-en-ruta-por-cobrar">
+              <SectionLabel>En ruta por cobrar ({porCobrar.enRuta.count})</SectionLabel>
+              <div className={REJILLA_LISTA}>{porCobrar.enRuta.ordenes.map(tarjetaOrden)}</div>
+            </div>
+          )}
+        </>)}
+
+        <div className={REJILLA_LISTA}>
+          {tab !== "ventas" && lista.map(tarjetaOrden)}
+          {(tab === "ventas" ? porCobrar.vacio : lista.length === 0) && (
             <Card className="xl:col-span-2">
               {tab === "ventas" && (
                 <EmptyState
