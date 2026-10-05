@@ -8,14 +8,29 @@ import { s, n, fmtDate, fmtPct, todayLocalISO } from '../utils/safe';
 import { compressImage } from '../utils/compressImage';
 import { puedeAgregarAlCuarto, tarimasOcupadasEnCuarto, colorTarimasUso } from '../utils/tarimas';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
-import { useBodyScrollLock } from './ui/Modal';
+import Modal, { FormInput, FormBtn } from './ui/Modal';
+import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton, KpiTile, PageHeader, CapacityBar } from './ui/Components';
+import { Icons } from './ui/Icons';
+import { useToast } from './ui/Toast';
+import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { EmptyState } from './ui/Skeleton';
 
+// Fase A4 (convergencia visual por rol): esta vista usa las primitivas del
+// shell de Administración (cabecera, pestañas segmentadas, tarjetas, Modal,
+// FormInput/FormBtn, ChoiceButton, toast global). Los flujos (producir,
+// congeladores, mermas, transformación), sus validaciones, fotos, firmas,
+// UUIDs de operación y llamadas al store no cambian.
+//   embedded: la vista vive dentro del shell compartido (sin cabecera propia).
+//   tab/onTab: pestaña controlada por el shell (menú por rol); sin ellas, estado interno.
 // empaqueMap se deriva dinámicamente de data.productos.empaque_sku
-const PRODUCCION_SHELL = "min-h-dvh w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf3f6_0%,#e5edf1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
+const TABS = [{ k: "producir", l: "Producción", icon: "Factory" }, { k: "cuartos", l: "Congeladores", icon: "Warehouse" }, { k: "mermas", l: "Mermas", icon: "AlertTriangle" }, { k: "trans", l: "Trans.", icon: "Snowflake" }];
+const CONTENIDO = "mx-auto w-full max-w-[640px] space-y-3 md:max-w-3xl lg:max-w-5xl";
+const LABEL = "mb-1.5 block text-sm font-medium text-slate-700";
 
-export default function ProduccionStandaloneView({ user, data, actions, onLogout }) {
-  const [tab, setTab] = useState("producir");
+export default function ProduccionStandaloneView({ user, data, actions, onLogout, embedded = false, tab: tabProp, onTab }) {
+  const [tabLocal, setTabLocal] = useState("producir");
+  const tab = tabProp ?? tabLocal;
+  const setTab = (k) => { if (onTab) onTab(k); else setTabLocal(k); };
   const [modal, setModal] = useState(false);
   const [traspasoModal, setTraspasoModal] = useState(false);
   const [sacarModal, setSacarModal] = useState(null); // { cfId, cfNombre }
@@ -38,8 +53,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const [mermaModal, setMermaModal] = useState(false);
   const [mForm, setMForm] = useState({ sku: "", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" });
-  // Tanda 17 P1: body scroll lock con boolean agregado de los 5 modales del archivo.
-  useBodyScrollLock(!!modal || !!traspasoModal || !!sacarModal || !!transModal || !!mermaModal);
+  // (El bloqueo de scroll y Escape de las 5 hojas los hace el Modal compartido.)
   const [fotoMermaFile, setFotoMermaFile] = useState(null);
   const [fotoMermaPreview, setFotoMermaPreview] = useState('');
   const [guardandoMerma, setGuardandoMerma] = useState(false);
@@ -56,18 +70,18 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const enVueloProd = useRef(false);
   const enVueloTrans = useRef(false);
 
-  const [toast, setToast] = useState("");
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
+  const toast = useToast();
+  const showToast = (msg, tipo = "success") => { (toast?.[tipo] || toast?.info)?.(msg); };
 
   // Handler compartido: comprime cliente-side, valida 5MB como red de
   // seguridad, y guarda el File comprimido + un objectURL para preview.
   const handleImagePickFile = (clearFn, setFile, setPreview) => async (e) => {
     const original = e.target.files?.[0];
     if (!original) return;
-    if (original.size > 2 * 1024 * 1024) showToast('Procesando foto…');
+    if (original.size > 2 * 1024 * 1024) showToast('Procesando foto…', 'info');
     const file = await compressImage(original);
     if (file.size > 5 * 1024 * 1024) {
-      showToast('Foto muy grande, máx 5MB');
+      showToast('Foto muy grande, máx 5MB', 'error');
       e.target.value = '';
       return;
     }
@@ -94,26 +108,8 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     };
   }, [fotoMermaProdPreview]);
 
-  // Escape para los 2 modales ad-hoc principales: "Ya produje hielo" y
-  // "Mover entre congeladores". Si hay un guardado en curso (guardandoProd
-  // o haciendoTraspaso), Escape NO cierra para evitar perder contexto.
-  useEffect(() => {
-    const algunoAbierto = !!modal || !!traspasoModal;
-    if (!algunoAbierto) return;
-    if (guardandoProd || haciendoTraspaso) return;
-    const onKey = (e) => {
-      if (e.key !== 'Escape') return;
-      if (modal) {
-        setModal(false);
-        // mantener consistencia con el click-fuera existente
-        if (typeof clearFotoMermaProd === 'function') clearFotoMermaProd();
-      } else if (traspasoModal) {
-        setTraspasoModal(false);
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [modal, traspasoModal, guardandoProd, haciendoTraspaso]);
+  // Escape: lo gestiona el Modal compartido (closeOnEscape bloqueado mientras
+  // hay un guardado en curso; "Ya produje hielo" limpia la foto al cerrar).
 
   const clearFotoMerma = () => {
     if (fotoMermaPreview && fotoMermaPreview.startsWith('blob:')) {
@@ -139,9 +135,9 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const registrarMerma = async () => {
     if (!mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMermaFile) return;
-    if (!s(mForm.congelador)) { showToast('Selecciona el congelador donde ocurrió la merma'); return; }
+    if (!s(mForm.congelador)) { showToast('Selecciona el congelador donde ocurrió la merma', 'error'); return; }
     if (fotoMermaFile.size > 5 * 1024 * 1024) {
-      showToast('Foto muy grande, máx 5MB');
+      showToast('Foto muy grande, máx 5MB', 'error');
       return;
     }
     const cant = n(mForm.cantidad);
@@ -162,7 +158,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             contentType: fotoMermaFile.type || 'image/jpeg',
           });
         if (uploadErr) {
-          showToast('No se pudo subir la foto');
+          showToast('No se pudo subir la foto', 'error');
           return;
         }
         fotoMermaSubidaRef.current = { file: fotoMermaFile, path: filePath };
@@ -175,7 +171,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       opMermaRef.current = op;
       const mermaErr = await actions.registrarMermaCuarto({ ...datos, operacionId: op.id });
       if (mermaErr) {
-        showToast(mermaErr.error || 'No se pudo registrar la merma. Intenta de nuevo.');
+        showToast(mermaErr.error || 'No se pudo registrar la merma. Intenta de nuevo.', 'error');
         return;
       }
       opMermaRef.current = null;
@@ -320,7 +316,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     if (guardandoTrans || enVueloTrans.current) return;
     if (!transForm.input_sku || !transForm.output_sku || transInputKg <= 0 || transOutputKg <= 0) return;
     if (!transForm.cuarto_destino) {
-      showToast('Selecciona el cuarto destino');
+      showToast('Selecciona el cuarto destino', 'error');
       return;
     }
     const datos = { ...transForm, input_kg: transInputKg, output_kg: transOutputKg };
@@ -332,7 +328,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       // Una sola RPC atómica; un error = el servidor revirtió todo.
       const result = await actions.addTransformacion({ ...datos, operacionId: op.id });
       if (result?.error) {
-        showToast('Error: ' + result.error);
+        showToast('Error: ' + result.error, 'error');
         return; // se conserva el operacion_id: reintentar no duplica
       }
       opTransRef.current = null;
@@ -341,7 +337,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       setTransForm({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", cuarto_destino: "CF-1", notas: "" });
     } catch (e) {
       console.error('Error transformación:', e);
-      showToast('Error en transformación. Verifica tu conexión y reintenta.');
+      showToast('Error en transformación. Verifica tu conexión y reintenta.', 'error');
     } finally {
       enVueloTrans.current = false;
       setGuardandoTrans(false);
@@ -368,15 +364,15 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const registrarProduccion = async () => {
     if (guardandoProd || enVueloProd.current) return;
     if (!form.cantidad || n(form.cantidad) <= 0) {
-      showToast('Captura una cantidad válida');
+      showToast('Captura una cantidad válida', 'error');
       return;
     }
     if (bolsaSku && n(form.cantidad) > stockBolsa) {
-      showToast(`Stock insuficiente de ${bolsaSku} (disp: ${stockBolsa}, pediste ${n(form.cantidad)}). Compra empaque desde Insumos.`);
+      showToast(`Stock insuficiente de ${bolsaSku} (disp: ${stockBolsa}, pediste ${n(form.cantidad)}). Compra empaque desde Insumos.`, 'error');
       return;
     }
     if (!bolsaSku) {
-      showToast(`${form.sku} no tiene empaque configurado. Configurarlo en Catálogo antes de producir.`);
+      showToast(`${form.sku} no tiene empaque configurado. Configurarlo en Catálogo antes de producir.`, 'error');
       return;
     }
 
@@ -395,7 +391,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       if (!puede) {
         const exceso = (ocupadoFuturo - capacidad).toFixed(1);
         const mensaje = `${cfNombre} no tiene espacio. Ocupado ${ocupadoActual.toFixed(1)}/${capacidad} tarimas. Faltan ${exceso} tarimas. Elige otro cuarto.`;
-        showToast(mensaje);
+        showToast(mensaje, 'error');
         return;
       }
     }
@@ -412,7 +408,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       try {
         const result = await actions.producirYCongelar({ ...datosProd, operacionId: op.id });
         if (result?.error) {
-          showToast(result.error);
+          showToast(result.error, 'error');
           return; // se conserva el operacion_id: reintentar no duplica
         }
         opProdRef.current = null;
@@ -421,7 +417,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         resetFormProd();
       } catch (e) {
         console.error('Error registrando producción:', e);
-        showToast('Error al registrar producción. Verifica tu conexión y reintenta.');
+        showToast('Error al registrar producción. Verifica tu conexión y reintenta.', 'error');
       } finally {
         enVueloProd.current = false;
         setGuardandoProd(false);
@@ -434,7 +430,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     if (merma <= 0 || merma > cant) return;
     if (!fotoMermaProdFile) return;
     if (fotoMermaProdFile.size > 5 * 1024 * 1024) {
-      showToast('Foto muy grande, máx 5MB');
+      showToast('Foto muy grande, máx 5MB', 'error');
       return;
     }
 
@@ -455,7 +451,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           contentType: fotoMermaProdFile.type || 'image/jpeg',
         });
       if (uploadErr) {
-        showToast('No se pudo subir la foto de merma');
+        showToast('No se pudo subir la foto de merma', 'error');
         return;
       }
 
@@ -465,7 +461,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       if (prodResult?.error) {
         // Limpiar la foto subida (propia y sin ligar) ya que no se va a usar
         await supabase.storage.from('mermas').remove([filePath]);
-        showToast(prodResult.error);
+        showToast(prodResult.error, 'error');
         return; // se conserva el operacion_id: reintentar no duplica
       }
       opProdRef.current = null;
@@ -475,7 +471,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       const opMerma = resolverOperacion(null, claveMermaCuarto(datosMerma));
       const mermaErr = await actions.registrarMermaCuarto({ ...datosMerma, operacionId: opMerma.id });
       if (mermaErr) {
-        showToast('Producción OK, pero la merma no se registró. Hazlo desde Mermas.');
+        showToast('Producción OK, pero la merma no se registró. Hazlo desde Mermas.', 'error');
         setModal(false);
         resetFormProd();
         return;
@@ -501,7 +497,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       opTraspasoRef.current = op;
       const r = actions.traspasoEntreUbicaciones ? await actions.traspasoEntreUbicaciones({ ...tForm, operacionId: op.id }) : null;
       if (r && (r.error || r.message)) {
-        showToast('Error: ' + (r.error || r.message));
+        showToast('Error: ' + (r.error || r.message), 'error');
         return;
       }
       opTraspasoRef.current = null;
@@ -510,7 +506,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       setTForm({ origen: "CF-1", destino: "CF-2", sku: "", cantidad: "" });
     } catch (e) {
       console.error('Error en traspaso:', e);
-      showToast('Error en traspaso. Verifica tu conexión.');
+      showToast('Error en traspaso. Verifica tu conexión.', 'error');
     } finally {
       setHaciendoTraspaso(false);
     }
@@ -521,7 +517,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     if (!sacarForm.cantidad || n(sacarForm.cantidad) <= 0 || !sacarModal) return;
     // 103: motivos cerrados; "Otro" lleva detalle. Merma y conteo tienen su propio registro.
     const mot = motivoSalidaManual(sacarForm.motivo, sacarForm.detalle);
-    if (mot.error) { showToast(mot.error); return; }
+    if (mot.error) { showToast(mot.error, 'error'); return; }
     setHaciendoSalida(true);
     try {
       const op = resolverOperacion(opSalidaRef.current, claveSalida({ cuartoId: sacarModal.cfId, sku: sacarForm.sku, cantidad: sacarForm.cantidad, motivo: mot.motivo }));
@@ -530,7 +526,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         ? await actions.sacarDeCuartoFrio(sacarModal.cfId, sacarForm.sku, sacarForm.cantidad, mot.motivo, { operacionId: op.id })
         : null;
       if (r && (r.error || r.message)) {
-        showToast('Error: ' + (r.error || r.message));
+        showToast('Error: ' + (r.error || r.message), 'error');
         return;
       }
       opSalidaRef.current = null;
@@ -539,42 +535,38 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       setSacarForm({ sku: "", cantidad: "", motivo: "", detalle: "" });
     } catch (e) {
       console.error('Error en salida:', e);
-      showToast('Error al sacar del congelador. Verifica tu conexión.');
+      showToast('Error al sacar del congelador. Verifica tu conexión.', 'error');
     } finally {
       setHaciendoSalida(false);
     }
   };
 
+  const cerrarProd = () => { setModal(false); clearFotoMermaProd(); };
+  const kpis = [
+    { label: "Producido hoy", value: totalHoy.toLocaleString() },
+    { label: "En congeladores", value: totalEnCuartos.toLocaleString() },
+    { label: "Merma hoy", value: mermaHoy },
+  ];
+  const cfCorto = (cf) => s(cf.nombre).replace("Cuarto Frío ", "CF-");
+
   return (
-    <div className={PRODUCCION_SHELL}>
-      {/* Header */}
-      <div className="bg-gradient-to-r from-blue-600 to-blue-800 px-4 pb-5 text-white shadow-[0_24px_48px_rgba(37,99,235,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
-        <div className="flex items-center justify-between mb-1">
-          <div>
-            <p className="erp-kicker text-cyan-200/70">Producción</p>
-            <h1 className="font-display text-[1.6rem] font-bold tracking-[-0.04em]">Producción del día</h1>
-            <p className="text-xs text-cyan-100/80">{s(user?.nombre)}</p>
-          </div>
-          <div className="flex items-center gap-2 relative">
-            <BotonFirmasPendientes user={user} data={data} actions={actions} />
-            <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs font-semibold">Salir</button>
+    <div className={embedded ? "text-slate-900" : "min-h-dvh w-full text-slate-900"} data-testid="produccion-shell">
+      {!embedded && <ModoPruebaBanner />}
+      {embedded ? (
+        <div className={CONTENIDO}>
+          <PageHeader title="Producción del día" subtitle={s(user?.nombre)} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {kpis.map(k => <KpiTile key={k.label} label={k.label} value={k.value} />)}
           </div>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-[22px] border border-white/10 bg-white/8 p-3.5 text-center backdrop-blur-xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/70">Producido hoy</p>
-            <p className="mt-1.5 text-2xl font-extrabold">{totalHoy.toLocaleString()}</p>
+      ) : (
+        <RoleHeader kicker="Producción" title="Producción del día" subtitle={s(user?.nombre)} accent="sky" onLogout={onLogout}
+          right={<BotonFirmasPendientes user={user} data={data} actions={actions} />}>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {kpis.map(k => <HeaderStat key={k.label} label={k.label} value={k.value} className="text-center" />)}
           </div>
-          <div className="rounded-[22px] border border-white/10 bg-white/8 p-3.5 text-center backdrop-blur-xl">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/70">En congeladores</p>
-            <p className="mt-1.5 text-2xl font-extrabold">{totalEnCuartos.toLocaleString()}</p>
-          </div>
-          <div className="rounded-[22px] border border-white/10 bg-white/8 p-3.5 text-center backdrop-blur-xl sm:col-span-1">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-200/70">Merma hoy</p>
-            <p className="mt-1.5 text-2xl font-extrabold">{mermaHoy}</p>
-          </div>
-        </div>
-      </div>
+        </RoleHeader>
+      )}
 
       {/* Banner urgente de firmas pendientes (solo Producción) */}
       <BotonFirmasPendientes
@@ -584,69 +576,59 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         mostrarBannerUrgente={true}
       />
 
-      {/* Tabs */}
-      <div className="px-4 pt-3">
-        <div className="mb-4 grid grid-cols-2 gap-1 rounded-[20px] border border-slate-200/80 bg-white/72 p-1.5 shadow-[0_14px_28px_rgba(8,19,27,0.05)] sm:grid-cols-4">
-          {[{ k: "producir", l: "Producción" }, { k: "cuartos", l: "Congeladores" }, { k: "mermas", l: "Mermas" }, { k: "trans", l: "🧊 Trans." }].map(t => (
-            <button key={t.k} onClick={() => setTab(t.k)}
-              className={`flex-1 py-3 text-sm font-bold rounded-[16px] transition-all ${tab === t.k ? "bg-blue-600 text-white shadow-[0_12px_22px_rgba(37,99,235,0.14)]" : "text-slate-600"}`}>
-              {t.l}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="px-4 space-y-3">
+      <div className={`${CONTENIDO} ${embedded ? "pt-4" : "px-4 pt-3"}`}>
+        {/* En el shell compartido el menú lateral ya lista estas pestañas (lg+). */}
+        <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="blue" className={`mb-1 ${embedded ? "lg:hidden" : ""}`} />
 
         {/* ═══ TAB: PRODUCCIÓN ═══ */}
         {tab === "producir" && (<>
-          <button onClick={() => { resetFormProd(); setModal(true); }}
-            className="w-full py-4 bg-blue-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
-            + Ya produje hielo
-          </button>
+          <FormBtn primary size="lg" className="w-full" onClick={() => { resetFormProd(); setModal(true); }}>
+            <Icons.Plus /> Ya produje hielo
+          </FormBtn>
 
           {/* ═══ PANEL: Qué necesitas producir ═══ */}
-          <div className={`rounded-[24px] p-4 border shadow-[0_14px_28px_rgba(8,19,27,0.06)] ${hayFaltante ? 'bg-amber-50 border-amber-200' : 'bg-white/90 border-slate-200/80'}`}>
-            <div className="flex items-center justify-between mb-3">
+          <Card tone={hayFaltante ? "warning" : undefined}>
+            <div className="mb-3 flex items-center justify-between gap-2">
               <div>
                 <h3 className="text-sm font-bold text-slate-800">Qué necesitas producir</h3>
                 <p className="text-[11px] text-slate-500">Pedidos pendientes + mínimo de stock − lo que ya hay</p>
               </div>
-              {hayFaltante && <span className="text-[10px] font-bold uppercase bg-amber-500 text-white px-2 py-1 rounded-full">Atención</span>}
+              {hayFaltante && <StatusBadge status="Atención" />}
             </div>
 
             {tableroDemanda.length === 0 ? (
               <EmptyState
+                icon="Package"
                 message="Sin productos terminados configurados"
                 hint="Pide a Admin que agregue productos terminados al catálogo"
               />
             ) : (
               <div className="space-y-2">
                 {tableroDemanda.map(r => (
-                  <div key={r.sku} className={`rounded-[16px] p-3 ${r.faltante > 0 ? 'bg-white border border-amber-200' : 'bg-slate-50 border border-slate-100'}`}>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <p className="text-sm font-semibold text-slate-800 truncate">{r.producto}</p>
+                  <div key={r.sku} className={`rounded-[16px] border p-3 ${r.faltante > 0 ? 'border-amber-200 bg-white' : 'border-slate-100 bg-slate-50'}`}>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-semibold text-slate-800">{r.producto}</p>
                       {r.faltante > 0 ? (
-                        <span className="text-xs font-bold bg-amber-500 text-white px-2 py-0.5 rounded-full flex-shrink-0">Faltan {r.faltante.toLocaleString()}</span>
+                        <span className="flex-shrink-0 rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">Faltan {r.faltante.toLocaleString()}</span>
                       ) : (
-                        <span className="text-xs font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full flex-shrink-0">✓ Cubierto</span>
+                        <StatusBadge status="Cubierto" />
                       )}
                     </div>
                     <div className="grid grid-cols-4 gap-2 text-center">
                       <div>
-                        <p className="text-[10px] text-slate-400 uppercase">Pedidos</p>
+                        <p className="text-[10px] uppercase text-slate-400">Pedidos</p>
                         <p className={`text-sm font-bold ${r.pendientes > 0 ? 'text-blue-600' : 'text-slate-400'}`}>{r.pendientes.toLocaleString()}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] text-slate-400 uppercase">Stock</p>
-                        <p className={`text-sm font-bold ${r.bajoMinimo ? 'text-red-600' : 'text-slate-700'}`}>{r.stock.toLocaleString()}{r.bajoMinimo && <span className="text-[10px] text-red-400 ml-0.5">▼</span>}</p>
+                        <p className="text-[10px] uppercase text-slate-400">Stock</p>
+                        <p className={`text-sm font-bold ${r.bajoMinimo ? 'text-red-600' : 'text-slate-700'}`}>{r.stock.toLocaleString()}{r.bajoMinimo && <span className="ml-0.5 text-[10px] text-red-400">▼</span>}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] text-slate-400 uppercase">Mínimo</p>
+                        <p className="text-[10px] uppercase text-slate-400">Mínimo</p>
                         <p className="text-sm font-bold text-slate-500">{r.stockMinimo > 0 ? r.stockMinimo.toLocaleString() : '—'}</p>
                       </div>
                       <div>
-                        <p className="text-[10px] text-slate-400 uppercase">Hecho hoy</p>
+                        <p className="text-[10px] uppercase text-slate-400">Hecho hoy</p>
                         <p className={`text-sm font-bold ${r.producidoHoy > 0 ? 'text-emerald-600' : 'text-slate-400'}`}>{r.producidoHoy.toLocaleString()}</p>
                       </div>
                     </div>
@@ -654,83 +636,83 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 ))}
               </div>
             )}
-          </div>
+          </Card>
 
           {prodHoy.length > 0 && (
             <div>
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Producido hoy</h3>
+              <SectionLabel className="mb-2">Producido hoy</SectionLabel>
               {prodHoy.map(p => (
-                <div key={p.id} className="bg-emerald-50/90 rounded-[20px] p-3 border border-emerald-200 mb-2">
-                  <div className="flex justify-between items-center">
+                <Card key={p.id} tone="success" padding="p-3" className="mb-2">
+                  <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-bold text-slate-800">{n(p.cantidad).toLocaleString()} × {s(p.sku)}</p>
                       <p className="text-xs text-slate-500">{s(p.maquina)} · {s(p.turno)}</p>
                     </div>
-                    <span className="text-xs text-emerald-600 font-bold bg-emerald-100 px-2 py-1 rounded-lg">✓ Congelado</span>
+                    <StatusBadge status="Congelado" />
                   </div>
-                </div>
+                </Card>
               ))}
             </div>
           )}
 
           {prodHoy.length === 0 && (
-            <EmptyState
-              message="Aún no has registrado producción hoy"
-              icon={<span className="text-4xl">🧊</span>}
-              hint="Cuando produzcas hielo en el día, aparecerá aquí el detalle"
-              cta="+ Ya produje hielo"
-              onCta={() => { resetFormProd(); setModal(true); }}
-            />
+            <Card>
+              <EmptyState
+                message="Aún no has registrado producción hoy"
+                icon="Snowflake"
+                hint="Cuando produzcas hielo en el día, aparecerá aquí el detalle"
+                cta="+ Ya produje hielo"
+                onCta={() => { resetFormProd(); setModal(true); }}
+              />
+            </Card>
           )}
         </>)}
 
         {/* ═══ TAB: CONGELADORES ═══ */}
         {tab === "cuartos" && (<>
-          <button onClick={() => setTraspasoModal(true)}
-            className="w-full py-4 bg-blue-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(37,99,235,0.16)] active:scale-[0.98] transition-transform">
-            Mover entre congeladores
-          </button>
+          <FormBtn primary size="lg" className="w-full" onClick={() => setTraspasoModal(true)}>
+            <Icons.Truck /> Mover entre congeladores
+          </FormBtn>
 
           {/* Cargas pendientes de chofers */}
           {cargasPendientes.filter(c => c.estatus === "Pendiente").length > 0 && (
-            <div className="bg-amber-50/90 rounded-[24px] p-4 border border-amber-200 shadow-[0_14px_28px_rgba(8,19,27,0.05)]">
-              <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-amber-600">Cargas pendientes</h3>
+            <Card tone="warning">
+              <SectionLabel className="mb-1 !text-amber-700">Cargas pendientes</SectionLabel>
               <p className="mb-3 text-sm font-semibold text-slate-700">Choferes listos para salida</p>
               {cargasPendientes.filter(c => c.estatus === "Pendiente").map(cg => (
-                <div key={cg.id} className="bg-white/84 rounded-[20px] p-3 mb-2 border border-white/80">
-                  <div className="flex justify-between items-start mb-2">
+                <Card key={cg.id} padding="p-3" className="mb-2">
+                  <div className="mb-2 flex items-start justify-between">
                     <div>
                       <p className="text-sm font-bold text-slate-800">{cg.chofer}</p>
                       <p className="text-xs text-slate-400">{cg.ruta} · {cg.hora}</p>
                     </div>
-                    <span className="text-xs bg-amber-100 text-amber-700 font-bold px-2 py-1 rounded-lg">Pendiente</span>
+                    <StatusBadge status="Pendiente" />
                   </div>
-                  <div className="flex gap-1 mb-2">
+                  <div className="mb-2 flex gap-1">
                     {Object.entries(cg.items).map(([sku, cant]) => (
-                      <span key={sku} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{cant}× {sku}</span>
+                      <span key={sku} className="rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{cant}× {sku}</span>
                     ))}
                   </div>
-                  <button onClick={() => {
+                  <FormBtn success className="w-full" onClick={() => {
                     setCargasPendientes(prev => prev.map(p => p.id === cg.id ? { ...p, estatus: "Entregado" } : p));
                     showToast("Carga entregada a " + cg.chofer + " ✓");
-                  }}
-                    className="w-full py-3 bg-emerald-600 text-white font-bold rounded-[18px] text-sm active:scale-[0.98] transition-transform">
+                  }}>
                     Entregar carga
-                  </button>
-                </div>
+                  </FormBtn>
+                </Card>
               ))}
-            </div>
+            </Card>
           )}
 
           {cuartos.map(cf => {
             const stockEntries = cf.stock ? Object.entries(cf.stock) : [];
             const total = stockEntries.reduce((s, [, v]) => s + n(v), 0);
             return (
-              <div key={cf.id} className="bg-white/78 rounded-[24px] border border-slate-200/80 shadow-[0_14px_28px_rgba(8,19,27,0.05)] overflow-hidden">
-                <div className="p-4 flex items-center justify-between">
+              <Card key={cf.id} padding="p-0" className="overflow-hidden">
+                <div className="flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center">
-                      <span className="text-2xl">🧊</span>
+                    <div className="flex h-12 w-12 items-center justify-center rounded-[14px] bg-slate-900 text-cyan-200">
+                      <Icons.Snowflake />
                     </div>
                     <div>
                       <p className="text-base font-bold text-slate-800">{s(cf.nombre)}</p>
@@ -738,7 +720,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-2xl font-extrabold text-slate-800">{total.toLocaleString()}</p>
+                    <p className="font-display text-2xl font-bold tracking-[-0.04em] text-slate-900">{total.toLocaleString()}</p>
                     <p className="text-[10px] text-slate-400">bolsas</p>
                   </div>
                 </div>
@@ -749,19 +731,16 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   if (capacidad <= 0) return null;
                   const pct = Math.round((ocupado / capacidad) * 100);
                   const color = colorTarimasUso(ocupado, capacidad);
-                  const colorClass = color === 'red' ? 'bg-red-500' : color === 'amber' ? 'bg-amber-500' : 'bg-emerald-500';
                   const textColorClass = color === 'red' ? 'text-red-700' : color === 'amber' ? 'text-amber-700' : 'text-emerald-700';
                   return (
                     <div className="px-4 pb-3">
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Tarimas</span>
+                      <div className="mb-1 flex items-center justify-between">
+                        <SectionLabel>Tarimas</SectionLabel>
                         <span className={`text-xs font-bold ${textColorClass}`}>
                           {ocupado.toFixed(1)}/{capacidad} ({fmtPct(ocupado, capacidad)})
                         </span>
                       </div>
-                      <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                        <div className={`h-full ${colorClass} transition-all`} style={{ width: `${Math.min(pct, 100)}%` }} />
-                      </div>
+                      <CapacityBar pct={pct} />
                     </div>
                   );
                 })()}
@@ -769,73 +748,106 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 {stockEntries.length > 0 ? (
                   <div className="grid grid-cols-1 gap-2 px-4 pb-3 sm:grid-cols-2 lg:grid-cols-3">
                     {stockEntries.map(([sku, qty]) => (
-                      <div key={sku} className="bg-slate-50 rounded-[18px] p-3">
-                        <p className="text-xs text-slate-400 font-mono">{sku}</p>
+                      <div key={sku} className="rounded-[18px] bg-slate-50 p-3">
+                        <p className="font-mono text-xs text-slate-400">{sku}</p>
                         <p className="text-lg font-extrabold text-slate-800">{n(qty).toLocaleString()}</p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="px-4 pb-3"><div className="bg-slate-50 rounded-lg p-3 text-center"><p className="text-sm text-slate-400">Vacío</p></div></div>
+                  <div className="px-4 pb-3"><div className="rounded-lg bg-slate-50 p-3 text-center"><p className="text-sm text-slate-400">Vacío</p></div></div>
                 )}
                 <div className="border-t border-slate-100">
-                  <button onClick={() => { setSacarModal({ cfId: s(cf.id), cfNombre: s(cf.nombre) }); setSacarForm({ sku: "", cantidad: "", motivo: "", detalle: "" }); }}
-                    className="w-full py-3 text-xs font-bold text-amber-600 active:bg-amber-50">
+                  <button type="button" onClick={() => { setSacarModal({ cfId: s(cf.id), cfNombre: s(cf.nombre) }); setSacarForm({ sku: "", cantidad: "", motivo: "", detalle: "" }); }}
+                    className="min-h-[44px] w-full py-3 text-xs font-bold text-amber-700 active:bg-amber-50">
                     − Sacar hielo (carga a ruta / otro)
                   </button>
                 </div>
-              </div>
+              </Card>
             );
           })}
         </>)}
 
         {/* ═══ TAB: TRANSFORMACIONES ═══ */}
         {tab === "trans" && (<>
-          <button onClick={() => setTransModal(true)}
-            className="w-full py-4 bg-cyan-700 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(14,116,144,0.16)] active:scale-[0.98] transition-transform">
-            + Nueva transformación
-          </button>
+          <FormBtn primary size="lg" className="w-full" onClick={() => setTransModal(true)}>
+            <Icons.Plus /> Nueva transformación
+          </FormBtn>
 
           {transformaciones.length === 0 ? (
-            <EmptyState
-              message="Sin transformaciones registradas"
-              icon={<span className="text-4xl">🧊</span>}
-              hint="Las transformaciones de barras a triturado quedan aquí"
-              cta="+ Nueva transformación"
-              onCta={() => setTransModal(true)}
-            />
+            <Card>
+              <EmptyState
+                message="Sin transformaciones registradas"
+                icon="Snowflake"
+                hint="Las transformaciones de barras a triturado quedan aquí"
+                cta="+ Nueva transformación"
+                onCta={() => setTransModal(true)}
+              />
+            </Card>
           ) : (
             <div className="space-y-2">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Historial ({transformaciones.length})</h3>
+              <SectionLabel>Historial ({transformaciones.length})</SectionLabel>
               {transformaciones.slice().reverse().map(t => {
                 const rend = Number(t.rendimiento || 0);
                 const rendColor = rend >= 80 ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : rend >= 65 ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
                 return (
-                  <div key={t.id} className="bg-white/84 rounded-[22px] p-4 border border-slate-200/80 shadow-[0_8px_18px_rgba(8,19,27,0.04)]">
-                    <div className="flex items-center justify-between mb-2">
+                  <Card key={t.id} padding="p-4">
+                    <div className="mb-2 flex items-center justify-between">
                       <p className="text-xs font-bold text-slate-500">{t.folio || t.id} · {fmtDate(t.fecha)}</p>
-                      <span className={`text-xs font-extrabold px-2 py-0.5 rounded-lg border ${rendColor}`}>{rend}%</span>
+                      <span className={`rounded-lg border px-2 py-0.5 text-xs font-extrabold ${rendColor}`}>{rend}%</span>
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                      <div className="bg-slate-50 rounded-xl p-2">
-                        <p className="text-slate-400 mb-0.5">Entrada</p>
+                      <div className="rounded-xl bg-slate-50 p-2">
+                        <p className="mb-0.5 text-slate-400">Entrada</p>
                         <p className="font-extrabold text-slate-800">{Number(t.input_kg || 0)} kg</p>
-                        <p className="text-slate-500 font-mono">{t.input_sku}</p>
+                        <p className="font-mono text-slate-500">{t.input_sku}</p>
                       </div>
-                      <div className="bg-red-50 rounded-xl p-2">
-                        <p className="text-red-400 mb-0.5">Merma</p>
+                      <div className="rounded-xl bg-red-50 p-2">
+                        <p className="mb-0.5 text-red-400">Merma</p>
                         <p className="font-extrabold text-red-700">{Number(t.merma_kg || 0)} kg</p>
                       </div>
-                      <div className="bg-emerald-50 rounded-xl p-2">
-                        <p className="text-emerald-600 mb-0.5">Salida</p>
+                      <div className="rounded-xl bg-emerald-50 p-2">
+                        <p className="mb-0.5 text-emerald-600">Salida</p>
                         <p className="font-extrabold text-emerald-800">{Number(t.output_kg || 0)} kg</p>
-                        <p className="text-emerald-600 font-mono">{t.output_sku}</p>
+                        <p className="font-mono text-emerald-600">{t.output_sku}</p>
                       </div>
                     </div>
-                  </div>
+                  </Card>
                 );
               })}
             </div>
+          )}
+        </>)}
+
+        {/* ═══ TAB MERMAS ═══ */}
+        {tab === "mermas" && (<>
+          <FormBtn danger size="lg" className="w-full" onClick={() => { setMermaModal(true); clearFotoMerma(); setMForm({ sku: "", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" }); }}>
+            <Icons.AlertTriangle /> Registrar merma
+          </FormBtn>
+
+          {mermasHoyList.length > 0 ? (
+            <div className="space-y-2">
+              <SectionLabel>Mermas de hoy ({mermasHoyList.length})</SectionLabel>
+              {mermasHoyList.map(m => (
+                <Card key={m.id} tone="danger" padding="p-3">
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <p className="text-sm font-bold text-red-700">{m.cantidad}× {m.sku}</p>
+                      <p className="text-xs text-slate-500">{m.causa} · {m.origen} · {m.fecha ? fmtDate(m.fecha) : 'Hoy'}</p>
+                    </div>
+                    {m.fotoUrl && <img src={m.fotoUrl} alt="Evidencia" className="h-10 w-10 rounded-lg border border-red-300 object-cover" />}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <EmptyState
+                message="Buen turno"
+                icon="Check"
+                hint="No has registrado mermas hoy"
+              />
+            </Card>
           )}
         </>)}
 
@@ -843,434 +855,334 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       </div>
 
       {/* ═══ MODAL: Ya produje hielo ═══ */}
-      {modal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => { setModal(false); clearFotoMermaProd(); }}>
-          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Producción</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">¿Qué produjiste?</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {skuOptions.map(p => (
-                    <button key={p.sku} onClick={() => setForm(f => ({ ...f, sku: s(p.sku) }))}
-                      className={`py-2.5 px-2 rounded-xl text-xs font-bold border-2 ${form.sku === s(p.sku) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
-                      {s(p.nombre)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad</label>
-                <input type="number" min="0" inputMode="numeric" value={form.cantidad} onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="Ej: 500" autoFocus />
-              </div>
-              {bolsaSku ? (
-                <div className={`p-3 rounded-xl ${n(form.cantidad) > stockBolsa ? "bg-red-50" : "bg-blue-50"}`}>
-                  <p className="text-xs font-semibold">Consume: {form.cantidad || 0} bolsas {bolsaSku}</p>
-                  <p className={`text-xs mt-0.5 ${n(form.cantidad) > stockBolsa ? "text-red-600 font-bold" : "text-slate-500"}`}>
-                    Disponibles (total empresa): {stockBolsa.toLocaleString()}{n(form.cantidad) > stockBolsa ? " — INSUFICIENTE" : ""}
-                  </p>
-                </div>
-              ) : form.sku ? (
-                <div className="p-3 rounded-xl bg-amber-50 border border-amber-200">
-                  <p className="text-xs font-bold text-amber-800">⚠ {form.sku} no tiene empaque configurado</p>
-                  <p className="text-xs text-amber-700 mt-0.5">Pídele a Admin que enlace un empaque a este producto en Catálogo. No se puede producir sin empaque definido.</p>
-                </div>
-              ) : null}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Máquina</label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {["Máquina 30", "Máquina 20", "Máquina 15"].map(m => (
-                    <button key={m} onClick={() => setForm(f => ({ ...f, maquina: m }))}
-                      className={`py-2 rounded-xl text-xs font-semibold border-2 ${form.maquina === m ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
-                      {m.replace("Máquina ", "Máq ")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Turno</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {["Turno 1", "Turno 2", "Turno 3"].map(t => (
-                    <button key={t} onClick={() => setForm(f => ({ ...f, turno: t }))}
-                      className={`py-2 rounded-xl text-sm font-semibold border-2 ${form.turno === t ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿A qué congelador va?</label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {cuartos.map(cf => (
-                    <button key={cf.id} onClick={() => setForm(f => ({ ...f, destino: s(cf.id) }))}
-                      className={`py-3 rounded-xl text-xs font-bold border-2 ${form.destino === s(cf.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
-                      {s(cf.nombre).replace("Cuarto Frío ", "CF-")}
-                      <p className="text-[10px] text-slate-400 mt-0.5">{n(cf.temp, -50, 10)}°C</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* ═══ Merma inline opcional ═══ */}
-              <div className="border-t border-slate-200 pt-3">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.conMerma}
-                    onChange={e => {
-                      const checked = e.target.checked;
-                      setForm(f => ({ ...f, conMerma: checked }));
-                      if (!checked) clearFotoMermaProd();
-                    }}
-                    className="w-5 h-5 rounded border-slate-300 accent-red-500"
-                  />
-                  <span className="text-sm font-semibold text-slate-700">¿Hubo merma en este lote?</span>
-                </label>
-              </div>
-
-              {form.conMerma && (
-                <div className="bg-red-50/60 border border-red-200 rounded-xl p-3 space-y-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad de merma</label>
-                    <input type="number" min="0" inputMode="numeric" value={form.mermaCantidad}
-                      onChange={e => setForm(f => ({ ...f, mermaCantidad: e.target.value }))}
-                      className="w-full px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="0" />
-                    {form.mermaCantidad && n(form.mermaCantidad) > n(form.cantidad) && (
-                      <p className="text-xs text-red-600 font-bold mt-1 text-center">No puede ser mayor a la cantidad producida ({n(form.cantidad)})</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Causa</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {MERMA_CAUSAS.map(c => (
-                        <button key={c} onClick={() => setForm(f => ({ ...f, mermaCausa: c }))}
-                          className={`py-2 rounded-xl text-xs font-semibold border-2 ${form.mermaCausa === c ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 text-slate-500"}`}>
-                          {c}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Evidencia (foto) *</label>
-                    {fotoMermaProdPreview ? (
-                      <div>
-                        <img src={fotoMermaProdPreview} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" />
-                        <button onClick={clearFotoMermaProd} className="text-xs text-slate-400 mt-1">Tomar otra</button>
-                      </div>
-                    ) : (
-                      <label className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
-                        <span className="text-lg">📷</span> Tomar foto de evidencia
-                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePickFile(clearFotoMermaProd, setFotoMermaProdFile, setFotoMermaProdPreview)} />
-                      </label>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-            <button onClick={registrarProduccion}
-              disabled={
-                guardandoProd ||
-                !form.sku ||
-                !form.cantidad || n(form.cantidad) <= 0 ||
-                !bolsaSku ||
-                n(form.cantidad) > stockBolsa ||
-                (form.conMerma && (
-                  !form.mermaCantidad || n(form.mermaCantidad) <= 0 ||
-                  n(form.mermaCantidad) > n(form.cantidad) ||
-                  !fotoMermaProdFile
-                ))
-              }
-              className="w-full py-4 bg-blue-600 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40 active:scale-[0.98] transition-transform">
-              {guardandoProd ? 'Guardando...' : 'Registrar producción'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ═══ MODAL: Mover entre congeladores ═══ */}
-      {traspasoModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setTraspasoModal(false)}>
-          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Movimiento</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Mover entre congeladores</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">De</label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {cuartos.map(cf => (
-                    <button key={cf.id} onClick={() => setTForm(f => ({ ...f, origen: s(cf.id) }))}
-                      className={`py-2.5 rounded-xl text-xs font-bold border-2 ${tForm.origen === s(cf.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
-                      {s(cf.nombre).replace("Cuarto Frío ", "CF-")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">A</label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {cuartos.map(cf => (
-                    <button key={cf.id} onClick={() => setTForm(f => ({ ...f, destino: s(cf.id) }))}
-                      className={`py-2.5 rounded-xl text-xs font-bold border-2 ${tForm.destino === s(cf.id) ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"} ${tForm.origen === s(cf.id) ? "opacity-30" : ""}`}>
-                      {s(cf.nombre).replace("Cuarto Frío ", "CF-")}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {skuOptions.map(p => (
-                    <button key={p.sku} onClick={() => setTForm(f => ({ ...f, sku: s(p.sku) }))}
-                      className={`py-2 rounded-xl text-xs font-bold border-2 ${tForm.sku === s(p.sku) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
-                      {s(p.sku)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <input type="number" min="0" inputMode="numeric" value={tForm.cantidad} onChange={e => setTForm(f => ({ ...f, cantidad: e.target.value }))}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" />
-            </div>
-            <button onClick={hacerTraspaso} disabled={haciendoTraspaso || !tForm.cantidad || n(tForm.cantidad) <= 0 || tForm.origen === tForm.destino}
-              className="w-full py-3.5 bg-blue-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40 disabled:cursor-not-allowed">
-              {haciendoTraspaso ? 'Trasladando…' : 'Mover'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ═══ MODAL: Sacar hielo ═══ */}
-      {sacarModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setSacarModal(null)}>
-          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Salida</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-1">Sacar hielo</h3>
-            <p className="text-sm text-slate-500 mb-4">{sacarModal.cfNombre}</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {skuOptions.map(p => (
-                    <button key={p.sku} onClick={() => setSacarForm(f => ({ ...f, sku: s(p.sku) }))}
-                      className={`py-2.5 rounded-xl text-xs font-bold border-2 ${sacarForm.sku === s(p.sku) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
-                      {s(p.sku)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <input type="number" min="0" inputMode="numeric" value={sacarForm.cantidad} onChange={e => setSacarForm(f => ({ ...f, cantidad: e.target.value }))}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" autoFocus />
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Motivo</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {MOTIVOS_SALIDA_MANUAL.map(m => (
-                    <button key={m} onClick={() => setSacarForm(f => ({ ...f, motivo: m }))}
-                      className={`py-2 rounded-xl text-xs font-semibold border-2 ${sacarForm.motivo === m ? "border-amber-500 bg-amber-50 text-amber-700" : "border-slate-200 text-slate-500"}`}>
-                      {m}
-                    </button>
-                  ))}
-                </div>
-                {sacarForm.motivo === 'Otro' && (
-                  <input value={sacarForm.detalle || ''} onChange={e => setSacarForm(f => ({ ...f, detalle: e.target.value }))}
-                    placeholder="¿Para qué sale? (mínimo 5 caracteres)" className="mt-2 w-full px-3 py-2.5 border border-slate-200 rounded-xl text-base sm:text-sm" />
-                )}
-                <p className="text-[11px] text-slate-400 mt-2">Producto dañado o perdido: usa <b>Merma</b>. Diferencia de conteo: la ajusta Admin en Inventario.</p>
-              </div>
-            </div>
-            <button onClick={hacerSalida} disabled={haciendoSalida || !sacarForm.cantidad || n(sacarForm.cantidad) <= 0 || !s(sacarForm.motivo)}
-              className="w-full py-3.5 bg-amber-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40 disabled:cursor-not-allowed">
-              {haciendoSalida ? 'Sacando…' : 'Sacar del congelador'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ═══ TAB MERMAS ═══ */}
-        {tab === "mermas" && (<>
-          <button onClick={() => { setMermaModal(true); clearFotoMerma(); setMForm({ sku: "", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" }); }}
-            className="w-full py-4 bg-[#8f2d22] text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(143,45,34,0.18)] active:scale-[0.98] transition-transform">
-            Registrar merma
-          </button>
-
-          {mermasHoyList.length > 0 ? (
-            <div className="space-y-2">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Mermas de hoy ({mermasHoyList.length})</h3>
-              {mermasHoyList.map(m => (
-                <div key={m.id} className="bg-red-50/90 rounded-[20px] p-3 border border-red-200">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <p className="text-sm font-bold text-red-700">{m.cantidad}× {m.sku}</p>
-                      <p className="text-xs text-slate-500">{m.causa} · {m.origen} · {m.fecha ? fmtDate(m.fecha) : 'Hoy'}</p>
-                    </div>
-                    {m.fotoUrl && <img src={m.fotoUrl} alt="Evidencia" className="w-10 h-10 object-cover rounded-lg border border-red-300" />}
-                  </div>
-                </div>
+      <Modal open={!!modal} onClose={cerrarProd} kicker="Producción" title="¿Qué produjiste?" safeBottom closeOnEscape={!guardandoProd}>
+        <div className="space-y-3">
+          <div>
+            <label className={LABEL}>Producto</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {skuOptions.map(p => (
+                <ChoiceButton key={p.sku} active={form.sku === s(p.sku)} onClick={() => setForm(f => ({ ...f, sku: s(p.sku) }))} className="text-xs">
+                  {s(p.nombre)}
+                </ChoiceButton>
               ))}
             </div>
-          ) : (
-            <EmptyState
-              message="Buen turno"
-              icon={<span className="text-4xl">✅</span>}
-              hint="No has registrado mermas hoy"
-            />
-          )}
-        </>)}
+          </div>
+          <FormInput label="Cantidad" type="number" min="0" inputMode="numeric" value={form.cantidad} onChange={e => setForm(f => ({ ...f, cantidad: e.target.value }))}
+            inputClassName="text-center !text-lg font-bold" placeholder="Ej: 500" autoFocus />
+          {bolsaSku ? (
+            <Card tone={n(form.cantidad) > stockBolsa ? "danger" : undefined} padding="p-3">
+              <p className="text-xs font-semibold">Consume: {form.cantidad || 0} bolsas {bolsaSku}</p>
+              <p className={`mt-0.5 text-xs ${n(form.cantidad) > stockBolsa ? "font-bold text-red-600" : "text-slate-500"}`}>
+                Disponibles (total empresa): {stockBolsa.toLocaleString()}{n(form.cantidad) > stockBolsa ? " — INSUFICIENTE" : ""}
+              </p>
+            </Card>
+          ) : form.sku ? (
+            <Card tone="warning" padding="p-3">
+              <p className="flex items-center gap-1.5 text-xs font-bold text-amber-800"><Icons.AlertTriangle /> {form.sku} no tiene empaque configurado</p>
+              <p className="mt-0.5 text-xs text-amber-700">Pídele a Admin que enlace un empaque a este producto en Catálogo. No se puede producir sin empaque definido.</p>
+            </Card>
+          ) : null}
+          <div>
+            <label className={LABEL}>Máquina</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {["Máquina 30", "Máquina 20", "Máquina 15"].map(m => (
+                <ChoiceButton key={m} active={form.maquina === m} onClick={() => setForm(f => ({ ...f, maquina: m }))} className="text-xs">
+                  {m.replace("Máquina ", "Máq ")}
+                </ChoiceButton>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={LABEL}>Turno</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {["Turno 1", "Turno 2", "Turno 3"].map(t => (
+                <ChoiceButton key={t} active={form.turno === t} onClick={() => setForm(f => ({ ...f, turno: t }))}>
+                  {t}
+                </ChoiceButton>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={LABEL}>¿A qué congelador va?</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {cuartos.map(cf => (
+                <ChoiceButton key={cf.id} active={form.destino === s(cf.id)} onClick={() => setForm(f => ({ ...f, destino: s(cf.id) }))} className="text-xs">
+                  {cfCorto(cf)}
+                  <p className="mt-0.5 text-[10px] font-normal text-slate-400">{n(cf.temp, -50, 10)}°C</p>
+                </ChoiceButton>
+              ))}
+            </div>
+          </div>
 
-      {/* ═══ MODAL MERMA ═══ */}
-      {mermaModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setMermaModal(false)}>
-          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 max-h-[85vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Merma</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Registrar merma</h3>
-            <div className="space-y-3">
+          {/* ═══ Merma inline opcional ═══ */}
+          <div className="border-t border-slate-200 pt-3">
+            <label className="flex cursor-pointer items-center gap-3">
+              <input
+                type="checkbox"
+                checked={form.conMerma}
+                onChange={e => {
+                  const checked = e.target.checked;
+                  setForm(f => ({ ...f, conMerma: checked }));
+                  if (!checked) clearFotoMermaProd();
+                }}
+                className="h-5 w-5 rounded border-slate-300 accent-red-500"
+              />
+              <span className="text-sm font-semibold text-slate-700">¿Hubo merma en este lote?</span>
+            </label>
+          </div>
+
+          {form.conMerma && (
+            <Card tone="danger" padding="p-3" className="space-y-3">
+              <FormInput label="Cantidad de merma" type="number" min="0" inputMode="numeric" value={form.mermaCantidad}
+                onChange={e => setForm(f => ({ ...f, mermaCantidad: e.target.value }))}
+                inputClassName="text-center !text-lg font-bold" placeholder="0"
+                error={form.mermaCantidad && n(form.mermaCantidad) > n(form.cantidad) ? `No puede ser mayor a la cantidad producida (${n(form.cantidad)})` : undefined} />
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {(data.productos || []).filter(p => s(p.tipo) === "Producto Terminado").map(p => (
-                    <button key={p.sku} onClick={() => setMForm(f => ({ ...f, sku: s(p.sku) }))}
-                      className={`py-2.5 rounded-xl text-xs font-bold border-2 ${mForm.sku === s(p.sku) ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 text-slate-600"}`}>
-                      {s(p.nombre)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad</label>
-                <input type="number" min="0" value={mForm.cantidad} onChange={e => setMForm(f => ({ ...f, cantidad: e.target.value }))}
-                  className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="0" />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Causa</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className={LABEL}>Causa</label>
+                <div className="grid grid-cols-2 gap-2">
                   {MERMA_CAUSAS.map(c => (
-                    <button key={c} onClick={() => setMForm(f => ({ ...f, causa: c }))}
-                      className={`py-2 rounded-xl text-xs font-semibold border-2 ${mForm.causa === c ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 text-slate-500"}`}>
+                    <ChoiceButton key={c} tone="red" active={form.mermaCausa === c} onClick={() => setForm(f => ({ ...f, mermaCausa: c }))} className="text-xs">
                       {c}
-                    </button>
+                    </ChoiceButton>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿De qué congelador?</label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {cuartos.map(cf => (
-                    <button key={cf.id} onClick={() => setMForm(f => ({ ...f, congelador: s(cf.id) }))}
-                      className={`py-2 rounded-xl text-xs font-bold border-2 ${mForm.congelador === s(cf.id) ? "border-red-500 bg-red-50 text-red-700" : "border-slate-200 text-slate-600"}`}>
-                      {s(cf.nombre)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Evidencia (foto) *</label>
-                {fotoMermaPreview ? (
-                  <div><img src={fotoMermaPreview} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={clearFotoMerma} className="text-xs text-slate-400 mt-1">Tomar otra</button></div>
+                <label className={`${LABEL} mb-2`}>Evidencia (foto) *</label>
+                {fotoMermaProdPreview ? (
+                  <div>
+                    <img src={fotoMermaProdPreview} alt="Evidencia" className="h-32 w-full rounded-xl border border-emerald-300 object-cover" />
+                    <button type="button" onClick={clearFotoMermaProd} className="mt-1 text-xs text-slate-400">Tomar otra</button>
+                  </div>
                 ) : (
-                  <label className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
-                    <span className="text-lg">📷</span> Tomar foto de evidencia
-                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePickFile(clearFotoMerma, setFotoMermaFile, setFotoMermaPreview)} />
+                  <label className="flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-[16px] border-2 border-dashed border-slate-300 py-4 text-xs font-semibold text-slate-500">
+                    <Icons.Camera /> Tomar foto de evidencia
+                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePickFile(clearFotoMermaProd, setFotoMermaProdFile, setFotoMermaProdPreview)} />
                   </label>
                 )}
               </div>
-            </div>
-            <button onClick={registrarMerma} disabled={guardandoMerma || !mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMermaFile}
-              className="w-full py-3.5 bg-red-500 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">
-              {guardandoMerma ? 'Guardando...' : 'Registrar merma'}
-            </button>
-          </div>
+            </Card>
+          )}
         </div>
-      )}
+        <FormBtn primary size="lg" className="mt-4 w-full" onClick={registrarProduccion}
+          disabled={
+            guardandoProd ||
+            !form.sku ||
+            !form.cantidad || n(form.cantidad) <= 0 ||
+            !bolsaSku ||
+            n(form.cantidad) > stockBolsa ||
+            (form.conMerma && (
+              !form.mermaCantidad || n(form.mermaCantidad) <= 0 ||
+              n(form.mermaCantidad) > n(form.cantidad) ||
+              !fotoMermaProdFile
+            ))
+          }>
+          {guardandoProd ? 'Guardando...' : 'Registrar producción'}
+        </FormBtn>
+      </Modal>
 
-      {/* ═══ MODAL: Transformación ═══ */}
-      {transModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setTransModal(false)}>
-          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 max-h-[90vh] overflow-y-auto shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Transformación</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Barras → Hielo triturado</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿Qué entró? (Insumo)</label>
-                {insumos.length === 0 ? (
-                  <EmptyState
-                    message="Sin insumos en el catálogo"
-                    hint="Pide a Admin que agregue barras (kg) al catálogo"
-                  />
-                ) : (
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                    {insumos.map(p => (
-                      <button key={p.sku} onClick={() => setTransForm(f => ({ ...f, input_sku: s(p.sku) }))}
-                        className={`py-2.5 px-2 rounded-xl text-xs font-bold border-2 text-left ${transForm.input_sku === s(p.sku) ? "border-cyan-500 bg-cyan-50 text-cyan-700" : "border-slate-200 text-slate-600"}`}>
-                        <p>{s(p.nombre)}</p>
-                        <p className="font-mono text-[10px] opacity-70">{s(p.sku)} · {Number(p.stock || 0)} kg stock</p>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <input type="number" min="0" step="0.01" inputMode="decimal" value={transForm.input_kg} onChange={e => setTransForm(f => ({ ...f, input_kg: e.target.value }))}
-                  className="w-full mt-2 px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="kg a transformar" />
-                {transStockInput !== null && transInputKg > transStockInput && (
-                  <p className="text-xs text-red-600 font-semibold mt-1 text-center">Stock insuficiente ({transStockInput} kg disponibles)</p>
-                )}
+      {/* ═══ MODAL: Mover entre congeladores ═══ */}
+      <Modal open={!!traspasoModal} onClose={() => setTraspasoModal(false)} kicker="Movimiento" title="Mover entre congeladores" safeBottom closeOnEscape={!haciendoTraspaso}>
+        <div className="space-y-3">
+          <div>
+            <label className={LABEL}>De</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {cuartos.map(cf => (
+                <ChoiceButton key={cf.id} active={tForm.origen === s(cf.id)} onClick={() => setTForm(f => ({ ...f, origen: s(cf.id) }))} className="text-xs">
+                  {cfCorto(cf)}
+                </ChoiceButton>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={LABEL}>A</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {cuartos.map(cf => (
+                <ChoiceButton key={cf.id} tone="emerald" active={tForm.destino === s(cf.id)} disabled={tForm.origen === s(cf.id)} onClick={() => setTForm(f => ({ ...f, destino: s(cf.id) }))} className="text-xs">
+                  {cfCorto(cf)}
+                </ChoiceButton>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={LABEL}>Producto</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {skuOptions.map(p => (
+                <ChoiceButton key={p.sku} active={tForm.sku === s(p.sku)} onClick={() => setTForm(f => ({ ...f, sku: s(p.sku) }))} className="text-xs">
+                  {s(p.sku)}
+                </ChoiceButton>
+              ))}
+            </div>
+          </div>
+          <FormInput label="Cantidad" type="number" min="0" inputMode="numeric" value={tForm.cantidad} onChange={e => setTForm(f => ({ ...f, cantidad: e.target.value }))}
+            inputClassName="text-center !text-xl font-bold" placeholder="Cantidad" />
+        </div>
+        <FormBtn primary size="lg" className="mt-4 w-full" onClick={hacerTraspaso} disabled={haciendoTraspaso || !tForm.cantidad || n(tForm.cantidad) <= 0 || tForm.origen === tForm.destino}>
+          {haciendoTraspaso ? 'Trasladando…' : 'Mover'}
+        </FormBtn>
+      </Modal>
+
+      {/* ═══ MODAL: Sacar hielo ═══ */}
+      <Modal open={!!sacarModal} onClose={() => setSacarModal(null)} kicker="Salida" title="Sacar hielo" safeBottom closeOnEscape={!haciendoSalida}>
+        {sacarModal && (<>
+          <p className="mb-4 text-sm text-slate-500">{sacarModal.cfNombre}</p>
+          <div className="space-y-3">
+            <div>
+              <label className={LABEL}>Producto</label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {skuOptions.map(p => (
+                  <ChoiceButton key={p.sku} active={sacarForm.sku === s(p.sku)} onClick={() => setSacarForm(f => ({ ...f, sku: s(p.sku) }))} className="text-xs">
+                    {s(p.sku)}
+                  </ChoiceButton>
+                ))}
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿Qué salió? (Producto)</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {skuOptions.map(p => (
-                    <button key={p.sku} onClick={() => setTransForm(f => ({ ...f, output_sku: s(p.sku) }))}
-                      className={`py-2.5 px-2 rounded-xl text-xs font-bold border-2 text-left ${transForm.output_sku === s(p.sku) ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
-                      {s(p.nombre)}
-                    </button>
-                  ))}
-                </div>
-                <input type="number" min="0" step="0.01" inputMode="decimal" value={transForm.output_kg} onChange={e => setTransForm(f => ({ ...f, output_kg: e.target.value }))}
-                  className="w-full mt-2 px-4 py-3 border border-slate-200 rounded-xl text-lg font-bold text-center" placeholder="kg obtenidos" />
+            </div>
+            <FormInput label="Cantidad" type="number" min="0" inputMode="numeric" value={sacarForm.cantidad} onChange={e => setSacarForm(f => ({ ...f, cantidad: e.target.value }))}
+              inputClassName="text-center !text-xl font-bold" placeholder="Cantidad" autoFocus />
+            <div>
+              <label className={LABEL}>Motivo</label>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {MOTIVOS_SALIDA_MANUAL.map(m => (
+                  <ChoiceButton key={m} tone="amber" active={sacarForm.motivo === m} onClick={() => setSacarForm(f => ({ ...f, motivo: m }))} className="text-xs">
+                    {m}
+                  </ChoiceButton>
+                ))}
               </div>
-              {transInputKg > 0 && transOutputKg > 0 && (
-                <div className={`rounded-[18px] p-3 border ${transRendimiento >= 80 ? 'bg-emerald-50 border-emerald-200' : transRendimiento >= 65 ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'}`}>
-                  <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                    <div><p className="text-slate-400">Entrada</p><p className="font-extrabold text-slate-800">{transInputKg} kg</p></div>
-                    <div><p className="text-red-400">Merma</p><p className="font-extrabold text-red-700">{transMermaKg.toFixed(1)} kg</p></div>
-                    <div><p className="text-slate-400">Rendimiento</p><p className={`font-extrabold ${transRendimiento >= 80 ? 'text-emerald-700' : transRendimiento >= 65 ? 'text-amber-700' : 'text-red-700'}`}>{transRendimiento}%</p></div>
-                  </div>
+              {sacarForm.motivo === 'Otro' && (
+                <div className="mt-2">
+                  <FormInput label="Detalle" value={sacarForm.detalle || ''} onChange={e => setSacarForm(f => ({ ...f, detalle: e.target.value }))}
+                    placeholder="¿Para qué sale? (mínimo 5 caracteres)" />
                 </div>
               )}
-              {/* Cuarto destino: el output va al CF (mig 057+ comportamiento híbrido) */}
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">¿A qué cuarto frío entra?</label>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {(cuartos || []).map(cf => (
-                    <button key={cf.id} onClick={() => setTransForm(f => ({ ...f, cuarto_destino: String(cf.id) }))}
-                      className={`py-2.5 px-2 rounded-xl text-xs font-bold border-2 text-left ${String(transForm.cuarto_destino) === String(cf.id) ? "border-blue-500 bg-blue-50 text-blue-700" : "border-slate-200 text-slate-600"}`}>
-                      {s(cf.nombre)}
-                      <span className="block text-[10px] opacity-70">{s(cf.id)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <input type="text" value={transForm.notas} onChange={e => setTransForm(f => ({ ...f, notas: e.target.value }))}
-                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm" placeholder="Notas (opcional)" />
+              <p className="mt-2 text-[11px] text-slate-400">Producto dañado o perdido: usa <b>Merma</b>. Diferencia de conteo: la ajusta Admin en Inventario.</p>
             </div>
-            <button onClick={registrarTransformacion}
-              disabled={guardandoTrans || !transForm.input_sku || !transForm.output_sku || !transForm.cuarto_destino || transInputKg <= 0 || transOutputKg <= 0 || transOutputKg > transInputKg || (transStockInput !== null && transInputKg > transStockInput)}
-              className="w-full py-4 bg-cyan-700 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40 active:scale-[0.98] transition-transform">
-              {guardandoTrans ? 'Guardando...' : 'Registrar transformación'}
-            </button>
+          </div>
+          <FormBtn warning size="lg" className="mt-4 w-full" onClick={hacerSalida} disabled={haciendoSalida || !sacarForm.cantidad || n(sacarForm.cantidad) <= 0 || !s(sacarForm.motivo)}>
+            {haciendoSalida ? 'Sacando…' : 'Sacar del congelador'}
+          </FormBtn>
+        </>)}
+      </Modal>
+
+      {/* ═══ MODAL MERMA ═══ */}
+      <Modal open={!!mermaModal} onClose={() => setMermaModal(false)} kicker="Merma" title="Registrar merma" safeBottom closeOnEscape={!guardandoMerma}>
+        <div className="space-y-3">
+          <div>
+            <label className={LABEL}>Producto</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {(data.productos || []).filter(p => s(p.tipo) === "Producto Terminado").map(p => (
+                <ChoiceButton key={p.sku} tone="red" active={mForm.sku === s(p.sku)} onClick={() => setMForm(f => ({ ...f, sku: s(p.sku) }))} className="text-xs">
+                  {s(p.nombre)}
+                </ChoiceButton>
+              ))}
+            </div>
+          </div>
+          <FormInput label="Cantidad" type="number" min="0" value={mForm.cantidad} onChange={e => setMForm(f => ({ ...f, cantidad: e.target.value }))}
+            inputClassName="text-center !text-xl font-bold" placeholder="0" />
+          <div>
+            <label className={LABEL}>Causa</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {MERMA_CAUSAS.map(c => (
+                <ChoiceButton key={c} tone="red" active={mForm.causa === c} onClick={() => setMForm(f => ({ ...f, causa: c }))} className="text-xs">
+                  {c}
+                </ChoiceButton>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={LABEL}>¿De qué congelador?</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {cuartos.map(cf => (
+                <ChoiceButton key={cf.id} tone="red" active={mForm.congelador === s(cf.id)} onClick={() => setMForm(f => ({ ...f, congelador: s(cf.id) }))} className="text-xs">
+                  {s(cf.nombre)}
+                </ChoiceButton>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className={`${LABEL} mb-2`}>Evidencia (foto) *</label>
+            {fotoMermaPreview ? (
+              <div><img src={fotoMermaPreview} alt="Evidencia" className="h-32 w-full rounded-xl border border-emerald-300 object-cover" /><button type="button" onClick={clearFotoMerma} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
+            ) : (
+              <label className="flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-[16px] border-2 border-dashed border-slate-300 py-4 text-xs font-semibold text-slate-500">
+                <Icons.Camera /> Tomar foto de evidencia
+                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePickFile(clearFotoMerma, setFotoMermaFile, setFotoMermaPreview)} />
+              </label>
+            )}
           </div>
         </div>
-      )}
+        <FormBtn danger size="lg" className="mt-4 w-full" onClick={registrarMerma} disabled={guardandoMerma || !mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMermaFile}>
+          {guardandoMerma ? 'Guardando...' : 'Registrar merma'}
+        </FormBtn>
+      </Modal>
 
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] bg-emerald-600 text-white px-4 py-2.5 rounded-full text-sm font-semibold shadow-[0_18px_32px_rgba(5,150,105,0.24)]" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }} role="status" aria-live="polite">
-          {toast}
+      {/* ═══ MODAL: Transformación ═══ */}
+      <Modal open={!!transModal} onClose={() => setTransModal(false)} kicker="Transformación" title="Barras → Hielo triturado" safeBottom closeOnEscape={!guardandoTrans}>
+        <div className="space-y-4">
+          <div>
+            <label className={LABEL}>¿Qué entró? (Insumo)</label>
+            {insumos.length === 0 ? (
+              <EmptyState
+                message="Sin insumos en el catálogo"
+                hint="Pide a Admin que agregue barras (kg) al catálogo"
+              />
+            ) : (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {insumos.map(p => (
+                  <ChoiceButton key={p.sku} tone="cyan" active={transForm.input_sku === s(p.sku)} onClick={() => setTransForm(f => ({ ...f, input_sku: s(p.sku) }))} className="text-left text-xs">
+                    <p>{s(p.nombre)}</p>
+                    <p className="font-mono text-[10px] opacity-70">{s(p.sku)} · {Number(p.stock || 0)} kg stock</p>
+                  </ChoiceButton>
+                ))}
+              </div>
+            )}
+            <div className="mt-2">
+              <FormInput label="Kilos a transformar" type="number" min="0" step="0.01" inputMode="decimal" value={transForm.input_kg} onChange={e => setTransForm(f => ({ ...f, input_kg: e.target.value }))}
+                inputClassName="text-center !text-lg font-bold" placeholder="kg a transformar"
+                error={transStockInput !== null && transInputKg > transStockInput ? `Stock insuficiente (${transStockInput} kg disponibles)` : undefined} />
+            </div>
+          </div>
+          <div>
+            <label className={LABEL}>¿Qué salió? (Producto)</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {skuOptions.map(p => (
+                <ChoiceButton key={p.sku} tone="emerald" active={transForm.output_sku === s(p.sku)} onClick={() => setTransForm(f => ({ ...f, output_sku: s(p.sku) }))} className="text-left text-xs">
+                  {s(p.nombre)}
+                </ChoiceButton>
+              ))}
+            </div>
+            <div className="mt-2">
+              <FormInput label="Kilos obtenidos" type="number" min="0" step="0.01" inputMode="decimal" value={transForm.output_kg} onChange={e => setTransForm(f => ({ ...f, output_kg: e.target.value }))}
+                inputClassName="text-center !text-lg font-bold" placeholder="kg obtenidos" />
+            </div>
+          </div>
+          {transInputKg > 0 && transOutputKg > 0 && (
+            <Card tone={transRendimiento >= 80 ? 'success' : transRendimiento >= 65 ? 'warning' : 'danger'} padding="p-3">
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div><p className="text-slate-400">Entrada</p><p className="font-extrabold text-slate-800">{transInputKg} kg</p></div>
+                <div><p className="text-red-400">Merma</p><p className="font-extrabold text-red-700">{transMermaKg.toFixed(1)} kg</p></div>
+                <div><p className="text-slate-400">Rendimiento</p><p className={`font-extrabold ${transRendimiento >= 80 ? 'text-emerald-700' : transRendimiento >= 65 ? 'text-amber-700' : 'text-red-700'}`}>{transRendimiento}%</p></div>
+              </div>
+            </Card>
+          )}
+          {/* Cuarto destino: el output va al CF (mig 057+ comportamiento híbrido) */}
+          <div>
+            <label className={LABEL}>¿A qué cuarto frío entra?</label>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {(cuartos || []).map(cf => (
+                <ChoiceButton key={cf.id} active={String(transForm.cuarto_destino) === String(cf.id)} onClick={() => setTransForm(f => ({ ...f, cuarto_destino: String(cf.id) }))} className="text-left text-xs">
+                  {s(cf.nombre)}
+                  <span className="block text-[10px] opacity-70">{s(cf.id)}</span>
+                </ChoiceButton>
+              ))}
+            </div>
+          </div>
+          <FormInput label="Notas (opcional)" type="text" value={transForm.notas} onChange={e => setTransForm(f => ({ ...f, notas: e.target.value }))} placeholder="Notas (opcional)" />
         </div>
-      )}
+        <FormBtn primary size="lg" className="mt-4 w-full" onClick={registrarTransformacion}
+          disabled={guardandoTrans || !transForm.input_sku || !transForm.output_sku || !transForm.cuarto_destino || transInputKg <= 0 || transOutputKg <= 0 || transOutputKg > transInputKg || (transStockInput !== null && transInputKg > transStockInput)}>
+          {guardandoTrans ? 'Guardando...' : 'Registrar transformación'}
+        </FormBtn>
+      </Modal>
     </div>
   );
 }
