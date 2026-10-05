@@ -13,13 +13,25 @@ import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from 
 import { useColaOffline } from '../data/useColaOffline';
 import { conteoInicial, diferenciasConteo, totalesBalance, mensajeNoEntrega } from '../data/inventarioRutaLogic';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
-import { useBodyScrollLock } from './ui/Modal';
+import Modal, { FormInput, FormBtn } from './ui/Modal';
+import { Card, SectionLabel, RoleHeader, ChoiceButton } from './ui/Components';
+import { Icons } from './ui/Icons';
+import { useToast } from './ui/Toast';
 import { EmptyState } from './ui/Skeleton';
 const MapaRuta = lazy(() => import('./ui/MapaRuta'));
 
+// Fase A5 (convergencia visual por rol): el Chofer conserva su flujo de
+// enfoque (cargar → firma → cargada → ruta → cierre), la cola offline, el GPS,
+// las fotos, la firma, la venta exprés y el cierre por servidor; solo cambia
+// la presentación (RoleHeader en modo enfoque, tarjetas, Modal compartido,
+// ChoiceButton/FormInput/FormBtn, toast global). Botones grandes y barra de
+// acciones fija se mantienen: es la pantalla que se usa manejando.
 const PAGOS = ["Efectivo", "Transferencia", "Tarjeta", "QR / Link de pago", "Crédito"];
 const MERMA_CAUSAS = ["Bolsa rota", "Hielo derretido", "Daño transporte", "Rechazo cliente"];
-const CHOFER_SHELL = "min-h-dvh w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#edf4f6_0%,#e3eef1_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
+const CHOFER_SHELL = "min-h-dvh w-full text-slate-900";
+const CONTENIDO = "mx-auto w-full max-w-[640px] px-4 pt-4 md:max-w-3xl lg:max-w-5xl";
+const LABEL = "mb-1.5 block text-sm font-medium text-slate-700";
+const FOTO_LABEL = "flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-[16px] border-2 border-dashed py-3 text-xs font-semibold";
 
 export default function ChoferView({ user, data, actions, onLogout }) {
   const [stepOverride, setStepOverride] = useState(null);
@@ -72,25 +84,19 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const [noEntregaModal, setNoEntregaModal] = useState(null); // orden o null
   const [noEntregaForm, setNoEntregaForm] = useState({ motivo: MOTIVOS_NO_ENTREGA[0], otroMotivo: '', reagendar: true });
   const [marcandoNoEntrega, setMarcandoNoEntrega] = useState(false);
-  // Tanda 17 P1: body scroll lock cuando cualquier modal custom esté
-  // abierto. Sin esto, arrastrar sobre el backdrop del modal hacía
-  // scrollear el body de fondo (mismo bug que Modal.jsx ya arregló).
-  useBodyScrollLock(
-    !!firmaModal || !!excepcionModal || !!entregaModal ||
-    !!ventaModal || !!mermaModal || !!noEntregaModal
-  );
-  const [toast, setToast] = useState("");
-  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
+  // (El bloqueo de scroll y Escape de las hojas los hace el Modal compartido.)
+  const toast = useToast();
+  const showToast = (msg, tipo = "success") => { (toast?.[tipo] || toast?.info)?.(msg); };
 
   // Handler compartido: comprime cliente-side, valida 5MB como red de
   // seguridad, y guarda el dataURL en el setter recibido.
   const handleImagePick = (setter) => async (e) => {
     const original = e.target.files?.[0];
     if (!original) return;
-    if (original.size > 2 * 1024 * 1024) showToast('Procesando foto…');
+    if (original.size > 2 * 1024 * 1024) showToast('Procesando foto…', 'info');
     const file = await compressImage(original);
     if (file.size > 5 * 1024 * 1024) {
-      showToast('Foto muy grande, máx 5MB');
+      showToast('Foto muy grande, máx 5MB', 'error');
       e.target.value = '';
       return;
     }
@@ -326,7 +332,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           setMermas(JSON.parse(saved));
         } catch (e) {
           console.warn('No se pudieron cargar mermas guardadas:', e);
-          showToast('Mermas guardadas no se pudieron recuperar. Por favor regístralas de nuevo.');
+          showToast('Mermas guardadas no se pudieron recuperar. Por favor regístralas de nuevo.', 'error');
           localStorage.removeItem('mermas_ruta_' + miRutaActiva.id);
         }
       }
@@ -385,7 +391,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
               console.warn('[GPS]', error.message);
               if (fallosConsecutivos >= 5 && !avisoMostrado) {
                 avisoMostrado = true;
-                showToast('GPS no se está registrando — admin no te ve en el mapa');
+                showToast('GPS no se está registrando — admin no te ve en el mapa', 'error');
               }
             } else if (fallosConsecutivos > 0) {
               // Recuperación: reset contador para permitir nuevo aviso si vuelve a fallar
@@ -446,7 +452,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     // Validar que al menos un producto tenga carga real > 0
     const tieneCarga = Object.values(cargaRealForm).some(v => n(v) > 0);
     if (!tieneCarga) {
-      showToast('Debes marcar al menos un producto cargado');
+      showToast('Debes marcar al menos un producto cargado', 'error');
       return;
     }
 
@@ -454,7 +460,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     for (const [sku, qty] of Object.entries(cargaRealForm)) {
       const autorizado = n(cargaTotal[sku]);
       if (n(qty) > autorizado) {
-        showToast(`${sku}: máximo autorizado ${autorizado}`);
+        showToast(`${sku}: máximo autorizado ${autorizado}`, 'error');
         return;
       }
     }
@@ -467,12 +473,12 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       }
       const result = await actions.solicitarFirmaCarga?.(miRutaActiva.id, cargaRealNum);
       if (result && result.message) {
-        showToast('Error: ' + result.message);
+        showToast('Error: ' + result.message, 'error');
         return;
       }
       showToast('Firma solicitada. Espera a Producción.');
     } catch {
-      showToast('No se pudo solicitar firma');
+      showToast('No se pudo solicitar firma', 'error');
     } finally {
       setSolicitandoFirma(false);
     }
@@ -482,11 +488,11 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   const enviarFirma = async (esExcepcion = false) => {
     if (enviandoFirma) return;
     if (esExcepcion && !motivoExcepcion.trim()) {
-      showToast('Captura el motivo de la excepción');
+      showToast('Captura el motivo de la excepción', 'error');
       return;
     }
     if (!esExcepcion && !firmaTienePuntos) {
-      showToast('Dibuja la firma antes de confirmar');
+      showToast('Dibuja la firma antes de confirmar', 'error');
       return;
     }
     const canvas = !esExcepcion ? firmaCanvasRef.current : null;
@@ -503,7 +509,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           operacionId: op.id,
         });
         if (result && result.message) {
-          showToast('Error: ' + result.message);
+          showToast('Error: ' + result.message, 'error');
           return;
         }
         opFirmaRef.current = null;
@@ -518,7 +524,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       opFirmaRef.current = op;
       const result = await actions.firmarCarga?.(miRutaActiva.id, firmaBase64, { operacionId: op.id });
       if (result && result.message) {
-        showToast('Error: ' + result.message);
+        showToast('Error: ' + result.message, 'error');
         return;
       }
       opFirmaRef.current = null;
@@ -527,7 +533,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       setFirmaTienePuntos(false);
     } catch (e) {
       console.error('Error enviando firma:', e);
-      showToast('Error al firmar. Verifica tu conexión.');
+      showToast('Error al firmar. Verifica tu conexión.', 'error');
     } finally {
       setEnviandoFirma(false);
     }
@@ -550,13 +556,13 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     // Sin foto el admin no puede conciliar el pago en la cuenta bancaria.
     const validErr = validarCobroTransferencia({ metodoPago: cobroMetodo, fotoTransf });
     if (validErr) {
-      showToast(validErr.error);
+      showToast(validErr.error, 'error');
       return;
     }
     // QR / Link de pago → generate checkout
     if (cobroMetodo === "QR / Link de pago") {
       if (!online) {
-        showToast('Sin señal — el link de pago necesita conexión. Usa otro método.');
+        showToast('Sin señal — el link de pago necesita conexión. Usa otro método.', 'info');
         return;
       }
       setGenerandoLink(true);
@@ -567,10 +573,10 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           setShortUrl(result.shortUrl || result.checkoutUrl);
           showToast('Link de pago generado');
         } else {
-          showToast("Error al generar link de pago");
+          showToast("Error al generar link de pago", 'error');
         }
       } catch (e) {
-        showToast('Error: ' + (e.message || 'No se pudo generar el link'));
+        showToast('Error: ' + (e.message || 'No se pudo generar el link'), 'error');
       } finally {
         setGenerandoLink(false);
       }
@@ -601,7 +607,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           folioNota: folioNota || null,
         });
         setEntregas(prev => [...prev, { ...entrega, offline: true }]);
-        showToast("Sin señal — entrega guardada en el teléfono");
+        showToast("Sin señal — entrega guardada en el teléfono", 'info');
         setEntregaModal(null);
         setFotoTransf(null);
         return;
@@ -611,7 +617,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         ? await actions.updateOrdenEstatus(entregaModal.id, "Entregada", cobroMetodo, { folioNota: folioNota || null })
         : null;
       if (err) {
-        showToast("No se pudo registrar la entrega");
+        showToast("No se pudo registrar la entrega", 'error');
         return;
       }
       setEntregas(prev => [...prev, entrega]);
@@ -643,7 +649,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       if (err?.name === 'AbortError') return; // canceló el share sheet
       showToast(err?.status === 501
         ? 'Notas públicas sin configurar — avisa al admin'
-        : 'No se pudo generar la nota');
+        : 'No se pudo generar la nota', 'error');
     } finally {
       setCompartiendoNota(false);
     }
@@ -661,7 +667,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       ? s(noEntregaForm.otroMotivo).trim()
       : noEntregaForm.motivo;
     if (!motivoFinal) {
-      showToast('Captura el motivo');
+      showToast('Captura el motivo', 'error');
       return;
     }
     setMarcandoNoEntrega(true);
@@ -675,7 +681,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           reagendar: noEntregaForm.reagendar,
           operacionId: nuevoOperacionId(),
         });
-        showToast('Sin señal — se marcará no entregada al reconectar');
+        showToast('Sin señal — se marcará no entregada al reconectar', 'info');
         setNoEntregaModal(null);
         return;
       }
@@ -688,7 +694,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         { operacionId: op.id }
       );
       if (result && result.error) {
-        showToast('Error: ' + result.error);
+        showToast('Error: ' + result.error, 'error');
         return;
       }
       opNoEntregaRef.current = null;
@@ -711,7 +717,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     const sku = vForm.sku || s(productos[0]?.sku);
     // Check available inventory
     if (n(vForm.cant) > (restante[sku] || 0)) {
-      showToast("No tienes suficiente — te quedan " + (restante[sku] || 0));
+      showToast("No tienes suficiente — te quedan " + (restante[sku] || 0), 'error');
       return;
     }
     setCreandoVenta(true);
@@ -793,14 +799,14 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     // Tanda 22: el cierre necesita conexión y cola sincronizada — las
     // no-entregas encoladas deben llegar antes de calcular el balance.
     if (!online) {
-      showToast('Sin señal — busca conexión para cerrar la ruta');
+      showToast('Sin señal — busca conexión para cerrar la ruta', 'info');
       return;
     }
     if (pendientesCola().length > 0) {
-      showToast('Sincronizando pendientes…');
+      showToast('Sincronizando pendientes…', 'info');
       await sincronizarCola();
       if (pendientesCola().length > 0) {
-        showToast('Hay operaciones sin sincronizar — reintenta en un momento');
+        showToast('Hay operaciones sin sincronizar — reintenta en un momento', 'error');
         return;
       }
     }
@@ -815,7 +821,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       if (!res) return;
       if (res.mermasRegistradas) marcarMermasRegistradas(res.mermasRegistradas);
       if (res.error) {
-        showToast('No se pudo preparar el cierre: ' + res.error);
+        showToast('No se pudo preparar el cierre: ' + res.error, 'error');
         return;
       }
       setBalanceCierre(res.balance || []);
@@ -837,7 +843,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       if (!res) return;
       if (res.error) {
         setFaltanteCierre(res.faltante || null);
-        showToast(res.error);
+        showToast(res.error, 'error');
         return;
       }
       if (miRutaActiva?.id) {
@@ -848,7 +854,7 @@ export default function ChoferView({ user, data, actions, onLogout }) {
       setRutaCerrada(true);
       showToast("Ruta cerrada ✓");
     } catch {
-      showToast("No se pudo cerrar la ruta");
+      showToast("No se pudo cerrar la ruta", 'error');
     } finally {
       setCerrandoRuta(false);
     }
@@ -864,28 +870,24 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   if (step === "cargar") return (
     <div className={CHOFER_SHELL} data-testid="chofer-shell">
       <ModoPruebaBanner />
-      <div className="bg-[#07131a] px-4 pb-5 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
-        <div className="flex items-center justify-between mb-4">
-          <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cargar camión</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
-          <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-4 py-2.5 text-sm font-semibold text-white min-h-[44px]">Salir</button>
-        </div>
+      <RoleHeader kicker="Chofer" title="Cargar camión" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout}>
         <div className="rounded-[24px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">Paso 1 de 3</p>
-          <h2 className="font-display mt-2 text-[1.55rem] font-bold tracking-[-0.04em]">Marca cuánto cargaste</h2>
+          <h2 className="font-display mt-2 text-[1.55rem] font-bold tracking-[-0.04em] text-white">Marca cuánto cargaste</h2>
           <p className="mt-1.5 text-sm text-slate-300">Producción debe firmar antes de salir.</p>
         </div>
-      </div>
-      <div className="px-4 pt-4 space-y-3">
+      </RoleHeader>
+      <div className={`${CONTENIDO} space-y-3`}>
         {!miRutaActiva && (
-          <div className="bg-amber-50 border border-amber-200 rounded-[20px]">
+          <Card tone="warning">
             <EmptyState
-              icon={<span className="text-4xl">🚚</span>}
+              icon="Truck"
               message="No tienes ruta asignada para hoy"
               hint="Pide a tu admin que te asigne una ruta para empezar el día"
               secondaryLabel="Recargar"
               onSecondary={() => window.location.reload()}
             />
-          </div>
+          </Card>
         )}
 
         {miRutaActiva && productos.filter(p => n(cargaTotal[s(p.sku)]) > 0).map(p => {
@@ -894,47 +896,33 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           const real = cargaRealForm[sku] || '';
           const excede = n(real) > autorizado;
           return (
-            <div key={sku} className="bg-white/78 rounded-[22px] border border-slate-200/80 p-4 shadow-[0_12px_24px_rgba(8,20,27,0.06)]">
-              <div className="flex justify-between items-start mb-3">
+            <Card key={sku} padding="p-4">
+              <div className="mb-3 flex items-start justify-between">
                 <div className="flex-1">
                   <p className="text-sm font-bold text-slate-800">{s(p.nombre)}</p>
                   <p className="text-xs text-slate-400">{sku}</p>
-                  <p className="text-xs text-cyan-700 font-semibold mt-1">Autorizado: {autorizado}</p>
+                  <p className="mt-1 text-xs font-semibold text-cyan-700">Autorizado: {autorizado}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  inputMode="numeric"
-                  value={real}
-                  onChange={e => setCargaRealForm(f => ({ ...f, [sku]: e.target.value }))}
-                  placeholder="0"
-                  className={`flex-1 px-4 py-3 border-2 rounded-xl text-2xl font-extrabold text-center ${excede ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
-                />
-                <button
-                  onClick={() => setCargaRealForm(f => ({ ...f, [sku]: String(autorizado) }))}
-                  className="px-3 py-2 bg-slate-100 text-xs font-bold text-slate-700 rounded-xl"
-                >
-                  Máx
-                </button>
+              <div className="flex items-start gap-2">
+                <div className="flex-1">
+                  <FormInput label="Cargado" type="number" min="0" inputMode="numeric" value={real}
+                    onChange={e => setCargaRealForm(f => ({ ...f, [sku]: e.target.value }))} placeholder="0"
+                    inputClassName="text-center !text-2xl font-extrabold" error={excede ? 'Excede autorizado' : undefined} />
+                </div>
+                <FormBtn ghost className="mt-[26px]" onClick={() => setCargaRealForm(f => ({ ...f, [sku]: String(autorizado) }))}>Máx</FormBtn>
               </div>
-              {excede && <p className="text-xs text-red-600 font-semibold mt-1">Excede autorizado</p>}
-            </div>
+            </Card>
           );
         })}
 
         {miRutaActiva && (
-          <button
-            onClick={solicitarFirma}
-            disabled={solicitandoFirma || !Object.values(cargaRealForm).some(v => n(v) > 0)}
-            className="mt-4 w-full rounded-[22px] bg-slate-900 py-5 text-lg font-extrabold text-white shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98] disabled:opacity-40"
-          >
+          <FormBtn primary size="lg" className="mt-4 w-full !text-lg" onClick={solicitarFirma}
+            disabled={solicitandoFirma || !Object.values(cargaRealForm).some(v => n(v) > 0)}>
             {solicitandoFirma ? 'Solicitando…' : 'Solicitar firma de Producción'}
-          </button>
+          </FormBtn>
         )}
       </div>
-      {toast && <Toast msg={toast} />}
     </div>
   );
 
@@ -946,156 +934,133 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     const usuarioPuedeFirmar = user?.rol === 'Producción' || user?.rol === 'Admin';
 
     return (
-      <div className={CHOFER_SHELL}>
+      <div className={CHOFER_SHELL} data-testid="chofer-shell">
         <ModoPruebaBanner />
-        <div className="bg-[#07131a] px-4 pb-5 text-white" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
-          <div className="flex items-center justify-between mb-4">
-            <div><p className="erp-kicker text-cyan-200/70">Esperando firma</p><h1 className="font-display text-[1.4rem] font-bold tracking-[-0.04em]">Producción debe autorizar</h1></div>
-            <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-4 py-2.5 text-sm font-semibold text-white min-h-[44px]">Salir</button>
-          </div>
-        </div>
-        <div className="px-4 pt-4 space-y-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-[24px] p-5 text-center">
-            <p className="text-5xl mb-2">⏳</p>
+        <RoleHeader kicker="Esperando firma" title="Producción debe autorizar" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} />
+        <div className={`${CONTENIDO} space-y-4`}>
+          <Card tone="warning" className="text-center">
+            <p className="mb-2 flex justify-center text-amber-700 [&>svg]:h-10 [&>svg]:w-10"><Icons.Clock /></p>
             <p className="text-base font-bold text-amber-800">Esperando firma de Producción</p>
-            <p className="text-sm text-amber-700 mt-2">
+            <p className="mt-2 text-sm text-amber-700">
               {minutos < 1 ? 'Recién solicitada' : `Hace ${minutos} ${minutos === 1 ? 'minuto' : 'minutos'}`}
             </p>
-          </div>
+          </Card>
 
-          <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Carga reportada</h3>
+          <Card>
+            <SectionLabel className="mb-3">Carga reportada</SectionLabel>
             {(() => {
               const real = miRutaActiva?.carga_real || {};
               return Object.entries(real).map(([sku, qty]) => {
                 const prod = productos.find(p => s(p.sku) === sku);
                 return (
-                  <div key={sku} className="flex justify-between text-sm py-1">
+                  <div key={sku} className="flex justify-between py-1 text-sm">
                     <span className="text-slate-700">{prod ? s(prod.nombre) : sku}</span>
                     <span className="font-bold">{qty}</span>
                   </div>
                 );
               });
             })()}
-          </div>
+          </Card>
 
           {usuarioPuedeFirmar && (
-            <button
-              onClick={() => { setFirmaModal(true); setFirmaTienePuntos(false); }}
-              className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98]"
-            >
-              ✍️ Firmar carga ({user?.rol})
-            </button>
+            <FormBtn success size="lg" className="w-full" onClick={() => { setFirmaModal(true); setFirmaTienePuntos(false); }}>
+              <Icons.Edit /> Firmar carga ({user?.rol})
+            </FormBtn>
           )}
 
           {puedeFallback && !usuarioPuedeFirmar && (
-            <div className="bg-blue-50 border border-blue-200 rounded-[20px] p-4">
-              <p className="text-sm text-blue-700 font-semibold">Avisa a admin que apruebe remoto</p>
-              <p className="text-xs text-blue-600 mt-1">Pasaron más de 15 minutos. Admin puede aprobar desde su dispositivo.</p>
-            </div>
+            <Card tone={undefined} padding="p-4" className="!border-sky-200/80 !bg-sky-50/80">
+              <p className="text-sm font-semibold text-sky-800">Avisa a admin que apruebe remoto</p>
+              <p className="mt-1 text-xs text-sky-700">Pasaron más de 15 minutos. Admin puede aprobar desde su dispositivo.</p>
+            </Card>
           )}
 
           {puedeExcepcion && (
-            <button
-              onClick={() => setExcepcionModal(true)}
-              className="w-full py-3 bg-red-50 text-red-700 border-2 border-red-200 font-bold rounded-[20px] text-sm"
-            >
-              🚨 Cargar sin firma (excepción)
-            </button>
+            <FormBtn className="w-full border-red-200 bg-red-50 text-red-700 hover:bg-red-100" onClick={() => setExcepcionModal(true)}>
+              <Icons.AlertTriangle /> Cargar sin firma (excepción)
+            </FormBtn>
           )}
         </div>
 
         {/* Modal de firma */}
-        {firmaModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setFirmaModal(false)}>
-            <div className="bg-white w-full max-w-md rounded-[24px] p-5" onClick={e => e.stopPropagation()}>
-              <h3 className="font-display text-lg font-bold mb-3">Firma de Producción</h3>
-              <p className="text-xs text-slate-500 mb-3">Dibuja tu firma con el dedo</p>
+        <Modal open={!!firmaModal} onClose={() => setFirmaModal(false)} title="Firma de Producción" closeOnEscape={!enviandoFirma}>
+          <p className="mb-3 text-xs text-slate-500">Dibuja tu firma con el dedo</p>
 
-              <canvas
-                ref={el => {
-                  if (el && !firmaContextRef.current) {
-                    firmaCanvasRef.current = el;
-                    el.width = el.offsetWidth * 2;
-                    el.height = el.offsetHeight * 2;
-                    el.getContext('2d').scale(2, 2);
-                    const ctx = el.getContext('2d');
-                    ctx.fillStyle = 'white';
-                    ctx.fillRect(0, 0, el.width, el.height);
-                    ctx.strokeStyle = '#0a1929';
-                    ctx.lineWidth = 2.5;
-                    ctx.lineCap = 'round';
-                    firmaContextRef.current = ctx;
-                  }
-                }}
-                className="w-full h-48 border-2 border-slate-300 rounded-xl bg-white touch-none"
-                onMouseDown={e => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  firmaContextRef.current.beginPath();
-                  firmaContextRef.current.moveTo(e.clientX - rect.left, e.clientY - rect.top);
-                  setFirmaDibujando(true);
-                }}
-                onMouseMove={e => {
-                  if (!firmaDibujando) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  firmaContextRef.current.lineTo(e.clientX - rect.left, e.clientY - rect.top);
-                  firmaContextRef.current.stroke();
-                  setFirmaTienePuntos(true);
-                }}
-                onMouseUp={() => setFirmaDibujando(false)}
-                onMouseLeave={() => setFirmaDibujando(false)}
-                onTouchStart={e => {
-                  e.preventDefault();
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const t = e.touches[0];
-                  firmaContextRef.current.beginPath();
-                  firmaContextRef.current.moveTo(t.clientX - rect.left, t.clientY - rect.top);
-                  setFirmaDibujando(true);
-                }}
-                onTouchMove={e => {
-                  e.preventDefault();
-                  if (!firmaDibujando) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const t = e.touches[0];
-                  firmaContextRef.current.lineTo(t.clientX - rect.left, t.clientY - rect.top);
-                  firmaContextRef.current.stroke();
-                  setFirmaTienePuntos(true);
-                }}
-                onTouchEnd={() => setFirmaDibujando(false)}
-              />
+          <canvas
+            ref={el => {
+              if (el && !firmaContextRef.current) {
+                firmaCanvasRef.current = el;
+                el.width = el.offsetWidth * 2;
+                el.height = el.offsetHeight * 2;
+                el.getContext('2d').scale(2, 2);
+                const ctx = el.getContext('2d');
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, el.width, el.height);
+                ctx.strokeStyle = '#0a1929';
+                ctx.lineWidth = 2.5;
+                ctx.lineCap = 'round';
+                firmaContextRef.current = ctx;
+              }
+            }}
+            className="h-48 w-full touch-none rounded-[16px] border-2 border-slate-300 bg-white"
+            onMouseDown={e => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              firmaContextRef.current.beginPath();
+              firmaContextRef.current.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+              setFirmaDibujando(true);
+            }}
+            onMouseMove={e => {
+              if (!firmaDibujando) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              firmaContextRef.current.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+              firmaContextRef.current.stroke();
+              setFirmaTienePuntos(true);
+            }}
+            onMouseUp={() => setFirmaDibujando(false)}
+            onMouseLeave={() => setFirmaDibujando(false)}
+            onTouchStart={e => {
+              e.preventDefault();
+              const rect = e.currentTarget.getBoundingClientRect();
+              const t = e.touches[0];
+              firmaContextRef.current.beginPath();
+              firmaContextRef.current.moveTo(t.clientX - rect.left, t.clientY - rect.top);
+              setFirmaDibujando(true);
+            }}
+            onTouchMove={e => {
+              e.preventDefault();
+              if (!firmaDibujando) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const t = e.touches[0];
+              firmaContextRef.current.lineTo(t.clientX - rect.left, t.clientY - rect.top);
+              firmaContextRef.current.stroke();
+              setFirmaTienePuntos(true);
+            }}
+            onTouchEnd={() => setFirmaDibujando(false)}
+          />
 
-              <div className="flex gap-2 mt-3">
-                <button onClick={limpiarFirma} className="flex-1 py-2.5 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl">Limpiar</button>
-                <button onClick={() => setFirmaModal(false)} className="flex-1 py-2.5 bg-slate-200 text-slate-700 text-sm font-bold rounded-xl">Cancelar</button>
-                <button onClick={() => enviarFirma(false)} disabled={enviandoFirma || !firmaTienePuntos} className="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed">{enviandoFirma ? 'Firmando…' : 'Confirmar'}</button>
-              </div>
-            </div>
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <FormBtn ghost onClick={limpiarFirma}>Limpiar</FormBtn>
+            <FormBtn onClick={() => setFirmaModal(false)}>Cancelar</FormBtn>
+            <FormBtn success onClick={() => enviarFirma(false)} disabled={enviandoFirma || !firmaTienePuntos}>{enviandoFirma ? 'Enviando…' : 'Confirmar'}</FormBtn>
           </div>
-        )}
+        </Modal>
 
         {/* Modal de excepción */}
-        {excepcionModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setExcepcionModal(false)}>
-            <div className="bg-white w-full max-w-md rounded-[24px] p-5" onClick={e => e.stopPropagation()}>
-              <h3 className="font-display text-lg font-bold text-red-700 mb-1">⚠️ Carga sin firma</h3>
-              <p className="text-xs text-slate-600 mb-4">Esta acción queda registrada en auditoría. Solo úsala si no hay nadie de Producción/Admin disponible.</p>
-              <label className="block text-xs font-bold text-slate-600 mb-1">Motivo (obligatorio)</label>
-              <textarea
-                value={motivoExcepcion}
-                onChange={e => setMotivoExcepcion(e.target.value)}
-                placeholder="Ej: Producción no llegó a la hora, urgencia de salir..."
-                rows={3}
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm resize-none"
-              />
-              <div className="flex gap-2 mt-4">
-                <button onClick={() => { setExcepcionModal(false); setMotivoExcepcion(''); }} className="flex-1 py-2.5 bg-slate-200 text-slate-700 text-sm font-bold rounded-xl">Cancelar</button>
-                <button onClick={() => enviarFirma(true)} disabled={enviandoFirma || !motivoExcepcion.trim()} className="flex-1 py-2.5 bg-red-600 text-white text-sm font-bold rounded-xl disabled:opacity-40 disabled:cursor-not-allowed">{enviandoFirma ? 'Firmando…' : 'Cargar sin firma'}</button>
-              </div>
-            </div>
+        <Modal open={!!excepcionModal} onClose={() => setExcepcionModal(false)} title="Carga sin firma" closeOnEscape={!enviandoFirma}>
+          <p className="mb-4 text-xs text-slate-600">Esta acción queda registrada en auditoría. Solo úsala si no hay nadie de Producción/Admin disponible.</p>
+          <label className={LABEL}>Motivo (obligatorio)</label>
+          <textarea
+            value={motivoExcepcion}
+            onChange={e => setMotivoExcepcion(e.target.value)}
+            placeholder="Ej: Producción no llegó a la hora, urgencia de salir..."
+            rows={3}
+            className="w-full resize-none rounded-[16px] border border-slate-200 bg-white/80 px-3.5 py-3 text-sm focus:border-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-50"
+          />
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <FormBtn onClick={() => { setExcepcionModal(false); setMotivoExcepcion(''); }}>Cancelar</FormBtn>
+            <FormBtn danger onClick={() => enviarFirma(true)} disabled={enviandoFirma || !motivoExcepcion.trim()}>{enviandoFirma ? 'Enviando…' : 'Confirmar excepción'}</FormBtn>
           </div>
-        )}
-
-        {toast && <Toast msg={toast} />}
+        </Modal>
       </div>
     );
   }
@@ -1103,67 +1068,53 @@ export default function ChoferView({ user, data, actions, onLogout }) {
   // ═══ STEP NUEVO: CARGADA (lista para salir) ═══
   if (step === "cargada") {
     return (
-      <div className={CHOFER_SHELL}>
+      <div className={CHOFER_SHELL} data-testid="chofer-shell">
         <ModoPruebaBanner />
-        <div className="bg-[#07131a] px-4 pb-5 text-white" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
-          <div className="flex items-center justify-between mb-4">
-            <div><p className="erp-kicker text-cyan-200/70">Lista para salir</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Carga firmada ✓</h1></div>
-            <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-4 py-2.5 text-sm font-semibold text-white min-h-[44px]">Salir</button>
-          </div>
-        </div>
-        <div className="px-4 pt-4 space-y-4">
-          <div className="bg-emerald-50 border border-emerald-200 rounded-[24px] p-5 text-center">
-            <p className="text-5xl mb-2">✓</p>
-            <p className="text-base font-bold text-emerald-700">Carga autorizada</p>
-            <p className="text-sm text-emerald-600 mt-1">
+        <RoleHeader kicker="Lista para salir" title="Carga firmada ✓" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} />
+        <div className={`${CONTENIDO} space-y-4`}>
+          <Card tone="success" className="text-center">
+            <p className="mb-2 flex justify-center text-emerald-700 [&>svg]:h-10 [&>svg]:w-10"><Icons.Check /></p>
+            <p className="text-base font-bold text-emerald-800">Carga autorizada</p>
+            <p className="mt-1 text-sm text-emerald-700">
               {miRutaActiva?.firma_excepcion ? 'Sin firma (excepción registrada)' : 'Firmada por Producción'}
             </p>
-          </div>
+          </Card>
 
-          <button
+          <FormBtn primary size="lg" className="w-full !text-lg"
             onClick={async () => {
               if (actions.updateRutaEstatus) {
                 await actions.updateRutaEstatus(miRutaActiva.id, 'En progreso');
               }
               setStep('ruta');
-            }}
-            className="w-full py-5 bg-slate-900 text-white font-extrabold rounded-[22px] text-lg shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98]"
-          >
-            🚛 Iniciar ruta
-          </button>
+            }}>
+            <Icons.Truck /> Iniciar ruta
+          </FormBtn>
         </div>
-        {toast && <Toast msg={toast} />}
       </div>
     );
   }
 
   // ═══ STEP 2: RUTA ═══
   if (step === "ruta") return (
-    <div className={CHOFER_SHELL} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
+    <div className={CHOFER_SHELL} data-testid="chofer-shell" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
       <ModoPruebaBanner />
       <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
-      <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
-        <div className="flex items-center justify-between mb-2">
-          <div><p className="erp-kicker text-cyan-200/70">Chofer</p><h1 className="font-display text-[1.4rem] font-bold tracking-[-0.04em]">En ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)}</p></div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setMapaVisible(v => !v)}
-              className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all min-h-[44px] ${mapaVisible ? 'bg-blue-500 text-white' : 'bg-white/15 text-cyan-200'}`}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 7l6-3 6 3 6-3v13l-6 3-6-3-6 3V7z"/><line x1="9" y1="4" x2="9" y2="17"/><line x1="15" y1="7" x2="15" y2="20"/></svg>
-              {mapaVisible ? 'Ocultar mapa' : 'Ver mapa'}
-            </button>
-            <div className="text-right"><p className="text-lg font-extrabold">{fmtMoney(totalCobrado)}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>
-          </div>
-        </div>
+      <RoleHeader kicker="Chofer" title="En ruta" subtitle={s(user?.nombre)} accent="cyan"
+        right={<>
+          <button type="button" onClick={() => setMapaVisible(v => !v)}
+            className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-[13px] px-4 py-2.5 text-xs font-bold transition-all ${mapaVisible ? 'bg-blue-500 text-white' : 'bg-white/15 text-cyan-200'}`}>
+            <Icons.MapPin /> {mapaVisible ? 'Ocultar mapa' : 'Ver mapa'}
+          </button>
+          <div className="text-right"><p className="font-display text-lg font-bold text-white">{fmtMoney(totalCobrado)}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>
+        </>}>
         <div className="flex items-center gap-3 rounded-[18px] border border-white/10 bg-white/8 p-3">
-          <div className="flex-1"><div className="h-2 bg-white/20 rounded-full overflow-hidden"><div className="h-full bg-emerald-400 rounded-full transition-all" style={{ width: `${ordenesConDetalle.length > 0 ? (entregadasList.length / ordenesConDetalle.length) * 100 : 0}%` }} /></div></div>
-          <span className="text-sm font-bold">{entregadasList.length}/{ordenesConDetalle.length}</span>
+          <div className="flex-1"><div className="h-2 overflow-hidden rounded-full bg-white/20"><div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${ordenesConDetalle.length > 0 ? (entregadasList.length / ordenesConDetalle.length) * 100 : 0}%` }} /></div></div>
+          <span className="text-sm font-bold text-white">{entregadasList.length}/{ordenesConDetalle.length}</span>
         </div>
-      </div>
+      </RoleHeader>
       {/* Mapa embebido — se monta una sola vez para no perder la posición */}
-      <div className={`px-4 pt-4 transition-all ${mapaVisible ? 'block' : 'hidden'}`}>
-        <Suspense fallback={<div className="h-[340px] rounded-[22px] bg-slate-100 flex items-center justify-center text-sm text-slate-400">Cargando mapa...</div>}>
+      <div className={`${CONTENIDO} transition-all ${mapaVisible ? 'block' : 'hidden'}`}>
+        <Suspense fallback={<div className="flex h-[340px] items-center justify-center rounded-[22px] bg-slate-100 text-sm text-slate-400">Cargando mapa...</div>}>
           <MapaRuta
             paradas={ordenesConDetalle.map(o => ({
               id:        o.id,
@@ -1177,40 +1128,40 @@ export default function ChoferView({ user, data, actions, onLogout }) {
         </Suspense>
       </div>
 
-      <div className="px-4 pt-4 space-y-3">
+      <div className={`${CONTENIDO} space-y-3`}>
         {pendientes.length > 0 && <div>
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Por entregar ({pendientes.length})</h3>
+          <SectionLabel className="mb-2">Por entregar ({pendientes.length})</SectionLabel>
           {pendientes.map(o => (
-            <div key={o.id} className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)] mb-2">
-              <div className="flex justify-between items-start mb-2">
+            <Card key={o.id} padding="p-4" className="mb-2">
+              <div className="mb-2 flex items-start justify-between">
                 <div>
                   <span className="font-mono text-xs text-slate-400">#{s(o.folio)}</span>
                   <p className="text-base font-bold text-slate-800">{o.clienteNombre}</p>
                   {o.esCredito
-                    ? <span className="inline-block text-[10px] font-bold text-purple-700 bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-full mt-0.5">📋 A crédito</span>
-                    : <span className="inline-block text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full mt-0.5">💵 Cobrar</span>
+                    ? <span className="mt-0.5 inline-block rounded-full border border-violet-200/80 bg-violet-100/80 px-2 py-0.5 text-[10px] font-bold text-violet-900">A crédito</span>
+                    : <span className="mt-0.5 inline-block rounded-full border border-emerald-200/80 bg-emerald-100/80 px-2 py-0.5 text-[10px] font-bold text-emerald-900">Cobrar</span>
                   }
                 </div>
-                <p className="text-lg font-extrabold text-slate-800">{fmtMoney(o.totalCalc)}</p>
+                <p className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900">{fmtMoney(o.totalCalc)}</p>
               </div>
               {(o.direccion || o.contacto || o.referencia) && (
-                <div className="space-y-1.5 mb-3">
+                <div className="mb-3 space-y-1.5">
                   {o.direccion && (
                     <div className="flex items-start gap-1.5 text-xs text-slate-600">
-                      <span className="mt-0.5 flex-shrink-0 text-slate-500">📍</span>
+                      <span className="mt-0.5 flex-shrink-0 text-slate-500"><Icons.MapPin /></span>
                       <span className="line-clamp-2">{o.direccion}</span>
                     </div>
                   )}
                   {o.referencia && (
-                    <div className="flex items-start gap-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
-                      <span className="mt-0.5 flex-shrink-0">📝</span>
+                    <div className="flex items-start gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                      <span className="mt-0.5 flex-shrink-0"><Icons.FileText /></span>
                       <span className="line-clamp-2">{o.referencia}</span>
                     </div>
                   )}
                   {o.contacto && (
-                    <div className="flex items-center gap-1.5 text-xs text-slate-600 flex-wrap">
-                      <span className="flex-shrink-0">👤</span>
-                      <span className="flex-1 min-w-0 truncate">{o.contacto}</span>
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+                      <span className="flex-shrink-0"><Icons.Users /></span>
+                      <span className="min-w-0 flex-1 truncate">{o.contacto}</span>
                       {(() => {
                         const tel = extraerTelefono(o.contacto);
                         if (!tel) return null;
@@ -1219,20 +1170,20 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                             <a
                               href={`tel:${tel}`}
                               onClick={(e) => e.stopPropagation()}
-                              className="px-3 py-2 bg-slate-900 text-white text-xs font-bold rounded-md flex items-center gap-1.5 min-h-[40px]"
+                              className="flex min-h-[40px] items-center gap-1.5 rounded-[12px] bg-slate-900 px-3 py-2 text-xs font-bold text-white"
                               aria-label="Llamar"
                             >
-                              📞 Llamar
+                              Llamar
                             </a>
                             <a
                               href={`https://wa.me/52${tel}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               onClick={(e) => e.stopPropagation()}
-                              className="px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-md flex items-center gap-1.5 min-h-[40px]"
+                              className="flex min-h-[40px] items-center gap-1.5 rounded-[12px] bg-emerald-600 px-3 py-2 text-xs font-bold text-white"
                               aria-label="WhatsApp"
                             >
-                              💬 WA
+                              WA
                             </a>
                           </div>
                         );
@@ -1241,56 +1192,54 @@ export default function ChoferView({ user, data, actions, onLogout }) {
                   )}
                 </div>
               )}
-              <div className="flex flex-wrap gap-1 mb-3">
-                {o.items.map((it, i) => <span key={i} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{it.cant}× {it.sku} · ${it.precio}</span>)}
+              <div className="mb-3 flex flex-wrap gap-1">
+                {o.items.map((it, i) => <span key={i} className="rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{it.cant}× {it.sku} · ${it.precio}</span>)}
               </div>
               {/* Botón de navegación */}
               {(o.latitud && o.longitud) ? (
-                <button onClick={() => abrirNavegacion(o.latitud, o.longitud)}
-                  className="mb-2 flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 text-white font-semibold rounded-[14px] text-sm active:scale-[0.98] transition-transform">
+                <button type="button" onClick={() => abrirNavegacion(o.latitud, o.longitud)}
+                  className="mb-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[14px] bg-blue-600 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98]">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
                   Navegar
                 </button>
               ) : o.direccion ? (
-                <button onClick={() => window.location.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.direccion)}`}
-                  className="mb-2 flex items-center justify-center gap-2 w-full py-2.5 bg-blue-500/80 text-white font-semibold rounded-[14px] text-sm active:scale-[0.98] transition-transform">
+                <button type="button" onClick={() => window.location.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.direccion)}`}
+                  className="mb-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[14px] bg-blue-500/80 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98]">
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
                   Buscar dirección
                 </button>
               ) : null}
-              <button onClick={() => { setEntregaModal(o); setCobroMetodo(o.esCredito ? "Crédito" : "Efectivo"); setCobroRef(""); setFolioNota(""); setFotoEntrega(null); setCheckoutUrl(null); setShortUrl(null); }}
-                className="w-full py-3.5 bg-slate-900 text-white font-bold rounded-[18px] text-sm active:scale-[0.98] transition-transform shadow-[0_18px_30px_rgba(8,20,27,0.14)]">
+              <FormBtn primary className="w-full" onClick={() => { setEntregaModal(o); setCobroMetodo(o.esCredito ? "Crédito" : "Efectivo"); setCobroRef(""); setFolioNota(""); setFotoEntrega(null); setCheckoutUrl(null); setShortUrl(null); }}>
                 Entregar y cobrar
-              </button>
-              <button onClick={() => abrirNoEntrega(o)}
-                className="w-full mt-2 py-2.5 bg-white border border-amber-300 text-amber-700 font-semibold rounded-[14px] text-xs active:scale-[0.98] transition-transform">
+              </FormBtn>
+              <FormBtn className="mt-2 w-full border-amber-300 text-amber-700 hover:bg-amber-50" onClick={() => abrirNoEntrega(o)}>
                 No entregada
-              </button>
-            </div>
+              </FormBtn>
+            </Card>
           ))}
         </div>}
         {entregas.length > 0 && <div>
-          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Entregadas ({entregas.length})</h3>
+          <SectionLabel className="mb-2">Entregadas ({entregas.length})</SectionLabel>
           {entregas.map(e => (
-            <div key={e.ordenId || e.id} className="bg-emerald-50/90 rounded-[20px] p-3 border border-emerald-200 mb-2">
-              <div className="flex justify-between items-center">
-                <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="text-[10px] text-slate-400 ml-1">Nota: {e.folioNota}</span>}<span className="text-sm font-semibold text-slate-700 ml-2">{s(e.cliente)}</span>{e.express && <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.5 rounded ml-1">Exprés</span>}{e.factura && <span className="text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.5 rounded ml-1">Factura</span>}</div>
-                <div className="text-right flex items-center gap-2">{e.fotoEntrega && <span className="text-emerald-500 text-xs">📷</span>}<div><p className="text-sm font-bold">{fmtMoney(e.total)}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div>{online && e.ordenId && (
-                  <button onClick={() => compartirNota(e)} disabled={compartiendoNota} className="flex-shrink-0 px-2.5 py-2 bg-white border border-emerald-300 text-emerald-700 text-xs font-bold rounded-lg min-h-[36px] disabled:opacity-50" title="Compartir nota" aria-label={`Compartir nota ${s(e.folio)}`}>🔗</button>
+            <Card key={e.ordenId || e.id} tone="success" padding="p-3" className="mb-2">
+              <div className="flex items-center justify-between">
+                <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="ml-1 text-[10px] text-slate-400">Nota: {e.folioNota}</span>}<span className="ml-2 text-sm font-semibold text-slate-700">{s(e.cliente)}</span>{e.express && <span className="ml-1 rounded bg-emerald-200 px-1.5 py-0.5 text-[10px] text-emerald-800">Exprés</span>}{e.factura && <span className="ml-1 rounded bg-violet-200 px-1.5 py-0.5 text-[10px] text-violet-800">Factura</span>}</div>
+                <div className="flex items-center gap-2 text-right">{e.fotoEntrega && <span className="text-emerald-500 [&>svg]:h-3.5 [&>svg]:w-3.5"><Icons.Camera /></span>}<div><p className="text-sm font-bold">{fmtMoney(e.total)}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div>{online && e.ordenId && (
+                  <button type="button" onClick={() => compartirNota(e)} disabled={compartiendoNota} className="flex min-h-[36px] flex-shrink-0 items-center rounded-lg border border-emerald-300 bg-white px-2.5 py-2 text-xs font-bold text-emerald-700 disabled:opacity-50" title="Compartir nota" aria-label={`Compartir nota ${s(e.folio)}`}>Nota</button>
                 )}</div>
               </div>
-            </div>
+            </Card>
           ))}
         </div>}
         {mermas.length > 0 && <div>
-          <h3 className="text-xs font-bold text-amber-500 uppercase tracking-wider mb-2">Mermas</h3>
-          {mermas.map(m => (<div key={m.id} className="bg-amber-50 rounded-xl p-3 border border-amber-200 mb-2"><div className="flex justify-between text-xs"><span className="font-semibold">{m.cant}× {m.sku}</span><span className="text-amber-600">{m.causa}</span></div></div>))}
+          <SectionLabel className="mb-2 !text-amber-600">Mermas</SectionLabel>
+          {mermas.map(m => (<Card key={m.id} tone="warning" padding="p-3" className="mb-2"><div className="flex justify-between text-xs"><span className="font-semibold">{m.cant}× {m.sku}</span><span className="text-amber-700">{m.causa} · {m.hora}</span></div></Card>))}
         </div>}
         <div className="h-20" />
       </div>
 
       {/* Bottom bar */}
-      <div className="fixed bottom-0 left-1/2 z-40 -translate-x-1/2 w-full max-w-[640px] bg-slate-950/92 border-t border-white/10 px-4 py-3 backdrop-blur-xl md:max-w-3xl lg:max-w-5xl" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
+      <div className="fixed bottom-0 left-1/2 z-40 w-full max-w-[640px] -translate-x-1/2 border-t border-white/10 bg-slate-950/92 px-4 py-3 backdrop-blur-xl md:max-w-3xl lg:max-w-5xl" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
         {/* Ver ruta completa en Maps si hay pendientes con coords */}
         {(() => {
           const conCoords = pendientes.filter(o => o.latitud && o.longitud);
@@ -1300,269 +1249,228 @@ export default function ChoferView({ user, data, actions, onLogout }) {
           // Ruta completa — siempre usa Google Maps web (soporta waypoints múltiples)
           const url = `https://www.google.com/maps/dir/?api=1&destination=${dest.latitud},${dest.longitud}${waypts ? `&waypoints=${encodeURIComponent(waypts)}` : ''}&travelmode=driving`;
           return (
-            <button onClick={() => window.open(url, '_blank')}
-              className="mb-2 flex items-center justify-center gap-2 w-full py-2.5 bg-blue-600 text-white font-semibold rounded-[16px] text-sm active:scale-[0.98] transition-transform">
+            <button type="button" onClick={() => window.open(url, '_blank')}
+              className="mb-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[16px] bg-blue-600 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98]">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
               Ver ruta completa ({conCoords.length} paradas)
             </button>
           );
         })()}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-          <button onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false }); }} className="w-full py-4 bg-cyan-200 text-slate-950 text-sm font-bold rounded-[18px]">Venta rápida</button>
-          <button onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="w-full py-4 px-5 bg-white/10 text-amber-200 text-sm font-bold rounded-[18px]">Registrar merma</button>
-          <button onClick={() => setStep("cierre")} className="w-full py-4 px-5 bg-white text-slate-950 text-sm font-bold rounded-[18px]">Cerrar ruta</button>
+          <button type="button" onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false }); }} className="min-h-[56px] w-full rounded-[18px] bg-cyan-200 px-5 py-4 text-sm font-bold text-slate-950 transition-transform active:scale-[0.98]">Venta rápida</button>
+          <button type="button" onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="min-h-[56px] w-full rounded-[18px] bg-white/10 px-5 py-4 text-sm font-bold text-amber-200 transition-transform active:scale-[0.98]">Registrar merma</button>
+          <button type="button" onClick={() => setStep("cierre")} className="min-h-[56px] w-full rounded-[18px] bg-white px-5 py-4 text-sm font-bold text-slate-950">Cerrar ruta</button>
         </div>
       </div>
 
       {/* Modal cobro */}
-      {entregaModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setEntregaModal(null)}>
-          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Cobro</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900">Entregar a {entregaModal.clienteNombre}</h3>
-            <div className="flex flex-wrap gap-1 my-3">{entregaModal.items.map((it, i) => <span key={i} className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">{it.cant}× {it.sku} · ${it.precio}</span>)}</div>
-            <p className="text-3xl font-extrabold text-slate-800 mb-4">{fmtMoney(entregaModal.totalCalc)}</p>
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Folio de nota (opcional)</label>
-              <input value={folioNota} onChange={e=>setFolioNota(e.target.value)} className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Ej: N-0001" />
-            </div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">¿Cómo paga?</label>
-            <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {PAGOS.map(m => <button key={m} onClick={() => setCobroMetodo(m)} className={`py-3.5 rounded-xl text-sm font-bold border-2 transition-all ${cobroMetodo===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-600"}`}>{m==="Efectivo"?"💵 Efectivo":m==="Transferencia"?"📱 Transferencia":m==="Tarjeta"?"💳 Tarjeta":m==="QR / Link de pago"?"🔗 QR / Link":"📋 Crédito"}</button>)}
-            </div>
-            {cobroMetodo==="Transferencia" && <div className="mb-4 space-y-2">
-              <input value={cobroRef} onChange={e=>setCobroRef(e.target.value)} className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Referencia (últimos 6 dígitos)" />
-              {fotoTransf ? (
-                <div><img src={fotoTransf} alt="Comprobante" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoTransf(null)} className="text-xs text-slate-400 mt-1 px-3 py-2 min-h-[36px]">Tomar otra</button></div>
-              ) : (
-                <label className="w-full py-3 border-2 border-dashed border-red-300 bg-red-50/50 rounded-xl text-xs text-red-600 font-semibold flex items-center justify-center gap-2 cursor-pointer">
-                  <span className="text-lg">📷</span> Foto del comprobante (obligatoria)
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePick(setFotoTransf)} />
-                </label>
-              )}
-            </div>}
-            {cobroMetodo==="QR / Link de pago" && !checkoutUrl && (
-              <div className="mb-4 p-3 bg-blue-50 rounded-xl">
-                <p className="text-xs text-blue-600">Se genera un link de Stripe para que el cliente pague.</p>
-              </div>
-            )}
-            {cobroMetodo==="QR / Link de pago" && checkoutUrl && (
-              <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
-                <p className="text-xs font-bold text-emerald-700">✓ Link de pago generado</p>
-                <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
-                  {(() => {
-                    const tel = extraerTelefono(entregaModal?.contacto);
-                    const msg = `Hola, aquí está tu link de pago de Cubo Polar por ${fmtMoney(entregaModal.totalCalc)} MXN:\n${shortUrl || checkoutUrl}`;
-                    const href = tel
-                      ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`
-                      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-                    return <a href={href} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 WhatsApp</a>;
-                  })()}
-                </div>
-                <button onClick={() => { setCheckoutUrl(null); setShortUrl(null); setEntregaModal(null); }} className="w-full py-2 text-xs text-slate-500 font-semibold">Cerrar</button>
-              </div>
-            )}
-            {cobroMetodo==="Crédito" && <div className="bg-amber-50 rounded-xl p-3 mb-4"><p className="text-xs text-amber-700 font-semibold">Se agrega a la cuenta del cliente</p></div>}
-            <div className="mb-4">
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Evidencia de entrega (opcional)</label>
-              {fotoEntrega ? (
-                <div><img src={fotoEntrega} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoEntrega(null)} className="text-xs text-slate-400 mt-1 px-3 py-2 min-h-[36px]">Tomar otra</button></div>
-              ) : (
-                <label className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer">
-                  <span className="text-lg">📷</span> Foto de nota o entrega
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePick(setFotoEntrega)} />
-                </label>
-              )}
-            </div>
-            {!checkoutUrl && (() => {
-              // Tanda 6 🟢-4: deshabilitar confirmar si Transferencia sin foto.
-              const faltaFotoTransf = cobroMetodo === "Transferencia" && !fotoTransf;
-              const disabled = generandoLink || confirmandoEntrega || faltaFotoTransf;
-              return (
-                <button
-                  onClick={confirmarEntrega}
-                  disabled={disabled}
-                  className={`w-full py-4 text-white font-extrabold rounded-xl text-base shadow-lg shadow-emerald-200 active:scale-[0.98] transition-transform ${disabled ? 'bg-slate-400' : 'bg-emerald-600'}`}
-                >
-                  {generandoLink ? 'Generando link…'
-                    : confirmandoEntrega ? 'Registrando entrega…'
-                    : faltaFotoTransf ? 'Falta foto del comprobante'
-                    : cobroMetodo === "QR / Link de pago" ? 'Generar link de pago'
-                    : '✓ Confirmar entrega'}
-                </button>
-              );
-            })()}
+      <Modal open={!!entregaModal} onClose={() => setEntregaModal(null)} kicker="Cobro" safeBottom closeOnEscape={!confirmandoEntrega && !generandoLink}
+        title={entregaModal ? `Entregar a ${entregaModal.clienteNombre}` : ""}>
+        {entregaModal && (<>
+          <div className="my-3 flex flex-wrap gap-1">{entregaModal.items.map((it, i) => <span key={i} className="rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{it.cant}× {it.sku}</span>)}</div>
+          <p className="mb-4 font-display text-3xl font-bold tracking-[-0.04em] text-slate-900">{fmtMoney(entregaModal.totalCalc)}</p>
+          <div className="mb-4">
+            <FormInput label="Folio de nota (opcional)" value={folioNota} onChange={e=>setFolioNota(e.target.value)} placeholder="Ej: N-0001" />
           </div>
-        </div>
-      )}
+          <label className={LABEL}>¿Cómo paga?</label>
+          <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {PAGOS.map(m => <ChoiceButton key={m} active={cobroMetodo===m} onClick={() => setCobroMetodo(m)}>{m}</ChoiceButton>)}
+          </div>
+          {cobroMetodo==="Transferencia" && <div className="mb-4 space-y-2">
+            <FormInput label="Referencia" value={cobroRef} onChange={e=>setCobroRef(e.target.value)} placeholder="Referencia (últimos 6 dígitos)" />
+            {fotoTransf ? (
+              <div><img src={fotoTransf} alt="Comprobante" className="h-32 w-full rounded-xl border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoTransf(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
+            ) : (
+              <label className={`${FOTO_LABEL} border-red-300 bg-red-50/50 text-red-600`}>
+                <Icons.Camera /> Foto del comprobante (obligatoria)
+                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePick(setFotoTransf)} />
+              </label>
+            )}
+          </div>}
+          {cobroMetodo==="QR / Link de pago" && !checkoutUrl && (
+            <Card padding="p-3" className="mb-4 !border-sky-200/80 !bg-sky-50/80">
+              <p className="text-xs text-sky-700">Se genera un link de Stripe para que el cliente pague.</p>
+            </Card>
+          )}
+          {cobroMetodo==="QR / Link de pago" && checkoutUrl && (
+            <Card tone="success" padding="p-4" className="mb-4 space-y-3">
+              <p className="flex items-center gap-1.5 text-xs font-bold text-emerald-700"><Icons.Check /> Link de pago generado</p>
+              <p className="break-all rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-600">{shortUrl || checkoutUrl}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <FormBtn ghost onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="text-xs">Copiar link</FormBtn>
+                {(() => {
+                  const tel = extraerTelefono(entregaModal?.contacto);
+                  const msg = `Hola, aquí está tu link de pago de Cubo Polar por ${fmtMoney(entregaModal.totalCalc)} MXN:\n${shortUrl || checkoutUrl}`;
+                  const href = tel
+                    ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`
+                    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+                  return <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center justify-center rounded-[16px] bg-emerald-600 px-5 py-3 text-xs font-semibold text-white">WhatsApp</a>;
+                })()}
+              </div>
+              <button type="button" onClick={() => { setCheckoutUrl(null); setShortUrl(null); setEntregaModal(null); }} className="w-full py-2 text-xs font-semibold text-slate-500">Cerrar</button>
+            </Card>
+          )}
+          {cobroMetodo==="Crédito" && <Card tone="warning" padding="p-3" className="mb-4"><p className="text-xs font-semibold text-amber-800">Se agrega a la cuenta del cliente</p></Card>}
+          <div className="mb-4">
+            <label className={`${LABEL} mb-2`}>Evidencia de entrega (opcional)</label>
+            {fotoEntrega ? (
+              <div><img src={fotoEntrega} alt="Evidencia" className="h-32 w-full rounded-xl border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoEntrega(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
+            ) : (
+              <label className={`${FOTO_LABEL} border-slate-300 text-slate-500`}>
+                <Icons.Camera /> Foto de nota o entrega
+                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePick(setFotoEntrega)} />
+              </label>
+            )}
+          </div>
+          {!checkoutUrl && (() => {
+            // Tanda 6 🟢-4: deshabilitar confirmar si Transferencia sin foto.
+            const faltaFotoTransf = cobroMetodo === "Transferencia" && !fotoTransf;
+            const disabled = generandoLink || confirmandoEntrega || faltaFotoTransf;
+            return (
+              <FormBtn success size="lg" className="w-full" onClick={confirmarEntrega} disabled={disabled}>
+                {generandoLink ? 'Generando link…'
+                  : confirmandoEntrega ? 'Registrando entrega…'
+                  : faltaFotoTransf ? 'Falta foto del comprobante'
+                  : cobroMetodo === "QR / Link de pago" ? 'Generar link de pago'
+                  : 'Confirmar entrega'}
+              </FormBtn>
+            );
+          })()}
+        </>)}
+      </Modal>
 
       {/* Modal venta express */}
-      {ventaModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setVentaModal(false)}>
-          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Venta rapida</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Venta exprés</h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cliente de lista</label>
-                <select value={vForm.clienteId} onChange={e => {
-                  const id = e.target.value;
-                  const cli = clientesActivos.find(c => String(c.id) === String(id));
-                  setVForm(f => ({ ...f, clienteId: id, cliente: id ? s(cli?.nombre) : f.cliente }));
-                }} className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white">
-                  <option value="">Seleccionar cliente...</option>
-                  {clientesActivos.map(c => <option key={c.id} value={c.id}>{s(c.nombre)}</option>)}
-                </select>
-              </div>
-              <input value={vForm.cliente} onChange={e => setVForm(f=>({...f,cliente:e.target.value}))} className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Nombre del cliente" />
-              {/* Factura toggle */}
-              <div className="flex items-center justify-between bg-slate-50 rounded-xl p-3 border border-slate-200">
-                <div><p className="text-sm font-semibold text-slate-700">¿Necesita factura?</p><p className="text-[10px] text-slate-400">Capturar datos fiscales completos</p></div>
-                <button onClick={() => setVForm(f=>({...f,factura:!f.factura}))}
-                  className={`w-12 h-7 rounded-full transition-all relative ${vForm.factura ? "bg-purple-600" : "bg-slate-300"}`}>
-                  <div className={`absolute top-0.5 w-6 h-6 bg-white rounded-full shadow transition-all ${vForm.factura ? "left-[22px]" : "left-0.5"}`} />
-                </button>
-              </div>
-              {vForm.factura && (
-                <div className="bg-purple-50 rounded-xl p-3 border border-purple-200 space-y-1">
-                  {errorFacturaExpress ? (
-                    <p className="text-xs font-semibold text-purple-700">{errorFacturaExpress}</p>
-                  ) : (
-                    <>
-                      <p className="text-[10px] font-bold text-purple-600 uppercase">Datos fiscales del cliente</p>
-                      <p className="text-sm font-semibold text-slate-800">{s(clienteExpressSel?.nombre)}</p>
-                      <p className="text-xs font-mono text-slate-600">RFC {s(clienteExpressSel?.rfc)} · Régimen {s(clienteExpressSel?.regimen) || '—'} · Uso {s(clienteExpressSel?.uso_cfdi) || '—'} · CP {s(clienteExpressSel?.cp) || '—'}</p>
-                      <p className="text-[10px] text-slate-400">La factura se emite después desde Facturación con estos datos.</p>
-                    </>
-                  )}
-                </div>
-              )}
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Producto</label>
-                <div className="grid grid-cols-2 gap-2">{productos.map(p => {
-                  const sku = s(p.sku);
-                  const disp = restante[sku] || 0;
-                  return <button key={sku} onClick={() => setVForm(f=>({...f,sku}))} className={`py-2.5 rounded-xl text-xs font-bold border-2 ${vForm.sku===sku?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-600"}`}>
-                    {s(p.nombre)}<br/><span className="text-[10px] text-slate-400">${n(p.precio)} · quedan {disp}</span>
-                  </button>;
-                })}</div>
-              </div>
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cantidad</label>
-                <input type="number" min="0" inputMode="numeric" value={vForm.cant} onChange={e => setVForm(f=>({...f,cant:e.target.value}))} className="w-full px-4 py-3 border border-slate-200 rounded-xl text-2xl font-extrabold text-center" placeholder="0" autoFocus />
-                {vForm.cant && n(vForm.cant) > (restante[vForm.sku] || 0) && <p className="text-xs text-red-600 font-semibold mt-1">⚠ Solo te quedan {restante[vForm.sku] || 0}</p>}
-              </div>
-              {vForm.cant && n(vForm.cant) > 0 && n(vForm.cant) <= (restante[vForm.sku] || 0) && (
-                <div className="bg-blue-50 rounded-xl p-3 text-center space-y-0.5">
-                  {/* 088: mismo precio e IVA 0% que registra el servidor */}
-                  <p className="text-xs text-slate-500">Precio: {fmtMoney(getPrice(vForm.clienteId || clienteExpressSel?.id || null, vForm.sku))} · IVA 0% (hielo)</p>
-                  <p className="text-2xl font-extrabold text-slate-800">{fmtMoney(n(vForm.cant) * getPrice(vForm.clienteId || clienteExpressSel?.id || null, vForm.sku))}</p>
-                </div>
-              )}
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Pago</label>
-                <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">{PAGOS.map(m => <button key={m} onClick={() => setVForm(f=>({...f,pago:m}))} className={`py-2 rounded-lg text-[11px] font-bold border-2 ${vForm.pago===m?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-500"}`}>{m==="QR / Link de pago"?"🔗 QR/Link":m}</button>)}</div>
-              </div>
-
-            </div>
-            <button onClick={crearVentaExpress} disabled={creandoVenta||!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&!!errorFacturaExpress)} className="w-full py-4 bg-emerald-600 text-white font-extrabold rounded-xl text-sm mt-4 disabled:opacity-40">{creandoVenta ? "Creando venta…" : vForm.factura ? "Crear venta con factura" : "Crear venta"}</button>
+      <Modal open={!!ventaModal} onClose={() => setVentaModal(false)} kicker="Venta rapida" title="Venta exprés" safeBottom closeOnEscape={!creandoVenta}>
+        <div className="space-y-3">
+          <div>
+            <label className={LABEL}>Cliente de lista</label>
+            <select value={vForm.clienteId} onChange={e => {
+              const id = e.target.value;
+              const cli = clientesActivos.find(c => String(c.id) === String(id));
+              setVForm(f => ({ ...f, clienteId: id, cliente: id ? s(cli?.nombre) : f.cliente }));
+            }} className="min-h-[44px] w-full rounded-[16px] border border-slate-200 bg-white/80 px-3.5 py-3 text-sm focus:border-cyan-600 focus:outline-none">
+              <option value="">Seleccionar cliente...</option>
+              {clientesActivos.map(c => <option key={c.id} value={c.id}>{s(c.nombre)}</option>)}
+            </select>
           </div>
+          <FormInput label="Cliente" value={vForm.cliente} onChange={e => setVForm(f=>({...f,cliente:e.target.value}))} placeholder="Nombre del cliente" />
+          {/* Factura toggle */}
+          <Card padding="p-3" className="flex items-center justify-between !bg-slate-50">
+            <div><p className="text-sm font-semibold text-slate-700">¿Necesita factura?</p><p className="text-[10px] text-slate-400">Capturar datos fiscales completos</p></div>
+            <button type="button" onClick={() => setVForm(f=>({...f,factura:!f.factura}))} aria-pressed={vForm.factura}
+              className={`relative h-7 w-12 rounded-full transition-all ${vForm.factura ? "bg-violet-600" : "bg-slate-300"}`}>
+              <div className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all ${vForm.factura ? "left-[22px]" : "left-0.5"}`} />
+            </button>
+          </Card>
+          {vForm.factura && (
+            <Card padding="p-3" className="space-y-1 !border-violet-200/80 !bg-violet-50/80">
+              {errorFacturaExpress ? (
+                <p className="text-xs font-semibold text-violet-700">{errorFacturaExpress}</p>
+              ) : (
+                <>
+                  <p className="text-[10px] font-bold uppercase text-violet-600">Datos fiscales del cliente</p>
+                  <p className="text-sm font-semibold text-slate-800">{s(clienteExpressSel?.nombre)}</p>
+                  <p className="font-mono text-xs text-slate-600">RFC {s(clienteExpressSel?.rfc)} · Régimen {s(clienteExpressSel?.regimen) || '—'} · Uso {s(clienteExpressSel?.uso_cfdi) || '—'} · CP {s(clienteExpressSel?.cp) || '—'}</p>
+                  <p className="text-[10px] text-slate-400">La factura se emite después desde Facturación con estos datos.</p>
+                </>
+              )}
+            </Card>
+          )}
+          <div><label className={LABEL}>Producto</label>
+            <div className="grid grid-cols-2 gap-2">{productos.map(p => {
+              const sku = s(p.sku);
+              const disp = restante[sku] || 0;
+              return <ChoiceButton key={sku} active={vForm.sku===sku} onClick={() => setVForm(f=>({...f,sku}))} className="text-xs">
+                {s(p.nombre)}<br/><span className="text-[10px] font-normal text-slate-400">${n(p.precio)} · quedan {disp}</span>
+              </ChoiceButton>;
+            })}</div>
+          </div>
+          <FormInput label="Cantidad" type="number" min="0" inputMode="numeric" value={vForm.cant} onChange={e => setVForm(f=>({...f,cant:e.target.value}))}
+            inputClassName="text-center !text-2xl font-extrabold" placeholder="0" autoFocus
+            error={vForm.cant && n(vForm.cant) > (restante[vForm.sku] || 0) ? `Solo te quedan ${restante[vForm.sku] || 0}` : undefined} />
+          {vForm.cant && n(vForm.cant) > 0 && n(vForm.cant) <= (restante[vForm.sku] || 0) && (
+            <Card padding="p-3" className="space-y-0.5 text-center !border-sky-200/80 !bg-sky-50/80">
+              {/* 088: mismo precio e IVA 0% que registra el servidor */}
+              <p className="text-xs text-slate-500">Precio: {fmtMoney(getPrice(vForm.clienteId || clienteExpressSel?.id || null, vForm.sku))} · IVA 0% (hielo)</p>
+              <p className="font-display text-2xl font-bold tracking-[-0.04em] text-slate-900">{fmtMoney(n(vForm.cant) * getPrice(vForm.clienteId || clienteExpressSel?.id || null, vForm.sku))}</p>
+            </Card>
+          )}
+          <div><label className={LABEL}>Pago</label>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">{PAGOS.map(m => <ChoiceButton key={m} active={vForm.pago===m} onClick={() => setVForm(f=>({...f,pago:m}))} className="text-[11px]">{m==="QR / Link de pago"?"QR/Link":m}</ChoiceButton>)}</div>
+          </div>
+
         </div>
-      )}
+        <FormBtn primary size="lg" className="mt-4 w-full" onClick={crearVentaExpress} disabled={creandoVenta||!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&!!errorFacturaExpress)}>
+          {creandoVenta ? "Creando venta…" : vForm.factura ? "Crear venta con factura" : "Crear venta"}
+        </FormBtn>
+      </Modal>
 
       {/* Modal merma */}
-      {mermaModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setMermaModal(false)}>
-          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Incidencia</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-4">Registrar merma</h3>
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">{productos.map(p => <button key={p.sku} onClick={() => setMForm(f=>({...f,sku:s(p.sku)}))} className={`py-2.5 rounded-xl text-xs font-bold border-2 ${mForm.sku===s(p.sku)?"border-amber-500 bg-amber-50 text-amber-700":"border-slate-200 text-slate-600"}`}>{s(p.nombre)}</button>)}</div>
-              <input type="number" min="0" value={mForm.cant} onChange={e => setMForm(f=>({...f,cant:e.target.value}))} className="w-full px-4 py-3 border border-slate-200 rounded-xl text-xl font-bold text-center" placeholder="Cantidad" />
-              <div className="grid grid-cols-2 gap-2">{MERMA_CAUSAS.map(c => <button key={c} onClick={() => setMForm(f=>({...f,causa:c}))} className={`py-2 rounded-xl text-xs font-semibold border-2 ${mForm.causa===c?"border-amber-500 bg-amber-50 text-amber-700":"border-slate-200 text-slate-500"}`}>{c}</button>)}</div>
-            </div>
-            <div className="mt-4">
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Evidencia (foto) *</label>
-              {fotoMerma ? (
-                <div className="mb-3"><img src={fotoMerma} alt="Evidencia" className="w-full h-32 object-cover rounded-xl border border-emerald-300" /><button onClick={() => setFotoMerma(null)} className="text-xs text-slate-400 mt-1 px-3 py-2 min-h-[36px]">Tomar otra</button></div>
-              ) : (
-                <label className="w-full py-4 border-2 border-dashed border-slate-300 rounded-xl text-xs text-slate-500 font-semibold flex items-center justify-center gap-2 cursor-pointer mb-3">
-                  <span className="text-lg">📷</span> Tomar foto de evidencia
-                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePick(setFotoMerma)} />
-                </label>
-              )}
-            </div>
-            <button onClick={registrarMerma} disabled={registrandoMerma||!mForm.cant||n(mForm.cant)<=0||!fotoMerma} className="w-full py-3.5 bg-amber-600 text-white font-bold rounded-xl text-sm disabled:opacity-40">{registrandoMerma ? "Registrando…" : "Registrar merma"}</button>
-          </div>
+      <Modal open={!!mermaModal} onClose={() => setMermaModal(false)} kicker="Incidencia" title="Registrar merma" safeBottom closeOnEscape={!registrandoMerma}>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">{productos.map(p => <ChoiceButton key={p.sku} tone="amber" active={mForm.sku===s(p.sku)} onClick={() => setMForm(f=>({...f,sku:s(p.sku)}))} className="text-xs">{s(p.nombre)}</ChoiceButton>)}</div>
+          <FormInput label="Cantidad" type="number" min="0" value={mForm.cant} onChange={e => setMForm(f=>({...f,cant:e.target.value}))} inputClassName="text-center !text-xl font-bold" placeholder="Cantidad" />
+          <div className="grid grid-cols-2 gap-2">{MERMA_CAUSAS.map(c => <ChoiceButton key={c} tone="amber" active={mForm.causa===c} onClick={() => setMForm(f=>({...f,causa:c}))} className="text-xs">{c}</ChoiceButton>)}</div>
         </div>
-      )}
+        <div className="mt-4">
+          <label className={`${LABEL} mb-2`}>Evidencia (foto) *</label>
+          {fotoMerma ? (
+            <div className="mb-3"><img src={fotoMerma} alt="Evidencia" className="h-32 w-full rounded-xl border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoMerma(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
+          ) : (
+            <label className={`${FOTO_LABEL} border-slate-300 text-slate-500`}>
+              <Icons.Camera /> Tomar foto de evidencia
+              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePick(setFotoMerma)} />
+            </label>
+          )}
+        </div>
+        <FormBtn warning size="lg" className="mt-4 w-full" onClick={registrarMerma} disabled={registrandoMerma||!mForm.cant||n(mForm.cant)<=0||!fotoMerma}>
+          {registrandoMerma ? "Registrando…" : "Registrar merma"}
+        </FormBtn>
+      </Modal>
 
       {/* Modal No entregada */}
-      {noEntregaModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => !marcandoNoEntrega && setNoEntregaModal(null)}>
-          <div className="bg-white w-full max-w-lg rounded-t-[30px] border border-slate-200/80 p-5 shadow-[0_30px_70px_rgba(8,19,27,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Incidencia</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-1">Marcar como no entregada</h3>
-            <p className="text-sm text-slate-500 mb-4">{s(noEntregaModal.clienteNombre || noEntregaModal.cliente)}</p>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Motivo *</label>
-                <div className="grid grid-cols-1 gap-2">
-                  {MOTIVOS_NO_ENTREGA.map(m => (
-                    <button key={m} onClick={() => setNoEntregaForm(f => ({ ...f, motivo: m }))}
-                      className={`py-2.5 px-3 rounded-xl text-xs font-bold border-2 text-left ${noEntregaForm.motivo === m ? 'border-amber-500 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-600'}`}>
-                      {m}
-                    </button>
-                  ))}
-                </div>
-                {noEntregaForm.motivo === 'Otro' && (
-                  <input
-                    type="text"
-                    value={noEntregaForm.otroMotivo}
-                    onChange={e => setNoEntregaForm(f => ({ ...f, otroMotivo: e.target.value }))}
-                    placeholder="Describe el motivo"
-                    autoFocus
-                    className="w-full mt-2 px-4 py-3 border border-slate-200 rounded-xl text-sm"
-                  />
-                )}
+      <Modal open={!!noEntregaModal} onClose={() => !marcandoNoEntrega && setNoEntregaModal(null)} kicker="Incidencia" title="Marcar como no entregada" safeBottom closeOnEscape={!marcandoNoEntrega}>
+        {noEntregaModal && (<>
+          <p className="mb-4 text-sm text-slate-500">{s(noEntregaModal.clienteNombre || noEntregaModal.cliente)}</p>
+          <div className="space-y-3">
+            <div>
+              <label className={`${LABEL} mb-2`}>Motivo *</label>
+              <div className="grid grid-cols-1 gap-2">
+                {MOTIVOS_NO_ENTREGA.map(m => (
+                  <ChoiceButton key={m} tone="amber" active={noEntregaForm.motivo === m} onClick={() => setNoEntregaForm(f => ({ ...f, motivo: m }))} className="text-left text-xs">
+                    {m}
+                  </ChoiceButton>
+                ))}
               </div>
-              <label className="flex items-center justify-between gap-3 bg-slate-50 rounded-xl px-4 py-3 cursor-pointer">
-                <div>
-                  <p className="text-sm font-semibold text-slate-700">Reagendar para próxima ruta</p>
-                  <p className="text-[11px] text-slate-500">El admin verá la marca al armar la próxima ruta.</p>
+              {noEntregaForm.motivo === 'Otro' && (
+                <div className="mt-2">
+                  <FormInput label="Describe el motivo" type="text" value={noEntregaForm.otroMotivo}
+                    onChange={e => setNoEntregaForm(f => ({ ...f, otroMotivo: e.target.value }))}
+                    placeholder="Describe el motivo" autoFocus />
                 </div>
-                <input
-                  type="checkbox"
-                  checked={noEntregaForm.reagendar}
-                  onChange={e => setNoEntregaForm(f => ({ ...f, reagendar: e.target.checked }))}
-                  className="w-5 h-5 rounded border-slate-300 accent-amber-500"
-                />
-              </label>
+              )}
             </div>
-            <div className="flex gap-2 mt-5">
-              <button
-                onClick={() => setNoEntregaModal(null)}
-                disabled={marcandoNoEntrega}
-                className="flex-1 py-3 border border-slate-200 text-slate-700 font-semibold rounded-xl text-sm disabled:opacity-40"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={confirmarNoEntrega}
-                disabled={marcandoNoEntrega || (noEntregaForm.motivo === 'Otro' && !s(noEntregaForm.otroMotivo).trim())}
-                className="flex-1 py-3 bg-amber-600 text-white font-bold rounded-xl text-sm disabled:opacity-40"
-              >
-                {marcandoNoEntrega ? 'Guardando…' : 'Confirmar'}
-              </button>
-            </div>
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-[16px] bg-slate-50 px-4 py-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-700">Reagendar para próxima ruta</p>
+                <p className="text-[11px] text-slate-500">El admin verá la marca al armar la próxima ruta.</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={noEntregaForm.reagendar}
+                onChange={e => setNoEntregaForm(f => ({ ...f, reagendar: e.target.checked }))}
+                className="h-5 w-5 rounded border-slate-300 accent-amber-500"
+              />
+            </label>
           </div>
-        </div>
-      )}
-
-      {toast && <Toast msg={toast} />}
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <FormBtn onClick={() => setNoEntregaModal(null)} disabled={marcandoNoEntrega}>Cancelar</FormBtn>
+            <FormBtn warning onClick={confirmarNoEntrega} disabled={marcandoNoEntrega || (noEntregaForm.motivo === 'Otro' && !s(noEntregaForm.otroMotivo).trim())}>
+              {marcandoNoEntrega ? 'Guardando…' : 'Confirmar'}
+            </FormBtn>
+          </div>
+        </>)}
+      </Modal>
     </div>
   );
 
@@ -1575,98 +1483,95 @@ export default function ChoferView({ user, data, actions, onLogout }) {
     for (const e of entregas) cobrosPorMetodo[e.pago] = (cobrosPorMetodo[e.pago]||0) + n(e.total);
 
     return (
-      <div className={CHOFER_SHELL}>
+      <div className={CHOFER_SHELL} data-testid="chofer-shell">
         <ModoPruebaBanner />
         <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
-        <div className="bg-[#07131a] px-4 pb-4 text-white shadow-[0_24px_48px_rgba(3,14,19,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
-          <div className="flex items-center justify-between">
-            <div><p className="erp-kicker text-cyan-200/70">Paso 3 de 3</p><h1 className="font-display text-[1.55rem] font-bold tracking-[-0.04em]">Cierre de ruta</h1><p className="text-xs text-slate-300">{s(user?.nombre)} · {fmtDate(new Date())}</p></div>
-            {!rutaCerrada && <button onClick={() => setStep("ruta")} className="text-xs bg-white/8 border border-white/10 px-4 py-2.5 rounded-full min-h-[44px]">← Volver</button>}
-          </div>
-        </div>
-        <div className="px-4 pt-4 space-y-4">
-          <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Inventario del camión</h3>
+        <RoleHeader kicker="Paso 3 de 3" title="Cierre de ruta" subtitle={`${s(user?.nombre)} · ${fmtDate(new Date())}`} accent="cyan"
+          right={!rutaCerrada && <button type="button" onClick={() => setStep("ruta")} className="inline-flex min-h-[44px] items-center rounded-[13px] border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white">← Volver</button>} />
+        <div className={`${CONTENIDO} space-y-4`}>
+          <Card>
+            <SectionLabel className="mb-3">Inventario del camión</SectionLabel>
             {!balanceCierre ? (
               <div className="space-y-3">
                 <p className="text-xs text-slate-500">Primero registra ventas, cobros{mermasSinRegistrar > 0 ? ` y ${mermasSinRegistrar} ${mermasSinRegistrar === 1 ? 'merma' : 'mermas'}` : ''}. El sistema calcula lo que debe regresar en el camión.</p>
-                <button onClick={prepararCierre} disabled={preparandoCierre || rutaCerrada} className="w-full py-3.5 bg-cyan-700 text-white font-bold rounded-[18px] text-sm min-h-[48px] active:scale-[0.98] transition-transform disabled:opacity-50">{preparandoCierre ? 'Registrando…' : 'Registrar ventas y mermas'}</button>
+                <FormBtn primary className="w-full" onClick={prepararCierre} disabled={preparandoCierre || rutaCerrada}>{preparandoCierre ? 'Registrando…' : 'Registrar ventas y mermas'}</FormBtn>
               </div>
             ) : (
               <div>
-                <div className="grid grid-cols-5 gap-1 text-[10px] font-bold text-slate-400 uppercase mb-1"><span>Producto</span><span className="text-center">Cargó</span><span className="text-center">Entregó</span><span className="text-center">Merma</span><span className="text-center">Contado</span></div>
+                <div className="mb-1 grid grid-cols-5 gap-1 text-[10px] font-bold uppercase text-slate-400"><span>Producto</span><span className="text-center">Cargó</span><span className="text-center">Entregó</span><span className="text-center">Merma</span><span className="text-center">Contado</span></div>
                 {balanceCierre.map(b => {
                   const prod = productos.find(p => s(p.sku) === b.sku);
                   const falta = difConteo.faltante[b.sku] || 0;
                   const sobra = difConteo.sobrante[b.sku] || 0;
                   return (
-                    <div key={b.sku} className="grid grid-cols-5 gap-1 text-sm items-center py-1">
-                      <span className="font-semibold text-slate-700 text-xs">{prod ? s(prod.nombre) : b.sku}<span className="block text-[10px] text-slate-400 font-normal">debe regresar {b.restante}</span></span>
+                    <div key={b.sku} className="grid grid-cols-5 items-center gap-1 py-1 text-sm">
+                      <span className="text-xs font-semibold text-slate-700">{prod ? s(prod.nombre) : b.sku}<span className="block text-[10px] font-normal text-slate-400">debe regresar {b.restante}</span></span>
                       <span className="text-center text-slate-500">{b.cargado}</span>
                       <span className="text-center text-slate-500">{b.entregado}</span>
-                      <span className={`text-center ${b.merma > 0 ? "text-amber-600 font-semibold" : "text-slate-500"}`}>{b.merma}</span>
+                      <span className={`text-center ${b.merma > 0 ? "font-semibold text-amber-600" : "text-slate-500"}`}>{b.merma}</span>
                       <input type="number" inputMode="numeric" min="0" value={conteoForm[b.sku] ?? ''} disabled={rutaCerrada}
                         onChange={e => { setConteoForm(f => ({ ...f, [b.sku]: e.target.value })); setFaltanteCierre(null); }}
-                        className={`w-full min-h-[40px] px-1 py-1.5 border rounded-lg text-base text-center ${falta > 0 || sobra > 0 ? 'border-red-300 text-red-700' : 'border-slate-200'}`} />
+                        className={`min-h-[40px] w-full rounded-lg border px-1 py-1.5 text-center text-base ${falta > 0 || sobra > 0 ? 'border-red-300 text-red-700' : 'border-slate-200'}`} />
                     </div>
                   );
                 })}
-                <div className="grid grid-cols-5 gap-1 text-xs items-center py-1.5 border-t border-slate-200 mt-1 font-bold text-slate-700">
+                <div className="mt-1 grid grid-cols-5 items-center gap-1 border-t border-slate-200 py-1.5 text-xs font-bold text-slate-700">
                   <span>Total</span><span className="text-center">{totBal.cargado}</span><span className="text-center">{totBal.entregado}</span><span className="text-center text-amber-600">{totBal.merma}</span><span className="text-center">{totBal.restante}</span>
                 </div>
                 {(Object.keys(difConteo.faltante).length > 0 || faltanteCierre) && (
-                  <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
-                    <p className="text-xs text-red-700 font-bold">Falta producto según el sistema. Vuelve a contar o registra la merma (causa y foto):</p>
+                  <Card tone="danger" padding="p-3" className="mt-3 space-y-2">
+                    <p className="text-xs font-bold text-red-700">Falta producto según el sistema. Vuelve a contar o registra la merma (causa y foto):</p>
                     {Object.entries(faltanteCierre || difConteo.faltante).map(([sku, q]) => (
-                      <button key={sku} onClick={() => abrirMermaFaltante(sku, q)} className="w-full text-left text-xs px-3 py-2 bg-white border border-red-200 rounded-lg min-h-[40px] font-semibold text-red-700">Registrar merma de {q}× {sku}</button>
+                      <button type="button" key={sku} onClick={() => abrirMermaFaltante(sku, q)} className="min-h-[40px] w-full rounded-lg border border-red-200 bg-white px-3 py-2 text-left text-xs font-semibold text-red-700">Registrar merma de {q}× {sku}</button>
                     ))}
                     {mermasSinRegistrar > 0 && (
-                      <button onClick={prepararCierre} disabled={preparandoCierre} className="w-full py-2.5 bg-cyan-700 text-white font-bold rounded-lg text-xs min-h-[40px] disabled:opacity-50">{preparandoCierre ? 'Registrando…' : 'Registrar mermas y actualizar'}</button>
+                      <FormBtn primary className="w-full text-xs" onClick={prepararCierre} disabled={preparandoCierre}>{preparandoCierre ? 'Registrando…' : 'Registrar mermas y actualizar'}</FormBtn>
                     )}
-                  </div>
+                  </Card>
                 )}
                 {Object.keys(difConteo.sobrante).length > 0 && (
-                  <p className="mt-2 text-xs text-red-600 font-semibold">El conteo supera lo que debe traer el camión: {Object.entries(difConteo.sobrante).map(([sku, q]) => `${q}× ${sku}`).join(', ')}. Vuelve a contar.</p>
+                  <p className="mt-2 text-xs font-semibold text-red-600">El conteo supera lo que debe traer el camión: {Object.entries(difConteo.sobrante).map(([sku, q]) => `${q}× ${sku}`).join(', ')}. Vuelve a contar.</p>
                 )}
               </div>
             )}
-          </div>
-          <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Cobros</h3>
-            {Object.entries(cobrosPorMetodo).map(([m, v]) => <div key={m} className="flex justify-between text-sm py-0.5"><span className="text-slate-500">{m}</span><span className="font-bold">{fmtMoney(v)}</span></div>)}
-            <div className="border-t border-slate-200 pt-2 mt-2 flex justify-between"><span className="text-sm font-bold text-slate-700">Efectivo a entregar</span><span className="text-xl font-extrabold text-emerald-600">{fmtMoney(cobrosPorMetodo["Efectivo"]||0)}</span></div>
-            {totalCredito > 0 && <div className="flex justify-between text-sm mt-1"><span className="text-amber-600 font-semibold">Crédito</span><span className="font-bold text-amber-600">{fmtMoney(totalCredito)}</span></div>}
-          </div>
-          <div className="bg-white/78 rounded-[24px] p-4 border border-slate-200/80 shadow-[0_14px_28px_rgba(8,20,27,0.06)]">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Detalle ({entregas.length})</h3>
+          </Card>
+          <Card>
+            <SectionLabel className="mb-3">Cobros</SectionLabel>
+            {Object.entries(cobrosPorMetodo).map(([m, v]) => <div key={m} className="flex justify-between py-0.5 text-sm"><span className="text-slate-500">{m}</span><span className="font-bold">{fmtMoney(v)}</span></div>)}
+            <div className="mt-2 flex justify-between border-t border-slate-200 pt-2"><span className="text-sm font-bold text-slate-700">Efectivo a entregar</span><span className="text-xl font-extrabold text-emerald-600">{fmtMoney(cobrosPorMetodo["Efectivo"]||0)}</span></div>
+            {totalCredito > 0 && <div className="mt-1 flex justify-between text-sm"><span className="font-semibold text-amber-600">Crédito</span><span className="font-bold text-amber-600">{fmtMoney(totalCredito)}</span></div>}
+          </Card>
+          <Card>
+            <SectionLabel className="mb-3">Detalle ({entregas.length})</SectionLabel>
             {entregas.map(e => (
-              <div key={e.ordenId||e.id} className="flex justify-between text-xs items-center py-1.5 border-b border-slate-50">
-                <div><span className="font-mono text-slate-400">#{s(e.folio)}</span><span className="ml-1.5 text-slate-700 font-semibold">{s(e.cliente)}</span></div>
-                <div className="text-right"><span className="font-bold">{fmtMoney(e.total)}</span><span className={`ml-1.5 text-[10px] px-1.5 py-0.5 rounded ${e.pago==="Crédito"?"bg-amber-100 text-amber-700":"bg-slate-100 text-slate-500"}`}>{e.pago}</span></div>
+              <div key={e.ordenId||e.id} className="flex items-center justify-between border-b border-slate-50 py-1.5 text-xs">
+                <div><span className="font-mono text-slate-400">#{s(e.folio)}</span><span className="ml-1.5 font-semibold text-slate-700">{s(e.cliente)}</span></div>
+                <div className="text-right"><span className="font-bold">{fmtMoney(e.total)}</span><span className={`ml-1.5 rounded px-1.5 py-0.5 text-[10px] ${e.pago==="Crédito"?"bg-amber-100 text-amber-700":"bg-slate-100 text-slate-500"}`}>{e.pago}</span></div>
               </div>
             ))}
-          </div>
-          {mermas.length > 0 && <div className="bg-amber-50 rounded-2xl p-4 border border-amber-200">
-            <h3 className="text-xs font-bold text-amber-600 uppercase tracking-wider mb-2">Mermas</h3>
-            {mermas.map(m => <div key={m.id} className="flex justify-between text-xs py-1"><span>{m.cant}× {m.sku}</span><span className="text-amber-600">{m.causa}</span></div>)}
-          </div>}
-          {pendientes.length > 0 && <div className="bg-red-50 rounded-xl p-3 border border-red-200"><p className="text-xs text-red-600 font-bold">⚠ {pendientes.length} órdenes sin entregar</p></div>}
+          </Card>
+          {mermas.length > 0 && <Card tone="warning">
+            <SectionLabel className="mb-2 !text-amber-700">Mermas</SectionLabel>
+            {mermas.map(m => <div key={m.id} className="flex justify-between py-1 text-xs"><span>{m.cant}× {m.sku}</span><span className="text-amber-600">{m.causa}</span></div>)}
+          </Card>}
+          {pendientes.length > 0 && <Card tone="danger" padding="p-3"><p className="text-xs font-bold text-red-700">⚠ {pendientes.length} órdenes sin entregar</p></Card>}
 
           {!rutaCerrada ? (
-            <button onClick={cerrarRuta} disabled={cerrandoRuta || !balanceCierre || Object.keys(difConteo.faltante).length > 0 || Object.keys(difConteo.sobrante).length > 0} className="w-full py-4 bg-slate-900 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98] transition-transform disabled:cursor-not-allowed disabled:opacity-50">{cerrandoRuta ? 'Cerrando ruta…' : (balanceCierre ? 'Confirmar devolución y cerrar ruta' : 'Registra ventas y mermas para contar')}</button>
+            <FormBtn primary size="lg" className="w-full !text-lg" onClick={cerrarRuta} disabled={cerrandoRuta || !balanceCierre || Object.keys(difConteo.faltante).length > 0 || Object.keys(difConteo.sobrante).length > 0}>
+              {cerrandoRuta ? 'Cerrando ruta…' : (balanceCierre ? 'Confirmar devolución y cerrar ruta' : 'Registra ventas y mermas para contar')}
+            </FormBtn>
           ) : (
-            <div className="text-center space-y-4">
-              <div className="bg-emerald-50/90 border border-emerald-200 rounded-[24px] p-5">
-                <p className="text-2xl mb-2">✓</p>
-                <p className="text-base font-bold text-emerald-700">Ruta cerrada</p>
-                <p className="text-xs text-emerald-600 mt-1">La devolución quedó registrada en el cuarto frío</p>
-              </div>
-              <button onClick={onLogout} className="w-full py-4 bg-slate-900 text-white font-extrabold rounded-[22px] text-base shadow-[0_20px_34px_rgba(8,20,27,0.16)] active:scale-[0.98] transition-transform">Cerrar sesión</button>
+            <div className="space-y-4 text-center">
+              <Card tone="success">
+                <p className="mb-2 flex justify-center text-emerald-700 [&>svg]:h-8 [&>svg]:w-8"><Icons.Check /></p>
+                <p className="text-base font-bold text-emerald-800">Ruta cerrada</p>
+                <p className="mt-1 text-xs text-emerald-700">La devolución quedó registrada en el cuarto frío</p>
+              </Card>
+              <FormBtn primary size="lg" className="w-full" onClick={onLogout}>Cerrar sesión</FormBtn>
             </div>
           )}
           <div className="h-8" />
         </div>
-        {toast && <Toast msg={toast} />}
       </div>
     );
   }
@@ -1681,26 +1586,23 @@ function BannerColaOffline({ online, cola, sincronizando, onSincronizar }) {
   const fallidas = mutacionesFallidas(cola).length;
   if (online && pendientes === 0 && fallidas === 0) return null;
   return (
-    <div className={`px-4 py-2.5 text-xs font-semibold flex items-center justify-between gap-2 ${!online ? 'bg-amber-100 text-amber-800 border-b border-amber-200' : 'bg-cyan-50 text-cyan-800 border-b border-cyan-200'}`} role="status">
+    <div className={`flex items-center justify-between gap-2 px-4 py-2.5 text-xs font-semibold ${!online ? 'border-b border-amber-200 bg-amber-100 text-amber-800' : 'border-b border-cyan-200 bg-cyan-50 text-cyan-800'}`} role="status" aria-live="polite">
       <span>
         {!online
-          ? `📴 Sin conexión — tus operaciones se guardan en el teléfono${pendientes > 0 ? ` (${pendientes} en espera)` : ''}`
-          : `☁️ ${pendientes} ${pendientes === 1 ? 'operación pendiente' : 'operaciones pendientes'} de sincronizar`}
-        {fallidas > 0 && <span className="ml-2 text-red-700 font-bold">⚠ {fallidas} sin poder sincronizar — avisa al admin</span>}
+          ? `Sin conexión — tus operaciones se guardan en el teléfono${pendientes > 0 ? ` (${pendientes} en espera)` : ''}`
+          : `${pendientes} ${pendientes === 1 ? 'operación pendiente' : 'operaciones pendientes'} de sincronizar`}
+        {fallidas > 0 && <span className="ml-2 font-bold text-red-700">⚠ {fallidas} sin poder sincronizar — avisa al admin</span>}
       </span>
       {online && pendientes > 0 && (
         <button
+          type="button"
           onClick={onSincronizar}
           disabled={sincronizando}
-          className="flex-shrink-0 px-3 py-1.5 bg-cyan-700 text-white rounded-lg font-bold disabled:opacity-50 min-h-[32px]"
+          className="min-h-[32px] flex-shrink-0 rounded-lg bg-cyan-700 px-3 py-1.5 font-bold text-white disabled:opacity-50"
         >
           {sincronizando ? 'Sincronizando…' : 'Sincronizar'}
         </button>
       )}
     </div>
   );
-}
-
-function Toast({ msg }) {
-  return <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] bg-slate-950 text-cyan-100 px-4 py-2.5 rounded-full text-sm font-semibold shadow-[0_18px_32px_rgba(3,14,19,0.28)]" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }} role="status" aria-live="polite">{msg}</div>;
 }

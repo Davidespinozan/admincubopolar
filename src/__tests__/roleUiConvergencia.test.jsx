@@ -121,3 +121,43 @@ describe('A4: Producción — presentación nueva, negocio idéntico', () => {
     expect((v.match(/capture="environment"/g) || []).length).toBe(2);
   });
 });
+
+describe('A5: Chofer — modo enfoque con la identidad del producto; flujo, offline, GPS, fotos y firma idénticos', () => {
+  const v = sinComentarios(src('../components/ChoferView.jsx'));
+  it('conserva la máquina de pasos y el chrome de enfoque (sin sidebar); sin toast ni hojas propias', () => {
+    expect(v).toMatch(/const step = stepOverride \?\? \(rutaEnProgreso \? 'ruta' : \(rutaPendienteFirma \? 'esperando-firma' : \(rutaCargada \? 'cargada' : 'cargar'\)\)\);/);
+    for (const st of ['"cargar"', '"esperando-firma"', '"cargada"', '"ruta"', '"cierre"']) expect(v).toMatch(new RegExp(`if \\(step === ${st}\\)`));
+    expect((v.match(/data-testid="chofer-shell"/g) || []).length).toBe(5);
+    expect((v.match(/<RoleHeader /g) || []).length).toBe(5);
+    expect((v.match(/<Modal open=/g) || []).length).toBe(6);
+    expect(v).not.toMatch(/bg-\[#07131a\]|rounded-t-\[30px\]|fixed inset-0|setToast|useBodyScrollLock|function Toast/);
+    expect(v).toMatch(/fixed bottom-0 left-1\/2 z-40/);   // barra de acciones fija en ruta
+    expect(v).toMatch(/<BannerColaOffline online=\{online\} cola=\{colaOffline\} sincronizando=\{sincronizando\} onSincronizar=\{sincronizarCola\} \/>/);
+  });
+  it('cola offline, GPS, fotos y firma: código idéntico', () => {
+    expect(v).toMatch(/useColaOffline\(\{ rutaId: miRutaActiva\?\.id, ejecutores: ejecutoresOffline, avisar: showToast \}\)/);
+    expect(v).toMatch(/encolarOffline\(TIPOS_MUTACION\.ENTREGA, \{\s*ordenId: entregaModal\.id,\s*metodoPago: cobroMetodo,\s*folioNota: folioNota \|\| null,\s*\}\)/);
+    expect(v).toMatch(/supabase\.from\('chofer_ubicaciones'\)\.insert\(\{\s*ruta_id: miRutaActiva\.id,\s*chofer_id: user\.id,/);
+    expect(v).toMatch(/const interval = setInterval\(enviarUbicacion, 30000\);/);
+    expect((v.match(/capture="environment"/g) || []).length).toBe(3);
+    expect(v).toMatch(/const validErr = validarCobroTransferencia\(\{ metodoPago: cobroMetodo, fotoTransf \}\);/);
+    expect(v).toMatch(/const firmaBase64 = canvas\.toDataURL\('image\/png'\);/);
+    expect(v).toMatch(/el\.getContext\('2d'\)\.scale\(2, 2\);/);
+    expect(v).toMatch(/const ordenesEnColaOffline = useMemo\(\(\) => ordenesBloqueadas\(colaOffline\), \[colaOffline\]\);/);
+  });
+  it('llamadas al store, argumentos y precondiciones de cierre idénticos', () => {
+    expect(new Set(v.match(/actions\.\w+/g))).toEqual(new Set(['actions.updateOrdenEstatus', 'actions.marcarNoEntregada', 'actions.solicitarFirmaCarga', 'actions.firmarCarga', 'actions.crearCheckoutPago', 'actions.updateRutaEstatus', 'actions.prepararCierreRuta', 'actions.finalizarInventarioRuta']));
+    expect(v).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null \}\)/);
+    expect(v).toMatch(/await actions\.solicitarFirmaCarga\?\.\(miRutaActiva\.id, cargaRealNum\);/);
+    expect(v).toMatch(/await actions\.updateRutaEstatus\(miRutaActiva\.id, 'En progreso'\);/);
+    expect(v).toMatch(/if \(!online\) \{\s*showToast\('Sin señal — busca conexión para cerrar la ruta', 'info'\);\s*return;\s*\}/);
+    expect(v).toMatch(/if \(pendientesCola\(\)\.length > 0\) \{\s*showToast\('Sincronizando pendientes…', 'info'\);\s*await sincronizarCola\(\);/);
+    expect(v).toMatch(/const PAGOS = \["Efectivo", "Transferencia", "Tarjeta", "QR \/ Link de pago", "Crédito"\];/);
+    expect(v).toMatch(/const MERMA_CAUSAS = \["Bolsa rota", "Hielo derretido", "Daño transporte", "Rechazo cliente"\];/);
+    expect(v).toMatch(/disabled=\{cerrandoRuta \|\| !balanceCierre \|\| Object\.keys\(difConteo\.faltante\)\.length > 0 \|\| Object\.keys\(difConteo\.sobrante\)\.length > 0\}/);
+    expect(v).toMatch(/disabled=\{creandoVenta\|\|!vForm\.cant\|\|n\(vForm\.cant\)<=0\|\|n\(vForm\.cant\)>\(restante\[vForm\.sku\]\|\|0\)\|\|\(vForm\.factura&&!!errorFacturaExpress\)\}/);
+    expect(v).toMatch(/disabled=\{registrandoMerma\|\|!mForm\.cant\|\|n\(mForm\.cant\)<=0\|\|!fotoMerma\}/);
+    expect(v).toMatch(/const disabled = generandoLink \|\| confirmandoEntrega \|\| faltaFotoTransf;/);
+    expect(v).toMatch(/localStorage\.removeItem\('mermas_ruta_' \+ miRutaActiva\.id\);\s*localStorage\.removeItem\('entregas_ruta_' \+ miRutaActiva\.id\);/);
+  });
+});
