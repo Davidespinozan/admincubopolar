@@ -6,48 +6,42 @@ Regla: si el repositorio tiene código o migraciones más nuevos que la base de 
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Commit: `61161712c54e9981db5ad80a01ed52d7e93d0920` (`main`) — DEPLOYED y VALIDATED IN
-  PRODUCTION el 2026-10-03; re-verificado en solo lectura el 2026-10-05.
-- Base de datos: migraciones aplicadas hasta la 106 (cada una verificada al activarse).
-- Conteos registrados en la verificación de 106 (cambian con cada fase; no son invariantes):
-  116 funciones · 77 policies · 40 tablas · 39 secuencias · 1 vista.
+- Commit: `afc545caa75bc10493dfda5ae2e5c1c552de3a1f` (`main`) — DEPLOYED (Netlify
+  `6ac3e2470e05bf0009ed053b`, ready 2026-10-05) y VALIDATED IN PRODUCTION el 2026-10-05.
+- Base de datos: migraciones aplicadas hasta la 108 (cada una verificada al activarse).
+- Conteos registrados en la verificación de 108 (cambian con cada fase; no son invariantes):
+  118 funciones · 77 policies · 40 tablas · 39 secuencias · 1 vista.
 - Centinelas: `error_log` max id 192 · OV-0086 md5 `c253d4337b2db7c286c08605f94cc8b9` ·
   anon sin acceso a tablas ni funciones. Se revisan con `supabase/tests/prod/conteos.sql`.
 
 ## Última fase cerrada
-PACKAGING COST — CLOSED IN PRODUCTION · migración `106_costo_empaque_promedio.sql` ·
-commit `61161712c54e9981db5ad80a01ed52d7e93d0920`.
+PACKAGING COST BASIS INTEGRITY — CLOSED IN PRODUCTION (2026-10-05) · migraciones
+`107_base_costo_empaque_reverso.sql` y `108_contencion_base_costo_empaque.sql` · commit de
+implementación y desplegado `afc545caa75bc10493dfda5ae2e5c1c552de3a1f`. Invariante: ninguna
+unidad de empaque entra fuera de una recepción de compra (o del reverso de una producción, al
+costo unitario guardado); el empaque solo baja por ajuste; su existencia nunca es negativa; un
+empaque nuevo nace en 0 y sin costo; un empaque con existencia, uso o historia no se borra por
+API. Sustituye hacia adelante la apertura declarada al dar de alta de 106; sin reparación
+histórica: las aperturas de EMP-5 (99,000 @ 1) y EMP-25 (9,800 @ 2) quedan intactas.
+Anterior: PACKAGING COST (106, commit 6116171).
 
 ## Trabajo actual
-**PACKAGING COST BASIS INTEGRITY — DECISIONS APPROVED · IMPLEMENTED IN THE REPOSITORY ·
-LOCAL-VALIDATED · NOT PUSHED · NOT DEPLOYED · MIGRATIONS 107/108 NOT APPLIED TO PRODUCTION.**
-Producción no ha cambiado: sigue en la base de arriba (migraciones hasta 106).
-Decisiones aprobadas por el dueño el 2026-10-05:
-1. Reverso de producción: el empaque devuelto reingresa al promedio al costo unitario GUARDADO
-   en esa producción; con existencia 0 el promedio es ese costo. Resultados (093/094) sin cambio.
-2. Baja manual de empaque: permitida, nunca bajo cero, el promedio no cambia.
-3. Alza manual de empaque: prohibida (entra solo por recepción de compra).
-4. En existencia 0 el último promedio queda de referencia; la siguiente compra fija uno nuevo.
-5. Existencia negativa de empaque: estado inválido (CHECK; también para SQL de confianza).
-6. Un empaque con existencia, uso o historia no se borra por API (no se borra y recrea).
-7. Un empaque nuevo nace con existencia 0 y sin costo (sustituye, hacia adelante, la apertura
-   declarada al dar de alta de 106). Las aperturas de EMP-5 y EMP-25 no se tocan.
+Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno.
 
-En el repositorio (commit local posterior a la base; ver `git log`): `107_base_costo_empaque_reverso.sql`
-(aditiva), `108_contencion_base_costo_empaque.sql` (contención), frontend (ajuste de empaque solo a
-la baja; alta sin existencia ni costo) y suite `107`. Precondiciones de solo lectura verificadas el
-2026-10-05: catálogo y estado iguales a la foto de 106; sin empaque negativo; ninguna producción
-revertida ni reversible con empaque (no hay historia que reparar).
-Siguiente paso: autorización del dueño para activar con `activar-produccion`: 107 → push a `main`
-(deploy) → bundle vivo → 108 → verificación de solo lectura. Hasta entonces: nada en producción.
+**ROLE UI CONVERGENCE — AUDITED / DESIGN PROPOSED / NOT STARTED** (auditoría de solo lectura
+2026-10-05, comparada con el repositorio Renovacell). Dirección aprobada solo como rumbo: Opción A
+(primitivas visuales compartidas) → Opción B (shell compartido + navegación por rol). NO
+autorizado: Opción C, Opción D, cambiar Facturación / Sin asignar, unificar los textos de método
+de pago, tocar permisos, RLS, RPC, semántica de `supaStore`, scoping de datos ni workflows.
+Se abre como bloque independiente cuando el dueño lo autorice.
 
 **Reestructura de contexto.** Fase 1 COMMITTED localmente (commit `092b1f5`, solo documentación:
 no es una versión nueva de la aplicación ni cambia la base de producción). Fase 2 PENDING y sin
 autorizar: tarjetas restantes, archivar documentos obsoletos, reducir memoria privada.
 
 ## Residuales abiertos
-- Empaque y costo: base de costo (arriba, pendiente de activar); sin corrección ni reverso de compra;
-  la CxP de una compra todavía se puede editar o borrar por REST.
+- Empaque y costo: sin corrección ni reverso de compra; la CxP de una compra todavía se puede
+  editar o borrar por REST.
 - Inventario: espejo `productos.stock` de producto terminado desfasado (no autoritativo);
   sin reverso de transformación.
 - Finanzas: el pago de CxP no rechaza un monto mayor al saldo; costo fijo/variable en dos escrituras no
@@ -61,7 +55,7 @@ autorizar: tarjetas restantes, archivar documentos obsoletos, reducir memoria pr
 | Tema | Evidencia (migraciones / suites) | Tarjeta |
 |---|---|---|
 | Identidad, RLS, privilegios, historia canónica (B3, B4) | 069–071, 073–075, 077–083, 090/091 | `plataforma.md` |
-| Producción atómica y reverso; empaque; costo de empaque | 076, 092, 093/094, 106 | `produccion-empaque.md` |
+| Producción atómica y reverso; empaque; costo de empaque y su base | 076, 092, 093/094, 106, 107/108 | `produccion-empaque.md` |
 | Resultados vs flujo; día de negocio; caja; pagos de CxP | 086, 088/089, 093, 096–099 | `finanzas.md` |
 | Mermas inmutables y reversibles | 072 (parte sustituida por 103 y 106) | pendiente |
 | Stock de cuartos y de ruta; carga y cierre de ruta | 084/085, 087, 102/103 | pendiente |
@@ -69,5 +63,6 @@ autorizar: tarjetas restantes, archivar documentos obsoletos, reducir memoria pr
 | Devolución de cliente | 104/105 | pendiente |
 
 Sustituciones intencionales (no son regresiones): 095 (`update_stocks_atomic` sin acceso de la
-API desde 105) y 072 (merma FIFO entre cuartos retirada en 103; merma sin valuación desde 106).
+API desde 105), 072 (merma FIFO entre cuartos retirada en 103; merma sin valuación desde 106) y
+106 (apertura declarada al dar de alta un empaque, sustituida por 108: nace en 0).
 Sin reparación histórica: OV-0086 y los egresos legados de costo (1400) quedan intactos.

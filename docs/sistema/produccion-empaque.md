@@ -3,8 +3,9 @@
 ## Invariant
 El producto terminado entra a un cuarto frío solo por los contratos de producción; cada unidad
 producida consume un empaque y la producción guarda (snapshot) el costo de ese empaque. El costo
-del empaque es un promedio ponderado: se declara al dar de alta el empaque (apertura), después
-solo cambia con recepciones de compra, y se reconoce como costo al producir. El producto
+del empaque es un promedio ponderado que solo cambia con recepciones de compra y con el reverso
+de una producción (al costo unitario guardado), y se reconoce como costo al producir. Ninguna
+unidad de empaque entra fuera de esas dos vías; su existencia nunca es negativa. El producto
 terminado no se capitaliza ni tiene costo unitario.
 
 ## Source of truth
@@ -12,7 +13,7 @@ terminado no se capitaliza ni tiene costo unitario.
   `productos.stock` de un producto terminado es un espejo NO autoritativo (está desfasado).
 - Existencia de empaque: `productos.stock` (total de la empresa: almacén + lo entregado a Producción).
 - Costo promedio de empaque: `productos.costo_unitario` del SKU tipo Empaque (6 decimales);
-  evidencia de cada cambio en `costos_empaque_historial` (eventos Apertura y Compra).
+  evidencia de cada cambio en `costos_empaque_historial` (Apertura, Compra, Reverso producción).
 - Producción: `produccion` (`operacion_id`, `cuarto_id`, `empaque_sku`, `empaque_cantidad`,
   `costo_empaque`, `costo_total`, estatus Confirmada / Revertida).
 - Costo reconocido: `costos_historial` tipo `Producción` y `Reverso producción` (ref `PROD-<id>`).
@@ -34,8 +35,14 @@ terminado no se capitaliza ni tiene costo unitario.
   factura) ÷ (existencia + recibido); con existencia 0, factura ÷ recibido. El reintento no
   recalcula. Por qué: el costo tecleado a mano no tenía evidencia.
 - **Snapshot (076/106):** `costo_empaque` y `costo_total` de una producción no cambian con compras posteriores.
-- **Reverso compensatorio (093/094):** la producción no se borra; sale del cuarto original,
-  devuelve el empaque guardado y compensa el costo GUARDADO. Por qué: historia inmutable.
+- **Reverso compensatorio (093/094, 107):** la producción no se borra; sale del cuarto original,
+  devuelve el empaque guardado, lo reingresa al promedio AL COSTO UNITARIO GUARDADO (con
+  existencia 0, ese costo) y compensa el costo GUARDADO en resultados. Por qué: historia inmutable
+  y base de costo coherente. Bloqueo: producción → empaque → cuarto (igual que producir).
+- **El empaque entra solo por compra (108):** el ajuste manual solo baja (el promedio no cambia);
+  un empaque nuevo nace en 0 y sin costo (sustituye la apertura al dar de alta de 106); existencia
+  negativa imposible (CHECK, también para SQL de confianza); un empaque con existencia, uso o
+  historia no se borra por API. Por qué: unidades sin costo conocido y borrar/recrear reiniciaban la base.
 - **Sin costo de producto terminado (106):** no se capitaliza, no hay capas de costo, mano de
   obra y gastos indirectos no se asignan a SKU; `costo_unitario` de Producto Terminado es 0 y
   no se usa. Por qué: el único costo observado es el empaque; evitar falsa precisión.
@@ -47,7 +54,8 @@ terminado no se capitaliza ni tiene costo unitario.
 - Por API no se puede: cambiar existencia de insumos por UPDATE (094), editar el costo ni cambiar
   el tipo de un Empaque (106), borrar producción o editar más que turno/máquina (093/094),
   insertar kardex (103), escribir el historial de costo.
-- Por API todavía se puede (Admin): INSERT y DELETE de `productos` (ver residuales).
+- Por API todavía se puede (Admin): INSERT de `productos` (empaque nace 0 @ 0) y DELETE solo de
+  empaques sin existencia, uso ni historia (108).
 - `service_role` y SQL de confianza quedan fuera de las guardas (autoridad de mantenimiento).
 
 ## Dependencies
@@ -56,17 +64,11 @@ terminado no se capitaliza ni tiene costo unitario.
 - Cuartos fríos (tarjeta pendiente; evidencia 102/103): primitiva interna `stock_mov_cuarto`.
 
 ## Evidence
-Migraciones 076, 077, 088 (compra), 092, 093/094, 106. Suites `076`, `092`, `093`, `106` y sus
+Migraciones 076, 077, 088 (compra), 092, 093/094, 106, 107/108. Suites `076`, `092`, `093`, `106`, `107` y sus
 bloques de concurrencia en el runner local. Vitest: `produccionAtomica`, `reversoProduccion`,
-`costoEmpaquePromedio`.
+`costoEmpaquePromedio`, `baseCostoEmpaque`.
 
 ## Open residuals
-- **PACKAGING COST BASIS INTEGRITY — DECISIONS APPROVED; 107/108 en el repositorio, NO aplicadas
-  en producción** (estado y decisiones en `docs/STATUS.md`). Hasta la activación, producción hace
-  lo que describe esta tarjeta: el reverso no recalcula el promedio del inventario; el ajuste
-  manual puede subir el empaque; un empaque se puede borrar y recrear por API; el alta acepta
-  existencia negativa. Al activar: reverso al costo histórico (107) y contención (108); esta
-  tarjeta se actualiza entonces.
 - Sin corrección ni reverso de una compra; la CxP de una compra se puede editar o borrar por REST.
 - Sin reverso de transformación. Las producciones anteriores a 076 (sin `operacion_id`) no son reversibles.
 
