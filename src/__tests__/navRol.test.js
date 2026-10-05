@@ -129,3 +129,62 @@ describe('B: shell compartido y ruteo', () => {
     expect(src('../components/ChoferView.jsx')).toMatch(/data-testid="chofer-shell"/);
   });
 });
+
+describe('B3: navegación inferior móvil derivada del mismo modelo', async () => {
+  const { bottomNavParaRol, PRINCIPALES_MOVIL_ADMIN, MAX_DESTINOS_MOVIL } = await import('../data/navRolLogic');
+  it('Ventas: 3 destinos (mismos ids que el sidebar); Producción: 4 con etiqueta móvil corta; sin "Más"', () => {
+    const v = bottomNavParaRol(navParaRol('Ventas'));
+    expect(v.mas).toBe(false);
+    expect(v.items.map(i => i.id)).toEqual(['ventas-cobrar', 'ventas-hoy', 'ventas-todas']);
+    expect(v.items.map(i => i.label)).toEqual(['Por cobrar', 'Hoy', 'Todas']);
+    const p = bottomNavParaRol(navParaRol('Producción'));
+    expect(p.mas).toBe(false);
+    expect(p.items.map(i => i.id)).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-trans']);
+    expect(p.items.map(i => i.label)).toEqual(['Producción', 'Congeladores', 'Mermas', 'Transf.']);
+    expect(p.items.every(i => i.icon)).toBe(true);
+  });
+  it('un solo módulo (Almacén Bolsas) y modo enfoque (Chofer): sin barra inferior', () => {
+    expect(bottomNavParaRol(navParaRol('Almacén Bolsas'))).toBeNull();
+    expect(bottomNavParaRol(navParaRol('Chofer'))).toBeNull();
+    expect(bottomNavParaRol(null)).toBeNull();
+  });
+  it('Admin / Facturación / Sin asignar: 4 destinos de uso diario + "Más"; el menú completo sigue con los 25 módulos', () => {
+    for (const rol of ['Admin', 'Facturación', 'Sin asignar']) {
+      const b = bottomNavParaRol(navParaRol(rol));
+      expect(b.mas, rol).toBe(true);
+      expect(b.items.map(i => i.id), rol).toEqual(PRINCIPALES_MOVIL_ADMIN);
+      expect(b.items.length + 1, rol).toBeLessThanOrEqual(MAX_DESTINOS_MOVIL);
+      expect([...idsModulos(navParaRol(rol))], rol).toEqual(ADMIN_25);   // alcance intacto
+    }
+    expect(PRINCIPALES_MOVIL_ADMIN).toEqual(['dashboard', 'bandeja', 'ordenes', 'cobros']);
+    // uno por área de trabajo: Operación (resumen, bandeja), Comercial (ventas), Finanzas (por cobrar)
+    expect(PRINCIPALES_MOVIL_ADMIN.map(id => areaDeModulo(navParaRol('Admin'), id).id)).toEqual(['operacion', 'operacion', 'comercial', 'finanzas']);
+  });
+  it('los ids de la barra son siempre ids válidos del menú del rol (mismo mecanismo de navegación)', () => {
+    for (const rol of ROLES_VALIDOS) {
+      const nav = navParaRol(rol); const b = bottomNavParaRol(nav);
+      if (!b) continue;
+      for (const i of b.items) expect(idsModulos(nav).has(i.id), `${rol}:${i.id}`).toBe(true);
+      expect(idsModulos(nav).has(nav.inicio)).toBe(true);
+    }
+  });
+});
+
+describe('B3: shell y vistas', () => {
+  const shell = src('../components/CuboPolarERP.jsx');
+  it('el shell deriva la barra del modelo y navega con `go`; "Más" abre el drawer; el contenido deja espacio', () => {
+    expect(shell).toMatch(/const bottomNav = useMemo\(\(\) => bottomNavParaRol\(nav\), \[nav\]\);/);
+    expect(shell).toMatch(/<BottomNav items=\{bottomNav\.items\} value=\{view\} onChange=\{go\} mas=\{bottomNav\.mas\}/);
+    expect(shell).toMatch(/onMas=\{\(\) => setMobileDrawerOpen\(true\)\}/);
+    expect(shell).toMatch(/pb-\[calc\(env\(safe-area-inset-bottom,0px\)\+88px\)\]/);
+    expect(shell).not.toMatch(/rol === ['"]Ventas['"]|rol === ['"]Producción['"]/);   // sin ramas por rol
+    // Chofer (enfoque) devuelve antes de llegar a la barra: solo su barra operativa.
+    expect(shell.indexOf("if (nav.modo === 'enfoque')")).toBeLessThan(shell.indexOf('{bottomNav && ('));
+  });
+  it('Ventas y Producción no duplican pestañas dentro del shell', () => {
+    expect(src('../components/VentasStandaloneView.jsx')).toMatch(/\{!embedded && <SegmentedTabs items=\{TABS\}/);
+    expect(src('../components/ProduccionStandaloneView.jsx')).toMatch(/\{!embedded && <SegmentedTabs items=\{TABS\}/);
+    expect(src('../components/ChoferView.jsx')).not.toMatch(/BottomNav/);
+    expect(src('../components/ChoferView.jsx')).toMatch(/fixed bottom-0 left-1\/2 z-40/);   // barra operativa intacta
+  });
+});

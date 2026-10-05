@@ -12,7 +12,8 @@ import { traducirError } from '../utils/errorMessages';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
-import { navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, MODULO_BOLSAS, MODULO_CHOFER } from '../data/navRolLogic';
+import { navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER } from '../data/navRolLogic';
+import { BottomNav } from './ui/Components';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
 const ClientesView      = lazy(() => import('./views/ClientesView.jsx').then(m => ({ default: m.ClientesView })));
@@ -196,6 +197,8 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   const nav = useMemo(() => navParaRol(rol), [rol]);
   const IDS_MODULOS = useMemo(() => idsModulos(nav), [nav]);
   const ALL_ITEMS = useMemo(() => itemsModulos(nav), [nav]);
+  // B3: navegación inferior en móvil, derivada del mismo modelo que el sidebar.
+  const bottomNav = useMemo(() => bottomNavParaRol(nav), [nav]);
   // Tanda 25: la vista vive también en la URL (#/rutas) — deep links
   // compartibles y botón atrás del navegador. Hash inválido → módulo inicial del rol.
   const [view, setView] = useState(() => viewDesdeHash(window.location.hash, IDS_MODULOS) || nav.inicio);
@@ -651,13 +654,18 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       )}
 
       {/* ═══ MAIN ═══ */}
-      <main className="px-3 pt-4 sm:px-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px]">
+      <main className={`px-3 pt-4 sm:px-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px] ${bottomNav ? "pb-[calc(env(safe-area-inset-bottom,0px)+88px)]" : ""}`} data-bottom-nav={bottomNav ? 'si' : 'no'}>
         <div className="relative">
           <div className={`pointer-events-none absolute inset-x-8 top-0 h-16 rounded-[32px] bg-gradient-to-r ${currentMeta.glow} opacity-45 blur-3xl`} />
           <div className="relative"><ChunkErrorBoundary><Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>{renderView()}</Suspense></ChunkErrorBoundary></div>
         </div>
       </main>
 
+      {/* B3: navegación inferior (móvil); en lg+ la oculta el CSS y manda el sidebar. */}
+      {bottomNav && (
+        <BottomNav items={bottomNav.items} value={view} onChange={go} mas={bottomNav.mas}
+          masActivo={bottomNav.mas && !bottomNav.items.some(i => i.id === view)} onMas={() => setMobileDrawerOpen(true)} />
+      )}
     </div>
   );
 }

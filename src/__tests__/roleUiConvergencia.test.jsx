@@ -211,3 +211,24 @@ describe('B2: pulido visual e integración en el shell (solo presentación)', ()
     }
   });
 });
+
+describe('B3: primitiva BottomNav', async () => {
+  const { BottomNav } = await import('../components/ui/Components');
+  it('fija abajo, oculta en lg+, safe-area, estado activo y "Más"', () => {
+    const items = [{ id: 'a', label: 'Uno', icon: 'Clock' }, { id: 'b', label: 'Dos', icon: 'List' }];
+    const h = html(<BottomNav items={items} value="b" onChange={() => {}} />);
+    expect(h).toMatch(/data-testid="bottom-nav"/);
+    expect(h).toMatch(/fixed inset-x-0 bottom-0 z-30/);
+    expect(h).toMatch(/lg:hidden/);
+    expect(h).toMatch(/safe-area-inset-bottom/);
+    expect(h).toMatch(/aria-label="Navegación principal"/);
+    expect(h).toMatch(/aria-current="page"[^>]*aria-label="Dos"/);
+    expect((h.match(/min-h-\[56px\]/g) || []).length).toBe(2);
+    expect(h).toMatch(/repeat\(2, minmax\(0, 1fr\)\)/);
+    expect(h).not.toMatch(/Más/);
+    const m = html(<BottomNav items={items} value="zzz" onChange={() => {}} mas masActivo onMas={() => {}} />);
+    expect(m).toMatch(/Más/);
+    expect(m).toMatch(/repeat\(3, minmax\(0, 1fr\)\)/);
+    expect(m).toMatch(/aria-label="Más módulos"[^>]*text-slate-900/);
+  });
+});

@@ -328,3 +328,33 @@ export const KpiTile = ({ label, value, hint, className = "" }) => (
     {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
   </div>
 );
+
+// ─── BOTTOM NAV (móvil) ───
+// B3: navegación inferior fija para los roles en modo completo. Consume los
+// mismos ids/iconos que el sidebar (navRolLogic.bottomNavParaRol); se oculta
+// en lg+ donde manda el sidebar. `masActivo`: el módulo actual vive en el menú.
+export const BottomNav = ({ items, value, onChange, onMas, mas = false, masActivo = false }) => (
+  <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200/80 bg-white/95 shadow-[0_-10px_30px_rgba(8,20,27,0.08)] backdrop-blur-xl lg:hidden"
+    style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }} aria-label="Navegación principal" data-testid="bottom-nav">
+    <div className="mx-auto grid w-full max-w-3xl px-1" style={{ gridTemplateColumns: `repeat(${items.length + (mas ? 1 : 0)}, minmax(0, 1fr))` }}>
+      {items.map(it => {
+        const Ic = Icons[it.icon] || Icons.Package;
+        const active = value === it.id;
+        return (
+          <button key={it.id} type="button" onClick={() => onChange(it.id)} aria-current={active ? "page" : undefined} aria-label={it.label}
+            className={`flex min-h-[56px] min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-semibold transition-colors ${active ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}>
+            <span className={`flex h-8 w-11 items-center justify-center rounded-[12px] transition-colors [&>svg]:h-5 [&>svg]:w-5 ${active ? "bg-slate-900 text-cyan-200" : "bg-transparent"}`}><Ic /></span>
+            <span className="w-full truncate text-center">{it.label}</span>
+          </button>
+        );
+      })}
+      {mas && (
+        <button type="button" onClick={onMas} aria-label="Más módulos" aria-expanded={false}
+          className={`flex min-h-[56px] min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-semibold ${masActivo ? "text-slate-900" : "text-slate-500 hover:text-slate-700"}`}>
+          <span className={`flex h-8 w-11 items-center justify-center rounded-[12px] [&>svg]:h-5 [&>svg]:w-5 ${masActivo ? "bg-slate-900 text-cyan-200" : "bg-transparent"}`}><Icons.MoreH /></span>
+          <span className="w-full truncate text-center">Más</span>
+        </button>
+      )}
+    </div>
+  </nav>
+);

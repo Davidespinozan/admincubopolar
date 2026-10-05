@@ -577,8 +577,8 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       />
 
       <div className={embedded ? `${CONTENIDO_SHELL} pt-3` : `${CONTENIDO} px-4 pt-3`}>
-        {/* En el shell compartido el menú lateral ya lista estas pestañas (lg+). */}
-        <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="blue" className={`mb-1 ${embedded ? "lg:hidden" : ""}`} />
+        {/* B3: dentro del shell navegan el sidebar (lg+) y la barra inferior (móvil); las pestañas solo en la vista suelta. */}
+        {!embedded && <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="blue" className="mb-1" />}
 
         {/* ═══ TAB: PRODUCCIÓN ═══ */}
         {tab === "producir" && (<>

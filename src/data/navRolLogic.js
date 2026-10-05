@@ -68,9 +68,17 @@ export const MODULOS_PRODUCCION = [
   { id: "prod-producir", label: "Producción", icon: "Factory", tab: "producir" },
   { id: "prod-cuartos", label: "Congeladores", icon: "Warehouse", tab: "cuartos" },
   { id: "prod-mermas", label: "Mermas", icon: "AlertTriangle", tab: "mermas" },
-  { id: "prod-trans", label: "Transformación", icon: "Snowflake", tab: "trans" },
+  { id: "prod-trans", label: "Transformación", labelMovil: "Transf.", icon: "Snowflake", tab: "trans" },
 ];
 export const MODULO_BOLSAS = { id: "bolsas-almacen", label: "Almacén de Bolsas", icon: "Box" };
+
+// B3 — navegación inferior en móvil (misma fuente que el sidebar).
+// Admin / Facturación / Sin asignar: 25 módulos no caben; en móvil van 4
+// destinos de uso diario (el primero de cada área de trabajo: Operación ×2,
+// Comercial, Finanzas) + "Más", que abre el menú completo agrupado por área
+// (el mismo drawer de siempre). Un rol con un solo módulo no lleva barra.
+export const PRINCIPALES_MOVIL_ADMIN = ["dashboard", "bandeja", "ordenes", "cobros"];
+export const MAX_DESTINOS_MOVIL = 5;
 export const MODULO_CHOFER = { id: "chofer-ruta", label: "Mi ruta", icon: "Truck" };
 
 const CHROME_ADMIN = { busqueda: true, firmas: true, alertas: true, notificaciones: true, verComo: true };
@@ -124,6 +132,22 @@ export function moduloDesdeTab(rol, tab) {
   const lista = rol === "Ventas" ? MODULOS_VENTAS : rol === "Producción" ? MODULOS_PRODUCCION : [];
   const m = lista.find(x => x.tab === tab);
   return m ? m.id : null;
+}
+
+/**
+ * Navegación inferior (móvil) derivada del mismo modelo: null si el rol no la
+ * lleva (modo enfoque o un solo módulo). `items` usan los MISMOS ids que el
+ * sidebar; `mas` = true cuando hay módulos fuera de la barra (abre el menú).
+ */
+export function bottomNavParaRol(nav) {
+  if (!nav || nav.modo !== "completo") return null;
+  const todos = itemsModulos(nav);
+  if (todos.length <= 1) return null;
+  const aMovil = (i) => ({ id: i.id, label: i.labelMovil || i.label, icon: i.icon });
+  if (todos.length < MAX_DESTINOS_MOVIL) return { items: todos.map(aMovil), mas: false };
+  const ids = new Set(todos.map(i => i.id));
+  const principales = PRINCIPALES_MOVIL_ADMIN.filter(id => ids.has(id)).map(id => todos.find(i => i.id === id)).map(aMovil);
+  return { items: principales, mas: principales.length < todos.length };
 }
 
 /** Áreas expandidas por defecto: Admin conserva su preferencia; los roles de campo ven todo abierto. */

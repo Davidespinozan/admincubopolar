@@ -129,8 +129,8 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
       <div className={embedded ? `${CONTENIDO_SHELL} pt-4` : `${CONTENIDO} px-4 pt-4`}>
         {!embedded && nuevaVentaBtn}
 
-        {/* En el shell compartido el menú lateral ya lista estas pestañas (lg+). */}
-        <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="emerald" className={embedded ? "lg:hidden" : ""} />
+        {/* B3: dentro del shell navegan el sidebar (lg+) y la barra inferior (móvil); las pestañas solo en la vista suelta. */}
+        {!embedded && <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="emerald" />}
 
         <div className={embedded ? "grid grid-cols-1 gap-2 xl:grid-cols-2" : "space-y-2"}>
           {lista.map(o => (
