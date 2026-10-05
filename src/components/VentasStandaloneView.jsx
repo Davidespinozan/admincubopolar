@@ -5,27 +5,36 @@ import { EmptyState } from './ui/Skeleton';
 import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
-import { useBodyScrollLock } from './ui/Modal';
+import Modal, { FormInput, FormBtn } from './ui/Modal';
+import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton, KpiTile, PageHeader } from './ui/Components';
+import { Icons } from './ui/Icons';
 
+// Fase A3 (convergencia visual por rol): esta vista usa las primitivas del
+// shell de Administración. El flujo (Por cobrar / Hoy / Todas, nueva venta por
+// NuevaVentaModal variant="standalone", cobro por updateOrdenEstatus o link de
+// pago por crearCheckoutPago), el alcance por vendedor (isOwnedBy) y los
+// métodos de pago no cambian.
+//   embedded: la vista vive dentro del shell compartido (sin cabecera propia).
+//   tab/onTab: pestaña controlada por el shell (menú por rol); sin ellas, estado interno.
 const PAGOS = ["Efectivo", "Transferencia SPEI", "Tarjeta (terminal)", "QR / Link de pago", "Crédito (fiado)"];
-const VENTAS_SHELL = "min-h-dvh w-full max-w-[640px] mx-auto bg-[linear-gradient(180deg,#f8fafc_0%,#eef4f7_100%)] text-slate-900 md:max-w-3xl lg:max-w-5xl";
+const TABS = [{ k: "ventas", l: "Por cobrar", icon: "DollarSign" }, { k: "hoy", l: "Hoy", icon: "Clock" }, { k: "todas", l: "Todas", icon: "List" }];
+const CONTENIDO = "mx-auto w-full max-w-[640px] space-y-4 md:max-w-3xl lg:max-w-5xl";
 
-export default function VentasStandaloneView({ user, data, actions, onLogout }) {
+export default function VentasStandaloneView({ user, data, actions, onLogout, embedded = false, tab: tabProp, onTab }) {
   const toast = useToast();
-  const [tab, setTab] = useState("ventas");
+  const [tabLocal, setTabLocal] = useState("ventas");
+  const tab = tabProp ?? tabLocal;
+  const setTab = (k) => { if (onTab) onTab(k); else setTabLocal(k); };
   const [modal, setModal] = useState(false);
   const [pagoModal, setPagoModal] = useState(null);
-  // Tanda 17 P1: body scroll lock cuando algún modal custom está abierto.
-  useBodyScrollLock(!!modal || !!pagoModal);
   const [pagoForm, setPagoForm] = useState({ metodo: "Efectivo", referencia: "" });
   const [checkoutProvider] = useState('stripe');
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [shortUrl, setShortUrl] = useState(null);
   const [generandoLink, setGenerandoLink] = useState(false);
   const [confirmandoCobro, setConfirmandoCobro] = useState(false);
-  const [localToast, setLocalToast] = useState("");
 
-  const showToast = (msg) => { setLocalToast(msg); setTimeout(() => setLocalToast(""), 3000); };
+  const showToast = (msg, tipo = "success") => { (toast?.[tipo] || toast?.info)?.(msg); };
 
   const isOwnedBy = useCallback((row) => {
     if (!row) return false;
@@ -57,10 +66,10 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
           setShortUrl(result.shortUrl || result.checkoutUrl);
           showToast('Link de pago generado');
         } else {
-          showToast('Error al generar link de pago');
+          showToast('Error al generar link de pago', 'error');
         }
       } catch (e) {
-        showToast('Error: ' + (e.message || 'No se pudo generar el link'));
+        showToast('Error: ' + (e.message || 'No se pudo generar el link'), 'error');
       } finally {
         setGenerandoLink(false);
       }
@@ -74,7 +83,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       setPagoModal(null);
     } catch (e) {
       console.error('Error confirmando cobro:', e);
-      showToast('Error al cobrar. Verifica tu conexión.');
+      showToast('Error al cobrar. Verifica tu conexión.', 'error');
     } finally {
       setConfirmandoCobro(false);
     }
@@ -86,91 +95,92 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
   const ventasHoy = useMemo(() => ordenesHoy.filter(o => o.estatus === "Entregada").reduce((s, o) => s + n(o.total), 0), [ordenesHoy]);
 
   const abrirNuevaVenta = () => setModal(true);
+  const lista = tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : ordenesUsuario;
+  const nuevaVentaBtn = (
+    <FormBtn success size={embedded ? undefined : "lg"} className={embedded ? "" : "w-full sm:w-auto sm:px-10"} onClick={abrirNuevaVenta}>
+      <Icons.Plus /> Nueva venta
+    </FormBtn>
+  );
 
   return (
-    <div className={VENTAS_SHELL} data-testid="ventas-shell">
-      <ModoPruebaBanner />
-      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-4 pb-5 text-white shadow-[0_24px_48px_rgba(5,150,105,0.18)]" style={{ paddingTop: "max(env(safe-area-inset-top, 44px), 44px)" }}>
-        <div className="flex items-center justify-between mb-1">
-          <div><p className="erp-kicker text-emerald-100/80">Ventas</p><h1 className="font-display text-[1.6rem] font-bold tracking-[-0.04em]">Ventas del día</h1><p className="text-xs text-emerald-100">{s(user?.nombre)}</p></div>
-          <button onClick={onLogout} className="rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-xs">Salir</button>
+    <div className={embedded ? "text-slate-900" : "min-h-dvh w-full text-slate-900"} data-testid="ventas-shell">
+      {!embedded && <ModoPruebaBanner />}
+      {embedded ? (
+        <div className={CONTENIDO}>
+          <PageHeader title="Ventas del día" subtitle={s(user?.nombre)} extraButtons={nuevaVentaBtn} />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <KpiTile label="Vendido hoy" value={fmtMoney(ventasHoy)} />
+            <KpiTile label="Pendientes" value={pendientes.length} hint="órdenes por cobrar" />
+          </div>
         </div>
-        <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200/70">Vendido hoy</p><p className="mt-1.5 text-[1.8rem] font-extrabold">{fmtMoney(ventasHoy)}</p></div>
-          <div className="rounded-[22px] border border-white/10 bg-white/8 p-4 backdrop-blur-xl"><p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-amber-200/70">Pendientes</p><p className="mt-1.5 text-[1.8rem] font-extrabold">{pendientes.length}</p><p className="text-xs text-stone-300">órdenes por cobrar</p></div>
-        </div>
-      </div>
+      ) : (
+        <RoleHeader kicker="Ventas" title="Ventas del día" subtitle={s(user?.nombre)} accent="emerald" onLogout={onLogout}>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <HeaderStat label="Vendido hoy" value={fmtMoney(ventasHoy)} />
+            <HeaderStat label="Pendientes" value={<>{pendientes.length} <span className="text-sm font-medium text-slate-300">órdenes por cobrar</span></>} />
+          </div>
+        </RoleHeader>
+      )}
 
-      <div className="px-4 pt-4 space-y-4">
-        <button onClick={abrirNuevaVenta}
-          className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-[22px] bg-emerald-600 hover:bg-emerald-700 px-6 sm:px-10 py-4 sm:py-3.5 text-base sm:text-sm font-extrabold text-white shadow-[0_20px_34px_rgba(5,150,105,0.16)] transition-all active:scale-[0.98]">
-          + Nueva venta
-        </button>
+      <div className={`${CONTENIDO} ${embedded ? "pt-4" : "px-4 pt-4"}`}>
+        {!embedded && nuevaVentaBtn}
 
-        <div className="grid grid-cols-1 gap-1 rounded-[20px] border border-stone-200/80 bg-white/72 p-1.5 shadow-[0_14px_28px_rgba(22,18,15,0.05)] sm:grid-cols-3">
-          {[{ k: "ventas", l: "Por cobrar" }, { k: "hoy", l: "Hoy" }, { k: "todas", l: "Todas" }].map(t => (
-            <button key={t.k} onClick={() => setTab(t.k)}
-              className={`flex-1 rounded-[16px] py-3 text-sm font-semibold transition-all ${tab === t.k ? "bg-emerald-600 text-white shadow-[0_12px_22px_rgba(5,150,105,0.14)]" : "text-slate-600"}`}>
-              {t.l}
-            </button>
-          ))}
-        </div>
+        {/* En el shell compartido el menú lateral ya lista estas pestañas (lg+). */}
+        <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="emerald" className={embedded ? "lg:hidden" : ""} />
 
         <div className="space-y-2">
-          {(tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : ordenesUsuario).map(o => (
-            <div key={o.id} className="rounded-[24px] border border-stone-200/80 bg-white/78 p-4 shadow-[0_14px_28px_rgba(22,18,15,0.05)]">
-              <div className="flex justify-between items-start">
-                <div>
+          {lista.map(o => (
+            <Card key={o.id} padding="p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-blue-600">{s(o.folio)}</span>
-                    {o.requiereFactura && <span className="text-[10px] bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded">FACTURA</span>}
+                    <span className="font-mono text-xs font-bold text-blue-700">{s(o.folio)}</span>
+                    {o.requiereFactura && <span className="rounded-full border border-violet-200/80 bg-violet-100/80 px-2 py-0.5 text-[10px] font-bold text-violet-900">FACTURA</span>}
                   </div>
-                  <p className="text-sm font-bold text-slate-800 mt-0.5">{s(o.cliente)}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{s(o.productos)}</p>
+                  <p className="mt-0.5 truncate text-sm font-bold text-slate-800">{s(o.cliente)}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">{s(o.productos)}</p>
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-extrabold text-slate-800">{fmtMoney(o.total)}</p>
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-                    o.estatus === "Creada" ? "bg-blue-100 text-blue-700" :
-                    o.estatus === "Asignada" ? "bg-amber-100 text-amber-700" :
-                    o.estatus === "Entregada" ? "bg-emerald-100 text-emerald-700" :
-                    "bg-slate-100 text-slate-600"
-                  }`}>{s(o.estatus)}</span>
+                <div className="flex flex-shrink-0 flex-col items-end gap-1">
+                  <p className="font-display text-base font-bold tracking-[-0.03em] text-slate-900">{fmtMoney(o.total)}</p>
+                  <StatusBadge status={s(o.estatus)} />
                 </div>
               </div>
               {o.estatus === "Creada" && (
-                <div className="flex gap-2 mt-3">
-                  <button onClick={() => cobrar(o)} className="flex-1 rounded-[18px] bg-emerald-600 py-3.5 text-sm font-bold text-white transition-transform active:scale-[0.98]">Cobrar</button>
-                  <button onClick={() => { actions.updateOrdenEstatus(o.id, "Asignada"); showToast("Asignada a ruta"); }}
-                    className="flex-1 rounded-[18px] border border-amber-200 bg-amber-50 py-3.5 text-sm font-bold text-amber-800">Enviar a ruta</button>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <FormBtn success onClick={() => cobrar(o)}>Cobrar</FormBtn>
+                  <FormBtn onClick={() => { actions.updateOrdenEstatus(o.id, "Asignada"); showToast("Asignada a ruta"); }}
+                    className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"><Icons.Truck /> Enviar a ruta</FormBtn>
                 </div>
               )}
               {o.estatus === "Asignada" && (
-                <button onClick={() => cobrar(o)} className="w-full mt-3 rounded-[18px] border border-emerald-200 bg-emerald-50 py-3.5 text-sm font-bold text-emerald-700">Cobrar entrega</button>
+                <FormBtn onClick={() => cobrar(o)} className="mt-3 w-full border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">Cobrar entrega</FormBtn>
               )}
-            </div>
+            </Card>
           ))}
-          {(tab === "ventas" ? pendientes : tab === "hoy" ? ordenesHoy : ordenesUsuario).length === 0 && (
-            <>
+          {lista.length === 0 && (
+            <Card>
               {tab === "ventas" && (
                 <EmptyState
+                  icon="DollarSign"
                   message="Sin órdenes pendientes"
                   hint="Cuando crees una venta a crédito o se asigne entrega, aparecerá aquí"
                 />
               )}
               {tab === "hoy" && (
                 <EmptyState
+                  icon="ShoppingCart"
                   message="Aún no hay ventas hoy"
                   hint="Usa el botón verde de arriba para registrar la primera del día"
                 />
               )}
               {tab === "todas" && (
                 <EmptyState
+                  icon="ShoppingCart"
                   message="No has hecho ventas todavía"
                   hint="Usa el botón verde de arriba para crear tu primera venta"
                 />
               )}
-            </>
+            </Card>
           )}
         </div>
         <div className="h-8" />
@@ -197,63 +207,56 @@ export default function VentasStandaloneView({ user, data, actions, onLogout }) 
       />
 
       {/* ═══ MODAL COBRO ═══ */}
-      {pagoModal && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/50" onClick={() => setPagoModal(null)}>
-          <div className="w-full max-w-lg rounded-t-[30px] border border-slate-200/80 bg-white p-5 shadow-[0_30px_70px_rgba(22,18,15,0.18)]" onClick={e => e.stopPropagation()} style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 24px)" }}>
-            <div className="w-10 h-1 bg-slate-300 rounded-full mx-auto mb-4" />
-            <p className="erp-kicker text-slate-400">Cobranza</p>
-            <h3 className="font-display text-lg font-bold tracking-[-0.03em] text-slate-900 mb-1">Cobrar {s(pagoModal.folio)}</h3>
-            <p className="text-sm text-slate-500 mb-4">{s(pagoModal.cliente)} — <span className="font-bold text-slate-800">{fmtMoney(pagoModal.total)}</span>
-              {pagoModal.requiereFactura && <span className="ml-2 text-xs bg-purple-100 text-purple-700 font-bold px-1.5 py-0.5 rounded">FACTURA</span>}
-            </p>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Método de pago</label>
-            <div className="grid grid-cols-1 gap-2 mb-4 sm:grid-cols-2">
-              {PAGOS.map(m => (
-                <button key={m} onClick={() => setPagoForm(f => ({ ...f, metodo: m }))}
-                  className={`py-3 px-3 rounded-xl text-xs font-semibold border-2 transition-all ${pagoForm.metodo === m ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-600"}`}>
-                  {m}
-                </button>
-              ))}
-            </div>
-            {pagoForm.metodo === "Transferencia SPEI" && (
-              <div className="mb-4"><label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Referencia</label>
-                <input value={pagoForm.referencia} onChange={e => setPagoForm(f => ({ ...f, referencia: e.target.value }))}
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Últimos 6 dígitos" /></div>
-            )}
-
-            {pagoForm.metodo === "QR / Link de pago" && checkoutUrl && (
-              <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
-                <p className="text-xs font-bold text-emerald-700">✓ Link de pago generado</p>
-                <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
-                  {(() => {
-                    const cliente = (data?.clientes || []).find(c => String(c.id) === String(pagoModal.clienteId || pagoModal.cliente_id));
-                    const tel = extraerTelefono(cliente?.contacto || cliente?.telefono);
-                    const empresaNombre = s(data?.configEmpresa?.razonSocial) || 'Cubo Polar';
-                    const msg = `Hola, aquí está tu link de pago de ${empresaNombre} por ${fmtMoney(pagoModal.total)} MXN:\n${shortUrl || checkoutUrl}`;
-                    const href = tel
-                      ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`
-                      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-                    return <a href={href} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>;
-                  })()}
-                </div>
-                <button onClick={() => { setCheckoutUrl(null); setShortUrl(null); setPagoModal(null); }} className="w-full py-2 text-xs text-slate-500 font-semibold">Cerrar</button>
-              </div>
-            )}
-            {pagoForm.metodo === "Crédito (fiado)" && (
-              <div className="mb-4 p-3 bg-amber-50 rounded-xl"><p className="text-xs text-amber-700 font-semibold">Se agregará al saldo del cliente</p></div>
-            )}
-            {!checkoutUrl && <button onClick={confirmarCobro} disabled={generandoLink || confirmandoCobro} className={`w-full py-3.5 text-white font-bold rounded-xl text-sm shadow-lg shadow-emerald-200 disabled:cursor-not-allowed ${(generandoLink || confirmandoCobro) ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : confirmandoCobro ? 'Cobrando…' : pagoForm.metodo === "QR / Link de pago" ? "Generar link de pago" : "Confirmar cobro"}</button>}
+      <Modal open={!!pagoModal} onClose={() => setPagoModal(null)} kicker="Cobranza" safeBottom closeOnEscape={!generandoLink && !confirmandoCobro}
+        title={pagoModal ? `Cobrar ${s(pagoModal.folio)}` : ""}>
+        {pagoModal && (<>
+          <p className="mb-4 text-sm text-slate-500">{s(pagoModal.cliente)} — <span className="font-bold text-slate-800">{fmtMoney(pagoModal.total)}</span>
+            {pagoModal.requiereFactura && <span className="ml-2 rounded-full border border-violet-200/80 bg-violet-100/80 px-2 py-0.5 text-[10px] font-bold text-violet-900">FACTURA</span>}
+          </p>
+          <SectionLabel className="mb-2">Método de pago</SectionLabel>
+          <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {PAGOS.map(m => (
+              <ChoiceButton key={m} tone="emerald" active={pagoForm.metodo === m} onClick={() => setPagoForm(f => ({ ...f, metodo: m }))} className="text-xs">
+                {m}
+              </ChoiceButton>
+            ))}
           </div>
-        </div>
-      )}
+          {pagoForm.metodo === "Transferencia SPEI" && (
+            <div className="mb-4">
+              <FormInput label="Referencia" value={pagoForm.referencia} onChange={e => setPagoForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Últimos 6 dígitos" />
+            </div>
+          )}
 
-      {localToast && (
-        <div className="fixed top-4 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_18px_32px_rgba(5,150,105,0.24)]" style={{ top: "max(env(safe-area-inset-top, 16px), 52px)" }} role="status" aria-live="polite">
-          {localToast}
-        </div>
-      )}
+          {pagoForm.metodo === "QR / Link de pago" && checkoutUrl && (
+            <Card tone="success" padding="p-4" className="mb-4 space-y-3">
+              <p className="flex items-center gap-1.5 text-xs font-bold text-emerald-700"><Icons.Check /> Link de pago generado</p>
+              <p className="break-all rounded-[12px] border border-slate-200 bg-white p-2 text-xs text-slate-600">{shortUrl || checkoutUrl}</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <FormBtn ghost onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="text-xs">Copiar link</FormBtn>
+                {(() => {
+                  const cliente = (data?.clientes || []).find(c => String(c.id) === String(pagoModal.clienteId || pagoModal.cliente_id));
+                  const tel = extraerTelefono(cliente?.contacto || cliente?.telefono);
+                  const empresaNombre = s(data?.configEmpresa?.razonSocial) || 'Cubo Polar';
+                  const msg = `Hola, aquí está tu link de pago de ${empresaNombre} por ${fmtMoney(pagoModal.total)} MXN:\n${shortUrl || checkoutUrl}`;
+                  const href = tel
+                    ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`
+                    : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+                  return <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center justify-center rounded-[16px] bg-emerald-600 px-5 py-3 text-xs font-semibold text-white hover:bg-emerald-700">Enviar por WhatsApp</a>;
+                })()}
+              </div>
+              <button type="button" onClick={() => { setCheckoutUrl(null); setShortUrl(null); setPagoModal(null); }} className="w-full py-2 text-xs font-semibold text-slate-500">Cerrar</button>
+            </Card>
+          )}
+          {pagoForm.metodo === "Crédito (fiado)" && (
+            <Card tone="warning" padding="p-3" className="mb-4"><p className="text-xs font-semibold text-amber-800">Se agregará al saldo del cliente</p></Card>
+          )}
+          {!checkoutUrl && (
+            <FormBtn success size="lg" className="w-full" onClick={confirmarCobro} disabled={generandoLink || confirmandoCobro}>
+              {generandoLink ? 'Generando link…' : confirmandoCobro ? 'Cobrando…' : pagoForm.metodo === "QR / Link de pago" ? "Generar link de pago" : "Confirmar cobro"}
+            </FormBtn>
+          )}
+        </>)}
+      </Modal>
     </div>
   );
 }

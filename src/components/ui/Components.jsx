@@ -267,3 +267,62 @@ export const HeaderStat = ({ label, value, className = "" }) => (
     <p className="mt-1.5 font-display text-2xl font-bold tracking-[-0.04em] text-white">{value}</p>
   </div>
 );
+
+// ─── SEGMENTED TABS ───
+// Fase A3: control segmentado de las vistas por rol (Ventas, Producción).
+// En el shell compartido las mismas pestañas viven en el menú lateral; en
+// móvil este control es el acceso con una mano. `items`: [{ k, l, icon? }].
+const SEG_ACTIVE = {
+  slate:   "bg-slate-900 text-white shadow-[0_12px_22px_rgba(8,20,27,0.16)]",
+  emerald: "bg-emerald-600 text-white shadow-[0_12px_22px_rgba(5,150,105,0.14)]",
+  blue:    "bg-blue-600 text-white shadow-[0_12px_22px_rgba(37,99,235,0.14)]",
+  amber:   "bg-amber-600 text-white shadow-[0_12px_22px_rgba(217,119,6,0.14)]",
+};
+export const SegmentedTabs = ({ items, value, onChange, accent = "slate", className = "" }) => (
+  <div className={`grid gap-1 rounded-[20px] border border-slate-200/80 bg-white/72 p-1.5 shadow-panel ${className}`}
+    style={{ gridTemplateColumns: `repeat(${Math.max(1, items.length)}, minmax(0, 1fr))` }} role="tablist">
+    {items.map(t => {
+      const Ic = t.icon ? Icons[t.icon] : null;
+      const active = value === t.k;
+      return (
+        <button key={t.k} type="button" role="tab" aria-selected={active} onClick={() => onChange(t.k)}
+          className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-[16px] px-2 py-2.5 text-sm font-semibold transition-all ${active ? (SEG_ACTIVE[accent] || SEG_ACTIVE.slate) : "text-slate-600 hover:bg-slate-900/[0.04]"}`}>
+          {Ic && <span className="[&>svg]:h-4 [&>svg]:w-4"><Ic /></span>}
+          <span className="truncate">{t.l}</span>
+        </button>
+      );
+    })}
+  </div>
+);
+
+// ─── CHOICE BUTTON ───
+// Fase A3: opción de captura táctil (producto, método de pago, turno, cuarto,
+// causa…). Reemplaza los botones `border-2` que cada vista por rol dibujaba
+// a mano. `active` + `tone` dan el estado seleccionado.
+const CHOICE_ACTIVE = {
+  slate:   "border-slate-900 bg-slate-900 text-white",
+  blue:    "border-blue-500 bg-blue-50 text-blue-800",
+  emerald: "border-emerald-500 bg-emerald-50 text-emerald-800",
+  amber:   "border-amber-500 bg-amber-50 text-amber-800",
+  red:     "border-red-500 bg-red-50 text-red-800",
+  cyan:    "border-cyan-500 bg-cyan-50 text-cyan-800",
+};
+export const ChoiceButton = ({ active, tone = "blue", onClick, children, className = "", disabled }) => (
+  <button type="button" onClick={onClick} disabled={disabled} aria-pressed={!!active}
+    className={`min-h-[44px] rounded-[16px] border-2 px-3 py-2.5 text-sm font-semibold transition-colors ${
+      active ? (CHOICE_ACTIVE[tone] || CHOICE_ACTIVE.blue) : "border-slate-200 bg-white/80 text-slate-600 hover:bg-slate-50"
+    } ${disabled ? "opacity-40 cursor-not-allowed" : ""} ${className}`}>
+    {children}
+  </button>
+);
+
+// ─── KPI ROW (contenido claro, dentro del shell) ───
+// Cifras de cabecera de una vista por rol cuando la vista vive dentro del
+// shell compartido (fondo claro): misma familia que StatCard, sin icono.
+export const KpiTile = ({ label, value, hint, className = "" }) => (
+  <div className={`rounded-card border border-slate-200/80 bg-white/80 p-4 shadow-card ${className}`}>
+    <SectionLabel>{label}</SectionLabel>
+    <p className="mt-1.5 font-display text-2xl font-bold tracking-[-0.05em] text-slate-900 sm:text-[1.8rem]">{value}</p>
+    {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
+  </div>
+);

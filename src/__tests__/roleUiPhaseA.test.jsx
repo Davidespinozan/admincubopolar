@@ -127,10 +127,6 @@ describe('A2: Almacén de Bolsas — presentación nueva, negocio idéntico', ()
     const store = src('../data/supaStore.js');
     expect(store).toMatch(/movimientoBolsa: async \(sku, cantidad, tipo, motivo, costo, proveedor, esCredito, opciones = \{\}\) => \{\s*const guard = requireRol\(\['Admin', 'Almacén Bolsas'\]\);/);
   });
-  it('las otras vistas por rol y el ruteo por rol no se tocaron en este paquete', () => {
-    for (const f of ['../components/ChoferView.jsx', '../components/VentasStandaloneView.jsx', '../components/ProduccionStandaloneView.jsx']) {
-      expect(src(f), f).not.toMatch(/RoleHeader/);
-    }
-    expect(src('../App.jsx')).toMatch(/if \(effectiveRole === 'Almacén Bolsas'\)/);
-  });
+  // (La guarda "las otras vistas no se tocaron" era del paquete A1+A2; A3–A5 y B
+  // convergen el resto y se prueban en roleUiConvergencia.test.jsx.)
 });
