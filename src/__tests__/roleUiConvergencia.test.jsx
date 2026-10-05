@@ -224,11 +224,17 @@ describe('B3: primitiva BottomNav', async () => {
     expect(h).toMatch(/aria-label="Navegación principal"/);
     expect(h).toMatch(/aria-current="page"[^>]*aria-label="Dos"/);
     expect((h.match(/min-h-\[56px\]/g) || []).length).toBe(2);
+    // B3.1: mismo lenguaje oscuro que el aside de escritorio
+    expect(h).toMatch(/border-white\/10 bg-gradient-to-t from-blue-950 via-slate-900 to-slate-900 text-slate-100/);
+    expect(h).toMatch(/aria-current="page"[^>]*text-white[^>]*>[\s\S]*?bg-blue-600 text-white/);
+    expect(h).toMatch(/aria-label="Uno" class="[^"]*text-slate-300\/80/);
+    expect(h).toMatch(/bg-white\/5 text-slate-300/);
+    expect(h).not.toMatch(/bg-white\/95|text-slate-900/);
     expect(h).toMatch(/repeat\(2, minmax\(0, 1fr\)\)/);
     expect(h).not.toMatch(/Más/);
     const m = html(<BottomNav items={items} value="zzz" onChange={() => {}} mas masActivo onMas={() => {}} />);
     expect(m).toMatch(/Más/);
     expect(m).toMatch(/repeat\(3, minmax\(0, 1fr\)\)/);
-    expect(m).toMatch(/aria-label="Más módulos"[^>]*text-slate-900/);
+    expect(m).toMatch(/aria-label="Más módulos"[^>]*text-white/);
   });
 });
