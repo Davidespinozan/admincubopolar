@@ -15,6 +15,7 @@ import {
   resolverOperacion as resolverOperacionCierre,
 } from './cierreFinancieroLogic';
 import { buildRegistrarDevolucionArgs, mensajeErrorDevolucion } from './devolucionesLogic';
+import { camposAltaProducto, mensajeErrorEmpaque } from './empaqueLogic';
 import {
   validateConfirmarCarga,
   validateFirmarCarga,
@@ -827,19 +828,21 @@ export function useSupaStore(userId, userName, userRol) {
       addProducto: async (p) => {
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
+        // 108: el Empaque nace sin existencia ni costo (entra por recepción de
+        // compra, que fija el promedio); el producto terminado no tiene costo.
+        const alta = camposAltaProducto({ tipo: p.tipo, stock: p.stock });
         const { error } = await supabase.from('productos').insert({
           sku: p.sku, nombre: p.nombre, tipo: p.tipo,
-          stock: Number(p.stock) || 0, ubicacion: p.ubicacion,
+          stock: alta.stock, ubicacion: p.ubicacion,
           precio: Number(p.precio) || 0,
-          // 106: solo el Empaque declara costo (apertura) al darse de alta.
-          costo_unitario: p.tipo === 'Empaque' ? (Number(p.costo_unitario || p.costoUnitario) || 0) : 0,
+          costo_unitario: alta.costo_unitario,
           proveedor: p.proveedor || null,
           empaque_sku: p.empaque_sku || p.empaqueSku || null,
           // Tanda 4 🔴-7: claves SAT del producto (mig 060).
           clave_prod_serv: p.clave_prod_serv || p.claveProdServ || null,
           clave_unidad: p.clave_unidad || p.claveUnidad || 'H87',
         });
-        if (error) { t()?.error('Error al crear producto'); return error; }
+        if (error) { t()?.error(mensajeErrorEmpaque(error, 'Error al crear producto')); return error; }
         log('Crear', 'Productos', `${p.sku} — ${p.nombre}`);
         rf();
       },
@@ -893,7 +896,7 @@ export function useSupaStore(userId, userName, userRol) {
 
       deleteProducto: async (id) => {
         const { error } = await supabase.from('productos').delete().eq('id', id);
-        if (error) { t()?.error('Error al eliminar producto'); return error; }
+        if (error) { t()?.error(mensajeErrorEmpaque(error, 'Error al eliminar producto')); return error; }
         log('Eliminar', 'Productos', `ID ${id}`);
         rf();
       },
@@ -1737,6 +1740,7 @@ export function useSupaStore(userId, userName, userRol) {
       // bloqueo, calcula el delta, no permite negativos, deja kardex con el
       // actor canónico y es idempotente por operación. Para producto
       // terminado ajusta los cuartos fríos; para insumos, el total.
+      // 108: el empaque solo se ajusta a la baja (entra por recepción de compra).
       ajustarExistenciaManual: async ({ sku, nuevaExistencia, motivo, operacionId } = {}) => {
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
@@ -1753,7 +1757,7 @@ export function useSupaStore(userId, userName, userRol) {
           p_nueva_existencia: target,
           p_motivo: motivoTxt,
         });
-        if (error) { t()?.error(error.message || 'No se pudo ajustar la existencia'); return error; }
+        if (error) { t()?.error(mensajeErrorEmpaque(error, error.message || 'No se pudo ajustar la existencia')); return error; }
         rf();
       },
 

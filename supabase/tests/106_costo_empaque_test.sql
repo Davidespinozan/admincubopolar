@@ -137,12 +137,28 @@ SELECT t106_err($q$UPDATE productos SET tipo = 'Producto Terminado' WHERE sku = 
 UPDATE productos SET nombre = 'Bolsa 106 renombrada', precio = 1, stock_minimo = 5 WHERE sku = 'P106-EMP';
 UPDATE productos SET nombre = 'Hielo 106 B', precio = 31 WHERE sku = 'P106-HIELO';
 INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('P106-PT2', 'Hielo nuevo 106', 'Producto Terminado', 10, 0, 55);
-INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('P106-EMP3', 'Bolsa nueva 106', 'Empaque', 0, 0, 3);
+-- 108: un empaque nuevo nace sin existencia ni costo (la apertura declarada al
+-- dar de alta de 106 queda sustituida hacia adelante); antes de 108 declara su costo.
+DO $do$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'productos_empaque_stock_no_negativo') THEN
+    PERFORM t106_err($q$INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('P106-EMP3', 'Bolsa nueva 106', 'Empaque', 0, 0, 3)$q$, '106-43a (108) alta de empaque con costo declarado: rechazada', '42501', '%nace sin costo%');
+    INSERT INTO productos (sku, nombre, tipo, precio) VALUES ('P106-EMP3', 'Bolsa nueva 106', 'Empaque', 0);
+  ELSE
+    INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('P106-EMP3', 'Bolsa nueva 106', 'Empaque', 0, 0, 3);
+  END IF;
+END $do$;
 COMMIT;
-SELECT t106_assert((SELECT nombre = 'Bolsa 106 renombrada' AND costo_unitario = round((190 * 4 + 160)::numeric / 200, 6) FROM productos WHERE sku = 'P106-EMP')
+-- 107: el reverso de 106-32 reingresa 10 unidades al costo histórico (4) sobre
+-- 200 @ 4.6 → 210 @ 4.571429; antes de 107 el promedio no se movía.
+SELECT t106_assert((SELECT nombre = 'Bolsa 106 renombrada' AND costo_unitario = CASE
+           WHEN EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'costos_empaque_historial' AND column_name = 'costo_unitario_reingreso')
+           THEN round((200 * round((190 * 4 + 160)::numeric / 200, 6) + 10 * 4) / 210, 6)
+           ELSE round((190 * 4 + 160)::numeric / 200, 6) END FROM productos WHERE sku = 'P106-EMP')
   AND (SELECT costo_unitario = 0 FROM productos WHERE sku = 'P106-PT2')
-  AND (SELECT count(*) = 1 AND bool_and(evento = 'Apertura' AND costo_nuevo = 3 AND actor = 'Admin 106') FROM costos_empaque_historial WHERE sku = 'P106-EMP3'),
-  '106-43 metadatos editables; producto terminado nace con costo 0; empaque nuevo deja su apertura declarada');
+  AND (SELECT count(*) = 1 AND bool_and(evento = 'Apertura' AND actor = 'Admin 106'
+         AND costo_nuevo = CASE WHEN EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'productos_empaque_stock_no_negativo') THEN 0 ELSE 3 END)
+       FROM costos_empaque_historial WHERE sku = 'P106-EMP3'),
+  '106-43 metadatos editables; producto terminado nace con costo 0; empaque nuevo deja su apertura (declarada antes de 108, en ceros después)');
 
 \echo '── 106: merma de producto terminado sin valuación'
 BEGIN; SET LOCAL session_replication_role = replica;

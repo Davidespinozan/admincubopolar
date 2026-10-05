@@ -12,6 +12,11 @@ BEGIN
   SET LOCAL session_replication_role = replica;
   DELETE FROM costos_historial WHERE concepto LIKE '%P95-%';
   DELETE FROM auditoria WHERE detalle LIKE '%P95-%';
+  -- 106+/107: compra y reverso dejan una fila de historial de costo por operación;
+  -- se limpia con el fixture para que la suite pueda repetirse.
+  IF to_regclass('public.costos_empaque_historial') IS NOT NULL THEN
+    EXECUTE $x$DELETE FROM costos_empaque_historial WHERE sku LIKE 'P95-%'$x$;
+  END IF;
   DELETE FROM inventario_mov WHERE producto LIKE 'P95-%';
   DELETE FROM produccion WHERE sku LIKE 'P95-%';
   DELETE FROM stock_operaciones WHERE operacion_id::text LIKE '95000000-%';

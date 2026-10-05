@@ -9,6 +9,14 @@ DELETE FROM mermas_efectos WHERE merma_id IN (SELECT id FROM mermas WHERE sku LI
 DELETE FROM mermas WHERE sku LIKE 'P77-%';
 DELETE FROM costos_historial WHERE concepto LIKE '%P77-%';
 DELETE FROM movimientos_contables WHERE concepto LIKE '%P77-%';
+-- 106+/107: compra y reverso dejan una fila de historial de costo por operación;
+-- se limpia con el fixture para que la suite pueda repetirse (la tabla no existe
+-- en la primera corrida, anterior a 106).
+DO $x$ BEGIN
+  IF to_regclass('public.costos_empaque_historial') IS NOT NULL THEN
+    DELETE FROM costos_empaque_historial WHERE sku LIKE 'P77-%';
+  END IF;
+END $x$;
 DELETE FROM inventario_mov WHERE producto LIKE 'P77-%';
 DELETE FROM produccion WHERE sku LIKE 'P77-%';
 DELETE FROM cuartos_frios WHERE id = 'CF-77';

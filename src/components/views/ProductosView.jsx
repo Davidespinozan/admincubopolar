@@ -1,3 +1,4 @@
+import { camposAltaProducto, REGLA_ENTRADA_EMPAQUE } from '../../data/empaqueLogic';
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtMoney, useDebounce, useToast, useConfirm, reporteInventario, PAGE_SIZE, Paginator, normalizeStr } from './viewsCommon';
 
 export function ProductosView({ data, actions }) {
@@ -29,13 +30,11 @@ export function ProductosView({ data, actions }) {
       tipo: form.tipo,
       // 093: el stock solo se captura al dar de alta (existencia inicial con
       // kardex). Al editar no se envía: cambia solo por movimientos trazables.
-      ...(modal === "new" ? { stock: Number(form.stock) || 0 } : {}),
+      // 108: el Empaque nace sin existencia ni costo (entra por recepción de
+      // compra, que fija el promedio); el producto terminado no tiene costo.
+      ...(modal === "new" ? camposAltaProducto({ tipo: form.tipo, stock: form.stock }) : {}),
       ubicacion: form.ubicacion,
       precio: form.tipo === "Producto Terminado" ? Number(form.precio) || 0 : 0,
-      // 106: el costo solo se declara al dar de alta un Empaque (apertura);
-      // después lo fija la recepción de compra (promedio ponderado). El
-      // producto terminado no tiene costo unitario.
-      ...(modal === "new" && form.tipo === "Empaque" ? { costo_unitario: Number(form.costoUnitario) || 0 } : {}),
       proveedor: form.proveedor || null,
       empaque_sku: form.tipo === "Producto Terminado" ? form.empaqueSku || null : null,
       // Tanda 4 🔴-7: clave SAT por producto (mig 060). El backend usa
@@ -119,7 +118,11 @@ export function ProductosView({ data, actions }) {
         <FormInput label="Nombre *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} error={errors.nombre} />
         <FormSelect label="Tipo" disabled={modal !== "new"} options={["Producto Terminado","Empaque"]} value={form.tipo} onChange={e=>{const t=e.target.value;setForm({...form,tipo:t,precio:t==="Empaque"?0:form.precio,costoUnitario:t==="Producto Terminado"?0:form.costoUnitario,empaqueSku:t==="Empaque"?"":form.empaqueSku})}} />
         {modal === "new" ? (
-          <FormInput label="Stock inicial" type="number" min="0" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} />
+          form.tipo === "Empaque" ? (
+            <p className="text-xs text-slate-500 bg-slate-50 rounded-lg p-2.5">Un empaque nuevo se da de alta sin existencia. {REGLA_ENTRADA_EMPAQUE}</p>
+          ) : (
+            <FormInput label="Stock inicial" type="number" min="0" value={form.stock} onChange={e=>setForm({...form,stock:e.target.value})} />
+          )
         ) : (
           <p className="text-xs text-slate-500 bg-slate-50 rounded-lg p-2.5">Stock actual: <span className="font-semibold">{Number(form.stock || 0).toLocaleString()}</span>. Para corregirlo usa <span className="font-semibold">Ajustar existencia</span> en Inventario (queda registrado con motivo).</p>
         )}
@@ -133,9 +136,7 @@ export function ProductosView({ data, actions }) {
         )}
         {form.tipo==="Empaque" && (
           <>
-            {modal === "new" ? (
-              <FormInput label="Costo inicial por unidad ($)" type="number" min="0" step="0.01" value={form.costoUnitario} onChange={e=>setForm({...form,costoUnitario:e.target.value})} placeholder="Costo de apertura" />
-            ) : (
+            {modal !== "new" && (
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Costo promedio actual</label>
                 <p className="px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700">{fmtMoney(form.costoUnitario, { decimals: 2 })}</p>
@@ -143,7 +144,7 @@ export function ProductosView({ data, actions }) {
             )}
             <FormInput label="Proveedor" value={form.proveedor} onChange={e=>setForm({...form,proveedor:e.target.value})} placeholder="Ej: Bolsas del Norte" />
             <p className="text-xs text-slate-400 -mt-2">{modal === "new"
-              ? "Costo de apertura declarado. Después se actualiza solo con cada compra recibida (promedio ponderado)."
+              ? "El costo lo fija la primera compra recibida y después cada compra lo actualiza (promedio ponderado)."
               : "Se calcula con las compras recibidas (promedio ponderado) y es el costo que toma cada producción. No se edita aquí."}</p>
           </>
         )}

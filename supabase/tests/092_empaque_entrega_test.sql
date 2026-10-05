@@ -14,6 +14,11 @@ BEGIN
   DELETE FROM costos_historial WHERE concepto LIKE '%P92-%' OR concepto LIKE 'T92%';
   DELETE FROM movimientos_contables WHERE concepto LIKE '%P92-%' OR concepto LIKE 'T92%' OR referencia LIKE 'recepcion_compra/92000000-%';
   DELETE FROM cuentas_por_pagar WHERE referencia LIKE 'recepcion_compra/92000000-%' OR concepto LIKE '%P92-%';
+  -- 106+: la compra deja una fila de historial de costo por operación; se limpia
+  -- con el resto del fixture para que la suite pueda repetirse.
+  IF to_regclass('public.costos_empaque_historial') IS NOT NULL THEN
+    EXECUTE $x$DELETE FROM costos_empaque_historial WHERE sku LIKE 'P92-%'$x$;
+  END IF;
   DELETE FROM inventario_mov WHERE producto LIKE 'P92-%';
   DELETE FROM produccion WHERE sku LIKE 'P92-%';
   DELETE FROM stock_operaciones WHERE operacion_id::text LIKE '92000000-%';

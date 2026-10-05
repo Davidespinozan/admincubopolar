@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { resolverOperacion, claveTraspaso, claveAjusteCuarto } from '../../data/stockContratosLogic';
 import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtPct, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
+import { esEmpaque, validarAjusteExistencia, REGLA_ENTRADA_EMPAQUE } from '../../data/empaqueLogic';
 
 export function InventarioView({ data, actions }) {
   const toast = useToast();
@@ -158,11 +159,13 @@ export function InventarioView({ data, actions }) {
   const confirmarAjuste = async () => {
     if (ajustando) return;
     if (!ajusteModal) return;
-    const e = {};
-    const nueva = n(ajusteForm.existencia, -1);
-    if (nueva < 0) e.existencia = "Debe ser 0 o mayor";
-    if (!s(ajusteForm.motivo).trim()) e.motivo = "Motivo requerido";
+    // 108: el empaque solo se ajusta a la baja; el servidor vuelve a validar.
+    const e = validarAjusteExistencia({
+      tipo: ajusteModal.tipo, existenciaActual: ajusteModal.stock,
+      nuevaExistencia: ajusteForm.existencia, motivo: ajusteForm.motivo,
+    });
     if (Object.keys(e).length) { setAjusteErrors(e); return; }
+    const nueva = Number(ajusteForm.existencia);
 
     setAjustando(true);
     try {
@@ -334,11 +337,15 @@ export function InventarioView({ data, actions }) {
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3">
           <p className="text-xs text-amber-700">Este ajuste corrige inventario cuando hay una diferencia operativa.</p>
           <p className="text-xs text-amber-700 mt-1">Stock actual: <span className="font-bold">{n(ajusteModal?.stock).toLocaleString()}</span></p>
+          {esEmpaque(ajusteModal) && (
+            <p className="text-xs text-amber-800 font-semibold mt-1">El empaque solo se ajusta a la baja (conteo físico). {REGLA_ENTRADA_EMPAQUE}</p>
+          )}
         </div>
         <FormInput
-          label="Nueva existencia total *"
+          label={esEmpaque(ajusteModal) ? "Existencia contada (igual o menor a la actual) *" : "Nueva existencia total *"}
           type="number"
           min="0"
+          max={esEmpaque(ajusteModal) ? n(ajusteModal?.stock) : undefined}
           value={ajusteForm.existencia}
           onChange={e=>setAjusteForm({...ajusteForm, existencia:e.target.value})}
           error={ajusteErrors.existencia}

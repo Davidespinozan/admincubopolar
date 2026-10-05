@@ -19,29 +19,35 @@ PACKAGING COST — CLOSED IN PRODUCTION · migración `106_costo_empaque_promedi
 commit `61161712c54e9981db5ad80a01ed52d7e93d0920`.
 
 ## Trabajo actual
-**PACKAGING COST BASIS INTEGRITY — AUDITED / DECISION PENDING.** Auditoría de solo lectura
-entregada el 2026-10-03 sobre la base 6116171. Nada implementado ni autorizado.
-Hallazgo: compras y producción conservan existencia × costo promedio; cuatro rutas no:
-reverso de producción (devuelve empaque sin recalcular el promedio), ajuste manual (sin
-historial de costo), borrar y recrear un empaque por API, y alta con existencia negativa.
-Decisiones pendientes del dueño:
-1. Opción A (contención mínima) u Opción B (base coherente en todo evento; recomendada).
-2. Reverso de producción: ¿el empaque devuelto reingresa al costo guardado de esa producción?
-3. Aumento manual de existencia: heredar el promedio (recomendado), exigir costo o prohibirlo.
-4. Empaque nuevo: ¿debe nacer con existencia 0 y entrar inventario solo por compra? (recomendado)
-5. CxP de una compra: ¿protegerla ya de borrado/edición de monto? ¿Agendar un contrato de corrección?
+**PACKAGING COST BASIS INTEGRITY — DECISIONS APPROVED · IMPLEMENTED IN THE REPOSITORY ·
+LOCAL-VALIDATED · NOT PUSHED · NOT DEPLOYED · MIGRATIONS 107/108 NOT APPLIED TO PRODUCTION.**
+Producción no ha cambiado: sigue en la base de arriba (migraciones hasta 106).
+Decisiones aprobadas por el dueño el 2026-10-05:
+1. Reverso de producción: el empaque devuelto reingresa al promedio al costo unitario GUARDADO
+   en esa producción; con existencia 0 el promedio es ese costo. Resultados (093/094) sin cambio.
+2. Baja manual de empaque: permitida, nunca bajo cero, el promedio no cambia.
+3. Alza manual de empaque: prohibida (entra solo por recepción de compra).
+4. En existencia 0 el último promedio queda de referencia; la siguiente compra fija uno nuevo.
+5. Existencia negativa de empaque: estado inválido (CHECK; también para SQL de confianza).
+6. Un empaque con existencia, uso o historia no se borra por API (no se borra y recrea).
+7. Un empaque nuevo nace con existencia 0 y sin costo (sustituye, hacia adelante, la apertura
+   declarada al dar de alta de 106). Las aperturas de EMP-5 y EMP-25 no se tocan.
 
-Siguiente paso autorizado: ninguno de implementación. Esperar las decisiones.
+En el repositorio (commit local posterior a la base; ver `git log`): `107_base_costo_empaque_reverso.sql`
+(aditiva), `108_contencion_base_costo_empaque.sql` (contención), frontend (ajuste de empaque solo a
+la baja; alta sin existencia ni costo) y suite `107`. Precondiciones de solo lectura verificadas el
+2026-10-05: catálogo y estado iguales a la foto de 106; sin empaque negativo; ninguna producción
+revertida ni reversible con empaque (no hay historia que reparar).
+Siguiente paso: autorización del dueño para activar con `activar-produccion`: 107 → push a `main`
+(deploy) → bundle vivo → 108 → verificación de solo lectura. Hasta entonces: nada en producción.
 
-**Reestructura de contexto.** Fase 1 escrita el 2026-10-05 (`CLAUDE.md`, este archivo, 3
-tarjetas, 4 skills, consultas de `supabase/tests/prod/`): solo documentación. No cambia la base
-de producción de arriba: un commit de documentación posterior a esa base no es una versión nueva
-de la aplicación. Si está en un commit o en el remoto lo dice git (`git log -1 -- docs/STATUS.md`,
-`git status -sb`), no este archivo. Fase 2 PENDING y sin autorizar: tarjetas restantes, archivar
-documentos obsoletos, reducir memoria privada.
+**Reestructura de contexto.** Fase 1 COMMITTED localmente (commit `092b1f5`, solo documentación:
+no es una versión nueva de la aplicación ni cambia la base de producción). Fase 2 PENDING y sin
+autorizar: tarjetas restantes, archivar documentos obsoletos, reducir memoria privada.
 
 ## Residuales abiertos
-- Empaque y costo: integridad de la base de costo (arriba); sin corrección ni reverso de compra.
+- Empaque y costo: base de costo (arriba, pendiente de activar); sin corrección ni reverso de compra;
+  la CxP de una compra todavía se puede editar o borrar por REST.
 - Inventario: espejo `productos.stock` de producto terminado desfasado (no autoritativo);
   sin reverso de transformación.
 - Finanzas: el pago de CxP no rechaza un monto mayor al saldo; costo fijo/variable en dos escrituras no

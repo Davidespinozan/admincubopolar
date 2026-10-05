@@ -19,6 +19,11 @@ BEGIN
   DELETE FROM cuentas_por_pagar WHERE proveedor LIKE 'Prov T93%';
   DELETE FROM costos_historial WHERE concepto LIKE '%T93%' OR concepto LIKE '%P93-%';
   DELETE FROM mermas WHERE sku LIKE 'P93-%';
+  -- 106+: la compra deja una fila de historial de costo por operación; se limpia
+  -- con el resto del fixture para que la suite pueda repetirse.
+  IF to_regclass('public.costos_empaque_historial') IS NOT NULL THEN
+    EXECUTE $x$DELETE FROM costos_empaque_historial WHERE sku LIKE 'P93-%'$x$;
+  END IF;
   DELETE FROM inventario_mov WHERE producto LIKE 'P93-%';
   DELETE FROM produccion WHERE sku LIKE 'P93-%' OR input_sku LIKE 'P93-%';
   DELETE FROM stock_operaciones WHERE operacion_id::text LIKE '93000000-%';
@@ -434,11 +439,22 @@ SELECT t93_assert(t93_cf('CF-93A', 'P93-HIELO') + t93_cf('CF-93B', 'P93-HIELO') 
   AND (SELECT bool_and(cuarto_id IS NOT NULL AND referencia = 'ajuste_existencia/P93-HIELO') FROM inventario_mov WHERE operacion_id = '93000000-0000-0000-0000-00000000d002'), '093-100 ajuste de producto terminado: cuartos −5 con kardex por cuarto; espejo en productos');
 -- Alta de un insumo con existencia inicial: evento de kardex.
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(1);
-INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('P93-NUEVA', 'Bolsa nueva 93', 'Empaque', 0, 40, 1);
+-- 108: un empaque nuevo nace sin existencia (entra por recepción de compra); la
+-- existencia inicial por alta queda sustituida hacia adelante.
+DO $do$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'productos_empaque_stock_no_negativo') THEN
+    PERFORM t93_err($q$INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('P93-NUEVA', 'Bolsa nueva 93', 'Empaque', 0, 40, 1)$q$, '093-103a (108) alta de empaque con existencia inicial: rechazada', '42501', '%nace sin existencia%');
+  ELSE
+    INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('P93-NUEVA', 'Bolsa nueva 93', 'Empaque', 0, 40, 1);
+  END IF;
+END $do$;
 SELECT t93_err($q$INSERT INTO inventario_mov (tipo, producto, cantidad, referencia) VALUES ('Entrada', 'P93-EMPB', 5, 'ajuste_existencia/P93-EMPB')$q$, '093-101 Admin: kardex con referencia de ajuste reservada', '42501', CASE WHEN has_table_privilege('authenticated', 'public.inventario_mov', 'INSERT') THEN '%reservado%' END);
 SELECT t93_err($q$INSERT INTO costos_historial (tipo, categoria, concepto, monto, fecha) VALUES ('Reverso producción', 'Costo de Ventas', 'T93 falso', 1, CURRENT_DATE)$q$, '093-102 Admin: costo de reverso manual reservado', '42501');
 COMMIT;
-SELECT t93_assert((SELECT count(*) = 1 AND bool_and(tipo = 'Entrada' AND cantidad = 40 AND referencia = 'existencia_inicial/P93-NUEVA' AND usuario = 'Admin 93') FROM inventario_mov WHERE producto = 'P93-NUEVA'), '093-103 alta con existencia inicial: un kardex de entrada con el actor');
+SELECT t93_assert(CASE WHEN EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'productos_empaque_stock_no_negativo')
+    THEN NOT EXISTS (SELECT 1 FROM productos WHERE sku = 'P93-NUEVA') AND NOT EXISTS (SELECT 1 FROM inventario_mov WHERE producto = 'P93-NUEVA')
+    ELSE (SELECT count(*) = 1 AND bool_and(tipo = 'Entrada' AND cantidad = 40 AND referencia = 'existencia_inicial/P93-NUEVA' AND usuario = 'Admin 93') FROM inventario_mov WHERE producto = 'P93-NUEVA') END,
+  '093-103 alta con existencia inicial: un kardex de entrada con el actor (antes de 108); tras 108 no hay alta con existencia ni kardex');
 
 BEGIN; SELECT t93_limpiar(); COMMIT;
 \echo '── 093: TODAS LAS PRUEBAS OK'

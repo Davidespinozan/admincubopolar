@@ -61,10 +61,12 @@ bloques de concurrencia en el runner local. Vitest: `produccionAtomica`, `revers
 `costoEmpaquePromedio`.
 
 ## Open residuals
-- **PACKAGING COST BASIS INTEGRITY — AUDITED / DECISION PENDING** (decisiones en `docs/STATUS.md`):
-  el reverso no recalcula el promedio del inventario (lo cerrado en 093/094 es el costo
-  reconocido que se compensa); el ajuste manual no deja historial de costo; un empaque
-  se puede borrar y recrear por API con otra existencia y costo; el alta acepta existencia negativa.
+- **PACKAGING COST BASIS INTEGRITY — DECISIONS APPROVED; 107/108 en el repositorio, NO aplicadas
+  en producción** (estado y decisiones en `docs/STATUS.md`). Hasta la activación, producción hace
+  lo que describe esta tarjeta: el reverso no recalcula el promedio del inventario; el ajuste
+  manual puede subir el empaque; un empaque se puede borrar y recrear por API; el alta acepta
+  existencia negativa. Al activar: reverso al costo histórico (107) y contención (108); esta
+  tarjeta se actualiza entonces.
 - Sin corrección ni reverso de una compra; la CxP de una compra se puede editar o borrar por REST.
 - Sin reverso de transformación. Las producciones anteriores a 076 (sin `operacion_id`) no son reversibles.
 

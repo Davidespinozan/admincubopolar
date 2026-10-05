@@ -18,6 +18,11 @@ BEGIN
   DELETE FROM ordenes WHERE cliente_id BETWEEN 8840 AND 8849 OR ruta_id BETWEEN 8801 AND 8899;
   DELETE FROM movimientos_contables WHERE referencia LIKE 'recepcion_compra/88000000-%' OR concepto LIKE '%P88-%';
   DELETE FROM cuentas_por_pagar WHERE referencia LIKE 'recepcion_compra/88000000-%' OR concepto LIKE '%P88-%';
+  -- 106+: la compra deja una fila de historial de costo por operación; se limpia
+  -- con el resto del fixture para que la suite pueda repetirse.
+  IF to_regclass('public.costos_empaque_historial') IS NOT NULL THEN
+    EXECUTE $x$DELETE FROM costos_empaque_historial WHERE sku LIKE 'P88-%'$x$;
+  END IF;
   DELETE FROM inventario_mov WHERE producto LIKE 'P88-%';
   DELETE FROM stock_operaciones WHERE ruta_id BETWEEN 8801 AND 8899 OR operacion_id::text LIKE '88000000-%';
   DELETE FROM auditoria WHERE detalle LIKE '%T88%';

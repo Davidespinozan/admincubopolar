@@ -85,3 +85,54 @@ export function normalizarConciliacion(rows) {
     };
   });
 }
+
+// ── 107/108: base de costo del empaque ──
+// Ninguna unidad de empaque entra fuera de una recepción de compra: el ajuste
+// manual solo baja (el promedio no cambia), un empaque nuevo nace sin
+// existencia ni costo, y un empaque con existencia, uso o historia no se
+// elimina. El servidor es la autoridad; esto solo guía la captura.
+
+export const REGLA_ENTRADA_EMPAQUE = 'Las entradas de empaque se registran con la recepción de compra.';
+
+export function esEmpaque(producto) {
+  return txt(producto?.tipo) === 'Empaque';
+}
+
+/**
+ * Validación de captura del ajuste manual de existencia (UX).
+ * @returns {{existencia?: string, motivo?: string}} vacío = sin errores
+ */
+export function validarAjusteExistencia({ tipo, existenciaActual, nuevaExistencia, motivo } = {}) {
+  const e = {};
+  const capturada = txt(nuevaExistencia).trim();
+  const nueva = Number(capturada);
+  if (capturada === '' || !Number.isInteger(nueva) || nueva < 0) {
+    e.existencia = 'Debe ser un entero de 0 o mayor';
+  } else if (txt(tipo) === 'Empaque' && nueva > (Number(existenciaActual) || 0)) {
+    e.existencia = `El empaque solo se ajusta a la baja (actual: ${(Number(existenciaActual) || 0).toLocaleString('es-MX')}). ${REGLA_ENTRADA_EMPAQUE}`;
+  }
+  if (!txt(motivo).trim()) e.motivo = 'Motivo requerido';
+  return e;
+}
+
+/**
+ * Existencia y costo con los que se da de alta un producto. El empaque nace
+ * en 0 y sin costo (la primera compra fija ambos); el producto terminado no
+ * tiene costo unitario.
+ */
+export function camposAltaProducto({ tipo, stock } = {}) {
+  if (txt(tipo) === 'Empaque') return { stock: 0, costo_unitario: 0 };
+  return { stock: Number(stock) || 0, costo_unitario: 0 };
+}
+
+/** Mensaje en español para los rechazos del servidor sobre empaque (107/108). */
+export function mensajeErrorEmpaque(error, porDefecto = '') {
+  const msg = txt(typeof error === 'string' ? error : error?.message);
+  if (/no se aumenta con un ajuste manual/i.test(msg)) return `El empaque solo se ajusta a la baja. ${REGLA_ENTRADA_EMPAQUE}`;
+  if (/nace sin existencia/i.test(msg)) return `Un empaque nuevo se da de alta sin existencia. ${REGLA_ENTRADA_EMPAQUE}`;
+  if (/nace sin costo/i.test(msg)) return 'Un empaque nuevo se da de alta sin costo: lo fija la primera recepción de compra.';
+  if (/tiene existencia; no se elimina/i.test(msg)) return 'Este empaque tiene existencia; no se puede eliminar.';
+  if (/está en uso o tiene historia/i.test(msg)) return 'Este empaque está en uso o tiene compras, producciones o movimientos; no se puede eliminar.';
+  if (/productos_empaque_stock_no_negativo/i.test(msg)) return 'La existencia de empaque no puede ser negativa.';
+  return porDefecto || msg;
+}

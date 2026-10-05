@@ -26,14 +26,17 @@ describe('memo: empaque estimado de una merma', () => {
 describe('106: el catálogo no edita costos', () => {
   const store = src('../data/supaStore.js');
   const vista = src('../components/views/ProductosView.jsx');
-  it('updateProducto no envía costo; addProducto solo para Empaque (apertura)', () => {
+  it('updateProducto no envía costo; addProducto no declara costo (108: el empaque nace sin costo)', () => {
     const upd = store.slice(store.indexOf('updateProducto: async'), store.indexOf('deleteProducto: async'));
     expect(upd).not.toMatch(/costo_unitario/);
-    expect(store).toMatch(/costo_unitario: p\.tipo === 'Empaque' \?/);
+    const add = store.slice(store.indexOf('addProducto: async'), store.indexOf('updateProducto: async'));
+    expect(add).toMatch(/costo_unitario: alta\.costo_unitario/);
+    expect(add).not.toMatch(/costoUnitario/);
   });
-  it('la vista muestra el costo promedio como solo lectura al editar', () => {
+  it('la vista muestra el costo promedio como solo lectura al editar y no captura costo al dar de alta', () => {
     expect(vista).toMatch(/Costo promedio actual/);
-    expect(vista).toMatch(/modal === "new" && form\.tipo === "Empaque" \? \{ costo_unitario/);
+    expect(vista).not.toMatch(/Costo inicial por unidad/);
+    expect(vista).not.toMatch(/costo_unitario: Number\(form\.costoUnitario\)/);
     expect(vista).toMatch(/disabled=\{modal !== "new"\}/);
   });
   it('Mermas: memo etiquetado como estimación, no como gasto', () => {

@@ -47,7 +47,7 @@ describe('093: sin borrado físico de producción', () => {
     expect(store).not.toMatch(/update\.stock = /);
     expect(store).toMatch(/rpc\('ajustar_existencia'/);
     const pv = src('../components/views/ProductosView.jsx');
-    expect(pv).toMatch(/modal === "new" \? \{ stock:/);
+    expect(pv).toMatch(/modal === "new" \? camposAltaProducto\(\{ tipo: form\.tipo, stock: form\.stock \}\) : \{\}/);
   });
 });
 
