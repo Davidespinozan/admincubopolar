@@ -3,7 +3,7 @@ import { diaNegocio } from '../utils/fechas';
 import { s, n } from '../utils/safe';
 import { EmptyState } from './ui/Skeleton';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
-import { Card, SectionLabel, StatusBadge, RoleHeader } from './ui/Components';
+import { Card, SectionLabel, StatusBadge, RoleHeader, PageHeader } from './ui/Components';
 import { Icons } from './ui/Icons';
 import { useToast } from './ui/Toast';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
@@ -14,11 +14,13 @@ import { clasificarMovEmpaque, resumenDiaEmpaque } from '../data/empaqueLogic';
 // de Administración (RoleHeader, Card, Modal, FormInput, FormBtn, StatusBadge,
 // toast global). El flujo (dos movimientos: entrada por compra y entrega a
 // Producción), sus validaciones y la llamada a movimientoBolsa no cambian.
+//   embedded (Fase B): la vista vive dentro del shell compartido, sin cabecera propia.
 const BOLSAS_SHELL = "min-h-dvh w-full text-slate-900";
-const CONTENIDO = "mx-auto w-full max-w-[640px] px-4 pt-4 space-y-4 md:max-w-3xl lg:max-w-5xl";
+const CONTENIDO = "mx-auto w-full max-w-[640px] space-y-4 md:max-w-3xl lg:max-w-5xl";
+const NOTA = "Registra lo que llega y lo que entregas a Producción. El inventario es el total de la empresa: baja cuando Producción usa las bolsas.";
 const SKU_BTN = "rounded-[16px] border-2 px-3 py-3 text-left text-sm font-semibold transition-colors";
 
-export default function BolsasView({ user, data, actions, onLogout }) {
+export default function BolsasView({ user, data, actions, onLogout, embedded = false }) {
   const [modal, setModal] = useState(null); // "entrada" | "salida"
   const [form, setForm] = useState({ sku: "EMP-25", cantidad: "", destino: "Producción", costo: "", proveedor: "", esCredito: false });
   const opRef = useRef(null);
@@ -110,13 +112,19 @@ export default function BolsasView({ user, data, actions, onLogout }) {
   const excedeTotal = modal === "salida" && !!form.cantidad && n(form.cantidad) > stockActual(form.sku);
 
   return (
-    <div className={BOLSAS_SHELL}>
-      <ModoPruebaBanner />
-      <RoleHeader kicker="Almacén" title="Almacén de Bolsas" subtitle={s(user?.nombre)} accent="amber" onLogout={onLogout}>
-        <p className="text-sm text-slate-300">Registra lo que llega y lo que entregas a Producción. El inventario es el total de la empresa: baja cuando Producción usa las bolsas.</p>
-      </RoleHeader>
+    <div className={embedded ? "text-slate-900" : BOLSAS_SHELL} data-testid="bolsas-shell">
+      {!embedded && <ModoPruebaBanner />}
+      {embedded ? (
+        <div className={CONTENIDO}>
+          <PageHeader title="Almacén de Bolsas" subtitle={NOTA} />
+        </div>
+      ) : (
+        <RoleHeader kicker="Almacén" title="Almacén de Bolsas" subtitle={s(user?.nombre)} accent="amber" onLogout={onLogout}>
+          <p className="text-sm text-slate-300">{NOTA}</p>
+        </RoleHeader>
+      )}
 
-      <div className={CONTENIDO}>
+      <div className={`${CONTENIDO} ${embedded ? "pt-4" : "px-4 pt-4"}`}>
         {(!empaques || empaques.length === 0) && (
           <EmptyState
             icon="Package"

@@ -12,6 +12,7 @@ import { traducirError } from '../utils/errorMessages';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
+import { navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, MODULO_BOLSAS, MODULO_CHOFER } from '../data/navRolLogic';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
 const ClientesView      = lazy(() => import('./views/ClientesView.jsx').then(m => ({ default: m.ClientesView })));
@@ -36,6 +37,11 @@ const CostosView        = lazy(() => import('./views/CostosView.jsx').then(m => 
 const CuentasPorPagarView = lazy(() => import('./views/CuentasPorPagarView.jsx').then(m => ({ default: m.CuentasPorPagarView })));
 const DevolucionesView    = lazy(() => import('./views/DevolucionesView.jsx').then(m => ({ default: m.DevolucionesView })));
 const BandejaView         = lazy(() => import('./views/BandejaView.jsx').then(m => ({ default: m.BandejaView })));
+// Fase B: las vistas por rol son contenido del shell compartido (lazy, como antes en App.jsx).
+const ChoferView                = lazy(() => import('./ChoferView'));
+const BolsasView                = lazy(() => import('./BolsasView'));
+const ProduccionStandaloneView  = lazy(() => import('./ProduccionStandaloneView'));
+const VentasStandaloneView      = lazy(() => import('./VentasStandaloneView'));
 
 // Auto-reload when a lazy chunk can't load (stale deployment)
 if (typeof window !== 'undefined') {
@@ -139,56 +145,13 @@ class ChunkErrorBoundary extends Component {
 }
 
 /*
-  ADMIN: 4 áreas — Operación, Comercial, Finanzas, Equipo
-  Mobile: bottom nav 5 items + "Más" overflow
-  Desktop: sidebar grouped by area with section headers
+  Fase B: la navegación por rol vive en src/data/navRolLogic.js (una sola
+  fuente). Admin/Facturación/Sin asignar: 4 áreas, 25 módulos (sin cambio).
+  Ventas / Producción / Almacén Bolsas: sus módulos dentro del mismo shell.
+  Chofer: modo enfoque (sin sidebar ni cabecera del shell).
+  Mobile: drawer lateral. Desktop: sidebar agrupado por área.
 */
 
-const AREAS = [
-  { id: "operacion", label: "Operación", icon: "Factory", color: "blue",
-    items: [
-      { id: "dashboard", label: "Resumen", icon: "Dashboard" },
-      { id: "bandeja", label: "Mi bandeja", icon: "ClipboardCheck" },
-      { id: "produccion", label: "Producción", icon: "Factory" },
-      { id: "inventario", label: "Congeladores", icon: "Warehouse" },
-      { id: "mermas", label: "Mermas", icon: "AlertTriangle" },
-      { id: "comodatos", label: "Comodatos", icon: "Truck" },
-      { id: "rutas", label: "Rutas", icon: "Truck" },
-      { id: "bolsas", label: "Insumos", icon: "Box" },
-    ]
-  },
-  { id: "comercial", label: "Comercial", icon: "ShoppingCart", color: "emerald",
-    items: [
-      { id: "ordenes", label: "Ventas", icon: "ShoppingCart" },
-      { id: "clientes", label: "Clientes", icon: "Users" },
-      { id: "leads", label: "Leads", icon: "UserCheck" },
-      { id: "precios", label: "Precios", icon: "DollarSign" },
-      { id: "productos", label: "Catálogo", icon: "Package" },
-    ]
-  },
-  { id: "finanzas", label: "Finanzas", icon: "Wallet", color: "amber",
-    items: [
-      { id: "contabilidad", label: "Movimientos", icon: "Calculator" },
-      { id: "cobros", label: "Por cobrar", icon: "DollarSign" },
-      { id: "proveedores", label: "Por pagar", icon: "CreditCard" },
-      { id: "devoluciones", label: "Devoluciones", icon: "Truck" },
-      { id: "costos", label: "Costos", icon: "Receipt" },
-      { id: "facturacion", label: "Facturación", icon: "FileText" },
-      { id: "conciliacion", label: "Cortes", icon: "ClipboardCheck" },
-      { id: "nomina", label: "Nómina", icon: "Wallet" },
-    ]
-  },
-  { id: "equipo", label: "Equipo", icon: "Users", color: "purple",
-    items: [
-      { id: "empleados", label: "Empleados", icon: "UserCheck" },
-      { id: "kardex", label: "Kardex", icon: "ClipboardCheck" },
-      { id: "auditoria", label: "Auditoría", icon: "Shield" },
-      { id: "configuracion", label: "Ajustes", icon: "Settings" },
-    ]
-  },
-];
-
-const ALL_ITEMS = AREAS.flatMap(a => a.items);
 const AREA_META = {
   operacion: {
     tagline: 'Cadena fria y despacho',
@@ -214,14 +177,29 @@ const AREA_META = {
     chip: 'border-violet-200/80 bg-violet-100/80 text-violet-900',
     glow: 'from-violet-200/40 via-slate-200/30 to-transparent',
   },
+  // Áreas de los roles de campo (Fase B)
+  ventas:  { tagline: 'Ventas del día', subtitle: 'cobros y órdenes', chip: 'border-emerald-200/80 bg-emerald-100/80 text-emerald-900', glow: 'from-emerald-300/40 via-teal-200/30 to-transparent' },
+  planta:  { tagline: 'Producción', subtitle: 'planta y congeladores', chip: 'border-cyan-200/80 bg-cyan-100/80 text-cyan-900', glow: 'from-cyan-300/50 via-sky-200/40 to-transparent' },
+  almacen: { tagline: 'Almacén', subtitle: 'empaque', chip: 'border-amber-200/80 bg-amber-100/80 text-amber-900', glow: 'from-amber-200/50 via-orange-200/30 to-transparent' },
+  ruta:    { tagline: 'Ruta', subtitle: 'entregas', chip: 'border-cyan-200/80 bg-cyan-100/80 text-cyan-900', glow: 'from-cyan-300/50 via-sky-200/40 to-transparent' },
 };
 
-const IDS_MODULOS = new Set(AREAS.flatMap(a => a.items.map(i => i.id)));
-
-export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }) {
+// Fase B: `rolVista` es el rol cuya experiencia se pinta (el propio, o el de
+// "Ver como" para Admin); `usuarioRol` es el usuario con id/auth_id resueltos
+// que reciben las vistas por rol (igual que antes en App.jsx). La
+// autorización no cambia: `actions` sigue corriendo con el rol real.
+export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions, onLogout, onViewAs }) {
+  const rol = rolVista || user?.rol;
+  const nav = useMemo(() => navParaRol(rol), [rol]);
+  const IDS_MODULOS = useMemo(() => idsModulos(nav), [nav]);
+  const ALL_ITEMS = useMemo(() => itemsModulos(nav), [nav]);
   // Tanda 25: la vista vive también en la URL (#/rutas) — deep links
-  // compartibles y botón atrás del navegador. Hash inválido → dashboard.
-  const [view, setView] = useState(() => viewDesdeHash(window.location.hash, IDS_MODULOS) || 'dashboard');
+  // compartibles y botón atrás del navegador. Hash inválido → módulo inicial del rol.
+  const [view, setView] = useState(() => viewDesdeHash(window.location.hash, IDS_MODULOS) || nav.inicio);
+  // Al cambiar el rol pintado ("Ver como"), el hash anterior puede no existir en el menú nuevo.
+  useEffect(() => {
+    setView(v => (IDS_MODULOS.has(v) ? v : (viewDesdeHash(window.location.hash, IDS_MODULOS) || nav.inicio)));
+  }, [IDS_MODULOS, nav.inicio]);
 
   // vista → hash. El primer sync (sin hash previo) usa replaceState
   // para no meter un paso extra al historial en el load.
@@ -238,37 +216,43 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
   // hash → vista (botón atrás/adelante, o alguien pega un link).
   useEffect(() => {
     const onHashChange = () => {
-      setView(viewDesdeHash(window.location.hash, IDS_MODULOS) || 'dashboard');
+      setView(viewDesdeHash(window.location.hash, IDS_MODULOS) || nav.inicio);
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, []);
+  }, [IDS_MODULOS, nav.inicio]);
 
-  // Estado de áreas expandidas/colapsadas en sidebar (con persistencia)
-  const [areasExpandidas, setAreasExpandidas] = useState(() => {
-    try {
-      const saved = localStorage.getItem('cubopolar_sidebar_areas');
-      if (saved) return JSON.parse(saved);
-    } catch { /* noop */ }
+  // Estado de áreas expandidas/colapsadas en sidebar (con persistencia para
+  // el shell de Admin; los roles de campo ven su única área abierta).
+  const leerAreasGuardadas = (navActual) => {
+    if (navActual.persistirAreas) {
+      try {
+        const saved = localStorage.getItem('cubopolar_sidebar_areas');
+        if (saved) return JSON.parse(saved);
+      } catch { /* noop */ }
+    }
     // Default: Operación y Comercial abiertas, Finanzas y Equipo cerradas
-    return { operacion: true, comercial: true, finanzas: false, equipo: false };
-  });
+    return areasExpandidasInicial(navActual);
+  };
+  const [areasExpandidas, setAreasExpandidas] = useState(() => leerAreasGuardadas(nav));
+  useEffect(() => { setAreasExpandidas(leerAreasGuardadas(nav)); }, [nav]);
 
   // Persistir cambios en localStorage
   useEffect(() => {
+    if (!nav.persistirAreas) return;
     try {
       localStorage.setItem('cubopolar_sidebar_areas', JSON.stringify(areasExpandidas));
     } catch { /* noop */ }
-  }, [areasExpandidas]);
+  }, [areasExpandidas, nav.persistirAreas]);
 
   // Si el usuario navega a un módulo dentro de un área cerrada, abrirla.
   // Solo depende de `view`: si incluyera `areasExpandidas`, contraer
   // manualmente el área del view actual la reabriría inmediatamente.
   useEffect(() => {
-    const currentArea = AREAS.find(area => area.items.some(item => item.id === view));
+    const currentArea = areaDeModulo(nav, view);
     if (!currentArea) return;
     setAreasExpandidas(prev => prev[currentArea.id] ? prev : { ...prev, [currentArea.id]: true });
-  }, [view]);
+  }, [view, nav]);
 
   const toggleArea = (areaId) => {
     setAreasExpandidas(prev => ({ ...prev, [areaId]: !prev[areaId] }));
@@ -338,17 +322,38 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
       case 'comodatos': return <ComodatosView {...vp} />;
       case 'leads': return <LeadsView {...vp} />;
       case 'kardex': return <KardexView data={data} />;
-      default: return <DashboardView data={data} actions={actions} />;
+      // Fase B: vistas por rol como contenido del shell (misma lógica, misma autorización).
+      case 'ventas-cobrar': case 'ventas-hoy': case 'ventas-todas':
+        return <VentasStandaloneView embedded tab={tabDesdeModulo(view)} onTab={t => go(moduloDesdeTab('Ventas', t))} user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;
+      case 'prod-producir': case 'prod-cuartos': case 'prod-mermas': case 'prod-trans':
+        return <ProduccionStandaloneView embedded tab={tabDesdeModulo(view)} onTab={t => go(moduloDesdeTab('Producción', t))} user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;
+      case MODULO_BOLSAS.id:
+        return <BolsasView embedded user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;
+      default: return IDS_MODULOS.has('dashboard') ? <DashboardView data={data} actions={actions} /> : null;
     }
   };
 
-  const go = useCallback((id) => { setView(id); setMobileDrawerOpen(false); }, []);
+  const go = useCallback((id) => { if (id && IDS_MODULOS.has(id)) setView(id); setMobileDrawerOpen(false); }, [IDS_MODULOS]);
   const current = ALL_ITEMS.find(n => n.id === view);
-  const currentArea = AREAS.find(area => area.items.some(item => item.id === view)) || AREAS[0];
+  const currentArea = areaDeModulo(nav, view) || nav.areas[0];
   const currentMeta = AREA_META[currentArea?.id] || AREA_META.operacion;
 
+  // Modo enfoque (Chofer): sin sidebar ni cabecera del shell; la vista trae
+  // su propio chrome mínimo y la identidad del producto (RoleHeader).
+  if (nav.modo === 'enfoque') {
+    return (
+      <div className="min-h-dvh text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''} data-modo="enfoque">
+        <ChunkErrorBoundary viewName={MODULO_CHOFER.id}>
+          <Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>
+            <ChoferView user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />
+          </Suspense>
+        </ChunkErrorBoundary>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-dvh text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''}>
+    <div className="min-h-dvh text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''} data-rol-vista={rol || ''}>
       {/* Tanda 16-fix: sidebarOffset evita que el banner tape el logo del aside fijo en lg+. */}
       <ModoPruebaBanner sidebarOffset />
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
@@ -371,7 +376,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
         </div>
 
         <nav className="flex-1 overflow-y-auto px-4 py-4">
-          {AREAS.map(area => {
+          {nav.areas.map(area => {
             const expandida = areasExpandidas[area.id];
             return (
               <div key={area.id} className="mb-3">
@@ -413,7 +418,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
           })}
         </nav>
 
-        {onViewAs && (
+        {onViewAs && nav.chrome.verComo && (
           <div className="flex-shrink-0 border-t border-white/8 px-4 py-4">
             <p className="mb-2 px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Ver como...</p>
             <div className="grid grid-cols-2 gap-1">
@@ -450,11 +455,11 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             <p className="font-display truncate text-base font-bold tracking-[-0.04em] text-slate-900 lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
           </div>
           <div className="relative flex flex-shrink-0 items-center gap-2">
-            <BusquedaGlobal data={data} onNavigate={go} />
-            <BotonFirmasPendientes user={user} data={data} actions={actions} />
-            <button onClick={() => { setAlertasOpen(!alertasOpen); setNotifOpen(false); }} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
+            {nav.chrome.busqueda && <BusquedaGlobal data={data} onNavigate={go} />}
+            {nav.chrome.firmas && <BotonFirmasPendientes user={usuarioRol || user} data={data} actions={actions} />}
+            {nav.chrome.alertas && <button onClick={() => { setAlertasOpen(!alertasOpen); setNotifOpen(false); }} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
               <Icons.Bell />{alertasActivas.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />}
-            </button>
+            </button>}
             {alertasOpen && (
               <div className="erp-panel absolute right-0 top-12 z-[70] max-h-96 w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] sm:w-96 md:w-[22rem]" role="dialog" aria-modal="false" aria-label="Alertas activas">
                 <div className="border-b border-slate-200/80 px-4 py-3.5">
@@ -477,10 +482,10 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
             )}
             {alertasOpen && <div className="fixed inset-0 z-[60]" onClick={() => setAlertasOpen(false)} aria-hidden="true" />}
             {/* Notification bell */}
-            <button onClick={() => { setNotifOpen(!notifOpen); setAlertasOpen(false); }} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Notificaciones" aria-label="Notificaciones">
+            {nav.chrome.notificaciones && <button onClick={() => { setNotifOpen(!notifOpen); setAlertasOpen(false); }} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Notificaciones" aria-label="Notificaciones">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
               {notifNoLeidas.length > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-blue-600 text-white text-[10px] font-bold rounded-full px-1">{notifNoLeidas.length > 9 ? '9+' : notifNoLeidas.length}</span>}
-            </button>
+            </button>}
             {notifOpen && (
               <div className="erp-panel absolute right-0 top-12 z-[70] max-h-[28rem] w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] sm:w-96 md:w-[24rem]" role="dialog" aria-modal="false" aria-label="Notificaciones">
                 <div className="border-b border-slate-200/80 px-4 py-3.5 flex items-center justify-between">
@@ -568,7 +573,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
 
             {/* Áreas con módulos */}
             <nav className="flex-1 px-3 py-3">
-              {AREAS.map(area => (
+              {nav.areas.map(area => (
                 <div key={area.id} className="mb-4">
                   <p className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     {area.label}
@@ -613,7 +618,7 @@ export default function CuboPolarERP({ user, data, actions, onLogout, onViewAs }
                   </div>
                 </div>
               )}
-              {onViewAs && (
+              {onViewAs && nav.chrome.verComo && (
                 <div className="mb-2 px-1">
                   <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Ver como…</p>
                   <div className="grid grid-cols-2 gap-1.5">

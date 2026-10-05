@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useRef, lazy, Suspense } from 'react'
+import { useMemo, useState, useEffect, useRef, Suspense } from 'react'
 import LoginScreen from './components/Login'
 import CuboPolarERP from './components/CuboPolarERP'
 import { useSupaStore } from './data/supaStore'
@@ -6,11 +6,9 @@ import { supabase } from './lib/supabase'
 import { setUserContext, Sentry } from './lib/sentry'
 import { buildUserFromSessionAndProfile } from './lib/sessionUser'
 
-// Lazy-load role-specific views — reduces initial bundle for admin by ~40%
-const ChoferView = lazy(() => import('./components/ChoferView'))
-const BolsasView = lazy(() => import('./components/BolsasView'))
-const ProduccionStandaloneView = lazy(() => import('./components/ProduccionStandaloneView'))
-const VentasStandaloneView = lazy(() => import('./components/VentasStandaloneView'))
+// Fase B: todas las experiencias por rol viven dentro del shell compartido
+// (CuboPolarERP decide sidebar/enfoque y módulos con navRolLogic). Las vistas
+// por rol siguen cargándose lazy desde el shell.
 
 function RoleFallback() {
   return (
@@ -365,26 +363,23 @@ function App() {
 
   const roleUser = { ...user, id: usuarioActualId || user?.id, auth_id: authUserId || user?.auth_id }
 
-  if (effectiveRole === 'Chofer')
-    return withGlobalBars(<Suspense fallback={<RoleFallback />}><ChoferView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
-
-  if (effectiveRole === 'Almacén Bolsas')
-    return withGlobalBars(<Suspense fallback={<RoleFallback />}><BolsasView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
-
-  if (effectiveRole === 'Producción')
-    return withGlobalBars(<Suspense fallback={<RoleFallback />}><ProduccionStandaloneView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
-
-  if (effectiveRole === 'Ventas')
-    return withGlobalBars(<Suspense fallback={<RoleFallback />}><VentasStandaloneView user={roleUser} data={scopedData} actions={actions} onLogout={handleLogout} /></Suspense>)
-
+  // Fase B: un solo shell. `rolVista` pinta la experiencia del rol (o la del
+  // rol elegido en "Ver como"); `usuarioRol` es el usuario que reciben las
+  // vistas por rol (id/auth_id resueltos, mismo objeto que antes). Los datos
+  // son los mismos de siempre: scopedData (Admin/Facturación/Sin asignar
+  // reciben `data` sin recortar; Chofer y Ventas, su alcance).
   return withGlobalBars(
-    <CuboPolarERP
-      user={user}
-      data={data}
-      actions={actions}
-      onLogout={handleLogout}
-      onViewAs={isAdmin ? setAdminViewAs : null}
-    />
+    <Suspense fallback={<RoleFallback />}>
+      <CuboPolarERP
+        user={user}
+        usuarioRol={roleUser}
+        rolVista={effectiveRole}
+        data={scopedData}
+        actions={actions}
+        onLogout={handleLogout}
+        onViewAs={isAdmin ? setAdminViewAs : null}
+      />
+    </Suspense>
   )
 }
 

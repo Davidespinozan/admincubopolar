@@ -78,7 +78,7 @@ describe('A2: Almacén de Bolsas — presentación nueva, negocio idéntico', ()
   const v = sinComentarios(src('../components/BolsasView.jsx'));
   it('usa las primitivas compartidas y ya no dibuja cabecera, hoja ni aviso propios', () => {
     expect(v).toMatch(/import Modal, \{ FormInput, FormBtn \} from '\.\/ui\/Modal'/);
-    expect(v).toMatch(/import \{ Card, SectionLabel, StatusBadge, RoleHeader \} from '\.\/ui\/Components'/);
+    expect(v).toMatch(/import \{ Card, SectionLabel, StatusBadge, RoleHeader, PageHeader \} from '\.\/ui\/Components'/);
     expect(v).toMatch(/useToast\(\)/);
     expect(v).toMatch(/<ModoPruebaBanner \/>/);
     expect(v).toMatch(/<RoleHeader kicker="Almacén" title="Almacén de Bolsas"/);
