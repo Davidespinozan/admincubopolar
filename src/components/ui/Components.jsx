@@ -321,11 +321,16 @@ export const ChoiceButton = ({ active, tone = "blue", onClick, children, classNa
 // ─── KPI ROW (contenido claro, dentro del shell) ───
 // Cifras de cabecera de una vista por rol cuando la vista vive dentro del
 // shell compartido (fondo claro): misma familia que StatCard, sin icono.
-export const KpiTile = ({ label, value, hint, className = "" }) => (
+// B3.2: `compact` para un valor textual (p. ej. "12× HPC-5K"), `children`
+// para un indicador bajo la cifra (p. ej. CapacityBar). Sin ellos es la de siempre.
+export const KpiTile = ({ label, value, hint, compact = false, children, className = "" }) => (
   <div className={`rounded-card border border-slate-200/80 bg-white/80 p-4 shadow-card ${className}`}>
     <SectionLabel>{label}</SectionLabel>
-    <p className="mt-1.5 font-display text-2xl font-bold tracking-[-0.05em] text-slate-900 sm:text-[1.8rem]">{value}</p>
+    <p className={compact
+      ? "mt-1.5 truncate text-base font-bold tracking-[-0.02em] text-slate-900 sm:text-lg"
+      : "mt-1.5 font-display text-2xl font-bold tracking-[-0.05em] text-slate-900 sm:text-[1.8rem]"}>{value}</p>
     {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
+    {children ? <div className="mt-2">{children}</div> : null}
   </div>
 );
 

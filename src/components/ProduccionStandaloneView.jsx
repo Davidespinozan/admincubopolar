@@ -3,6 +3,7 @@ import { diaNegocio } from '../utils/fechas';
 import { resolverOperacion, claveProduccion, claveTransformacion } from '../data/produccionAtomicaLogic';
 import { claveSalida, claveTraspaso, claveMermaCuarto, MOTIVOS_SALIDA_MANUAL, motivoSalidaManual } from '../data/stockContratosLogic';
 import { mermasActivas } from '../data/mermasLogic';
+import { resumenCongeladores, resumenMermas, resumenTransformacion } from '../data/produccionResumenLogic';
 import { supabase } from '../lib/supabase';
 import { s, n, fmtDate, fmtPct, todayLocalISO } from '../utils/safe';
 import { compressImage } from '../utils/compressImage';
@@ -27,6 +28,8 @@ const TABS = [{ k: "producir", l: "Producción", icon: "Factory" }, { k: "cuarto
 // B2: dentro del shell el contenido ocupa el workspace como las vistas de Admin.
 const CONTENIDO = "mx-auto w-full max-w-[640px] space-y-3 md:max-w-3xl lg:max-w-5xl";
 const CONTENIDO_SHELL = "w-full space-y-3";
+// B3.2: rejilla del resumen de cada módulo (misma familia KpiTile; el número de piezas varía por módulo).
+const RESUMEN = "grid grid-cols-1 gap-3 sm:grid-cols-3";
 const LABEL = "mb-1.5 block text-sm font-medium text-slate-700";
 
 export default function ProduccionStandaloneView({ user, data, actions, onLogout, embedded = false, tab: tabProp, onTab }) {
@@ -550,16 +553,21 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     { label: "Merma hoy", value: mermaHoy },
   ];
   const cfCorto = (cf) => s(cf.nombre).replace("Cuarto Frío ", "CF-");
+  // B3.2: cada módulo abre con SU resumen (derivado de datos ya cargados; sin
+  // consultas nuevas). Producción conserva el resumen general (kpis); los
+  // otros tres dejan de repetirlo. Orden por módulo: resumen → acción → contenido.
+  const resumenCuartos = useMemo(() => resumenCongeladores(data.cuartosFrios, data.productos), [data.cuartosFrios, data.productos]);
+  const resumenMer = useMemo(() => resumenMermas(data.mermas, diaNegocio()), [data.mermas]);
+  const resumenTrans = useMemo(() => resumenTransformacion(data.produccion, diaNegocio()), [data.produccion]);
+  const kg = (v) => `${Number(v || 0).toLocaleString()} kg`;
 
   return (
     <div className={embedded ? "text-slate-900" : "min-h-dvh w-full text-slate-900"} data-testid="produccion-shell">
       {!embedded && <ModoPruebaBanner />}
-      {embedded ? (
-        /* B2: el shell pone el título de página; la vista empieza en cifras. */
-        <div className={`${CONTENIDO_SHELL} grid grid-cols-1 gap-3 sm:grid-cols-3`}>
-          {kpis.map((k, i) => <KpiTile key={k.label} label={k.label} value={k.value} hint={i === 0 ? s(user?.nombre) : undefined} />)}
-        </div>
-      ) : (
+      {/* B2: el shell pone el título de página. B3.2: dentro del shell cada
+          módulo abre con su propio resumen (abajo, por pestaña); la cabecera
+          suelta conserva el resumen general. */}
+      {!embedded && (
         <RoleHeader kicker="Producción" title="Producción del día" subtitle={s(user?.nombre)} accent="sky" onLogout={onLogout}
           right={<BotonFirmasPendientes user={user} data={data} actions={actions} />}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -576,12 +584,17 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         mostrarBannerUrgente={true}
       />
 
-      <div className={embedded ? `${CONTENIDO_SHELL} pt-3` : `${CONTENIDO} px-4 pt-3`}>
+      <div className={embedded ? CONTENIDO_SHELL : `${CONTENIDO} px-4 pt-3`}>
         {/* B3: dentro del shell navegan el sidebar (lg+) y la barra inferior (móvil); las pestañas solo en la vista suelta. */}
         {!embedded && <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="blue" className="mb-1" />}
 
         {/* ═══ TAB: PRODUCCIÓN ═══ */}
         {tab === "producir" && (<>
+          {embedded && (
+            <div className={RESUMEN} data-testid="resumen-produccion">
+              {kpis.map((k, i) => <KpiTile key={k.label} label={k.label} value={k.value} hint={i === 0 ? s(user?.nombre) : undefined} />)}
+            </div>
+          )}
           <FormBtn primary size="lg" className="w-full" onClick={() => { resetFormProd(); setModal(true); }}>
             <Icons.Plus /> Ya produje hielo
           </FormBtn>
@@ -670,6 +683,19 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
         {/* ═══ TAB: CONGELADORES ═══ */}
         {tab === "cuartos" && (<>
+          <div className={RESUMEN} data-testid="resumen-congeladores">
+            <KpiTile label="Existencia total" value={resumenCuartos.existencia.toLocaleString()}
+              hint={`bolsas en ${resumenCuartos.congeladores} ${resumenCuartos.congeladores === 1 ? 'congelador' : 'congeladores'}`} />
+            <KpiTile label="Tarimas ocupadas"
+              value={resumenCuartos.tarimasCapacidad > 0 ? `${resumenCuartos.tarimasOcupadas.toFixed(1)} / ${resumenCuartos.tarimasCapacidad}` : '—'}
+              hint={resumenCuartos.tarimasCapacidad > 0 ? `${fmtPct(resumenCuartos.tarimasOcupadas, resumenCuartos.tarimasCapacidad)} de la capacidad configurada` : 'Sin capacidad configurada'}>
+              {resumenCuartos.tarimasCapacidad > 0 && <CapacityBar pct={resumenCuartos.pct} />}
+            </KpiTile>
+            <KpiTile label="Tarimas libres" value={resumenCuartos.tarimasLibres === null ? '—' : resumenCuartos.tarimasLibres.toFixed(1)}
+              hint={resumenCuartos.sinCapacidad.length > 0
+                ? `${resumenCuartos.sinCapacidad.length} sin capacidad configurada: ${resumenCuartos.sinCapacidad.join(', ')}`
+                : (resumenCuartos.congeladores > 0 ? 'capacidad configurada en todos' : 'sin congeladores')} />
+          </div>
           <FormBtn primary size="lg" className="w-full" onClick={() => setTraspasoModal(true)}>
             <Icons.Truck /> Mover entre congeladores
           </FormBtn>
@@ -772,6 +798,16 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
         {/* ═══ TAB: TRANSFORMACIONES ═══ */}
         {tab === "trans" && (<>
+          <div className={RESUMEN} data-testid="resumen-transformacion">
+            <KpiTile label="Transformaciones hoy" value={resumenTrans.transformacionesHoy} hint={`${resumenTrans.historial} en el historial`} />
+            <KpiTile label="Entrada hoy" value={kg(resumenTrans.entradaKg)} hint="insumo transformado hoy" />
+            <KpiTile label="Salida hoy" value={kg(resumenTrans.salidaKg)} hint="producto obtenido hoy" />
+          </div>
+          {resumenTrans.ultima && (
+            <p className="px-1 text-xs text-slate-500" data-testid="ultima-transformacion">
+              <span className="font-semibold text-slate-700">Última:</span> {resumenTrans.ultima.folio} · {fmtDate(resumenTrans.ultima.fecha)} · {kg(resumenTrans.ultima.inputKg)} {resumenTrans.ultima.inputSku} → {kg(resumenTrans.ultima.outputKg)} {resumenTrans.ultima.outputSku}
+            </p>
+          )}
           <FormBtn primary size="lg" className="w-full" onClick={() => setTransModal(true)}>
             <Icons.Plus /> Nueva transformación
           </FormBtn>
@@ -825,6 +861,13 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
         {/* ═══ TAB MERMAS ═══ */}
         {tab === "mermas" && (<>
+          <div className={RESUMEN} data-testid="resumen-mermas">
+            <KpiTile label="Merma hoy" value={resumenMer.mermaHoy.toLocaleString()} hint="bolsas (mermas vigentes de hoy)" />
+            <KpiTile label="Registros hoy" value={resumenMer.registrosHoy} hint="mermas registradas hoy" />
+            <KpiTile label="Última merma de hoy" compact
+              value={resumenMer.ultima ? `${resumenMer.ultima.cantidad.toLocaleString()}× ${resumenMer.ultima.sku}` : 'Sin mermas hoy'}
+              hint={resumenMer.ultima ? [resumenMer.ultima.causa, resumenMer.ultima.origen].filter(Boolean).join(' · ') : 'Buen turno'} />
+          </div>
           <FormBtn danger size="lg" className="w-full" onClick={() => { setMermaModal(true); clearFotoMerma(); setMForm({ sku: "", cantidad: "", causa: "Bolsa rota", congelador: "CF-1" }); }}>
             <Icons.AlertTriangle /> Registrar merma
           </FormBtn>

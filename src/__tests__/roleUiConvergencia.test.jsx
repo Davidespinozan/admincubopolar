@@ -238,3 +238,77 @@ describe('B3: primitiva BottomNav', async () => {
     expect(m).toMatch(/aria-label="Más módulos"[^>]*text-white/);
   });
 });
+
+describe('B3.2: cada módulo de Producción abre con SU resumen (solo presentación; datos ya cargados)', () => {
+  const v = sinComentarios(src('../components/ProduccionStandaloneView.jsx'));
+  const bloque = (ini, fin) => { const a = v.indexOf(ini), b = v.indexOf(fin); expect(a, ini).toBeGreaterThan(-1); expect(b, fin).toBeGreaterThan(a); return v.slice(a, b); };
+  const prod = bloque('{tab === "producir" && (<>', '{tab === "cuartos" && (<>');
+  const cuartos = bloque('{tab === "cuartos" && (<>', '{tab === "trans" && (<>');
+  const trans = bloque('{tab === "trans" && (<>', '{tab === "mermas" && (<>');
+  const mermas = bloque('{tab === "mermas" && (<>', '<div className="h-8" />');
+  const ACCIONES = ['actions.producirYCongelar', 'actions.registrarMermaCuarto', 'actions.addTransformacion', 'actions.traspasoEntreUbicaciones', 'actions.sacarDeCuartoFrio'];
+
+  it('Producción conserva su resumen general (Producido hoy · En congeladores · Merma hoy) con la misma derivación', () => {
+    expect(v).toMatch(/const kpis = \[\s*\{ label: "Producido hoy", value: totalHoy\.toLocaleString\(\) \},\s*\{ label: "En congeladores", value: totalEnCuartos\.toLocaleString\(\) \},\s*\{ label: "Merma hoy", value: mermaHoy \},\s*\];/);
+    expect(v).toMatch(/const totalHoy = useMemo\(\(\) => prodHoy\.reduce\(\(s, p\) => s \+ n\(p\.cantidad\), 0\), \[prodHoy\]\);/);
+    expect(v).toMatch(/const mermaHoy = useMemo\(\(\) => mermasHoyList\.reduce\(\(sum, item\) => sum \+ n\(item\.cantidad\), 0\), \[mermasHoyList\]\);/);
+    expect(v).toMatch(/for \(const cf of cuartos\) if \(cf\.stock\) for \(const v of Object\.values\(cf\.stock\)\) t \+= n\(v\);/);
+    expect(prod).toMatch(/data-testid="resumen-produccion"/);
+    expect(prod).toMatch(/kpis\.map\(\(k, i\) => <KpiTile key=\{k\.label\} label=\{k\.label\} value=\{k\.value\} hint=\{i === 0 \? s\(user\?\.nombre\) : undefined\} \/>\)/);
+    expect((v.match(/kpis\.map/g) || []).length).toBe(2);   // pestaña Producción (shell) + cabecera suelta; ya no hay fila global
+    expect(v).not.toMatch(/\{embedded \? \(\s*<div className=\{`\$\{CONTENIDO_SHELL\} grid/);
+  });
+  it('Congeladores: existencia, tarimas ocupadas (barra) y libres; no repite el resumen de Producción', () => {
+    expect(cuartos).toMatch(/data-testid="resumen-congeladores"/);
+    expect(cuartos).toMatch(/label="Existencia total" value=\{resumenCuartos\.existencia\.toLocaleString\(\)\}/);
+    expect(cuartos).toMatch(/label="Tarimas ocupadas"/);
+    expect(cuartos).toMatch(/<CapacityBar pct=\{resumenCuartos\.pct\} \/>/);
+    expect(cuartos).toMatch(/label="Tarimas libres"/);
+    expect(cuartos).not.toMatch(/kpis\.map|Producido hoy|Merma hoy|resumenMer\.|resumenTrans\./);
+  });
+  it('Mermas: merma de hoy, registros de hoy y última merma; nada de producción ni congeladores', () => {
+    expect(mermas).toMatch(/data-testid="resumen-mermas"/);
+    expect(mermas).toMatch(/label="Merma hoy" value=\{resumenMer\.mermaHoy\.toLocaleString\(\)\}/);
+    expect(mermas).toMatch(/label="Registros hoy" value=\{resumenMer\.registrosHoy\}/);
+    expect(mermas).toMatch(/label="Última merma de hoy" compact/);
+    expect(mermas).not.toMatch(/kpis\.map|Producido hoy|En congeladores|Tarimas|resumenCuartos\.|resumenTrans\.|fmtPct|%|\$[0-9]/);   // sin monto, porcentaje ni tendencia
+  });
+  it('Transformación: transformaciones de hoy, kg de entrada y salida guardados, última del historial; sin rendimiento agregado', () => {
+    expect(trans).toMatch(/data-testid="resumen-transformacion"/);
+    expect(trans).toMatch(/label="Transformaciones hoy" value=\{resumenTrans\.transformacionesHoy\}/);
+    expect(trans).toMatch(/label="Entrada hoy" value=\{kg\(resumenTrans\.entradaKg\)\}/);
+    expect(trans).toMatch(/label="Salida hoy" value=\{kg\(resumenTrans\.salidaKg\)\}/);
+    expect(trans).toMatch(/data-testid="ultima-transformacion"/);
+    expect(trans).not.toMatch(/kpis\.map|Producido hoy|En congeladores|Merma hoy|resumenCuartos\.|resumenMer\.|resumenTrans\.rendimiento/);
+  });
+  it('orden por módulo: resumen → acción principal → contenido', () => {
+    for (const [nombre, b, testid] of [['producir', prod, 'resumen-produccion'], ['cuartos', cuartos, 'resumen-congeladores'], ['trans', trans, 'resumen-transformacion'], ['mermas', mermas, 'resumen-mermas']]) {
+      expect(b.indexOf(`data-testid="${testid}"`), nombre).toBeLessThan(b.indexOf('<FormBtn'));
+    }
+  });
+  it('los resúmenes se derivan de datos ya cargados: mismas 5 acciones, sin consultas ni RPC nuevas', () => {
+    expect(new Set(v.match(/actions\.\w+/g))).toEqual(new Set(ACCIONES));
+    expect((v.match(/supabase\./g) || []).length).toBe(3);        // solo el storage de fotos de merma (A4)
+    expect(v).not.toMatch(/supabase\.rpc|supabase\.from\(|fetch\(|backendPost|backendGet/);
+    expect(v).toMatch(/resumenCongeladores\(data\.cuartosFrios, data\.productos\)/);
+    expect(v).toMatch(/resumenMermas\(data\.mermas, diaNegocio\(\)\)/);
+    expect(v).toMatch(/resumenTransformacion\(data\.produccion, diaNegocio\(\)\)/);
+    const logic = src('../data/produccionResumenLogic.js');
+    expect(logic).not.toMatch(/supabase|rpc|fetch\(|backend|useState|useEffect/);
+    expect(logic.match(/^import .*$/gm)).toEqual([
+      "import { s, n } from '../utils/safe';",
+      "import { mermasActivas } from './mermasLogic';",
+      "import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../utils/tarimas';",
+    ]);
+  });
+  it('KpiTile: compact (valor textual) y children (indicador); sin ellos es la de siempre', () => {
+    const base = html(<KpiTile label="A" value="1" />);
+    expect(base).toMatch(/font-display text-2xl/);
+    expect(base).not.toMatch(/mt-2/);
+    const c = html(<KpiTile label="Última" value="12× HPC-5K" hint="Bolsa rota" compact />);
+    expect(c).toMatch(/truncate text-base font-bold/);
+    expect(c).not.toMatch(/font-display/);
+    const k = html(<KpiTile label="T" value="9.9 / 20"><div data-x="bar" /></KpiTile>);
+    expect(k).toMatch(/<div class="mt-2"><div data-x="bar"><\/div><\/div>/);
+  });
+});
