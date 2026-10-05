@@ -47,8 +47,9 @@ describe('A3: Ventas — presentación nueva, negocio idéntico', () => {
   });
   it('llamadas de negocio y argumentos idénticos', () => {
     expect(v).toMatch(/const result = await actions\.crearCheckoutPago\?\.\(pagoModal\.id, checkoutProvider\);/);
-    expect(v).toMatch(/await actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo\);/);
-    expect(v).toMatch(/actions\.updateOrdenEstatus\(o\.id, "Asignada"\); showToast\("Asignada a ruta"\);/);
+    // OL-01A: mismas llamadas y argumentos; el éxito solo se declara si el store lo confirma.
+    expect(v).toMatch(/await ejecutarMutacion\(\(\) => actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo\), \{/);
+    expect(v).toMatch(/await ejecutarMutacion\(\(\) => actions\.updateOrdenEstatus\(o\.id, "Asignada"\), \{ onExito: \(\) => showToast\("Asignada a ruta"\) \}\);/);
     expect(v).toMatch(/const \[checkoutProvider\] = useState\('stripe'\);/);
     expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus', 'actions.updateOrdenEstatus']);
   });
@@ -319,7 +320,7 @@ describe('B3.2: cada módulo de Producción abre con SU resumen (solo presentaci
 
 describe('B3.4: cada módulo de Ventas tiene su propio contexto (solo presentación; mismas órdenes)', () => {
   const v = sinComentarios(src('../components/VentasStandaloneView.jsx'));
-  const ctx = v.slice(v.indexOf('const contextoModulo ='), v.indexOf('return ('));
+  const ctx = v.slice(v.indexOf('const contextoModulo ='), v.indexOf('return (', v.indexOf('const contextoModulo =')));
   const cuerpo = v.slice(v.indexOf('{contextoModulo}'), v.indexOf('<NuevaVentaModal'));
   it('ya no hay fila genérica de rol: el contexto depende del módulo', () => {
     expect(v).not.toMatch(/<KpiTile label="Pendientes"/);
@@ -336,10 +337,11 @@ describe('B3.4: cada módulo de Ventas tiene su propio contexto (solo presentaci
     expect(cuerpo).toMatch(/data-testid="grupo-en-ruta-por-cobrar"[\s\S]*porCobrar\.enRuta\.ordenes\.map\(tarjetaOrden\)/);
     expect(v).not.toMatch(/TOTAL PENDIENTE|[Ss]aldo por cobrar|CxC|[Cc]obrado hoy|[Cc]omisi|[Mm]eta|[Pp]romedio|[Tt]endencia/);
   });
-  it('acciones por estatus idénticas: una sola tarjeta para todos los módulos, sin acciones nuevas', () => {
+  it('acciones por estatus: una sola tarjeta para todos los módulos, sin acciones nuevas (reglas en ventasCobroLogic desde OL-01A)', () => {
     const tarjeta = v.slice(v.indexOf('const tarjetaOrden ='), v.indexOf('const grupoMonto'));
-    expect(tarjeta).toMatch(/\{o\.estatus === "Creada" && \([\s\S]*cobrar\(o\)\}>Cobrar<[\s\S]*actions\.updateOrdenEstatus\(o\.id, "Asignada"\); showToast\("Asignada a ruta"\);/);
-    expect(tarjeta).toMatch(/\{o\.estatus === "Asignada" && \([\s\S]*cobrar\(o\)\}[^>]*>Cobrar entrega</);
+    expect(tarjeta).toMatch(/const acc = accionesCobroVentas\(o\)/);
+    expect(tarjeta).toMatch(/\{acc\.cobrar && acc\.enviarARuta && \([\s\S]*cobrar\(o\)\}>Cobrar<[\s\S]*enviarARuta\(o\)/);
+    expect(tarjeta).toMatch(/\{acc\.cobrarEntrega && \([\s\S]*cobrar\(o\)\}[^>]*>Cobrar entrega</);
     expect((v.match(/<Card key=\{o\.id\}/g) || []).length).toBe(1);
     expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus', 'actions.updateOrdenEstatus']);
   });
@@ -368,5 +370,43 @@ describe('B3.4: cada módulo de Ventas tiene su propio contexto (solo presentaci
     const logic = src('../data/ventasResumenLogic.js');
     expect(logic).not.toMatch(/supabase|rpc|fetch\(|backend|useState|useEffect|react/);
     expect(logic.match(/^import .*$/gm)).toEqual(["import { s, n } from '../utils/safe';", "import { TRANSICIONES_ORDEN } from './ordenLogic';"]);
+  });
+});
+
+describe('OL-01A: honestidad del cobro del vendedor (contención; ciclo de vida y backend sin cambios)', () => {
+  const v = sinComentarios(src('../components/VentasStandaloneView.jsx'));
+  const cobro = v.slice(v.indexOf('const confirmarCobro = async'), v.indexOf('const hoy = diaNegocio();'));
+  const envio = v.slice(v.indexOf('const enviarARuta = async'), v.indexOf('const tarjetaOrden ='));
+  it('cobro: el toast de éxito y el cierre del diálogo viven SOLO en onExito (resultado confirmado)', () => {
+    const exito = cobro.slice(cobro.indexOf('onExito: () => {'), cobro.indexOf('},', cobro.indexOf('onExito: () => {')));
+    expect(exito).toMatch(/showToast\(pagoForm\.metodo\.includes\("Crédito"\)/);
+    expect(exito).toMatch(/setPagoModal\(null\);/);
+    expect((cobro.match(/setPagoModal\(null\)/g) || []).length).toBe(1);
+    expect((cobro.match(/Cobrado — /g) || []).length).toBe(1);
+    expect(cobro).not.toMatch(/await actions\.updateOrdenEstatus/);   // ya no se espera "a ciegas"
+  });
+  it('enviar a ruta: éxito solo confirmado; sin doble envío; misma llamada (no adjunta ruta)', () => {
+    expect(envio).toMatch(/if \(enviandoRuta\) return;/);
+    expect(envio).toMatch(/\(\) => actions\.updateOrdenEstatus\(o\.id, "Asignada"\), \{ onExito/);
+    expect(envio).not.toMatch(/ruta_id|p_ruta_id|asignarOrdenesARuta/);
+    expect(v).not.toMatch(/actions\.updateOrdenEstatus\(o\.id, "Asignada"\); showToast/);
+  });
+  it('orden con ruta: sin cobro del vendedor; solo una etiqueta pasiva', () => {
+    const tarjeta = v.slice(v.indexOf('const tarjetaOrden ='), v.indexOf('const grupoMonto'));
+    expect(tarjeta).toMatch(/\{acc\.enRutaDelChofer && \([\s\S]*data-testid="orden-en-ruta-chofer"[\s\S]*la cobra el chofer/);
+    const etiqueta = tarjeta.slice(tarjeta.indexOf('acc.enRutaDelChofer'));
+    expect(etiqueta.slice(0, etiqueta.indexOf('</p>'))).not.toMatch(/onClick|FormBtn|actions\./);
+  });
+  it('sin cambios de contratos: mismas acciones del store; Admin y Chofer intactos', () => {
+    expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus', 'actions.updateOrdenEstatus']);
+    const admin = src('../components/views/OrdenesView.jsx');
+    expect(admin).toMatch(/const err = await actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo\);\s*if \(err\) \{\s*toast\?\.error\("No se pudo registrar el cobro"\);\s*return;/);
+    const chofer = src('../components/ChoferView.jsx');
+    expect(chofer).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null \}\)/);
+    expect(chofer).toMatch(/if \(err\) \{\s*showToast\("No se pudo registrar la entrega", 'error'\);/);
+    const logic = src('../data/ventasCobroLogic.js');
+    expect(logic).not.toMatch(/supabase|rpc|fetch\(|backend|import /);
+    const orden = src('../data/ordenLogic.js');
+    expect(orden).toMatch(/Creada: {9}\['Asignada', 'Cancelada'\],/);   // ciclo de vida intacto
   });
 });

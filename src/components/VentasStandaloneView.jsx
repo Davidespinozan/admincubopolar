@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { diaNegocio } from '../utils/fechas';
 import { s, fmtMoney, fmtDate, extraerTelefono } from '../utils/safe';
 import { resumenPorCobrar, resumenVentasHoy, resumenHistorial, textoDesglose } from '../data/ventasResumenLogic';
+import { accionesCobroVentas, ejecutarMutacion } from '../data/ventasCobroLogic';
 import { EmptyState } from './ui/Skeleton';
 import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
@@ -37,6 +38,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
   const [shortUrl, setShortUrl] = useState(null);
   const [generandoLink, setGenerandoLink] = useState(false);
   const [confirmandoCobro, setConfirmandoCobro] = useState(false);
+  const [enviandoRuta, setEnviandoRuta] = useState(null); // OL-01A: id de la orden en envío a ruta
 
   const showToast = (msg, tipo = "success") => { (toast?.[tipo] || toast?.info)?.(msg); };
 
@@ -82,9 +84,14 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
     if (confirmandoCobro) return;
     setConfirmandoCobro(true);
     try {
-      await actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo);
-      showToast(pagoForm.metodo.includes("Crédito") || pagoForm.metodo.includes("fiado") ? "Venta a crédito registrada" : "Cobrado — " + pagoForm.metodo);
-      setPagoModal(null);
+      // OL-01A: éxito y cierre SOLO si el store lo confirma. Si falla, el store
+      // ya mostró el error; el diálogo queda abierto para corregir o reintentar.
+      await ejecutarMutacion(() => actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo), {
+        onExito: () => {
+          showToast(pagoForm.metodo.includes("Crédito") || pagoForm.metodo.includes("fiado") ? "Venta a crédito registrada" : "Cobrado — " + pagoForm.metodo);
+          setPagoModal(null);
+        },
+      });
     } catch (e) {
       console.error('Error confirmando cobro:', e);
       showToast('Error al cobrar. Verifica tu conexión.', 'error');
@@ -112,10 +119,24 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
   );
   const REJILLA_LISTA = embedded ? "grid grid-cols-1 gap-2 xl:grid-cols-2" : "space-y-2";
 
-  // Tarjeta de orden: mismo contenido y MISMAS acciones por estatus que antes
-  // (Creada: Cobrar / Enviar a ruta; Asignada: Cobrar entrega). Verla en otro
-  // módulo no le da acciones nuevas.
-  const tarjetaOrden = (o) => (
+  // OL-01A: "Enviar a ruta" solo avisa éxito si el store lo confirma.
+  const enviarARuta = async (o) => {
+    if (enviandoRuta) return;
+    setEnviandoRuta(o.id);
+    try {
+      await ejecutarMutacion(() => actions.updateOrdenEstatus(o.id, "Asignada"), { onExito: () => showToast("Asignada a ruta") });
+    } catch (e) {
+      console.error('Error enviando a ruta:', e);
+      showToast('Error al enviar a ruta. Verifica tu conexión.', 'error');
+    } finally {
+      setEnviandoRuta(null);
+    }
+  };
+
+  // Tarjeta de orden: mismo contenido; acciones según accionesCobroVentas
+  // (OL-01A): Creada → Cobrar / Enviar a ruta; Asignada sin ruta → Cobrar
+  // entrega; Asignada con ruta → sin cobro del vendedor (la cobra el chofer).
+  const tarjetaOrden = (o) => { const acc = accionesCobroVentas(o); return (
     <Card key={o.id} padding="p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -131,18 +152,23 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
           <StatusBadge status={s(o.estatus)} />
         </div>
       </div>
-      {o.estatus === "Creada" && (
+      {acc.cobrar && acc.enviarARuta && (
         <div className="mt-3 grid grid-cols-2 gap-2">
           <FormBtn success onClick={() => cobrar(o)}>Cobrar</FormBtn>
-          <FormBtn onClick={() => { actions.updateOrdenEstatus(o.id, "Asignada"); showToast("Asignada a ruta"); }}
+          <FormBtn onClick={() => enviarARuta(o)} disabled={enviandoRuta === o.id}
             className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"><Icons.Truck /> Enviar a ruta</FormBtn>
         </div>
       )}
-      {o.estatus === "Asignada" && (
+      {acc.cobrarEntrega && (
         <FormBtn onClick={() => cobrar(o)} className="mt-3 w-full border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">Cobrar entrega</FormBtn>
       )}
+      {acc.enRutaDelChofer && (
+        <p className="mt-3 flex items-center gap-1.5 rounded-[12px] border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600" data-testid="orden-en-ruta-chofer">
+          <Icons.Truck /> {s(o.ruta) && s(o.ruta) !== "—" ? `En ${s(o.ruta)}` : "En ruta"} · la cobra el chofer
+        </p>
+      )}
     </Card>
-  );
+  ); };
 
   // Contexto por módulo (sin fila genérica repetida; sin cifras en $0 de relleno).
   const grupoMonto = (g) => g.count > 0 ? fmtMoney(g.monto) : "—";
