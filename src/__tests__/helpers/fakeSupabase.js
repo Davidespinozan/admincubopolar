@@ -1,7 +1,8 @@
 // fakeSupabase.js — cliente Supabase en memoria para probar las Netlify
 // Functions financieras SIN red. Implementa el subconjunto del query
 // builder que usan persistence.js, billing-create-checkout,
-// billing-webhook-* y admin-create-user, y registra cada escritura.
+// billing-webhook-*, billing-create-invoice, billing-cancel-invoice y
+// admin-create-user, y registra cada escritura.
 
 const TABLAS_FINANCIERAS = new Set(['pagos', 'cuentas_por_cobrar', 'ordenes', 'payment_intents', 'clientes']);
 
@@ -86,6 +87,8 @@ export function makeFakeSupabase(seed = {}, opts = {}) {
       eq(col, val) { q.filters.push(r => String(r[col]) === String(val)); return b; },
       neq(col, val) { q.filters.push(r => String(r[col]) !== String(val)); return b; },
       ilike(col, val) { q.filters.push(r => String(r[col] ?? '').toLowerCase() === String(val).toLowerCase()); return b; },
+      in(col, vals) { const set = new Set((vals || []).map(String)); q.filters.push(r => set.has(String(r[col]))); return b; },
+      is(col, val) { q.filters.push(r => (val === null ? (r[col] === null || r[col] === undefined) : r[col] === val)); return b; },
       not(col, op, val) { if (op === 'is' && val === null) q.filters.push(r => r[col] !== null && r[col] !== undefined); return b; },
       order(col, o) { q.order = { col, asc: o?.ascending !== false }; return b; },
       limit(n) { q.limit = n; return b; },

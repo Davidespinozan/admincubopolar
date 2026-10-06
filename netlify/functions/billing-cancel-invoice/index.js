@@ -4,27 +4,29 @@
 //
 // Flujo:
 //   1. Auth: solo Admin / Facturación / Ventas.
-//   2. Lee orden, valida que tenga CFDI vigente (isFacturada = true).
+//   2. Lee orden; OL-03A: Ventas solo SU orden (vendedor_id); Admin y
+//      Facturación, toda la empresa. Exige CFDI vigente Y estatus 'Facturada'.
 //   3. Llama Facturama DELETE /3/cfdis/{id}?type=issued&motive=XX[&substitution=UUID].
-//   4. UPDATE ordenes: estatus='Entregada' + cfdi_cancelado_*.
+//   4. UPDATE ordenes condicional Facturada → Entregada + cfdi_cancelado_*
+//      (mismo CFDI, aún no cancelado); se verifica que tocó la orden.
 //   5. Log invoice_attempts con provider='facturama-cancel'.
+// Todo rechazo de los pasos 1–2 ocurre ANTES del proveedor (cero llamadas).
 //
 // Importante: facturama_uuid/id/folio se conservan como histórico —
 // no se borran. El siguiente timbrado los sobrescribe.
 
-import { badRequest, methodNotAllowed, ok, readJsonBody, serverError } from '../_lib/http.js';
+import { badRequest, json, methodNotAllowed, ok, readJsonBody, serverError } from '../_lib/http.js';
 import { getAuthenticatedProfile } from '../_lib/auth.js';
 import { insertInvoiceAttempt } from '../_lib/persistence.js';
 import { getFacturamaConfig } from '../_lib/providers.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 import { translateFacturamaError } from '../_lib/translateFacturama.js';
 import { withSentry } from '../_lib/sentry.js';
+import { autorizarOrdenFacturacion, precondicionCancelacion, rolPuedeFacturar, updateCondicionalOk } from '../_lib/facturacionGuard.js';
 
 const MOTIVOS_VALIDOS = new Set(['01', '02', '03', '04']);
-const ROLES_PERMITIDOS = new Set(['Admin', 'Facturación', 'Ventas']);
-
-const cancelOnFacturama = async ({ facturamaId, motivo, uuidSustituto }) => {
-  const config = getFacturamaConfig();
+const cancelOnFacturama = async ({ facturamaId, motivo, uuidSustituto }, { fetchImpl, getConfig }) => {
+  const config = getConfig();
   const credentials = Buffer.from(`${config.username}:${config.password}`).toString('base64');
 
   const params = new URLSearchParams({
@@ -37,7 +39,7 @@ const cancelOnFacturama = async ({ facturamaId, motivo, uuidSustituto }) => {
 
   const url = `${config.baseUrl}/3/cfdis/${encodeURIComponent(facturamaId)}?${params.toString()}`;
 
-  const response = await fetch(url, {
+  const response = await fetchImpl(url, {
     method: 'DELETE',
     headers: {
       authorization: `Basic ${credentials}`,
@@ -60,16 +62,30 @@ const cancelOnFacturama = async ({ facturamaId, motivo, uuidSustituto }) => {
   return raw;
 };
 
-const _handler = async (event) => {
+export const createHandler = ({
+  getSupabase = getSupabaseAdmin,
+  fetchImpl = (...args) => fetch(...args),
+  getConfig = getFacturamaConfig,
+} = {}) => async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   let body = null;
+  let supabase = null;
+  let autorizada = false;
+
+  // P0.1 se conserva: sin configuración del servidor → 503 explícito (falla cerrada).
+  try {
+    supabase = getSupabase();
+  } catch (configErr) {
+    console.error('[billing-cancel-invoice] configuración ausente:', configErr?.message);
+    return json(503, { error: 'Autenticación no configurada en el servidor (faltan SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)', code: 'AUTH_NOT_CONFIGURED' });
+  }
 
   try {
-    const auth = await getAuthenticatedProfile(event);
+    const auth = await getAuthenticatedProfile(event, { supabase });
     if (auth.errorResponse) return auth.errorResponse;
 
-    if (!ROLES_PERMITIDOS.has(auth.profile.rol)) {
+    if (!rolPuedeFacturar(auth.profile)) {
       return badRequest('Tu rol no puede cancelar facturas');
     }
 
@@ -84,19 +100,20 @@ const _handler = async (event) => {
       return badRequest('El motivo 01 requiere el UUID del CFDI sustituto');
     }
 
-    const supabase = getSupabaseAdmin();
-
     const { data: orden, error: ordErr } = await supabase
       .from('ordenes')
-      .select('id, folio, facturama_id, facturama_uuid, facturama_folio, cfdi_cancelado_at')
+      .select('id, folio, estatus, vendedor_id, facturama_id, facturama_uuid, facturama_folio, cfdi_cancelado_at')
       .eq('id', ordenId)
       .single();
     if (ordErr || !orden) return badRequest('Orden no encontrada');
 
-    if (!orden.facturama_uuid || !orden.facturama_id) {
-      return badRequest('La orden no tiene un CFDI timbrado para cancelar');
-    }
-    if (orden.cfdi_cancelado_at) {
+    const permiso = autorizarOrdenFacturacion(auth.profile, orden);
+    if (!permiso.ok) return json(permiso.status, { error: permiso.error, code: permiso.code });
+    autorizada = true;
+
+    const pre = precondicionCancelacion(orden);
+    if (!pre.ok) return json(pre.status, { error: pre.error, code: pre.code });
+    if (pre.accion === 'ya_cancelada') {
       return ok({ alreadyCancelled: true, ordenId: orden.id, folio: orden.folio });
     }
 
@@ -104,10 +121,10 @@ const _handler = async (event) => {
       facturamaId: orden.facturama_id,
       motivo,
       uuidSustituto,
-    });
+    }, { fetchImpl, getConfig });
 
     const nowIso = new Date().toISOString();
-    const { error: updErr } = await supabase
+    const upd = await supabase
       .from('ordenes')
       .update({
         estatus: 'Entregada',
@@ -117,18 +134,33 @@ const _handler = async (event) => {
         cfdi_cancelado_uuid_sustituto: motivo === '01' ? String(uuidSustituto).trim() : null,
         cfdi_cancelado_por: auth.profile.nombre || auth.profile.email || 'Sistema',
       })
-      .eq('id', orden.id);
+      .eq('id', orden.id)
+      .eq('estatus', 'Facturada')
+      .eq('facturama_uuid', orden.facturama_uuid)
+      .is('cfdi_cancelado_at', null)
+      .select('id');
+    const actualizada = updateCondicionalOk(upd, orden.id);
 
-    if (updErr) throw updErr;
+    try {
+      await insertInvoiceAttempt({
+        orden_id: orden.id,
+        provider: 'facturama-cancel',
+        provider_reference: orden.facturama_uuid,
+        status: actualizada ? 'success' : 'review:orden_no_actualizada',
+        request_payload: { ordenId: orden.id, motivo, motivoDetalle, uuidSustituto },
+        response_payload: cancelResult,
+      }, supabase);
+    } catch (logErr) {
+      console.error('[billing-cancel-invoice] bitácora falló:', logErr?.message || logErr);
+    }
 
-    await insertInvoiceAttempt({
-      orden_id: orden.id,
-      provider: 'facturama-cancel',
-      provider_reference: orden.facturama_uuid,
-      status: 'success',
-      request_payload: { ordenId: orden.id, motivo, motivoDetalle, uuidSustituto },
-      response_payload: cancelResult,
-    });
+    if (!actualizada) {
+      return json(409, {
+        error: `El CFDI ${orden.facturama_uuid} se canceló ante el SAT pero la orden ${orden.folio} cambió de estado; no se regresó a Entregada. Revísalo en Facturación.`,
+        code: 'ORDEN_CAMBIO_TRAS_CANCELAR',
+        details: upd?.error?.message || null,
+      });
+    }
 
     return ok({
       cancelled: true,
@@ -139,7 +171,7 @@ const _handler = async (event) => {
       cancelResult,
     });
   } catch (error) {
-    if (body?.ordenId) {
+    if (autorizada && body?.ordenId && supabase) {
       try {
         await insertInvoiceAttempt({
           orden_id: body.ordenId,
@@ -152,11 +184,11 @@ const _handler = async (event) => {
             facturamaDetail: error.facturamaDetail,
             facturamaRaw: error.facturamaRaw,
           },
-        });
+        }, supabase);
       } catch {}
     }
     return serverError(error.message || 'No se pudo cancelar el CFDI', error.message);
   }
 };
 
-export const handler = withSentry(_handler);
+export const handler = withSentry(createHandler());

@@ -1,4 +1,4 @@
-import { badRequest, methodNotAllowed, ok, readJsonBody, serverError } from '../_lib/http.js';
+import { badRequest, json, methodNotAllowed, ok, readJsonBody, serverError } from '../_lib/http.js';
 import { getAuthenticatedProfile } from '../_lib/auth.js';
 import { insertInvoiceAttempt } from '../_lib/persistence.js';
 import { getFacturamaConfig } from '../_lib/providers.js';
@@ -6,8 +6,9 @@ import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 import { buildCfdiReceiver } from '../_lib/invoiceLogic.js';
 import { translateFacturamaError } from '../_lib/translateFacturama.js';
 import { withSentry } from '../_lib/sentry.js';
-
-const ROLES_PERMITIDOS = new Set(['Admin', 'Facturación', 'Ventas']);
+import {
+  autorizarOrdenFacturacion, precondicionTimbrado, rolPuedeFacturar, updateCondicionalOk, validarCuerpoTimbrado,
+} from '../_lib/facturacionGuard.js';
 
 const PAYMENT_FORM_MAP = {
   'Efectivo': '01',
@@ -115,9 +116,9 @@ const buildFacturamaPayload = ({ orden, cliente, lineas, issuerZip }) => {
   return cfdi;
 };
 
-const getOrderContext = async ({ ordenId, folio }) => {
-  const supabase = getSupabaseAdmin();
-
+// OL-03A: la orden se lee primero (autorización y precondiciones) y su
+// contexto fiscal (cliente, líneas, configuración) solo si puede timbrarse.
+const getOrden = async ({ supabase, ordenId, folio }) => {
   let query = supabase
     .from('ordenes')
     .select('id, folio, cliente_id, cliente_nombre, productos, total, metodo_pago, estatus, vendedor_id, ruta_id, facturama_id, facturama_uuid, facturama_folio, cfdi_cancelado_at');
@@ -125,8 +126,11 @@ const getOrderContext = async ({ ordenId, folio }) => {
   query = ordenId ? query.eq('id', ordenId) : query.eq('folio', folio);
 
   const { data: orden, error: ordenError } = await query.single();
-  if (ordenError || !orden) throw new Error('Orden no encontrada');
+  if (ordenError || !orden) return null;
+  return orden;
+};
 
+const getOrderContext = async ({ supabase, orden }) => {
   // 🔴-6 Tanda 4: CP del emisor se lee de configuracion_empresa (id=1
   // singleton, mig 044) en lugar del hardcoded ISSUER_ZIP_CODE.
   const [
@@ -166,11 +170,11 @@ const getOrderContext = async ({ ordenId, folio }) => {
   return { orden, cliente, lineas, issuerZip };
 };
 
-const createFacturamaInvoice = async (payload) => {
-  const config = getFacturamaConfig();
+const createFacturamaInvoice = async (payload, { fetchImpl, getConfig }) => {
+  const config = getConfig();
   const credentials = Buffer.from(`${config.username}:${config.password}`).toString('base64');
 
-  const response = await fetch(`${config.baseUrl}/3/cfdis`, {
+  const response = await fetchImpl(`${config.baseUrl}/3/cfdis`, {
     method: 'POST',
     headers: {
       authorization: `Basic ${credentials}`,
@@ -196,32 +200,64 @@ const createFacturamaInvoice = async (payload) => {
   return raw;
 };
 
-const _handler = async (event) => {
+// OL-03A — orden de las comprobaciones. TODO lo siguiente ocurre ANTES de
+// contactar al proveedor; un rechazo no llama a Facturama ni escribe la orden:
+//   1. autenticación (JWT + perfil activo, identidad canónica);
+//   2. rol (Admin, Facturación, Ventas);
+//   3. cuerpo: sin CFDI armado por el cliente; ordenId o folio;
+//   4. la orden existe;
+//   5. dueño: Ventas solo su orden (vendedor_id); Admin/Facturación, toda la empresa;
+//   6. CFDI vigente → respuesta idempotente existente (alreadyInvoiced), sin proveedor;
+//   7. estatus = 'Entregada' (cumplimiento físico; el pago no se exige: crédito = PPD);
+//   8. contexto fiscal derivado por el servidor (líneas, cliente, catálogo, CP).
+// Tras el timbrado: UPDATE condicional Entregada → Facturada, verificado. Si la
+// orden cambió mientras se timbraba, NO se declara éxito (el CFDI queda en
+// invoice_attempts con su UUID para revisión; no se cancela automáticamente).
+export const createHandler = ({
+  getSupabase = getSupabaseAdmin,
+  fetchImpl = (...args) => fetch(...args),
+  getConfig = getFacturamaConfig,
+} = {}) => async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   let body = null;
+  let supabase = null;
+  let ordenRef = null;
+
+  // P0.1 se conserva: sin configuración del servidor → 503 explícito (falla cerrada).
+  try {
+    supabase = getSupabase();
+  } catch (configErr) {
+    console.error('[billing-create-invoice] configuración ausente:', configErr?.message);
+    return json(503, { error: 'Autenticación no configurada en el servidor (faltan SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)', code: 'AUTH_NOT_CONFIGURED' });
+  }
 
   try {
-    const auth = await getAuthenticatedProfile(event);
+    const auth = await getAuthenticatedProfile(event, { supabase });
     if (auth.errorResponse) return auth.errorResponse;
 
-    if (!ROLES_PERMITIDOS.has(auth.profile.rol)) {
+    if (!rolPuedeFacturar(auth.profile)) {
       return badRequest('Tu rol no puede timbrar facturas');
     }
 
     body = await readJsonBody(event);
-    const { ordenId, folio, facturamaPayload } = body;
+    const cuerpo = validarCuerpoTimbrado(body);
+    if (!cuerpo.ok) return json(cuerpo.status, { error: cuerpo.error, code: cuerpo.code });
 
-    if (!ordenId && !folio) {
-      return badRequest('ordenId or folio is required');
-    }
+    const orden = await getOrden({ supabase, ordenId: cuerpo.ordenId, folio: cuerpo.folio });
+    if (!orden) return badRequest('Orden no encontrada');
 
-    const { orden, cliente, lineas, issuerZip } = await getOrderContext({ ordenId, folio });
+    const permiso = autorizarOrdenFacturacion(auth.profile, orden);
+    if (!permiso.ok) return json(permiso.status, { error: permiso.error, code: permiso.code });
+    ordenRef = orden;
+
+    const pre = precondicionTimbrado(orden);
+    if (!pre.ok) return json(pre.status, { error: pre.error, code: pre.code });
 
     // 🔴-Tanda5 idempotency: si la orden ya tiene CFDI vigente (UUID
     // poblado y NO cancelado), evitamos un re-stamp accidental que
     // generaría un segundo CFDI duplicado en SAT.
-    if (orden.facturama_uuid && !orden.cfdi_cancelado_at) {
+    if (pre.accion === 'ya_timbrada') {
       return ok({
         alreadyInvoiced: true,
         ordenId: orden.id,
@@ -231,37 +267,31 @@ const _handler = async (event) => {
       });
     }
 
-    let payload = facturamaPayload || buildFacturamaPayload({ orden, cliente, lineas, issuerZip });
+    const { cliente, lineas, issuerZip } = await getOrderContext({ supabase, orden });
+    const proveedor = { fetchImpl, getConfig };
+
+    let payload = buildFacturamaPayload({ orden, cliente, lineas, issuerZip });
 
     let invoice;
     try {
-      invoice = await createFacturamaInvoice(payload);
+      invoice = await createFacturamaInvoice(payload, proveedor);
     } catch (firstErr) {
       // If RFC was rejected, retry as público general
       const isRfcError = firstErr.message && firstErr.message.includes('RFC');
       if (isRfcError && payload.Receiver?.Rfc !== 'XAXX010101000') {
         payload = buildFacturamaPayload({ orden, cliente: null, lineas, issuerZip });
-        invoice = await createFacturamaInvoice(payload);
+        invoice = await createFacturamaInvoice(payload, proveedor);
       } else {
         throw firstErr;
       }
     }
 
-    await insertInvoiceAttempt({
-      orden_id: orden.id,
-      provider: 'facturama',
-      provider_reference: invoice.Id || invoice.Folio || String(orden.id),
-      status: 'success',
-      request_payload: payload,
-      response_payload: invoice,
-    });
-
-    // Save Facturama reference in the order and mark as Facturada.
-    // Si la orden venía de un CFDI cancelado (re-timbrado), limpiamos
-    // las anotaciones de cancelación para que el nuevo timbre sea el
-    // CFDI vigente (idempotency lock).
-    const supabase = getSupabaseAdmin();
-    await supabase
+    // OL-03A: la orden se marca Facturada SOLO si sigue Entregada (el estado
+    // que se validó antes del proveedor). Primero la
+    // orden (es el candado de idempotencia: un reintento ve el CFDI vigente),
+    // después la bitácora. Si la re-facturación viene de un CFDI cancelado se
+    // limpian sus anotaciones para que el nuevo timbre sea el vigente.
+    const upd = await supabase
       .from('ordenes')
       .update({
         estatus: 'Facturada',
@@ -274,18 +304,44 @@ const _handler = async (event) => {
         cfdi_cancelado_uuid_sustituto: null,
         cfdi_cancelado_por: null,
       })
-      .eq('id', orden.id);
+      .eq('id', orden.id)
+      .eq('estatus', 'Entregada')
+      .select('id');
+    const actualizada = updateCondicionalOk(upd, orden.id);
+
+    try {
+      await insertInvoiceAttempt({
+        orden_id: orden.id,
+        provider: 'facturama',
+        provider_reference: invoice.Id || invoice.Folio || String(orden.id),
+        status: actualizada ? 'success' : 'review:orden_no_actualizada',
+        request_payload: payload,
+        response_payload: invoice,
+      }, supabase);
+    } catch (logErr) {
+      console.error('[billing-create-invoice] bitácora falló:', logErr?.message || logErr);
+    }
+
+    if (!actualizada) {
+      const uuid = invoice.Uuid || invoice.uuid || invoice.Id || null;
+      return json(409, {
+        error: `CFDI timbrado (${uuid}) pero la orden ${orden.folio} cambió de estado mientras se timbraba; no se marcó Facturada. Revísalo en Facturación antes de reintentar.`,
+        code: 'ORDEN_CAMBIO_TRAS_TIMBRAR',
+        facturamaUuid: uuid,
+        details: upd?.error?.message || null,
+      });
+    }
 
     return ok({ invoice });
   } catch (error) {
-    if (body?.ordenId || body?.folio) {
+    if (ordenRef && supabase) {
       try {
         await insertInvoiceAttempt({
-          orden_id: body.ordenId || null,
+          orden_id: ordenRef.id,
           provider: 'facturama',
-          provider_reference: body.folio || null,
+          provider_reference: ordenRef.folio || null,
           status: 'error',
-          request_payload: body.facturamaPayload || {},
+          request_payload: { ordenId: body?.ordenId || null, folio: body?.folio || null },
           response_payload: {
             message: error.message,
             // 🟡 I1: preservamos el ModelState crudo para diagnóstico
@@ -293,10 +349,11 @@ const _handler = async (event) => {
             facturamaDetail: error.facturamaDetail,
             facturamaRaw: error.facturamaRaw,
           },
-        });
+        }, supabase);
       } catch {}
     }
     return serverError(error.message || 'Could not create invoice', error.message);
   }
 };
-export const handler = withSentry(_handler);
+
+export const handler = withSentry(createHandler());
