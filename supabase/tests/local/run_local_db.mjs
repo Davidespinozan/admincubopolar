@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -3151,6 +3151,139 @@ for (const fase of ['107', '108']) {
   console.log(`  concurrencia + frontend↔DB (076, 087, 092, 093, 102, 104, 106, 107) tras ${fase}: PASS`);
 }
 
+// ═══ 109 — venta directa de planta atómica (OL-02B; aditiva) ═══
+{
+  const ok = (await c.query(`SELECT to_regprocedure('public.completar_venta_directa(uuid,bigint,text,text,jsonb,text,text)') IS NULL
+                               AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'stock_operaciones_tipo_check' AND pg_get_constraintdef(oid) LIKE '%venta_directa%') AS a`)).rows[0].a;
+  console.log(`  VENTA_DIRECTA_PARITY_CHECK[pre-109]: ${ok ? 'PASS' : 'FAIL'}`);
+  if (!ok) process.exit(1);
+}
+const SUITES_109 = [...SUITES_107, ['107', '107_base_costo_empaque_test.sql']];
+async function conc109() {
+  console.log('── 109 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const SUB = (k) => 'a9c00000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const OP = (k) => 'a9c10000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM movimientos_contables WHERE orden_id BETWEEN 10961 AND 10969;
+    DELETE FROM inventario_mov WHERE producto LIKE 'C109-%';
+    DELETE FROM stock_operaciones WHERE operacion_id::text LIKE 'a9c1%' OR orden_id BETWEEN 10961 AND 10969 OR ruta_id BETWEEN 10961 AND 10969;
+    DELETE FROM pagos WHERE orden_id BETWEEN 10961 AND 10969;
+    DELETE FROM orden_lineas WHERE orden_id BETWEEN 10961 AND 10969; DELETE FROM ordenes WHERE id BETWEEN 10961 AND 10969;
+    DELETE FROM rutas WHERE id BETWEEN 10961 AND 10969;
+    DELETE FROM auditoria WHERE detalle LIKE 'OV-1096%' OR usuario LIKE 'AdminC109%';
+    DELETE FROM cuartos_frios WHERE id LIKE 'CF-C109%'; DELETE FROM productos WHERE sku LIKE 'C109-%';
+    DELETE FROM usuarios WHERE id BETWEEN 10961 AND 10969; DELETE FROM auth.users WHERE id::text LIKE 'a9c00000-%';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) SELECT ('a9c00000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'c' || k || '@t109c' FROM generate_series(1, 2) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (10961, 'AdminC109-1', 'c1@t109c', 'Admin', 'Activo', '${SUB(1)}'), (10962, 'AdminC109-2', 'c2@t109c', 'Admin', 'Activo', '${SUB(2)}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('C109-X', 'Hielo C109', 'Producto Terminado', 10, 0, 0);
+    INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-C109', 'Cuarto C109', '{"C109-X": 10}'), ('CF-C109B', 'Cuarto C109B', '{"C109-X": 0}');
+    INSERT INTO ordenes (id, folio, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro) SELECT 10960 + k, 'OV-1096' || k, 'Cliente C109', 'x', 80, 'Creada', 'Efectivo', 'Contado' FROM generate_series(1, 7) k;
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) SELECT 10960 + k, 'C109-X', 8, 10, 80 FROM generate_series(1, 7) k;
+    INSERT INTO rutas (id, folio, nombre, estatus, chofer_id, carga, carga_autorizada, extra_autorizado, carga_real) VALUES
+      (10961, 'R-10961', 'C109 ruta 1', 'Pendiente firma', NULL, '{}', '{"C109-X": 5}', '{}', '{"C109-X": 5}'),
+      (10962, 'R-10962', 'C109 ruta 2', 'Pendiente firma', NULL, '{}', '{"C109-X": 5}', '{}', '{"C109-X": 5}'),
+      (10963, 'R-10963', 'C109 ruta 3', 'Programada', NULL, '{}', '{}', '{}', '{}');
+    COMMIT;`);
+  const reponer = async (q) => c.query(`BEGIN; SET LOCAL session_replication_role = replica; UPDATE cuartos_frios SET stock = '{"C109-X": ${q}}' WHERE id = 'CF-C109'; COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const carrera = async (subA, sqlA, pA, subB, sqlB, pB) => {
+    await actor(a, subA); await actor(b, subB);
+    const ra = await a.query(sqlA, pA).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(sqlB, pB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const cf = async () => n(`SELECT COALESCE((stock->>'C109-X')::int, 0) FROM cuartos_frios WHERE id = 'CF-C109'`);
+  const negativos = async () => n(`SELECT count(*) FROM cuartos_frios WHERE id LIKE 'CF-C109%' AND (stock->>'C109-X')::int < 0`);
+  const VD = `SELECT completar_venta_directa($1::uuid, $2::bigint, 'contado', 'Efectivo', '[{"sku":"C109-X","cuarto_id":"CF-C109","cantidad":8}]') AS r`;
+  const CARGA = `SELECT confirmar_carga_ruta($1::uuid, $2::bigint, 'firma C109', false, NULL) AS r`;
+  // 1. Dos ventas directas sobre la misma existencia (10; cada una pide 8).
+  let r = await carrera(SUB(1), VD, [OP(1), 10961], SUB(2), VD, [OP(2), 10962]);
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && r.rb.code === '22023' && /Stock insuficiente/.test(r.rb.msg) && await cf() === 2 && await negativos() === 0
+     && await n(`SELECT count(*) FROM inventario_mov WHERE producto = 'C109-X'`) === 1 && await n(`SELECT count(*) FROM pagos WHERE orden_id = 10962`) === 0
+     && await n(`SELECT count(*) FROM ordenes WHERE id = 10962 AND estatus = 'Creada'`) === 1,
+     '109-C1 dos ventas directas sobre el mismo cuarto: la segunda espera y se rechaza completa (existencia 2, sin negativos, sin pago ni entrega)');
+  // 2. Venta directa contra carga de ruta (la carga bloquea todos los cuartos).
+  await reponer(10);
+  r = await carrera(SUB(1), VD, [OP(3), 10963], SUB(2), CARGA, [OP(4), 10961]);
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && /insuficiente/i.test(r.rb.msg) && await cf() === 2 && await negativos() === 0
+     && await n(`SELECT count(*) FROM rutas WHERE id = 10961 AND carga_confirmada_at IS NULL AND estatus = 'Pendiente firma'`) === 1,
+     '109-C2 venta directa (8) y carga de ruta (5) a la vez: la carga espera y se rechaza (quedan 2); ruta intacta');
+  await reponer(10);
+  r = await carrera(SUB(1), CARGA, [OP(5), 10962], SUB(2), VD, [OP(6), 10964]);
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && r.rb.code === '22023' && await cf() === 5 && await negativos() === 0
+     && await n(`SELECT count(*) FROM ordenes WHERE id = 10964 AND estatus = 'Creada'`) === 1,
+     '109-C3 carga de ruta (5) y venta directa (8) a la vez: la venta espera y se rechaza (quedan 5); orden intacta');
+  // 3. Venta directa contra traspaso.
+  await reponer(10);
+  r = await carrera(SUB(1), `SELECT traspaso_cuartos($1::uuid, 'CF-C109', 'CF-C109B', 'C109-X', 5) AS r`, [OP(7)], SUB(2), VD, [OP(8), 10965]);
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && r.rb.code === '22023' && await cf() === 5
+     && await n(`SELECT (stock->>'C109-X')::int FROM cuartos_frios WHERE id = 'CF-C109B'`) === 5 && await negativos() === 0,
+     '109-C4 traspaso (5) y venta directa (8) del mismo cuarto: la venta espera y se rechaza; el traspaso queda completo');
+  // 4. Venta directa contra asignación de ruta de la misma orden.
+  await reponer(10);
+  r = await carrera(SUB(1), `SELECT asignar_orden($1::bigint, 10963, 10961) AS r`, [10966], SUB(2), VD, [OP(9), 10966]);
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && r.rb.code === '22023' && /tiene ruta/.test(r.rb.msg) && await cf() === 10
+     && await n(`SELECT count(*) FROM ordenes WHERE id = 10966 AND estatus = 'Asignada' AND ruta_id = 10963`) === 1
+     && await n(`SELECT count(*) FROM pagos WHERE orden_id = 10966`) === 0,
+     '109-C5 Admin asigna la orden a una ruta mientras el vendedor la completa: la venta espera la orden, ve la ruta y se rechaza');
+  // 5. La misma operación dos veces a la vez.
+  r = await carrera(SUB(1), VD, [OP(10), 10967], SUB(1), VD, [OP(10), 10967]);
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && r.rb.row.r.replay === true && await cf() === 2
+     && await n(`SELECT count(*) FROM inventario_mov WHERE operacion_id = $1`, [OP(10)]) === 1 && await n(`SELECT count(*) FROM pagos WHERE orden_id = 10967`) === 1,
+     '109-C6 misma venta (mismo UUID) a la vez: un efecto; la segunda espera y es replay');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (109 concurrencia)'); process.exit(1); }
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 109 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '109_venta_directa_atomica.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 109 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 109)'); process.exit(1); }
+console.log('── PRUEBAS 109');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/109_venta_directa_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (109)'); process.exit(1); }
+}
+await reruns090('109', ['072']);
+for (const [etq, f] of SUITES_109) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 109)`); process.exit(1); }
+  console.log(`  ${etq} tras 109: PASS`);
+}
+await conc109();
+console.log('── concurrencia + frontend↔DB tras 109');
+await conc107();
+await conc106();
+await conc104();
+await conc102();
+await conc093();
+await conc092();
+await conc076();
+await fe076();
+await conc087();
+await fe087();
+console.log('  concurrencia + frontend↔DB (076, 087, 092, 093, 102, 104, 106, 107, 109) tras 109: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -3200,7 +3333,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 102
   'ajustar_existencia_cuarto','registrar_merma_cuarto','cuarto_tiene_historia',
   // 104
-  'registrar_devolucion','empaque_tiene_dependencias'];
+  'registrar_devolucion','empaque_tiene_dependencias',
+  // 109
+  'completar_venta_directa'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
