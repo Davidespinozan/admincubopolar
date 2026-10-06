@@ -1,7 +1,7 @@
 name: E2E Smoke Tests
 
-# Tanda 13: cron diario + post-deploy + manual dispatch para los 3
-# smokes Playwright contra producción. Read-only: no contamina BD.
+# Tanda 13 (histórico): cron diario + post-deploy contra producción.
+# Desde GL-1 (2026-10-06) solo manual y nunca contra producción.
 #
 # Cron: 0 9 * * * UTC
 #   = 3:00 AM Durango (UTC-6, sin DST)
@@ -12,20 +12,29 @@ name: E2E Smoke Tests
 # Notificación de fallo: GitHub envía email automático al owner del
 # repo. Plus, Playwright HTML report queda como artifact (7 días).
 
+# GO-LIVE GL-1 (2026-10-06): E2E SMOKES MUST NOT RUN AGAINST PRODUCTION.
+# Sin cron ni push: solo ejecución manual, y el job se niega a correr si
+# E2E_BASE_URL apunta a producción. Reactivar la automatización solo cuando
+# exista un entorno de STAGING con cuentas propias (credenciales solo en
+# GitHub Secrets / gestor de secretos, nunca en el repositorio).
 on:
-  schedule:
-    - cron: '0 9 * * *'
-  push:
-    branches: [main]
   workflow_dispatch:
 
 jobs:
   smokes:
-    name: Smokes contra sistema.cubopolar.com
+    name: Smokes contra STAGING (nunca producción)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
+      - name: Negarse a correr contra producción (GL-1)
+        env:
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+        run: |
+          case "${E2E_BASE_URL}" in
+            ""|*sistema.cubopolar.com*) echo "E2E_BASE_URL vacía o de PRODUCCIÓN: E2E SMOKES MUST NOT RUN AGAINST PRODUCTION." ; exit 1 ;;
+          esac
+
       - name: Checkout
         uses: actions/checkout@v4
 

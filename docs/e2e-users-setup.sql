@@ -1,3 +1,11 @@
+-- ⚠️ AVISO DE SEGURIDAD (2026-10-06, GO-LIVE GL-1)
+-- Este archivo publicó contraseñas reales de las 3 cuentas e2e en un repositorio
+-- PÚBLICO. Esas cuentas de PRODUCCIÓN quedaron BANEADAS (Supabase Auth), con
+-- contraseña aleatoria nueva no conservada, y en usuarios.estatus = 'Inactivo'.
+-- Las contraseñas antiguas pueden seguir en el historial de git: ya NO son válidas.
+-- E2E SMOKES MUST NOT RUN AGAINST PRODUCTION. Reactivar solo con un entorno de
+-- STAGING propio y credenciales que vivan únicamente en un gestor de secretos.
+--
 -- e2e-users-setup.sql
 -- Tanda 10: instructivo + SQL para que David cree las 3 cuentas E2E
 -- en Supabase Auth + tabla `usuarios`. Estas cuentas son las que usa
@@ -28,15 +36,15 @@
 -- generaron con crypto.randomBytes — guárdalas en tu password manager):
 --
 --   Email:     e2e-admin@cubopolar.com
---   Password:  2Ul9pEO3TKEtaz3Pb9W4pIg0
+--   Password:  <en el gestor de secretos; NUNCA en el repositorio>
 --   ✅ Auto-confirm user: SÍ
 --
 --   Email:     e2e-ventas@cubopolar.com
---   Password:  f36va1qsjlHVUXYYGkADkuIt
+--   Password:  <en el gestor de secretos; NUNCA en el repositorio>
 --   ✅ Auto-confirm user: SÍ
 --
 --   Email:     e2e-chofer@cubopolar.com
---   Password:  KRIe5oH5FUQdoVX5xSmR0vkQ
+--   Password:  <en el gestor de secretos; NUNCA en el repositorio>
 --   ✅ Auto-confirm user: SÍ
 --
 -- Después de crearlas, los UUIDs reales que David capturó son:
@@ -105,13 +113,13 @@ SELECT COUNT(*) AS choferes_visibles
 -- ─────────────────────────────────────────────────────────────────
 -- En .env.local (NO versionado) o como export en tu shell:
 --
---   E2E_BASE_URL=https://sistema.cubopolar.com
+--   E2E_BASE_URL=<URL de STAGING; NUNCA producción>
 --   E2E_ADMIN_EMAIL=e2e-admin@cubopolar.com
---   E2E_ADMIN_PASSWORD=2Ul9pEO3TKEtaz3Pb9W4pIg0
+--   E2E_ADMIN_PASSWORD=<desde el gestor de secretos>
 --   E2E_VENTAS_EMAIL=e2e-ventas@cubopolar.com
---   E2E_VENTAS_PASSWORD=f36va1qsjlHVUXYYGkADkuIt
+--   E2E_VENTAS_PASSWORD=<desde el gestor de secretos>
 --   E2E_CHOFER_EMAIL=e2e-chofer@cubopolar.com
---   E2E_CHOFER_PASSWORD=KRIe5oH5FUQdoVX5xSmR0vkQ
+--   E2E_CHOFER_PASSWORD=<desde el gestor de secretos>
 --
 -- Después correr:
 --   npm run test:e2e

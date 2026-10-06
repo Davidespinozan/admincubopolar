@@ -10,7 +10,9 @@
 //
 // Seam (patrón renovacell): si RECIBO_SECRET no está configurado en
 // Netlify, ambos modos responden 501 y la UI degrada con un aviso —
-// nada truena. Generar el secret: `openssl rand -hex 32`.
+// nada truena. El secret son 32 bytes aleatorios en hex: se guarda la SALIDA
+// de un generador criptográfico (nunca el texto de un comando ni un valor
+// escrito en el repositorio) y solo en Netlify.
 //
 // P0.1: el POST SIEMPRE verifica la orden y la autorización. Antes,
 // `if (supabase)` saltaba la verificación cuando auth.js devolvía el

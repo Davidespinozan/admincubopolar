@@ -1,3 +1,10 @@
+> ⚠️ **SEGURIDAD (2026-10-06, GO-LIVE GL-1): E2E SMOKES MUST NOT RUN AGAINST PRODUCTION.**
+> Las 3 cuentas e2e de producción están BANEADAS e inactivas (sus contraseñas se publicaron en
+> el repositorio público y quedaron invalidadas). El workflow `e2e-smokes` es solo manual y se
+> niega a correr contra `sistema.cubopolar.com`. Reactivar la automatización solo cuando exista un
+> entorno de STAGING con cuentas propias cuyas credenciales vivan únicamente en un gestor de secretos.
+> Lo que sigue describe el diseño original (contra producción) y queda como referencia histórica.
+
 # Setup E2E con Playwright — Cubo Polar ERP
 
 Tanda 10 montó la **Fase A** de tests E2E: smoke read-only contra
@@ -41,7 +48,7 @@ npm install
 npx playwright install chromium
 
 # 2. Variables de entorno (mejor en .env.local que NO está versionado)
-export E2E_BASE_URL=https://sistema.cubopolar.com   # default si se omite
+export E2E_BASE_URL=<URL de STAGING>   # NUNCA producción
 export E2E_ADMIN_EMAIL=e2e-admin@cubopolar.com
 export E2E_ADMIN_PASSWORD=<la que generaste con docs/e2e-users-setup.sql>
 export E2E_VENTAS_EMAIL=e2e-ventas@cubopolar.com

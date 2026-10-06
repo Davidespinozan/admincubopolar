@@ -110,8 +110,12 @@ GitHub → Netlify dashboard → Site settings → Environment variables.
 | Variable | Valor SANDBOX (actual) | Valor PRODUCCIÓN (cambiar a) |
 |---|---|---|
 | `FACTURAMA_API_URL` | `https://apisandbox.facturama.mx` | `https://api.facturama.mx` |
-| `FACTURAMA_USERNAME` | `Cubopolar` (sandbox) | usuario nuevo de cuenta producción |
-| `FACTURAMA_PASSWORD` | `CuboPol@r2025` (sandbox) | password nuevo de cuenta producción |
+| `FACTURAMA_USERNAME` | (en Netlify; nunca en el repositorio) | usuario nuevo de cuenta producción |
+| `FACTURAMA_PASSWORD` | (en Netlify; nunca en el repositorio) | password nuevo de cuenta producción |
+
+> **Seguridad (2026-10-06, GL-1):** una versión anterior de esta tabla publicó las credenciales
+> del sandbox en un repositorio público. Deben rotarse en Facturama (sandbox) y actualizarse en
+> Netlify sin escribirlas en ningún archivo. Ninguna credencial va en este documento.
 | `VITE_FACTURAMA_MODE` | (no definida = sandbox) | `production` |
 
 **Cambiar las 4 simultáneamente** y guardar. Si solo cambias 3, queda

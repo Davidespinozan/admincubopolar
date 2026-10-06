@@ -44,7 +44,7 @@ encuentra las env vars.
 
 | Secret | Valor |
 |---|---|
-| `E2E_BASE_URL` | `https://sistema.cubopolar.com` |
+| `E2E_BASE_URL` | URL de **STAGING** — nunca producción (el workflow la rechaza) |
 | `E2E_ADMIN_EMAIL` | `e2e-admin@cubopolar.com` |
 | `E2E_ADMIN_PASSWORD` | (la del password manager — generada con `crypto.randomBytes` en Tanda 10) |
 | `E2E_VENTAS_EMAIL` | `e2e-ventas@cubopolar.com` |

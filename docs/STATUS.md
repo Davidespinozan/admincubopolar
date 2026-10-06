@@ -1,6 +1,6 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-06 (CLOSURE-1 activada; etapa CERRADA EN PRODUCCIÓN). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-06 (etapa CERRADA EN PRODUCCIÓN; go-live GL-1 en contención). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
@@ -155,6 +155,38 @@ F-05 rastreo de ruta.
 Estados previos (sin cambio): DIRECT-SALE P0 contenido (109 + D1 + 110); INVOICING LIFECYCLE BYPASS
 contenido (OL-03A y 112); OL-03B, B3.6 y OL-04 DEPLOYED / TECHNICALLY VERIFIED. Reestructura de
 contexto: Fase 2 PENDING y sin autorizar.
+
+## Go-live (puesta en operación) — 2026-10-06
+Go-Live Readiness (auditoría de solo lectura): **CONDITIONAL GO** · 3 GL-BLOCKERS · 16 tareas
+previas. CUBOPOLAR aún no se pone oficialmente a operar en la empresa (los pocos datos de
+producción son pruebas previas, no evidencia de adopción). PD-01 y todo desarrollo de producto:
+**FROZEN** hasta tener evidencia de operación real.
+
+**GL-1 (credenciales expuestas en el repositorio PÚBLICO): PARTIALLY CLOSED — FACTURAMA SANDBOX
+ROTATION PENDING.**
+- Cuentas e2e de producción (Admin / Ventas / Chofer, `is_test_account`, ids 66–68): **DISABLED**
+  — baneadas con la Auth Admin API de Supabase (hasta 2126) con contraseña aleatoria nueva no
+  conservada, y `usuarios.estatus = 'Inactivo'`. Login con las contraseñas publicadas: rechazado
+  (`user_banned`). Contraseñas e2e expuestas: **INVALIDATED**. Usuarios reales modificados: 0. La
+  4.ª cuenta de prueba (`qa-p0-…`, id 70) ya estaba inactiva y no estaba expuesta: sin cambio.
+- `RECIBO_SECRET`: estaba configurado con el TEXTO del comando de generación, visible en un
+  comentario público (cualquiera podía firmar links de nota). **ROTATED** a 32 bytes aleatorios
+  (contexto "all"), redeploy `6ac55626c980d188e9a6329c` ready. Tokens antiguos: **INVALIDATED**
+  (403); token con el secreto actual: 200; sin compatibilidad con el secreto anterior.
+- Repositorio (HEAD): **SANITIZED** (`docs/e2e-users-setup.sql`, `docs/CUTOVER_PRODUCCION.md`,
+  comentario de `netlify/functions/recibo/index.js`). Los valores antiguos siguen en el historial de
+  git y ya no son válidos (sin reescritura de historia).
+- E2E CI (`e2e-smokes`): **MANUAL ONLY / PRODUCTION PROHIBITED** (sin cron ni push; el job se niega
+  a correr contra `sistema.cubopolar.com`). Secretos `E2E_*` de GitHub conservados hasta que exista
+  staging. E2E SMOKES MUST NOT RUN AGAINST PRODUCTION.
+- Credenciales SANDBOX de Facturama (publicadas y en uso en Netlify): **PENDING OWNER ROTATION**
+  (no hay API para cambiar la contraseña; se rota en el portal de Facturama y luego se actualiza
+  `FACTURAMA_PASSWORD` en Netlify sin imprimirla). Facturama LIVE: no tocado.
+- Datos de negocio de producción: **UNCHANGED** (comparación antes/después idéntica; `error_log` 192).
+- Observación (sin tocar): el link bonito `/nota/:id?t=` responde 400; la función directa sí valida.
+
+**GL-2** (Stripe en modo TEST con links visibles): OPEN. **GL-3** (Facturama en sandbox; CP y régimen
+de la empresa vacíos): OPEN. OL y CLOSURE-1: siguen CLOSED.
 
 ## Backlog aceptado (32: P2 8 · P3 24) — no impide el cierre
 Clasificado en la auditoría final de cierre (2026-10-06). Ninguno se promueve a MUST-FIX sin
