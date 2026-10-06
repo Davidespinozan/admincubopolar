@@ -1,20 +1,22 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-06 (activación OL-04). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-06 (CLOSURE-1 activada; etapa CERRADA EN PRODUCCIÓN). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Código de la aplicación: `5f1632bb07e1e7826f9c52bc4aa2fbf3e1dd9811` (OL-04) — DEPLOYED (Netlify
-  `6ac5358b580a50000842bd8f`, ready 2026-10-06T17:53Z) y verificado en solo lectura (bundle vivo;
-  solo cambiaron los digests de `billing-create-complemento` y `billing-create-invoice`); este commit
-  de documentación se publica encima sin cambios de código. Bases anteriores: `c09d82a` (B3.6),
-  `9a94881` (OL-03B), `cfce0f2` (OL-03A), `8b61a2e` (110).
-- Base de datos: migraciones aplicadas hasta la **113** (111 el 2026-10-06T16:27Z, 112 el
-  16:29:58Z, 113 el 17:51:58Z, una vez cada una; se aplican con `supabase db query`; no hay tabla de
-  historial: la "cabeza" se verifica por la presencia y huella de los objetos).
-- Conteos tras 113 (cambian con cada fase; no son invariantes): 127 funciones · 78 policies ·
+- Repositorio desplegado: `3bdf4cee064f6fa40e5857dc2bbebb6ce2a34ae3` (CLOSURE-1) — DEPLOYED (Netlify
+  `6ac54515e0440600084d4beb`, ready 2026-10-06T19:02Z). Sin cambio de código de aplicación ni de
+  funciones respecto de OL-04 (los 17 digests de Netlify Functions idénticos; el commit solo trae la
+  migración 114 y pruebas); este commit de documentación se publica encima sin cambios de código.
+  Código de aplicación vigente: `5f1632b` (OL-04). Bases anteriores: `c09d82a` (B3.6), `9a94881`
+  (OL-03B), `cfce0f2` (OL-03A), `8b61a2e` (110).
+- Base de datos: migraciones aplicadas hasta la **114** (111 el 2026-10-06T16:27Z, 112 el
+  16:29:58Z, 113 el 17:51:58Z, 114 el 18:58:15Z, una vez cada una; se aplican con `supabase db query`;
+  no hay tabla de historial: la "cabeza" se verifica por la presencia y huella de los objetos).
+  SHA-256 de 114: `c5b5b82f83db1baae5390ccca197244c146881c1a400a9ed437c4060155d623a`; 109–113 sin cambio.
+- Conteos tras 114 (cambian con cada fase; no son invariantes): 127 funciones · 78 policies ·
   41 tablas · 39 secuencias · 1 vista · 45 triggers en `public` (7 en `ordenes`).
 - Huellas (md5 de `pg_get_functiondef`): `completar_venta_directa` (109) `5825f5e3072a1d5a98961752a5eb5cc6` ·
   `ordenes_guard_entrega_directa` (110) `9eac14f606d8c0f0fb4a8851cc32b640` ·
@@ -23,7 +25,10 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
   `conciliar_operacion_cfdi` (113) `c23b347279dfdc7e314067961682f32d` · `cfdi_aplicar_resultado` (113)
   `0202dd24c784ef4c83a09c0dd5b86c4a` ·
   `ordenes_guard_facturada` (112) `7e33177cfb5551cfcd602e94b94343ea` · `cerrar_ruta_financiero`
-  (112) `bbca26893810c7867be7b2fd33e6fb14` (antes `9b93ce16…`).
+  (112) `bbca26893810c7867be7b2fd33e6fb14` (antes `9b93ce16…`) · `abonar_cxc` (114)
+  `8a5a127c3cc45a4db71cf03bb515f185` (antes `b84b1d3a…`, de 088).
+- `idx_pagos_ref` (114): `CREATE UNIQUE INDEX idx_pagos_ref ON public.pagos USING btree (referencia)
+  WHERE (referencia <> ''::text)` — LIVE; 0 referencias no vacías repetidas al activar.
 - Webhooks del link desplegados (digest Netlify): stripe `d50a7b654379` · mercadopago `c6ae953b0992`.
 - Centinelas: `error_log` max id 192 · auditoría max id 724 · OV-0086 md5
   `c253d4337b2db7c286c08605f94cc8b9` · anon sin acceso a tablas ni funciones · EMP-5 99,000 @ 1 ·
@@ -47,6 +52,7 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 | OL-03B una operación CFDI a la vez por orden (111) y defensa en base de datos (112) | 9a94881 · docs 09be417 | MIGRATIONS APPLIED ONCE (111 → Netlify → 112) + DEPLOYED / TECHNICALLY VERIFIED |
 | Role UI B3.6 Ventas como UN espacio de trabajo (filtros Pendientes / Hoy / Todas) | c09d82a · docs a9ce9d7 | DEPLOYED / TECHNICALLY VERIFIED (solo UI; sin migración) |
 | OL-04 complementos de pago por pago (113) | 5f1632b | MIGRATION APPLIED ONCE (113 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED |
+| CLOSURE-1 referencia de pago única (114; R-01 de la auditoría final) | 3bdf4ce | MIGRATION APPLIED ONCE + DEPLOYED / TECHNICALLY VERIFIED / OWNER ACCEPTED; R-01 CLOSED IN PRODUCTION |
 
 B3.3 y B3.5 (Ventas IA) y OL-01 / OL-02 / OL-02D / OL-03 fueron auditorías sin commit. El cierre
 del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI, OL-02 ni OL-03A/B.
@@ -106,30 +112,68 @@ del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role U
   desde esos flujos. El complemento no mueve orden, pago, CxC, contabilidad ni inventario.
 
 ## Trabajo actual
-Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno.
-- **DIRECT-SALE P0:** CONTAINED FOR UI / REST / WEBHOOK (109 + D1 + 110).
-- **INVOICING LIFECYCLE BYPASS (OL-03):** CONTAINED SERVER-SIDE (OL-03A) AND AT THE DATABASE (112).
-- **OL-03B:** DEPLOYED / TECHNICALLY VERIFIED: timbrado y cancelación simultáneos serializados por
-  la reserva de la base ANTES del proveedor; resultados desconocidos bloqueados para reintento
-  automático; `requested` conserva `Facturada`; el cierre de ruta conserva `Facturada`. La
-  activación no cambió datos de negocio (0 operaciones CFDI, 0 sin resolver).
-- **ORDER LIFECYCLE INTEGRITY:** NO cerrado. **INVOICING INTEGRITY:** NO cerrado (residuales abajo).
-- **OL-04 (complementos de pago):** DEPLOYED / TECHNICALLY VERIFIED (113 + `5f1632b`); la activación no
-  cambió datos de negocio (0 CxC, 0 CFDI, 0 complementos, 0 operaciones sin resolver).
-- **Siguiente fase:** revisión del dueño → auditoría final de cierre de CUBOPOLAR.
-- **B3.6 (Ventas como un solo espacio de trabajo):** DEPLOYED / TECHNICALLY VERIFIED. Ventas tiene UN
-  módulo en el menú; filtros internos Pendientes (`#/ventas`) / Hoy (`#/ventas-hoy`) / Todas
-  (`#/ventas-todas`); `#/ventas-cobrar` (B3.4) es alias de `#/ventas`. Pendientes = la tarjeta ofrece
-  Cobrar / Cobrar entrega (Creada, o Asignada sin ruta), en dos grupos (por cobrar / pagadas por link
-  por entregar); las que tiene el chofer solo como dato. Escritorio y móvil con el mismo espacio de
-  trabajo; sin barra inferior para Ventas (un solo módulo); Nueva venta como acción principal de tamaño
-  normal. "Ver como" de Admin, alcance por vendedor, venta directa, links de pago, ruta/Chofer, OL-03A y
-  OL-03B sin cambio; base de datos hasta 112 sin cambio; sin mutación de datos de negocio.
-- **ROLE UI CONVERGENCE:** A1–B3.6 desplegadas; el programa NO se declara cerrado (residuales de UI
-  abajo). Opción C y D siguen NO autorizadas; Facturación / Sin asignar sin cambio.
-- **Reestructura de contexto:** Fase 2 PENDING y sin autorizar.
+**ETAPA CUBOPOLAR: CLOSED IN PRODUCTION (2026-10-06).** Auditoría final de cierre COMPLETA (solo
+lectura): P0 = 0; su único MUST-FIX (R-01, producción sin `idx_pagos_ref`) quedó cerrado por
+CLOSURE-1. Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno. El trabajo
+posterior es desarrollo normal de producto o backlog aceptado cuando el dueño lo priorice (no hay
+OL-05, CLOSURE-2 ni otra auditoría pendientes).
 
-## Residuales abiertos
+| Severidad | Cuenta |
+|---|---|
+| P0 | 0 |
+| P1 | 0 (R-01 CLOSED IN PRODUCTION) |
+| Backlog aceptado (P2 8 · P3 24) | 32 |
+| Funcionalidades futuras | 5 |
+
+**CLOSURE-1 (114) — DEPLOYED / TECHNICALLY VERIFIED / OWNER ACCEPTED.**
+- `idx_pagos_ref` LIVE: una referencia de pago no vacía se registra una sola vez; '' ("sin
+  referencia", default de la columna) queda fuera del índice. Respaldo final en base de datos de la
+  idempotencia de los webhooks (Stripe `stripe:<session>`, Mercado Pago `mercadopago:<id>`): una
+  entrega duplicada simultánea responde `duplicate` (200) sin segundo pago, CxC, saldo ni orden.
+- Referencia por omisión de `abonar_cxc`: `Abono CxC #<cxc> pago <pagos.id>` (antes por segundo de
+  reloj; dos abonos legítimos de la misma CxC en el mismo segundo ya no chocan).
+- **Comportamiento aceptado por el dueño:** una referencia manual/externa no vacía repetida falla
+  cerrado y NUNCA se modifica ni se le agrega texto. Cobro de CxC (`abonar_cxc`, también por
+  `registrar_pago_orden` con CxC): rechazo claro "la referencia de pago … ya está registrada" (23505)
+  antes de cualquier efecto. Contado (`registrar_pago_orden`): resultado existente
+  `referencia_existente` (el cierre de ruta la lista como saltada). Webhooks: `duplicate`.
+- Activación: pre-chequeo 0 duplicados → 114 una vez (2026-10-06T18:58:15Z) → catálogo cambió
+  EXACTAMENTE en `abonar_cxc` e `idx_pagos_ref` (ACL, SECURITY DEFINER, search_path, RLS, grants y
+  policies sin cambio; authenticated sigue sin INSERT en `pagos`) → datos de negocio idénticos
+  (órdenes, pagos 1, CxC, saldos, movimientos, rutas, cuartos, productos, CFDI 0, `error_log` 192) →
+  push `3bdf4ce` → Netlify ready con los mismos digests de funciones.
+- Evidencia local: suite `114_referencia_pago_unica_test.sql` (21 casos), runner (paridad: sin
+  `idx_pagos_ref` antes de 114; reproducción de R-01; 114 aborta con datos sucios; webhooks reales
+  W1–W7; concurrencia C1–C6; reruns 071–113), `src/__tests__/closure1ReferenciaPago.test.js`.
+- Reversión (solo emergencia; reabre R-01): `DROP INDEX idx_pagos_ref` y `abonar_cxc` de 088.
+
+**Funcionalidades futuras (5; no impiden el cierre):** F-01 Role UI convergence A→B (C y D no
+autorizadas) · F-02 cancelación de complementos + CFDI de egreso (tipo E) y saldo a favor en
+devoluciones · F-03 costo completo de manufactura y margen por SKU · F-04 Clientes para Ventas ·
+F-05 rastreo de ruta.
+
+Estados previos (sin cambio): DIRECT-SALE P0 contenido (109 + D1 + 110); INVOICING LIFECYCLE BYPASS
+contenido (OL-03A y 112); OL-03B, B3.6 y OL-04 DEPLOYED / TECHNICALLY VERIFIED. Reestructura de
+contexto: Fase 2 PENDING y sin autorizar.
+
+## Backlog aceptado (32: P2 8 · P3 24) — no impide el cierre
+Clasificado en la auditoría final de cierre (2026-10-06). Ninguno se promueve a MUST-FIX sin
+evidencia NUEVA de producción. P2: escritura del webhook en varios pasos sin compensación completa ·
+conciliación manual de CFDI inciertos · cancelar CFDI con complementos depende del proveedor · forma
+de pago de tarjeta 04 vs 28 · errores de carga mostrados como lista vacía · compras de empaque sin
+corrección/reverso y CxP editable por REST · pago de CxP mayor al saldo · sin E2E de escritura /
+`.env` local a producción. P3: CHECK `pagos.monto > 0` y FKs de `pagos`/`orden_lineas` ausentes en
+producción (0 violaciones; 2 líneas huérfanas legadas) · RFC/CURP únicos de empleados · triggers
+`updated_at` e índices de rendimiento ausentes · receptor público en general · ventanas de lectura
+500/200 · realtime sin resincronización · `pagos.read_all` · exención de service role en 105 ·
+`canAccessOrden` sin vendedor · chofer sobrescribe el método · cierre de ruta escribe `metodo_pago`
+en `Facturada` · webhook escribe el método después del pago · entrega de Admin con ruta en dos pasos ·
+"Venta directa" manual · "Producido hoy" · tiempo máximo de Netlify supuesto · espejo
+`productos.stock` y sin reverso de transformación · costo fijo/variable en dos escrituras ·
+`increment_saldo` / `error_log` · nómina sin reverso · devoluciones (reposición, saldo a favor,
+reverso) · sin QA visual autenticada / cabecera suelta de Ventas · OV-0085 sin `delivered_at` (legado).
+Detalle por tema:
+
 Ciclo de vida de la orden y pagos:
 - **Facturación tras OL-03A/B:** conciliación MANUAL de operaciones inciertas (no hay consulta
   automática al proveedor); sin interfaz de operador para `cfdi_operaciones`; el tiempo máximo real
