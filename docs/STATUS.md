@@ -1,25 +1,27 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-06 (activación B3.6). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-06 (activación OL-04). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Código de la aplicación: `c09d82a00fd8423e3decedab3e470c033bd7bb22` (B3.6, solo frontend) — DEPLOYED
-  (Netlify `6ac528ef37388600080f70d9`, ready 2026-10-06T16:59Z) y verificado en solo lectura (bundle
-  vivo y digests de las 17 Functions idénticos a OL-03B); este commit de documentación se publica
-  encima sin cambios de código. Bases anteriores: `9a94881` (OL-03B, Netlify
-  `6ac521a708997e00090cd30a`), `cfce0f2` (OL-03A), `8b61a2e` (110).
-- Base de datos: migraciones aplicadas hasta la **112** (111 el 2026-10-06T16:27Z, 112 el
-  16:29:58Z, una vez cada una; se aplican con `supabase db query`; no hay tabla de historial: la
-  "cabeza" se verifica por la presencia y huella de los objetos).
-- Conteos tras 112 (cambian con cada fase; no son invariantes): 126 funciones · 78 policies ·
+- Código de la aplicación: `5f1632bb07e1e7826f9c52bc4aa2fbf3e1dd9811` (OL-04) — DEPLOYED (Netlify
+  `6ac5358b580a50000842bd8f`, ready 2026-10-06T17:53Z) y verificado en solo lectura (bundle vivo;
+  solo cambiaron los digests de `billing-create-complemento` y `billing-create-invoice`); este commit
+  de documentación se publica encima sin cambios de código. Bases anteriores: `c09d82a` (B3.6),
+  `9a94881` (OL-03B), `cfce0f2` (OL-03A), `8b61a2e` (110).
+- Base de datos: migraciones aplicadas hasta la **113** (111 el 2026-10-06T16:27Z, 112 el
+  16:29:58Z, 113 el 17:51:58Z, una vez cada una; se aplican con `supabase db query`; no hay tabla de
+  historial: la "cabeza" se verifica por la presencia y huella de los objetos).
+- Conteos tras 113 (cambian con cada fase; no son invariantes): 127 funciones · 78 policies ·
   41 tablas · 39 secuencias · 1 vista · 45 triggers en `public` (7 en `ordenes`).
 - Huellas (md5 de `pg_get_functiondef`): `completar_venta_directa` (109) `5825f5e3072a1d5a98961752a5eb5cc6` ·
   `ordenes_guard_entrega_directa` (110) `9eac14f606d8c0f0fb4a8851cc32b640` ·
-  `reservar_operacion_cfdi` `da2ef2b708a3d459b1fb462092b3225f` · `finalizar_operacion_cfdi`
-  `e8086c8cd8e33d4b457d28781228fbc5` · `conciliar_operacion_cfdi` `301d2db4f901c8354cd1006b0ee9e535` ·
+  `reservar_operacion_cfdi` `da2ef2b708a3d459b1fb462092b3225f` · `reservar_complemento_cfdi` (113)
+  `5849cb2725be1b15ac69b747574029d4` · `finalizar_operacion_cfdi` (113) `c59548b8c3e2b98e51795dd46c5a6729` ·
+  `conciliar_operacion_cfdi` (113) `c23b347279dfdc7e314067961682f32d` · `cfdi_aplicar_resultado` (113)
+  `0202dd24c784ef4c83a09c0dd5b86c4a` ·
   `ordenes_guard_facturada` (112) `7e33177cfb5551cfcd602e94b94343ea` · `cerrar_ruta_financiero`
   (112) `bbca26893810c7867be7b2fd33e6fb14` (antes `9b93ce16…`).
 - Webhooks del link desplegados (digest Netlify): stripe `d50a7b654379` · mercadopago `c6ae953b0992`.
@@ -43,7 +45,8 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 | STATUS reconciliado hasta 110 | 63da5b4 | solo documentación |
 | OL-03A contención del timbrado/cancelación de CFDI (servidor, antes del proveedor) | d6375ad · docs cfce0f2 | DEPLOYED / TECHNICALLY VERIFIED; sin migración |
 | OL-03B una operación CFDI a la vez por orden (111) y defensa en base de datos (112) | 9a94881 · docs 09be417 | MIGRATIONS APPLIED ONCE (111 → Netlify → 112) + DEPLOYED / TECHNICALLY VERIFIED |
-| Role UI B3.6 Ventas como UN espacio de trabajo (filtros Pendientes / Hoy / Todas) | c09d82a | DEPLOYED / TECHNICALLY VERIFIED (solo UI; sin migración) |
+| Role UI B3.6 Ventas como UN espacio de trabajo (filtros Pendientes / Hoy / Todas) | c09d82a · docs a9ce9d7 | DEPLOYED / TECHNICALLY VERIFIED (solo UI; sin migración) |
+| OL-04 complementos de pago por pago (113) | 5f1632b | MIGRATION APPLIED ONCE (113 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED |
 
 B3.3 y B3.5 (Ventas IA) y OL-01 / OL-02 / OL-02D / OL-03 fueron auditorías sin commit. El cierre
 del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI, OL-02 ni OL-03A/B.
@@ -87,7 +90,20 @@ del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role U
   rechazados. El cierre de ruta CONSERVA `Facturada` (también con cancelación pendiente).
 - Runbook (solo lectura): `SELECT … FROM cfdi_operaciones WHERE estado IN ('incierta',
   'cancelacion_pendiente','revision') OR (estado = 'en_curso' AND lease_hasta < now())`. Tras la
-  activación: 0 filas.
+  activación de OL-04: 0 filas (0 operaciones, 0 complementos).
+- **Complementos de pago (OL-04, 113):** el CFDI tipo P se emite POR PAGO (ancla `pagos.id`); el cliente
+  manda solo `pagoId` y los montos/saldos/método del cliente se rechazan. `reservar_complemento_cfdi`
+  (service role) bloquea la orden (misma serialización de 111), valida dueño (Ventas solo SUS órdenes;
+  Admin y Facturación toda la empresa), CFDI vigente emitido **PPD** (registrado al timbrar en
+  `cfdi_operaciones.cfdi_metodo_pago`; nunca de `ordenes.metodo_pago`), coherencia del pago y que las
+  parcialidades anteriores ya tengan complemento. Monto, saldo anterior/insoluto, fecha (`pagos.fecha`)
+  y forma SAT salen del pago; parcialidad = posición del pago en la CxC, reinicia por generación de
+  CFDI. Un éxito por pago y CFDI. Payload según la guía oficial de Facturama (`Complemento.Payments`,
+  `AmountPaid`, sin Currency/PaymentMethod/PaymentForm generales; Folio + Date fijos por operación).
+  Resultado desconocido → `incierta` (sin reintento automático); conciliación manual con evidencia
+  (Admin/Facturación). PUE y CFDI cancelado: no elegibles. Pagos anteriores a la factura y pagos de
+  webhook o cierre de ruta aparecen como pendientes en Facturación (por pago) sin llamar a Facturama
+  desde esos flujos. El complemento no mueve orden, pago, CxC, contabilidad ni inventario.
 
 ## Trabajo actual
 Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno.
@@ -98,7 +114,9 @@ Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno.
   automático; `requested` conserva `Facturada`; el cierre de ruta conserva `Facturada`. La
   activación no cambió datos de negocio (0 operaciones CFDI, 0 sin resolver).
 - **ORDER LIFECYCLE INTEGRITY:** NO cerrado. **INVOICING INTEGRITY:** NO cerrado (residuales abajo).
-- **Siguiente fase:** revisión del dueño → OL-04 (complementos de pago).
+- **OL-04 (complementos de pago):** DEPLOYED / TECHNICALLY VERIFIED (113 + `5f1632b`); la activación no
+  cambió datos de negocio (0 CxC, 0 CFDI, 0 complementos, 0 operaciones sin resolver).
+- **Siguiente fase:** revisión del dueño → auditoría final de cierre de CUBOPOLAR.
 - **B3.6 (Ventas como un solo espacio de trabajo):** DEPLOYED / TECHNICALLY VERIFIED. Ventas tiene UN
   módulo en el menú; filtros internos Pendientes (`#/ventas`) / Hoy (`#/ventas-hoy`) / Todas
   (`#/ventas-todas`); `#/ventas-cobrar` (B3.4) es alias de `#/ventas`. Pendientes = la tarjeta ofrece
@@ -120,8 +138,12 @@ Ciclo de vida de la orden y pagos:
   histórico OL-03 en producción (0 `invoice_attempts`, ninguna orden con CFDI).
 - **P1-2 Bypass general de service role:** 105 exime a service role/JWT nulo de las transiciones
   fuera de `Facturada`; 110 cubre la entrega sin ruta y 112 la entrada/salida de `Facturada`.
-- **Complementos de pago (OL-04):** `billing-create-complemento` no revisa dueño, confía en
-  montos/saldos enviados por el cliente y no tiene control de concurrencia.
+- **Complementos de pago (tras OL-04):** la consulta por folio en Facturama antes de reintentar no está
+  automatizada (conciliación manual); no se cancelan complementos y cancelar una factura con
+  complementos depende del rechazo del proveedor; si la factura cayó a público general por RFC
+  rechazado, el receptor del complemento puede no coincidir (el proveedor lo rechaza); forma de pago de
+  tarjeta 04 vs 28 pendiente de confirmación del contador; las devoluciones ajustan la CxC sin CFDI de
+  egreso; el modelo de lectura de Facturación carga los últimos 500 pagos de CxC.
 - **Ayudante de dueño compartido:** `canAccessOrden` deja a cualquier vendedor una orden sin vendedor
   (checkout, sincronización de pago y recibo); la facturación ya no lo usa.
 - **P1-3 Entrega de Admin con ruta en dos pasos** (estatus por REST y luego ingreso/CxC), latente.
@@ -165,7 +187,13 @@ Verificado técnicamente, sin cierre del dueño: venta directa atómica y su con
 suites `109_venta_directa_test.sql`, `110_contencion_entrega_directa_test.sql`); facturación por
 operaciones CFDI y su guarda (111, 112; suites `111_operaciones_cfdi_test.sql`,
 `112_contencion_facturada_test.sql`, `src/__tests__/ol03a*`/`ol03b*` y la integración de handlers
-con Postgres del runner local).
+con Postgres del runner local); complementos de pago por pago (113; suite
+`113_complementos_pago_test.sql`, `src/__tests__/ol04Complementos.test.js` y la integración de handlers
+de complemento con Postgres).
+Reversión OL-04: 113 es aditiva y compatible con el código anterior (el código de OL-03B pasa sus
+pruebas con 113). Sin operaciones de complemento: se puede revertir Netlify a `a9ce9d7` dejando 113
+como infraestructura sin uso (eso reabre los riesgos del complemento anterior: solo de emergencia).
+Con cualquier operación de complemento: no quitar 113 ni borrar historia; resolver las sin resolver.
 Reversión OL-03B (en este orden): quitar la guarda 112 y volver a la definición de
 `cerrar_ruta_financiero` de 090 → verificar que no hay operaciones `en_curso`/`incierta`/
 `cancelacion_pendiente`/`revision` (resolverlas, nunca borrarlas) → solo entonces revertir Netlify →
