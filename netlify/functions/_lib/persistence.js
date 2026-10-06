@@ -226,9 +226,13 @@ const syncOrderPayment = async ({ provider, providerReference, payment, rawPaylo
   if (orden.estatus !== 'Facturada') {
     // P0.2: metodo_pago conserva el contrato del catálogo. Crédito (PPD)
     // se respeta; cualquier otro método pasa a 'QR / Link de pago'.
+    // OL-02D1: el pago confirmado NO es la entrega física. El webhook solo
+    // registra el dinero; NO cambia el estatus de la orden (ni fecha de
+    // entrega, ni salida de inventario). La entrega la hace, sin ruta,
+    // completar_venta_directa (modo pagado_link) y, con ruta, el chofer.
     const { error: ordenUpdError } = await supabase
       .from('ordenes')
-      .update({ estatus: 'Entregada', metodo_pago: metodoPagoTrasCobroLink(orden.metodo_pago) })
+      .update({ metodo_pago: metodoPagoTrasCobroLink(orden.metodo_pago) })
       .eq('id', orden.id);
     if (ordenUpdError) throw ordenUpdError;
   }

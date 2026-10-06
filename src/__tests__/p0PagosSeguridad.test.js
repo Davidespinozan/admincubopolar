@@ -247,7 +247,7 @@ describe('billing-webhook-mercadopago', () => {
     expect(JSON.parse(res.body)).toMatchObject({ received: true, applied: true, code: 'applied' });
     expect(fake.db.pagos).toHaveLength(1);
     expect(fake.db.pagos[0]).toMatchObject({ cliente_id: 32, orden_id: 46, monto: 350, referencia: 'mercadopago:123456', metodo_pago: 'QR / Link de pago' });
-    expect(fake.db.ordenes[0].estatus).toBe('Entregada');
+    expect(fake.db.ordenes[0].estatus).toBe('Asignada');   // OL-02D1: el pago confirmado no entrega la orden
     expect(fake.db.payment_intents[0]).toMatchObject({ provider: 'mercadopago', provider_reference: '123456', status: 'paid', amount: 350 });
     expect(fake.db.payment_webhook_events[0].processed).toBe(true);
   });
