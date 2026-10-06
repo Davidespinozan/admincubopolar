@@ -1,21 +1,26 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-06 (activación OL-03A). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-06 (activación OL-03B). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Código de la aplicación: `d6375ad` (OL-03A, solo Netlify Functions de facturación), publicado
-  junto con este commit de documentación (`main` = `origin/main`). El id del deploy de Netlify y su
-  verificación quedan en el reporte de activación de OL-03A (2026-10-06). Base anterior verificada:
-  `8b61a2eb25f02ec2143dd8c3d3b51bac3b1bd6ff` (Netlify `6ac464890642ca0008522841`).
-- Base de datos: migraciones aplicadas hasta la **110**, sin cambio en OL-03A (se aplican con `supabase db query`; no hay
-  tabla de historial: la "cabeza" se verifica por la presencia y huella de los objetos).
-- Conteos tras 110 (cambian con cada fase; no son invariantes): 120 funciones · 77 policies ·
-  40 tablas · 39 secuencias · 1 vista · 44 triggers en `public` (6 en `ordenes`).
+- Código de la aplicación: `9a94881c7acfaf566517c2036d99679d04112f44` (OL-03B) — DEPLOYED (Netlify
+  `6ac521a708997e00090cd30a`, ready 2026-10-06T16:29Z) y verificado en solo lectura; este commit de
+  documentación se publica encima sin cambios de código. Bases anteriores: `cfce0f2` (OL-03A,
+  Netlify `6ac46fc1e30f49000853ab23`), `8b61a2e` (110).
+- Base de datos: migraciones aplicadas hasta la **112** (111 el 2026-10-06T16:27Z, 112 el
+  16:29:58Z, una vez cada una; se aplican con `supabase db query`; no hay tabla de historial: la
+  "cabeza" se verifica por la presencia y huella de los objetos).
+- Conteos tras 112 (cambian con cada fase; no son invariantes): 126 funciones · 78 policies ·
+  41 tablas · 39 secuencias · 1 vista · 45 triggers en `public` (7 en `ordenes`).
 - Huellas (md5 de `pg_get_functiondef`): `completar_venta_directa` (109) `5825f5e3072a1d5a98961752a5eb5cc6` ·
-  `ordenes_guard_entrega_directa` (110) `9eac14f606d8c0f0fb4a8851cc32b640`.
+  `ordenes_guard_entrega_directa` (110) `9eac14f606d8c0f0fb4a8851cc32b640` ·
+  `reservar_operacion_cfdi` `da2ef2b708a3d459b1fb462092b3225f` · `finalizar_operacion_cfdi`
+  `e8086c8cd8e33d4b457d28781228fbc5` · `conciliar_operacion_cfdi` `301d2db4f901c8354cd1006b0ee9e535` ·
+  `ordenes_guard_facturada` (112) `7e33177cfb5551cfcd602e94b94343ea` · `cerrar_ruta_financiero`
+  (112) `bbca26893810c7867be7b2fd33e6fb14` (antes `9b93ce16…`).
 - Webhooks del link desplegados (digest Netlify): stripe `d50a7b654379` · mercadopago `c6ae953b0992`.
 - Centinelas: `error_log` max id 192 · auditoría max id 724 · OV-0086 md5
   `c253d4337b2db7c286c08605f94cc8b9` · anon sin acceso a tablas ni funciones · EMP-5 99,000 @ 1 ·
@@ -35,10 +40,11 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 | OL-02D1 el webhook del link solo registra el pago | 3077aca | DEPLOYED / TECHNICALLY VERIFIED |
 | OL-02D2 contención del camino heredado sin ruta (110) | 8b61a2e | MIGRATION APPLIED ONCE + DEPLOYED / TECHNICALLY VERIFIED |
 | STATUS reconciliado hasta 110 | 63da5b4 | solo documentación |
-| OL-03A contención del timbrado/cancelación de CFDI (servidor, antes del proveedor) | d6375ad | DEPLOYED con esta activación; sin migración |
+| OL-03A contención del timbrado/cancelación de CFDI (servidor, antes del proveedor) | d6375ad · docs cfce0f2 | DEPLOYED / TECHNICALLY VERIFIED; sin migración |
+| OL-03B una operación CFDI a la vez por orden (111) y defensa en base de datos (112) | 9a94881 | MIGRATIONS APPLIED ONCE (111 → Netlify → 112) + DEPLOYED / TECHNICALLY VERIFIED |
 
 B3.3 y B3.5 (Ventas IA) y OL-01 / OL-02 / OL-02D / OL-03 fueron auditorías sin commit. El cierre
-del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI, OL-02 ni OL-03A.
+del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI, OL-02 ni OL-03A/B.
 
 ## Ciclo de vida de la orden (vigente, verificado en código y producción)
 - **Venta sin ruta** (`Creada`, o `Asignada` sin ruta): la entrega física solo ocurre por
@@ -59,20 +65,38 @@ del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role U
   (el pago no se exige: crédito = PPD); cancelar solo una orden `Facturada` con CFDI vigente. El CFDI
   lo arma el servidor (un `facturamaPayload` del cliente se rechaza). Tras el proveedor, UPDATE
   condicional `Entregada → Facturada` / `Facturada → Entregada` con resultado verificado; si la orden
-  cambió, responde 409 y la bitácora queda `review:orden_no_actualizada` (sin rollback automático del
-  CFDI). La base de datos todavía NO impone `Facturada` solo desde `Entregada` (OL-03B).
+  cambió, responde 409 (sin rollback automático del CFDI).
+- **Operaciones CFDI (OL-03B, 111):** antes del proveedor, `reservar_operacion_cfdi` (service role;
+  bloquea la orden, revalida estatus/CFDI vigente/dueño) crea la operación en `cfdi_operaciones`; el
+  índice único parcial permite UNA operación activa o sin resolver por orden (emisión O cancelación):
+  dos timbrados o dos cancelaciones simultáneas → una sola llamada al proveedor. La llamada HTTP
+  (tiempo límite 8 s) ocurre fuera de toda transacción; `finalizar_operacion_cfdi` registra el
+  resultado y mueve la orden. Resultado desconocido (timeout, red, 5xx, 2xx sin `Id` +
+  `Complement.TaxStamp.Uuid`) o lease vencido (120 s) → `incierta`: bloquea todo reintento hasta
+  `conciliar_operacion_cfdi` (Admin/Facturación con evidencia). Generación = cancelaciones
+  confirmadas + 1 (re-facturación tras cancelación confirmada).
+- **Cancelación:** se respeta el estatus del proveedor: `canceled` → `Entregada`; `requested` →
+  `cancelacion_pendiente`, la orden SIGUE `Facturada`; `rejected` → sigue `Facturada`; otro →
+  `incierta`. Un HTTP 200 no basta.
+- **112 (guarda sin exención de rol, ni service role, ni sesión sin JWT, ni `app.fin_ctx`):**
+  `→ Facturada` solo desde `Entregada` dentro de `app.cfdi_ctx = 'emision'` (solo el contrato) y con
+  `facturama_id` + `facturama_uuid`; `Facturada → Entregada` solo dentro de `app.cfdi_ctx =
+  'cancelacion'` fijando `cfdi_cancelado_at`; `Facturada → otro` e `INSERT` como `Facturada`:
+  rechazados. El cierre de ruta CONSERVA `Facturada` (también con cancelación pendiente).
+- Runbook (solo lectura): `SELECT … FROM cfdi_operaciones WHERE estado IN ('incierta',
+  'cancelacion_pendiente','revision') OR (estado = 'en_curso' AND lease_hasta < now())`. Tras la
+  activación: 0 filas.
 
 ## Trabajo actual
 Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno.
 - **DIRECT-SALE P0:** CONTAINED FOR UI / REST / WEBHOOK (109 + D1 + 110).
-- **INVOICING LIFECYCLE BYPASS (OL-03):** CONTAINED SERVER-SIDE IN OL-03A BEFORE PROVIDER.
-- **DATABASE DEFENSE IN DEPTH:** PENDING OL-03B (migración 111 no creada).
-- **INVOICING CONCURRENCY:** dos solicitudes realmente simultáneas todavía pueden emitir DOS CFDI en
-  el proveedor; la segunda escritura local se rechaza (409) y queda marcada para revisión. OL-03B
-  debe resolverlo ANTES de llamar al proveedor.
-- **ORDER LIFECYCLE INTEGRITY:** NO cerrado. **INVOICING INTEGRITY:** NO cerrado.
-- **Siguiente fase:** OL-03B, primero diseño/auditoría de solo lectura (defensa en base de datos
-  `Entregada ↔ Facturada` y serialización/idempotencia previa al proveedor).
+- **INVOICING LIFECYCLE BYPASS (OL-03):** CONTAINED SERVER-SIDE (OL-03A) AND AT THE DATABASE (112).
+- **OL-03B:** DEPLOYED / TECHNICALLY VERIFIED: timbrado y cancelación simultáneos serializados por
+  la reserva de la base ANTES del proveedor; resultados desconocidos bloqueados para reintento
+  automático; `requested` conserva `Facturada`; el cierre de ruta conserva `Facturada`. La
+  activación no cambió datos de negocio (0 operaciones CFDI, 0 sin resolver).
+- **ORDER LIFECYCLE INTEGRITY:** NO cerrado. **INVOICING INTEGRITY:** NO cerrado (residuales abajo).
+- **Siguiente fase:** revisión del dueño → OL-04 (complementos de pago) o B3.6.
 - **B3.6 (Ventas como un solo espacio de trabajo):** bloqueo de ciclo de vida CERRADO; NOT STARTED;
   alcance recomendado en la auditoría post OL-02 (2026-10-06), pendiente de revisión del dueño.
 - **ROLE UI CONVERGENCE:** Opción C y D siguen NO autorizadas; Facturación / Sin asignar sin cambio.
@@ -80,15 +104,15 @@ Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno.
 
 ## Residuales abiertos
 Ciclo de vida de la orden y pagos:
-- **P1-1 Facturación (OL-03):** el bypass (timbrar cualquier estatus → `Facturada` con fecha de
-  entrega e ingreso; cancelar → `Entregada`; cruce de vendedores; CFDI del cliente) está contenido en
-  el servidor por OL-03A. Abierto (OL-03B): ventana de CFDI duplicado con solicitudes simultáneas
-  (no hay candado previo al proveedor) y ninguna regla de base de datos sobre `Facturada`.
-  Sin evidencia de daño histórico en producción (0 `invoice_attempts`, ninguna orden con CFDI).
-- **P1-2 Bypass general de service role:** 105 exime a service role/JWT nulo de todas las
-  transiciones; 110 solo cubre la entrega sin ruta.
-- **Complementos de pago:** `billing-create-complemento` no revisa dueño y confía en montos/saldos
-  enviados por el cliente (sin cambio en OL-03A).
+- **Facturación tras OL-03A/B:** conciliación MANUAL de operaciones inciertas (no hay consulta
+  automática al proveedor); sin interfaz de operador para `cfdi_operaciones`; el tiempo máximo real
+  de las Netlify Functions no está fijado en el repositorio (8 s / 120 s son supuestos documentados);
+  en una orden `Facturada` el cierre de ruta todavía actualiza `metodo_pago`. Sin evidencia de daño
+  histórico OL-03 en producción (0 `invoice_attempts`, ninguna orden con CFDI).
+- **P1-2 Bypass general de service role:** 105 exime a service role/JWT nulo de las transiciones
+  fuera de `Facturada`; 110 cubre la entrega sin ruta y 112 la entrada/salida de `Facturada`.
+- **Complementos de pago (OL-04):** `billing-create-complemento` no revisa dueño, confía en
+  montos/saldos enviados por el cliente y no tiene control de concurrencia.
 - **Ayudante de dueño compartido:** `canAccessOrden` deja a cualquier vendedor una orden sin vendedor
   (checkout, sincronización de pago y recibo); la facturación ya no lo usa.
 - **P1-3 Entrega de Admin con ruta en dos pasos** (estatus por REST y luego ingreso/CxC), latente.
@@ -126,10 +150,19 @@ Otros:
 | Devolución de cliente | 104/105 | pendiente |
 
 Verificado técnicamente, sin cierre del dueño: venta directa atómica y su contención (109, 110;
-suites `109_venta_directa_test.sql`, `110_contencion_entrega_directa_test.sql`).
+suites `109_venta_directa_test.sql`, `110_contencion_entrega_directa_test.sql`); facturación por
+operaciones CFDI y su guarda (111, 112; suites `111_operaciones_cfdi_test.sql`,
+`112_contencion_facturada_test.sql`, `src/__tests__/ol03a*`/`ol03b*` y la integración de handlers
+con Postgres del runner local).
+Reversión OL-03B (en este orden): quitar la guarda 112 y volver a la definición de
+`cerrar_ruta_financiero` de 090 → verificar que no hay operaciones `en_curso`/`incierta`/
+`cancelacion_pendiente`/`revision` (resolverlas, nunca borrarlas) → solo entonces revertir Netlify →
+conservar la tabla 111 como historia. Nunca correr el código de OL-03A con 112 activa.
 
 Sustituciones intencionales (no son regresiones): 095 (`update_stocks_atomic` sin acceso de la
 API desde 105), 072 (merma FIFO entre cuartos retirada en 103; merma sin valuación desde 106),
-106 (apertura declarada al dar de alta un empaque, sustituida por 108: nace en 0) y 110 (la entrega
-sin ruta en dos pasos de Ventas/Admin/service role, sustituida por `completar_venta_directa`).
+106 (apertura declarada al dar de alta un empaque, sustituida por 108: nace en 0), 110 (la entrega
+sin ruta en dos pasos de Ventas/Admin/service role, sustituida por `completar_venta_directa`) y 112
+(escrituras directas de `Facturada` del backend, sustituidas por los contratos CFDI de 111; el cierre
+de ruta ya no baja `Facturada` a `Entregada`).
 Sin reparación histórica: OV-0086 y los egresos legados de costo (1400) quedan intactos.
