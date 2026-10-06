@@ -1,7 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
 import { diaNegocio } from '../utils/fechas';
 import { s, fmtMoney, fmtDate, extraerTelefono } from '../utils/safe';
-import { resumenPorCobrar, resumenVentasHoy, resumenHistorial, textoDesglose } from '../data/ventasResumenLogic';
+import { resumenPendientes, resumenVentasHoy, resumenHistorial, textoDesglose } from '../data/ventasResumenLogic';
+import { FILTROS_VENTAS } from '../data/navRolLogic';
 import { accionesCobroVentas, ejecutarMutacion } from '../data/ventasCobroLogic';
 import { modoVentaDirecta, linkPagadoCompleto, METODO_LINK } from '../data/ventaDirectaLogic';
 import VentaDirectaOrigen, { useVentaDirecta } from './VentaDirectaOrigen';
@@ -10,28 +11,30 @@ import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
-import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton, KpiTile } from './ui/Components';
+import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton } from './ui/Components';
 import { Icons } from './ui/Icons';
 
 // Fase A3 (convergencia visual por rol): esta vista usa las primitivas del
-// shell de Administración. El flujo (Por cobrar / Hoy / Todas, nueva venta por
+// shell de Administración. B3.6: Ventas es UN espacio de trabajo con filtros
+// internos (Pendientes / Hoy / Todas) sobre las mismas órdenes; nueva venta por
 // NuevaVentaModal variant="standalone", cobro y entrega por completar_venta_directa (OL-02C) o link de
-// pago por crearCheckoutPago), el alcance por vendedor (isOwnedBy) y los
+// pago por crearCheckoutPago, el alcance por vendedor (isOwnedBy) y los
 // métodos de pago no cambian.
 //   embedded: la vista vive dentro del shell compartido (sin cabecera propia).
-//   tab/onTab: pestaña controlada por el shell (menú por rol); sin ellas, estado interno.
+//   filtro/onFiltro: filtro interno controlado por el shell (hash #/ventas,
+//   #/ventas-hoy, #/ventas-todas); sin ellos, estado interno.
 const PAGOS = ["Efectivo", "Transferencia SPEI", "Tarjeta (terminal)", "QR / Link de pago", "Crédito (fiado)"];
-const TABS = [{ k: "ventas", l: "Por cobrar", icon: "DollarSign" }, { k: "hoy", l: "Hoy", icon: "Clock" }, { k: "todas", l: "Todas", icon: "List" }];
+const FILTROS = FILTROS_VENTAS.map(f => ({ k: f.id, l: f.label, icon: f.icon }));
 // B2: dentro del shell el contenido ocupa el workspace como las vistas de Admin
 // (sin columna angosta); solo la vista suelta conserva el ancho móvil centrado.
 const CONTENIDO = "mx-auto w-full max-w-[640px] space-y-4 md:max-w-3xl lg:max-w-5xl";
 const CONTENIDO_SHELL = "w-full space-y-4";
 
-export default function VentasStandaloneView({ user, data, actions, onLogout, embedded = false, tab: tabProp, onTab }) {
+export default function VentasStandaloneView({ user, data, actions, onLogout, embedded = false, filtro: filtroProp, onFiltro }) {
   const toast = useToast();
-  const [tabLocal, setTabLocal] = useState("ventas");
-  const tab = tabProp ?? tabLocal;
-  const setTab = (k) => { if (onTab) onTab(k); else setTabLocal(k); };
+  const [filtroLocal, setFiltroLocal] = useState("pendientes");
+  const filtro = FILTROS.some(f => f.k === filtroProp) ? filtroProp : filtroLocal;
+  const setFiltro = (k) => { if (onFiltro) onFiltro(k); else setFiltroLocal(k); };
   const [modal, setModal] = useState(false);
   const [pagoModal, setPagoModal] = useState(null);
   const [pagoForm, setPagoForm] = useState({ metodo: "Efectivo", referencia: "" });
@@ -113,19 +116,20 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
   };
 
   const hoy = diaNegocio();
-  // B3.4: cada módulo tiene su contexto, derivado del MISMO `ordenesUsuario`
-  // que pinta sus listas (propias, o todas en la vista previa de Admin).
-  const porCobrar = useMemo(() => resumenPorCobrar(ordenesUsuario), [ordenesUsuario]);
+  // El contexto de cada filtro sale del MISMO `ordenesUsuario` que pinta sus
+  // listas (propias, o todas en la vista previa de Admin). Sin consultas nuevas.
+  const pend = useMemo(() => resumenPendientes(ordenesUsuario, data.pagos), [ordenesUsuario, data.pagos]);
   const resumenHoy = useMemo(() => resumenVentasHoy(ordenesUsuario, hoy), [ordenesUsuario, hoy]);
   const historial = useMemo(() => resumenHistorial(ordenesUsuario), [ordenesUsuario]);
   const ordenesHoy = resumenHoy.ordenesHoy;
-  const pendientes = porCobrar.directo.ordenes;   // estatus === "Creada" (cabecera suelta: misma cifra de siempre)
   const ventasHoy = resumenHoy.vendidoHoy;
 
   const abrirNuevaVenta = () => setModal(true);
-  const lista = tab === "hoy" ? ordenesHoy : ordenesUsuario;
+  const lista = filtro === "hoy" ? ordenesHoy : ordenesUsuario;
+  // B3.6: acción principal del espacio de trabajo — tamaño normal en escritorio
+  // (a la derecha de la barra), ancho completo en móvil para alcanzarla con el pulgar.
   const nuevaVentaBtn = (
-    <FormBtn success size="lg" className={embedded ? "w-full" : "w-full sm:w-auto sm:px-10"} onClick={abrirNuevaVenta}>
+    <FormBtn success className="w-full sm:w-auto sm:px-6" onClick={abrirNuevaVenta}>
       <Icons.Plus /> Nueva venta
     </FormBtn>
   );
@@ -185,26 +189,32 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
     </Card>
   ); };
 
-  // Contexto por módulo (sin fila genérica repetida; sin cifras en $0 de relleno).
-  const grupoMonto = (g) => g.count > 0 ? fmtMoney(g.monto) : "—";
-  const grupoHint = (g, txt) => g.count > 0 ? `${g.count} ${g.count === 1 ? "orden" : "órdenes"} · ${txt}` : "Sin órdenes";
-  const contextoModulo =
-    tab === "ventas" ? (porCobrar.vacio ? null : (
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2" data-testid="contexto-por-cobrar">
-        <KpiTile label="Por cobrar directo" value={grupoMonto(porCobrar.directo)} hint={grupoHint(porCobrar.directo, "sin asignar a ruta")} />
-        <KpiTile label="En ruta por cobrar" value={grupoMonto(porCobrar.enRuta)} hint={grupoHint(porCobrar.enRuta, "asignadas a ruta")} />
+  // B3.6: un resumen compacto del filtro activo (una línea de datos, no un
+  // tablero por filtro); sin cifras en $0 de relleno.
+  const dato = (valor, etiqueta, testid) => (
+    <span className="inline-flex items-baseline gap-1.5" data-testid={testid}>
+      <span className="font-display text-base font-bold tracking-[-0.03em] text-slate-900">{valor}</span>
+      <span className="text-xs font-medium text-slate-500">{etiqueta}</span>
+    </span>
+  );
+  const grupoTxt = (g, uno, varios) => `${g.count === 1 ? uno : varios}${g.count > 0 ? ` · ${fmtMoney(g.monto)}` : ""}`;
+  const resumenFiltro =
+    filtro === "pendientes" ? (pend.vacio && pend.conChofer.count === 0 ? null : (
+      <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1" data-testid="resumen-pendientes">
+        {dato(pend.porCobrar.count, grupoTxt(pend.porCobrar, "por cobrar", "por cobrar"), "pend-por-cobrar")}
+        {pend.pagadasPorEntregar.count > 0 && dato(pend.pagadasPorEntregar.count, grupoTxt(pend.pagadasPorEntregar, "pagada por entregar", "pagadas por entregar"), "pend-pagadas")}
+        {pend.conChofer.count > 0 && dato(pend.conChofer.count, "en ruta con el chofer", "pend-chofer")}
       </div>
     )) :
-    tab === "hoy" ? (resumenHoy.count === 0 ? null : (
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" data-testid="contexto-hoy">
-        <KpiTile label="Vendido hoy" value={fmtMoney(resumenHoy.vendidoHoy)} hint="órdenes de hoy entregadas" />
-        <KpiTile label="Órdenes hoy" value={resumenHoy.count} hint={textoDesglose(resumenHoy.porEstatus)} />
-        <KpiTile label="Última venta de hoy" compact value={`${resumenHoy.ultima.folio} · ${fmtMoney(resumenHoy.ultima.total)}`}
-          hint={[resumenHoy.ultima.cliente, resumenHoy.ultima.estatus].filter(Boolean).join(" · ")} />
+    filtro === "hoy" ? (resumenHoy.count === 0 ? null : (
+      <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1" data-testid="resumen-hoy">
+        {dato(fmtMoney(resumenHoy.vendidoHoy), "vendido hoy (entregadas)", "hoy-vendido")}
+        {dato(resumenHoy.count, `${resumenHoy.count === 1 ? "orden" : "órdenes"} · ${textoDesglose(resumenHoy.porEstatus)}`, "hoy-ordenes")}
+        {dato(resumenHoy.ultima.folio, `última · ${fmtMoney(resumenHoy.ultima.total)}${resumenHoy.ultima.cliente ? ` · ${resumenHoy.ultima.cliente}` : ""}`, "hoy-ultima")}
       </div>
     )) :
     (historial.count === 0 ? null : (
-      <p className="px-1 text-sm text-slate-500" data-testid="contexto-todas">
+      <p className="text-sm text-slate-500" data-testid="resumen-todas">
         <span className="font-semibold text-slate-700">{historial.count} {historial.count === 1 ? "orden" : "órdenes"}</span>
         {historial.desde && <> · desde {fmtDate(historial.desde)}</>}
       </p>
@@ -219,59 +229,58 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
         <RoleHeader kicker="Ventas" title="Ventas del día" subtitle={s(user?.nombre)} accent="emerald" onLogout={onLogout}>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <HeaderStat label="Vendido hoy" value={fmtMoney(ventasHoy)} />
-            <HeaderStat label="Pendientes" value={<>{pendientes.length} <span className="text-sm font-medium text-slate-300">órdenes por cobrar</span></>} />
+            <HeaderStat label="Pendientes" value={<>{pend.count} <span className="text-sm font-medium text-slate-300">por cobrar o entregar</span></>} />
           </div>
         </RoleHeader>
       )}
 
       <div className={embedded ? CONTENIDO_SHELL : `${CONTENIDO} px-4 pt-4`}>
-        {!embedded && nuevaVentaBtn}
+        {/* B3.6: un espacio de trabajo — barra (filtros internos + Nueva venta),
+            resumen del filtro activo y su lista. Mismo modelo en escritorio y móvil. */}
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between" data-testid="ventas-barra">
+          <SegmentedTabs items={FILTROS} value={filtro} onChange={setFiltro} accent="emerald" className="w-full sm:w-auto sm:min-w-[360px]" />
+          {nuevaVentaBtn}
+        </div>
+        {resumenFiltro}
 
-        {/* B3: dentro del shell navegan el sidebar (lg+) y la barra inferior (móvil); las pestañas solo en la vista suelta. */}
-        {!embedded && <SegmentedTabs items={TABS} value={tab} onChange={setTab} accent="emerald" />}
-
-        {/* B3.4: contexto del módulo → Nueva venta → contenido. */}
-        {contextoModulo}
-        {embedded && nuevaVentaBtn}
-
-        {tab === "ventas" && !porCobrar.vacio && (<>
-          {porCobrar.directo.count > 0 && (
-            <div className="space-y-2" data-testid="grupo-por-cobrar-directo">
-              <SectionLabel>Por cobrar directo ({porCobrar.directo.count})</SectionLabel>
-              <div className={REJILLA_LISTA}>{porCobrar.directo.ordenes.map(tarjetaOrden)}</div>
+        {filtro === "pendientes" && !pend.vacio && (<>
+          {pend.porCobrar.count > 0 && (
+            <div className="space-y-2" data-testid="grupo-por-cobrar">
+              <SectionLabel>Por cobrar ({pend.porCobrar.count})</SectionLabel>
+              <div className={REJILLA_LISTA}>{pend.porCobrar.ordenes.map(tarjetaOrden)}</div>
             </div>
           )}
-          {porCobrar.enRuta.count > 0 && (
-            <div className="space-y-2" data-testid="grupo-en-ruta-por-cobrar">
-              <SectionLabel>En ruta por cobrar ({porCobrar.enRuta.count})</SectionLabel>
-              <div className={REJILLA_LISTA}>{porCobrar.enRuta.ordenes.map(tarjetaOrden)}</div>
+          {pend.pagadasPorEntregar.count > 0 && (
+            <div className="space-y-2" data-testid="grupo-pagadas-por-entregar">
+              <SectionLabel>Pagadas por entregar ({pend.pagadasPorEntregar.count})</SectionLabel>
+              <div className={REJILLA_LISTA}>{pend.pagadasPorEntregar.ordenes.map(tarjetaOrden)}</div>
             </div>
           )}
         </>)}
 
         <div className={REJILLA_LISTA}>
-          {tab !== "ventas" && lista.map(tarjetaOrden)}
-          {(tab === "ventas" ? porCobrar.vacio : lista.length === 0) && (
+          {filtro !== "pendientes" && lista.map(tarjetaOrden)}
+          {(filtro === "pendientes" ? pend.vacio : lista.length === 0) && (
             <Card className="xl:col-span-2">
-              {tab === "ventas" && (
+              {filtro === "pendientes" && (
                 <EmptyState
-                  icon="DollarSign"
-                  message="Sin órdenes pendientes"
-                  hint="Cuando crees una venta a crédito o se asigne entrega, aparecerá aquí"
+                  icon="ClipboardCheck"
+                  message="Sin pendientes"
+                  hint={pend.conChofer.count > 0 ? "Tus órdenes en ruta las entrega y cobra el chofer; las ves en Todas" : "Las ventas por cobrar o por entregar aparecerán aquí"}
                 />
               )}
-              {tab === "hoy" && (
+              {filtro === "hoy" && (
                 <EmptyState
                   icon="ShoppingCart"
                   message="Aún no hay ventas hoy"
-                  hint="Usa el botón verde de arriba para registrar la primera del día"
+                  hint="Usa Nueva venta para registrar la primera del día"
                 />
               )}
-              {tab === "todas" && (
+              {filtro === "todas" && (
                 <EmptyState
                   icon="ShoppingCart"
                   message="No has hecho ventas todavía"
-                  hint="Usa el botón verde de arriba para crear tu primera venta"
+                  hint="Usa Nueva venta para crear tu primera venta"
                 />
               )}
             </Card>

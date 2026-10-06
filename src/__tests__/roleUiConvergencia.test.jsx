@@ -39,7 +39,7 @@ describe('A3: Ventas — presentación nueva, negocio idéntico', () => {
   const v = sinComentarios(src('../components/VentasStandaloneView.jsx'));
   it('usa primitivas compartidas; sin cabecera, hoja, badge ni toast propios', () => {
     expect(v).toMatch(/import Modal, \{ FormInput, FormBtn \} from '\.\/ui\/Modal'/);
-    expect(v).toMatch(/SegmentedTabs items=\{TABS\} value=\{tab\} onChange=\{setTab\}/);
+    expect(v).toMatch(/SegmentedTabs items=\{FILTROS\} value=\{filtro\} onChange=\{setFiltro\}/);
     expect(v).toMatch(/<StatusBadge status=\{s\(o\.estatus\)\} \/>/);
     expect(v).toMatch(/<Modal open=\{!!pagoModal\}/);
     expect(v).toMatch(/data-testid="ventas-shell"/);
@@ -72,13 +72,13 @@ describe('A3: Ventas — presentación nueva, negocio idéntico', () => {
     const logic = src('../data/ventasResumenLogic.js');
     expect(logic).toMatch(/o && o\.fecha && s\(o\.fecha\)\.slice\(0, 10\) === hoy/);
     expect(logic).toMatch(/export const ESTATUS_DIRECTO = 'Creada';/);
-    expect(v).toMatch(/resumenPorCobrar\(ordenesUsuario\)/);
+    expect(v).toMatch(/resumenPendientes\(ordenesUsuario, data\.pagos\)/);   // B3.6
     expect(v).toMatch(/resumenVentasHoy\(ordenesUsuario, hoy\)/);
   });
-  it('pestañas, pestaña inicial y NuevaVentaModal idénticos (controlables por el shell)', () => {
-    expect(v).toMatch(/\{ k: "ventas", l: "Por cobrar"[^}]*\}, \{ k: "hoy", l: "Hoy"[^}]*\}, \{ k: "todas", l: "Todas"[^}]*\}/);
-    expect(v).toMatch(/useState\("ventas"\)/);
-    expect(v).toMatch(/const tab = tabProp \?\? tabLocal;/);
+  it('filtros internos (B3.6), filtro inicial y NuevaVentaModal idénticos (controlables por el shell)', () => {
+    expect(v).toMatch(/const FILTROS = FILTROS_VENTAS\.map\(f => \(\{ k: f\.id, l: f\.label, icon: f\.icon \}\)\);/);
+    expect(v).toMatch(/useState\("pendientes"\)/);
+    expect(v).toMatch(/const filtro = FILTROS\.some\(f => f\.k === filtroProp\) \? filtroProp : filtroLocal;/);
     expect(v).toMatch(/variant="standalone"/);
     expect(v).toMatch(/toast=\{toast\}/);
     expect(v).toMatch(/if \(orden\) \{\s*showToast\('Orden creada — ahora cobra'\);\s*cobrar\(orden\);/);
@@ -318,58 +318,63 @@ describe('B3.2: cada módulo de Producción abre con SU resumen (solo presentaci
   });
 });
 
-describe('B3.4: cada módulo de Ventas tiene su propio contexto (solo presentación; mismas órdenes)', () => {
+describe('B3.6: Ventas es UN espacio de trabajo con filtros internos (solo presentación; mismas órdenes)', () => {
   const v = sinComentarios(src('../components/VentasStandaloneView.jsx'));
-  const ctx = v.slice(v.indexOf('const contextoModulo ='), v.indexOf('return (', v.indexOf('const contextoModulo =')));
-  const cuerpo = v.slice(v.indexOf('{contextoModulo}'), v.indexOf('<NuevaVentaModal'));
-  it('ya no hay fila genérica de rol: el contexto depende del módulo', () => {
-    expect(v).not.toMatch(/<KpiTile label="Pendientes"/);
-    expect(v).toMatch(/<HeaderStat label="Pendientes"/);   // la cabecera suelta (fuera del shell) no cambia
-    expect(v).not.toMatch(/lg:grid-cols-\[1fr_1fr_auto\]/);
-    expect(ctx).toMatch(/tab === "ventas" \? \(porCobrar\.vacio \? null/);
-    expect(ctx).toMatch(/tab === "hoy" \? \(resumenHoy\.count === 0 \? null/);
-    expect(ctx).toMatch(/historial\.count === 0 \? null/);
+  const resumen = v.slice(v.indexOf('const resumenFiltro ='), v.indexOf('return (', v.indexOf('const resumenFiltro =')));
+  const cuerpo = v.slice(v.indexOf('data-testid="ventas-barra"'), v.indexOf('<NuevaVentaModal'));
+  it('barra del espacio de trabajo: filtros internos + Nueva venta, luego el resumen del filtro activo, luego la lista', () => {
+    expect(cuerpo).toMatch(/^data-testid="ventas-barra">\s*<SegmentedTabs items=\{FILTROS\} value=\{filtro\} onChange=\{setFiltro\} accent="emerald"[^>]*\/>\s*\{nuevaVentaBtn\}\s*<\/div>\s*\{resumenFiltro\}/);
+    expect(v).not.toMatch(/!embedded && <SegmentedTabs/);       // el mismo control en el shell y en la vista suelta
+    expect(v).not.toMatch(/<KpiTile/);                            // sin bloques de KPI gigantes por filtro
+    expect(v).not.toMatch(/Por cobrar directo|En ruta por cobrar/);
   });
-  it('Por cobrar: directo (Creada) y en ruta (Asignada) separados en cifras y en listas; sin total combinado ni términos contables', () => {
-    expect(ctx).toMatch(/label="Por cobrar directo" value=\{grupoMonto\(porCobrar\.directo\)\}/);
-    expect(ctx).toMatch(/label="En ruta por cobrar" value=\{grupoMonto\(porCobrar\.enRuta\)\}/);
-    expect(cuerpo).toMatch(/data-testid="grupo-por-cobrar-directo"[\s\S]*porCobrar\.directo\.ordenes\.map\(tarjetaOrden\)/);
-    expect(cuerpo).toMatch(/data-testid="grupo-en-ruta-por-cobrar"[\s\S]*porCobrar\.enRuta\.ordenes\.map\(tarjetaOrden\)/);
+  it('Nueva venta: una sola acción primaria, tamaño normal (no franja gigante), ancho completo solo en móvil', () => {
+    expect((v.match(/<Icons\.Plus \/> Nueva venta/g) || []).length).toBe(1);
+    const btn = v.slice(v.indexOf('const nuevaVentaBtn ='), v.indexOf('const REJILLA_LISTA'));
+    expect(btn).toMatch(/<FormBtn success className="w-full sm:w-auto sm:px-6" onClick=\{abrirNuevaVenta\}>/);
+    expect(btn).not.toMatch(/size="lg"/);
+    expect(v).toMatch(/<NuevaVentaModal\s+open=\{modal\}\s+onClose=\{\(\) => setModal\(false\)\}/);
+    expect(v).toMatch(/variant="standalone"/);
+  });
+  it('Pendientes: lo accionable por el vendedor, en dos grupos (por cobrar / pagadas por entregar); con el chofer solo como dato', () => {
+    expect(resumen).toMatch(/filtro === "pendientes" \? \(pend\.vacio && pend\.conChofer\.count === 0 \? null/);
+    expect(cuerpo).toMatch(/data-testid="grupo-por-cobrar"[\s\S]*pend\.porCobrar\.ordenes\.map\(tarjetaOrden\)/);
+    expect(cuerpo).toMatch(/data-testid="grupo-pagadas-por-entregar"[\s\S]*pend\.pagadasPorEntregar\.ordenes\.map\(tarjetaOrden\)/);
+    expect(cuerpo).not.toMatch(/pend\.conChofer\.ordenes\.map/);   // las del chofer no se listan como pendientes
     expect(v).not.toMatch(/TOTAL PENDIENTE|[Ss]aldo por cobrar|CxC|[Cc]obrado hoy|[Cc]omisi|[Mm]eta|[Pp]romedio|[Tt]endencia/);
   });
-  it('acciones por estatus: una sola tarjeta para todos los módulos, sin acciones nuevas (reglas en ventasCobroLogic desde OL-01A)', () => {
-    const tarjeta = v.slice(v.indexOf('const tarjetaOrden ='), v.indexOf('const grupoMonto'));
+  it('Hoy: misma semántica (vendido hoy = entregadas de hoy; desglose; última venta)', () => {
+    expect(resumen).toMatch(/filtro === "hoy" \? \(resumenHoy\.count === 0 \? null/);
+    expect(resumen).toMatch(/fmtMoney\(resumenHoy\.vendidoHoy\), "vendido hoy \(entregadas\)"/);
+    expect(resumen).toMatch(/textoDesglose\(resumenHoy\.porEstatus\)/);
+    expect(src('../data/ventasResumenLogic.js')).toMatch(/ordenesHoy\.filter\(o => o\.estatus === "Entregada"\)\.reduce\(\(t, o\) => t \+ n\(o\.total\), 0\)/);
+    expect(v).toMatch(/const lista = filtro === "hoy" \? ordenesHoy : ordenesUsuario;/);
+  });
+  it('Todas: todas las órdenes del alcance; solo "N órdenes · desde fecha"', () => {
+    const todas = resumen.slice(resumen.indexOf('historial.count === 0'));
+    expect(todas).toMatch(/data-testid="resumen-todas"/);
+    expect(todas).not.toMatch(/grid/);
+    expect(cuerpo).toMatch(/\{filtro !== "pendientes" && lista\.map\(tarjetaOrden\)\}/);
+  });
+  it('acciones por estatus: una sola tarjeta para todos los filtros, sin acciones nuevas (reglas en ventasCobroLogic)', () => {
+    const tarjeta = v.slice(v.indexOf('const tarjetaOrden ='), v.indexOf('const dato ='));
     expect(tarjeta).toMatch(/const acc = accionesCobroVentas\(o\)/);
     expect(tarjeta).toMatch(/\{acc\.cobrar && acc\.enviarARuta && \([\s\S]*cobrar\(o\)\}>Cobrar<[\s\S]*enviarARuta\(o\)/);
     expect(tarjeta).toMatch(/\{acc\.cobrarEntrega && \([\s\S]*cobrar\(o\)\}[^>]*>Cobrar entrega</);
     expect((v.match(/<Card key=\{o\.id\}/g) || []).length).toBe(1);
-    expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus']);   // OL-02C: el cobro directo va por useVentaDirecta → completarVentaDirecta
+    expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus']);
   });
-  it('Hoy: Vendido hoy (semántica existente), órdenes de hoy con desglose y última venta', () => {
-    expect(ctx).toMatch(/label="Vendido hoy" value=\{fmtMoney\(resumenHoy\.vendidoHoy\)\}/);
-    expect(ctx).toMatch(/label="Órdenes hoy" value=\{resumenHoy\.count\} hint=\{textoDesglose\(resumenHoy\.porEstatus\)\}/);
-    expect(ctx).toMatch(/label="Última venta de hoy" compact/);
-    expect(src('../data/ventasResumenLogic.js')).toMatch(/ordenesHoy\.filter\(o => o\.estatus === "Entregada"\)\.reduce\(\(t, o\) => t \+ n\(o\.total\), 0\)/);
-  });
-  it('Todas: espacio de historial sin rejilla de KPIs; solo "N órdenes · desde fecha"', () => {
-    const todas = ctx.slice(ctx.indexOf('historial.count === 0'));
-    expect(todas).toMatch(/data-testid="contexto-todas"/);
-    expect(todas).not.toMatch(/KpiTile|grid/);
-  });
-  it('Nueva venta: un solo botón, visible en los tres módulos (shell) y arriba en la vista suelta', () => {
-    expect((v.match(/<Icons\.Plus \/> Nueva venta/g) || []).length).toBe(1);
-    expect(cuerpo).toMatch(/\{contextoModulo\}\s*\{embedded && nuevaVentaBtn\}/);
-    expect(v).toMatch(/\{!embedded && nuevaVentaBtn\}/);
-    expect(v.slice(v.indexOf('{embedded && nuevaVentaBtn}') - 40, v.indexOf('{embedded && nuevaVentaBtn}'))).not.toMatch(/tab ===/);
-    expect(v).toMatch(/<NuevaVentaModal\s+open=\{modal\}\s+onClose=\{\(\) => setModal\(false\)\}/);
-  });
-  it('sin consultas nuevas: el contexto sale de ordenesUsuario (vista previa de Admin incluida) y el módulo es puro', () => {
+  it('vacíos coherentes por filtro; sin consultas nuevas; el módulo de resumen es puro', () => {
+    expect(cuerpo).toMatch(/message="Sin pendientes"/);
+    expect(cuerpo).toMatch(/message="Aún no hay ventas hoy"/);
+    expect(cuerpo).toMatch(/message="No has hecho ventas todavía"/);
     expect(v).not.toMatch(/supabase|\.rpc\(|fetch\(|backendPost|backendGet/);
     expect(v).toMatch(/resumenHistorial\(ordenesUsuario\)/);
     expect(v).toMatch(/isAdminPreview \? \(data\.ordenes \|\| \[\]\) : \(data\.ordenes \|\| \[\]\)\.filter\(o => isOwnedBy\(o\)\)/);
     const logic = src('../data/ventasResumenLogic.js');
     expect(logic).not.toMatch(/supabase|rpc|fetch\(|backend|useState|useEffect|react/);
-    expect(logic.match(/^import .*$/gm)).toEqual(["import { s, n } from '../utils/safe';", "import { TRANSICIONES_ORDEN } from './ordenLogic';"]);
+    expect(logic.match(/^import .*$/gm)).toEqual(["import { s, n } from '../utils/safe';", "import { TRANSICIONES_ORDEN } from './ordenLogic';",
+      "import { accionesCobroVentas } from './ventasCobroLogic';", "import { linkPagadoCompleto } from './ventaDirectaLogic';"]);
   });
 });
 

@@ -9,6 +9,8 @@
 // de la orden, quién cobra y los contratos no cambian. Sin saldo, CxC ni cobros.
 import { s, n } from '../utils/safe';
 import { TRANSICIONES_ORDEN } from './ordenLogic';
+import { accionesCobroVentas } from './ventasCobroLogic';
+import { linkPagadoCompleto } from './ventaDirectaLogic';
 
 export const ESTATUS_DIRECTO = 'Creada';
 export const ESTATUS_EN_RUTA = 'Asignada';
@@ -69,4 +71,48 @@ export function resumenHistorial(ordenes) {
   const todas = lista(ordenes);
   const fechas = todas.map(o => s(o && o.fecha).slice(0, 10)).filter(f => /^\d{4}-\d{2}-\d{2}$/.test(f)).sort();
   return { count: todas.length, desde: fechas[0] || null };
+}
+
+// ── B3.6: Pendientes (un solo espacio de trabajo de Ventas) ──────────────────
+// "Pendientes" = las órdenes que todavía esperan una ACCIÓN del vendedor según
+// las reglas ya vigentes de la tarjeta (accionesCobroVentas, OL-01A / OL-02):
+//   Creada (con o sin ruta)  → Cobrar / Entregar pedido pagado / Enviar a ruta
+//   Asignada SIN ruta        → Cobrar entrega / Entregar pedido pagado
+// Fuera: Asignada CON ruta y En ruta (las entrega y cobra el chofer), y los
+// estatus terminales. No hay estatus nuevos ni permisos nuevos: es el mismo
+// predicado que decide qué botones muestra cada tarjeta.
+
+/** ¿La orden espera una acción del vendedor? (mismas reglas que los botones de la tarjeta). */
+export function esPendienteVendedor(o) {
+  if (!o) return false;
+  const acc = accionesCobroVentas(o);
+  return acc.cobrar || acc.cobrarEntrega;
+}
+
+/** ¿Orden con ruta en manos del chofer? (Asignada con ruta o En ruta): informativo, sin acción del vendedor. */
+export function esDelChofer(o) {
+  if (!o) return false;
+  return accionesCobroVentas(o).enRutaDelChofer || (o.estatus === 'En ruta');
+}
+
+/**
+ * Pendientes del vendedor, en dos grupos que no se mezclan:
+ *   porCobrar          pendientes sin pago completo por link (Cobrar / Cobrar entrega)
+ *   pagadasPorEntregar pendientes ya pagadas por link (Entregar pedido pagado)
+ * y, solo como dato, cuántas están con el chofer. `monto` = Σ total guardado
+ * (aritmética de los totales; no es saldo ni CxC).
+ */
+export function resumenPendientes(ordenes, pagos) {
+  const todas = lista(ordenes);
+  const pend = todas.filter(esPendienteVendedor);
+  const pagadas = pend.filter(o => linkPagadoCompleto(o, pagos));
+  const porCobrar = pend.filter(o => !pagadas.includes(o));
+  const conChofer = todas.filter(esDelChofer);
+  return {
+    porCobrar: bucket(porCobrar),
+    pagadasPorEntregar: bucket(pagadas),
+    conChofer: bucket(conChofer),
+    count: pend.length,
+    vacio: pend.length === 0,
+  };
 }

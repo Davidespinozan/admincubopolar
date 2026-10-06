@@ -12,7 +12,8 @@ import { traducirError } from '../utils/errorMessages';
 import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
-import { navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER } from '../data/navRolLogic';
+import { navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
+  idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas } from '../data/navRolLogic';
 import { BottomNav } from './ui/Components';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
@@ -201,32 +202,37 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   const bottomNav = useMemo(() => bottomNavParaRol(nav), [nav]);
   // Tanda 25: la vista vive también en la URL (#/rutas) — deep links
   // compartibles y botón atrás del navegador. Hash inválido → módulo inicial del rol.
-  const [view, setView] = useState(() => viewDesdeHash(window.location.hash, IDS_MODULOS) || nav.inicio);
+  // B3.6: además de los módulos del menú, un rol puede tener vistas internas
+  // con hash propio (filtros de Ventas) y alias heredados (#/ventas-cobrar).
+  const IDS_VISTAS = useMemo(() => idsVistas(nav), [nav]);
+  const vistaDeHash = useCallback((hash) => normalizarVista(nav, viewDesdeHash(hash, IDS_VISTAS)), [nav, IDS_VISTAS]);
+  const [view, setView] = useState(() => vistaDeHash(window.location.hash) || nav.inicio);
   // Al cambiar el rol pintado ("Ver como"), el hash anterior puede no existir en el menú nuevo.
   useEffect(() => {
-    setView(v => (IDS_MODULOS.has(v) ? v : (viewDesdeHash(window.location.hash, IDS_MODULOS) || nav.inicio)));
-  }, [IDS_MODULOS, nav.inicio]);
+    setView(v => normalizarVista(nav, v) || vistaDeHash(window.location.hash) || nav.inicio);
+  }, [nav, vistaDeHash]);
 
-  // vista → hash. El primer sync (sin hash previo) usa replaceState
-  // para no meter un paso extra al historial en el load.
+  // vista → hash. El primer sync (sin hash previo) y la normalización de un
+  // alias (#/ventas-cobrar → #/ventas) usan replaceState: no agregan un paso
+  // extra al historial.
   useEffect(() => {
     const destino = hashDesdeView(view);
     if (window.location.hash === destino) return;
-    if (!window.location.hash) {
+    if (!window.location.hash || vistaDeHash(window.location.hash) === view) {
       window.history.replaceState(null, '', destino);
     } else {
       window.location.hash = destino;
     }
-  }, [view]);
+  }, [view, vistaDeHash]);
 
   // hash → vista (botón atrás/adelante, o alguien pega un link).
   useEffect(() => {
     const onHashChange = () => {
-      setView(viewDesdeHash(window.location.hash, IDS_MODULOS) || nav.inicio);
+      setView(vistaDeHash(window.location.hash) || nav.inicio);
     };
     window.addEventListener('hashchange', onHashChange);
     return () => window.removeEventListener('hashchange', onHashChange);
-  }, [IDS_MODULOS, nav.inicio]);
+  }, [vistaDeHash, nav.inicio]);
 
   // Estado de áreas expandidas/colapsadas en sidebar (con persistencia para
   // el shell de Admin; los roles de campo ven su única área abierta).
@@ -255,7 +261,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   // Solo depende de `view`: si incluyera `areasExpandidas`, contraer
   // manualmente el área del view actual la reabriría inmediatamente.
   useEffect(() => {
-    const currentArea = areaDeModulo(nav, view);
+    const currentArea = areaDeModulo(nav, moduloDeVista(nav, view));
     if (!currentArea) return;
     setAreasExpandidas(prev => prev[currentArea.id] ? prev : { ...prev, [currentArea.id]: true });
   }, [view, nav]);
@@ -329,8 +335,9 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       case 'leads': return <LeadsView {...vp} />;
       case 'kardex': return <KardexView data={data} />;
       // Fase B: vistas por rol como contenido del shell (misma lógica, misma autorización).
-      case 'ventas-cobrar': case 'ventas-hoy': case 'ventas-todas':
-        return <VentasStandaloneView embedded tab={tabDesdeModulo(view)} onTab={t => go(moduloDesdeTab('Ventas', t))} user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;
+      // B3.6: un solo módulo Ventas; el filtro interno sale del hash (ventas / ventas-hoy / ventas-todas).
+      case 'ventas': case 'ventas-hoy': case 'ventas-todas':
+        return <VentasStandaloneView embedded filtro={filtroVentasDesdeVista(view)} onFiltro={f => go(vistaDesdeFiltroVentas(f))} user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;
       case 'prod-producir': case 'prod-cuartos': case 'prod-mermas': case 'prod-trans':
         return <ProduccionStandaloneView embedded tab={tabDesdeModulo(view)} onTab={t => go(moduloDesdeTab('Producción', t))} user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;
       case MODULO_BOLSAS.id:
@@ -339,9 +346,11 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
     }
   };
 
-  const go = useCallback((id) => { if (id && IDS_MODULOS.has(id)) setView(id); setMobileDrawerOpen(false); }, [IDS_MODULOS]);
-  const current = ALL_ITEMS.find(n => n.id === view);
-  const currentArea = areaDeModulo(nav, view) || nav.areas[0];
+  const go = useCallback((id) => { const v = normalizarVista(nav, id); if (v) setView(v); setMobileDrawerOpen(false); }, [nav]);
+  // B3.6: el módulo del menú dueño de la vista (filtro interno → su módulo).
+  const modulo = moduloDeVista(nav, view) || view;
+  const current = ALL_ITEMS.find(n => n.id === modulo);
+  const currentArea = areaDeModulo(nav, modulo) || nav.areas[0];
   const currentMeta = AREA_META[currentArea?.id] || AREA_META.operacion;
 
   // Modo enfoque (Chofer): sin sidebar ni cabecera del shell; la vista trae
@@ -403,7 +412,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
                   <div className="space-y-1">
                     {area.items.map(item => {
                       const Ic = Icons[item.icon] || Icons.Package;
-                      const active = view === item.id;
+                      const active = modulo === item.id;
                       return (
                         <button key={item.id} onClick={() => go(item.id)}
                           className={`w-full rounded-[18px] px-3 py-2.5 text-left text-sm transition-all ${active ? 'bg-blue-50 text-blue-900 shadow-[0_16px_28px_rgba(2,10,15,0.16)]' : 'text-slate-300/80 hover:bg-white/5 hover:text-white'}`}>
@@ -590,7 +599,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
                         key={item.id}
                         onClick={() => { setView(item.id); setMobileDrawerOpen(false); }}
                         className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-                          view === item.id
+                          modulo === item.id
                             ? 'bg-slate-900 text-white'
                             : 'text-slate-700 hover:bg-slate-100 active:bg-slate-200'
                         }`}
@@ -663,8 +672,8 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
 
       {/* B3: navegación inferior (móvil); en lg+ la oculta el CSS y manda el sidebar. */}
       {bottomNav && (
-        <BottomNav items={bottomNav.items} value={view} onChange={go} mas={bottomNav.mas}
-          masActivo={bottomNav.mas && !bottomNav.items.some(i => i.id === view)} onMas={() => setMobileDrawerOpen(true)} />
+        <BottomNav items={bottomNav.items} value={modulo} onChange={go} mas={bottomNav.mas}
+          masActivo={bottomNav.mas && !bottomNav.items.some(i => i.id === modulo)} onMas={() => setMobileDrawerOpen(true)} />
       )}
     </div>
   );

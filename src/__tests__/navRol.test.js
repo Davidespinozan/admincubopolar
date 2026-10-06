@@ -5,8 +5,9 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  NAV_ROLES, AREAS_ADMIN, MODULOS_VENTAS, MODULOS_PRODUCCION, MODULO_BOLSAS, MODULO_CHOFER,
+  NAV_ROLES, AREAS_ADMIN, MODULO_VENTAS, FILTROS_VENTAS, ALIAS_VISTAS_VENTAS, MODULOS_PRODUCCION, MODULO_BOLSAS, MODULO_CHOFER,
   navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial,
+  idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas,
 } from '../data/navRolLogic';
 import { ROLES_VALIDOS } from '../data/adminUserLogic';
 import { viewDesdeHash } from '../data/navegacionShellLogic';
@@ -44,9 +45,11 @@ describe('matriz de navegación por rol', () => {
     expect(navParaRol('Sin asignar').chrome.verComo).toBe(false);
     expect(AREAS_ADMIN.map(a => a.id)).toEqual(['operacion', 'comercial', 'finanzas', 'equipo']);
   });
-  it('Ventas: sus tres pestañas como módulos; Producción: sus cuatro; Bolsas: uno; Chofer: enfoque', () => {
-    expect([...idsModulos(navParaRol('Ventas'))]).toEqual(['ventas-cobrar', 'ventas-hoy', 'ventas-todas']);
-    expect(navParaRol('Ventas').inicio).toBe('ventas-cobrar');       // = pestaña "ventas" (Por cobrar), la de siempre
+  it('Ventas: UN módulo (B3.6); Producción: sus cuatro; Bolsas: uno; Chofer: enfoque', () => {
+    expect([...idsModulos(navParaRol('Ventas'))]).toEqual(['ventas']);
+    expect(itemsModulos(navParaRol('Ventas'))).toEqual([MODULO_VENTAS]);
+    expect(MODULO_VENTAS).toEqual({ id: 'ventas', label: 'Ventas', icon: 'ShoppingCart' });
+    expect(navParaRol('Ventas').inicio).toBe('ventas');               // = filtro Pendientes
     expect([...idsModulos(navParaRol('Producción'))]).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-trans']);
     expect(navParaRol('Producción').inicio).toBe('prod-producir');   // = pestaña "producir", la de siempre
     expect(navParaRol('Producción').chrome.firmas).toBe(true);
@@ -61,28 +64,54 @@ describe('matriz de navegación por rol', () => {
   it('ids únicos en todo el sistema; ningún módulo de rol choca con los de Admin', () => {
     const todos = Object.values(NAV_ROLES).flatMap(n => [...idsModulos(n)]);
     const admin = new Set(ADMIN_25);
-    for (const n of [...MODULOS_VENTAS, ...MODULOS_PRODUCCION, MODULO_BOLSAS, MODULO_CHOFER]) expect(admin.has(n.id), n.id).toBe(false);
+    for (const n of [MODULO_VENTAS, ...MODULOS_PRODUCCION, MODULO_BOLSAS, MODULO_CHOFER]) expect(admin.has(n.id), n.id).toBe(false);
+    for (const id of [...idsVistas(navParaRol('Ventas'))]) expect(admin.has(id), id).toBe(false);
     for (const nav of Object.values(NAV_ROLES)) expect(new Set([...idsModulos(nav)]).size).toBe(idsModulos(nav).size);
     expect(todos.length).toBeGreaterThan(0);
   });
-  it('pestaña ↔ módulo es biyectiva y los labels de Ventas son los de siempre', () => {
-    for (const m of MODULOS_VENTAS) expect(moduloDesdeTab('Ventas', tabDesdeModulo(m.id))).toBe(m.id);
+  it('Producción: pestaña ↔ módulo biyectiva (sin cambio); Ventas ya no usa pestañas como módulos', () => {
     for (const m of MODULOS_PRODUCCION) expect(moduloDesdeTab('Producción', tabDesdeModulo(m.id))).toBe(m.id);
-    expect(MODULOS_VENTAS.map(m => [m.tab, m.label])).toEqual([['ventas', 'Por cobrar'], ['hoy', 'Hoy'], ['todas', 'Todas']]);
     expect(MODULOS_PRODUCCION.map(m => m.tab)).toEqual(['producir', 'cuartos', 'mermas', 'trans']);
     expect(tabDesdeModulo('dashboard')).toBeNull();
+    expect(tabDesdeModulo('ventas-hoy')).toBeNull();
+    expect(moduloDesdeTab('Ventas', 'hoy')).toBeNull();
     expect(moduloDesdeTab('Admin', 'hoy')).toBeNull();
+  });
+  it('B3.6: filtros internos de Ventas y su hash (Pendientes / Hoy / Todas)', () => {
+    expect(FILTROS_VENTAS.map(f => [f.id, f.label, f.vista])).toEqual([['pendientes', 'Pendientes', 'ventas'], ['hoy', 'Hoy', 'ventas-hoy'], ['todas', 'Todas', 'ventas-todas']]);
+    for (const f of FILTROS_VENTAS) expect(filtroVentasDesdeVista(vistaDesdeFiltroVentas(f.id))).toBe(f.id);
+    expect(vistaDesdeFiltroVentas('nada')).toBeNull();
+    expect(filtroVentasDesdeVista('cobros')).toBeNull();
+  });
+  it('B3.6: hashes heredados como alias → mismo espacio de trabajo y filtro equivalente', () => {
+    const v = navParaRol('Ventas');
+    expect(ALIAS_VISTAS_VENTAS).toEqual({ 'ventas-cobrar': 'ventas' });
+    const abre = (hash) => { const vista = normalizarVista(v, viewDesdeHash(hash, idsVistas(v))); return [vista, moduloDeVista(v, vista), filtroVentasDesdeVista(vista)]; };
+    expect(abre('#/ventas-cobrar')).toEqual(['ventas', 'ventas', 'pendientes']);    // B3.4 "Por cobrar" → Pendientes
+    expect(abre('#/ventas-hoy')).toEqual(['ventas-hoy', 'ventas', 'hoy']);
+    expect(abre('#/ventas-todas')).toEqual(['ventas-todas', 'ventas', 'todas']);
+    expect(abre('#/ventas')).toEqual(['ventas', 'ventas', 'pendientes']);
+    expect(abre('#/cobros')).toEqual([null, null, null]);                          // un hash de Admin no abre nada en Ventas
+    expect([...idsVistas(v)].sort()).toEqual(['ventas', 'ventas-cobrar', 'ventas-hoy', 'ventas-todas']);
+  });
+  it('B3.6: los demás roles no tienen vistas ni alias extra (mismo ruteo de siempre)', () => {
+    for (const rol of ['Admin', 'Facturación', 'Sin asignar', 'Producción', 'Almacén Bolsas', 'Chofer']) {
+      const nav = navParaRol(rol);
+      expect([...idsVistas(nav)], rol).toEqual([...idsModulos(nav)]);
+      for (const id of idsModulos(nav)) { expect(normalizarVista(nav, id)).toBe(id); expect(moduloDeVista(nav, id)).toBe(id); }
+      expect(normalizarVista(nav, 'ventas-hoy'), rol).toBeNull();
+    }
   });
   it('helpers: área de un módulo, items planos, áreas expandidas, deep link por rol', () => {
     expect(areaDeModulo(navParaRol('Admin'), 'cobros').id).toBe('finanzas');
-    expect(areaDeModulo(navParaRol('Ventas'), 'ventas-hoy').id).toBe('ventas');
+    expect(areaDeModulo(navParaRol('Ventas'), moduloDeVista(navParaRol('Ventas'), 'ventas-hoy')).id).toBe('ventas');
     expect(areaDeModulo(navParaRol('Ventas'), 'cobros')).toBeNull();
     expect(itemsModulos(navParaRol('Producción')).map(i => i.id)).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-trans']);
     expect(areasExpandidasInicial(navParaRol('Admin'))).toEqual({ operacion: true, comercial: true, finanzas: false, equipo: false });
     expect(areasExpandidasInicial(navParaRol('Ventas'))).toEqual({ ventas: true });
     // Un hash de Admin no abre nada en el menú de Ventas (cae al inicio del rol).
     expect(viewDesdeHash('#/cobros', idsModulos(navParaRol('Ventas')))).toBeNull();
-    expect(viewDesdeHash('#/ventas-hoy', idsModulos(navParaRol('Ventas')))).toBe('ventas-hoy');
+    expect(viewDesdeHash('#/ventas-hoy', idsVistas(navParaRol('Ventas')))).toBe('ventas-hoy');
   });
 });
 
@@ -112,17 +141,23 @@ describe('B: shell compartido y ruteo', () => {
     expect(shell).toMatch(/nav\.chrome\.firmas && <BotonFirmasPendientes/);
     expect(shell).toMatch(/if \(nav\.modo === 'enfoque'\) \{/);
     expect(shell).toMatch(/<ChoferView user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
-    expect(shell).toMatch(/<VentasStandaloneView embedded tab=\{tabDesdeModulo\(view\)\} onTab=\{t => go\(moduloDesdeTab\('Ventas', t\)\)\} user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
+    expect(shell).toMatch(/case 'ventas': case 'ventas-hoy': case 'ventas-todas':\s*return <VentasStandaloneView embedded filtro=\{filtroVentasDesdeVista\(view\)\} onFiltro=\{f => go\(vistaDesdeFiltroVentas\(f\)\)\} user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
     expect(shell).toMatch(/<ProduccionStandaloneView embedded tab=\{tabDesdeModulo\(view\)\} onTab=\{t => go\(moduloDesdeTab\('Producción', t\)\)\} user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
     expect(shell).toMatch(/<BolsasView embedded user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
-    expect(shell).toMatch(/viewDesdeHash\(window\.location\.hash, IDS_MODULOS\) \|\| nav\.inicio/);
+    expect(shell).toMatch(/const vistaDeHash = useCallback\(\(hash\) => normalizarVista\(nav, viewDesdeHash\(hash, IDS_VISTAS\)\), \[nav, IDS_VISTAS\]\);/);
+    expect(shell).toMatch(/useState\(\(\) => vistaDeHash\(window\.location\.hash\) \|\| nav\.inicio\)/);
+    // B3.6: título, área y entrada activa del menú salen del módulo dueño de la vista.
+    expect(shell).toMatch(/const modulo = moduloDeVista\(nav, view\) \|\| view;\s*const current = ALL_ITEMS\.find\(n => n\.id === modulo\);/);
+    expect(shell).toMatch(/const active = modulo === item\.id;/);
+    // alias y primer sync sin paso extra en el historial
+    expect(shell).toMatch(/if \(!window\.location\.hash \|\| vistaDeHash\(window\.location\.hash\) === view\) \{\s*window\.history\.replaceState/);
     expect(shell).toMatch(/data-testid="dashboard-shell"/);
   });
   it('los 25 módulos de Admin siguen renderizando las mismas vistas', () => {
     for (const id of ADMIN_25) expect(shell, id).toMatch(new RegExp(`case '${id}': return <`));
   });
   it('las vistas por rol aceptan el modo embebido y conservan su testid de smoke', () => {
-    expect(src('../components/VentasStandaloneView.jsx')).toMatch(/embedded = false, tab: tabProp, onTab/);
+    expect(src('../components/VentasStandaloneView.jsx')).toMatch(/embedded = false, filtro: filtroProp, onFiltro/);
     expect(src('../components/ProduccionStandaloneView.jsx')).toMatch(/embedded = false, tab: tabProp, onTab/);
     expect(src('../components/BolsasView.jsx')).toMatch(/embedded = false/);
     expect(src('../components/VentasStandaloneView.jsx')).toMatch(/data-testid="ventas-shell"/);
@@ -132,11 +167,8 @@ describe('B: shell compartido y ruteo', () => {
 
 describe('B3: navegación inferior móvil derivada del mismo modelo', async () => {
   const { bottomNavParaRol, PRINCIPALES_MOVIL_ADMIN, MAX_DESTINOS_MOVIL } = await import('../data/navRolLogic');
-  it('Ventas: 3 destinos (mismos ids que el sidebar); Producción: 4 con etiqueta móvil corta; sin "Más"', () => {
-    const v = bottomNavParaRol(navParaRol('Ventas'));
-    expect(v.mas).toBe(false);
-    expect(v.items.map(i => i.id)).toEqual(['ventas-cobrar', 'ventas-hoy', 'ventas-todas']);
-    expect(v.items.map(i => i.label)).toEqual(['Por cobrar', 'Hoy', 'Todas']);
+  it('Ventas (B3.6): un solo módulo → sin barra inferior (los filtros viven dentro del espacio de trabajo); Producción: 4 con etiqueta móvil corta; sin "Más"', () => {
+    expect(bottomNavParaRol(navParaRol('Ventas'))).toBeNull();
     const p = bottomNavParaRol(navParaRol('Producción'));
     expect(p.mas).toBe(false);
     expect(p.items.map(i => i.id)).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-trans']);
@@ -174,15 +206,16 @@ describe('B3: shell y vistas', () => {
   const shell = src('../components/CuboPolarERP.jsx');
   it('el shell deriva la barra del modelo y navega con `go`; "Más" abre el drawer; el contenido deja espacio', () => {
     expect(shell).toMatch(/const bottomNav = useMemo\(\(\) => bottomNavParaRol\(nav\), \[nav\]\);/);
-    expect(shell).toMatch(/<BottomNav items=\{bottomNav\.items\} value=\{view\} onChange=\{go\} mas=\{bottomNav\.mas\}/);
+    expect(shell).toMatch(/<BottomNav items=\{bottomNav\.items\} value=\{modulo\} onChange=\{go\} mas=\{bottomNav\.mas\}/);
     expect(shell).toMatch(/onMas=\{\(\) => setMobileDrawerOpen\(true\)\}/);
     expect(shell).toMatch(/pb-\[calc\(env\(safe-area-inset-bottom,0px\)\+88px\)\]/);
     expect(shell).not.toMatch(/rol === ['"]Ventas['"]|rol === ['"]Producción['"]/);   // sin ramas por rol
     // Chofer (enfoque) devuelve antes de llegar a la barra: solo su barra operativa.
     expect(shell.indexOf("if (nav.modo === 'enfoque')")).toBeLessThan(shell.indexOf('{bottomNav && ('));
   });
-  it('Ventas y Producción no duplican pestañas dentro del shell', () => {
-    expect(src('../components/VentasStandaloneView.jsx')).toMatch(/\{!embedded && <SegmentedTabs items=\{TABS\}/);
+  it('Producción no duplica pestañas dentro del shell; Ventas (B3.6) muestra sus filtros internos (no hay otro control)', () => {
+    expect(src('../components/VentasStandaloneView.jsx')).toMatch(/<SegmentedTabs items=\{FILTROS\} value=\{filtro\} onChange=\{setFiltro\}/);
+    expect(src('../components/VentasStandaloneView.jsx')).not.toMatch(/!embedded && <SegmentedTabs/);
     expect(src('../components/ProduccionStandaloneView.jsx')).toMatch(/\{!embedded && <SegmentedTabs items=\{TABS\}/);
     expect(src('../components/ChoferView.jsx')).not.toMatch(/BottomNav/);
     expect(src('../components/ChoferView.jsx')).toMatch(/fixed bottom-0 left-1\/2 z-40/);   // barra operativa intacta

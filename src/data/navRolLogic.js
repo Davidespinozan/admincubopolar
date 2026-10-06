@@ -11,8 +11,13 @@
 //                      reduce aquí: eso es una decisión de producto aparte).
 //   - chrome:          qué extras de la cabecera aplican al rol.
 //   - inicio:          módulo de entrada (sustituye al hash inválido).
-// Las pestañas internas de Ventas y Producción son módulos del menú (deep link
-// #/ventas-hoy) y se traducen a la pestaña de la vista con tabDesdeModulo.
+// Las pestañas internas de Producción son módulos del menú (deep link
+// #/prod-cuartos) y se traducen a la pestaña de la vista con tabDesdeModulo.
+// B3.6: Ventas es UN solo módulo ("ventas"); Pendientes / Hoy / Todas son
+// filtros internos del espacio de trabajo. Cada filtro conserva un hash propio
+// (vista que no es entrada del menú: nav.vistas) para que refrescar, atrás y
+// adelante y los enlaces guardados abran el mismo filtro; '#/ventas-cobrar'
+// (B3.4) queda como alias de '#/ventas' (Pendientes).
 
 export const AREAS_ADMIN = [
   { id: "operacion", label: "Operación", icon: "Factory", color: "blue",
@@ -58,12 +63,17 @@ export const AREAS_ADMIN = [
   },
 ];
 
-// Módulos de las vistas por rol: id del menú ↔ pestaña de la vista.
-export const MODULOS_VENTAS = [
-  { id: "ventas-cobrar", label: "Por cobrar", icon: "DollarSign", tab: "ventas" },
-  { id: "ventas-hoy", label: "Hoy", icon: "Clock", tab: "hoy" },
-  { id: "ventas-todas", label: "Todas", icon: "List", tab: "todas" },
+// B3.6: Ventas — un módulo y sus filtros internos (no son módulos del menú).
+export const MODULO_VENTAS = { id: "ventas", label: "Ventas", icon: "ShoppingCart" };
+export const FILTROS_VENTAS = [
+  { id: "pendientes", label: "Pendientes", icon: "ClipboardCheck", vista: "ventas" },
+  { id: "hoy", label: "Hoy", icon: "Clock", vista: "ventas-hoy" },
+  { id: "todas", label: "Todas", icon: "List", vista: "ventas-todas" },
 ];
+// Hashes heredados de B3.4 que siguen abriendo Ventas (alias → vista canónica).
+export const ALIAS_VISTAS_VENTAS = { "ventas-cobrar": "ventas" };
+
+// Módulos de las vistas por rol: id del menú ↔ pestaña de la vista.
 export const MODULOS_PRODUCCION = [
   { id: "prod-producir", label: "Producción", icon: "Factory", tab: "producir" },
   { id: "prod-cuartos", label: "Congeladores", icon: "Warehouse", tab: "cuartos" },
@@ -90,8 +100,11 @@ export const NAV_ROLES = {
   "Facturación": { modo: "completo", areas: AREAS_ADMIN, inicio: "dashboard", chrome: CHROME_BACKOFFICE, persistirAreas: true },
   "Sin asignar": { modo: "completo", areas: AREAS_ADMIN, inicio: "dashboard", chrome: CHROME_BACKOFFICE, persistirAreas: true },
   Ventas: {
-    modo: "completo", inicio: "ventas-cobrar", chrome: CHROME_CAMPO, persistirAreas: false,
-    areas: [{ id: "ventas", label: "Ventas", icon: "ShoppingCart", color: "emerald", items: MODULOS_VENTAS }],
+    modo: "completo", inicio: MODULO_VENTAS.id, chrome: CHROME_CAMPO, persistirAreas: false,
+    areas: [{ id: "ventas", label: "Ventas", icon: "ShoppingCart", color: "emerald", items: [MODULO_VENTAS] }],
+    // vistas que no son entradas del menú → módulo dueño (los filtros con hash propio)
+    vistas: { "ventas-hoy": MODULO_VENTAS.id, "ventas-todas": MODULO_VENTAS.id },
+    alias: ALIAS_VISTAS_VENTAS,
   },
   "Producción": {
     modo: "completo", inicio: "prod-producir", chrome: { ...CHROME_CAMPO, firmas: true }, persistirAreas: false,
@@ -121,17 +134,54 @@ export function areaDeModulo(nav, id) {
   return (nav?.areas || []).find(a => a.items.some(i => i.id === id)) || null;
 }
 
-/** Pestaña de la vista por rol para un módulo del menú ('ventas-hoy' → 'hoy'). */
+/** Pestaña de la vista por rol para un módulo del menú ('prod-cuartos' → 'cuartos'). Solo Producción. */
 export function tabDesdeModulo(id) {
-  const m = [...MODULOS_VENTAS, ...MODULOS_PRODUCCION].find(x => x.id === id);
+  const m = MODULOS_PRODUCCION.find(x => x.id === id);
   return m ? m.tab : null;
 }
 
-/** Módulo del menú para una pestaña de la vista ('Ventas', 'hoy' → 'ventas-hoy'). */
+/** Módulo del menú para una pestaña de la vista ('Producción', 'cuartos' → 'prod-cuartos'). */
 export function moduloDesdeTab(rol, tab) {
-  const lista = rol === "Ventas" ? MODULOS_VENTAS : rol === "Producción" ? MODULOS_PRODUCCION : [];
+  const lista = rol === "Producción" ? MODULOS_PRODUCCION : [];
   const m = lista.find(x => x.tab === tab);
   return m ? m.id : null;
+}
+
+/** Todos los ids de vista válidos del rol: módulos del menú + vistas internas + alias. */
+export function idsVistas(nav) {
+  const ids = idsModulos(nav);
+  for (const k of Object.keys(nav?.vistas || {})) ids.add(k);
+  for (const k of Object.keys(nav?.alias || {})) ids.add(k);
+  return ids;
+}
+
+/** Vista canónica (resuelve alias) o null si no es válida para el rol. */
+export function normalizarVista(nav, id) {
+  if (!id) return null;
+  const v = nav?.alias?.[id] || id;
+  if (idsModulos(nav).has(v)) return v;
+  if (nav?.vistas && Object.prototype.hasOwnProperty.call(nav.vistas, v)) return v;
+  return null;
+}
+
+/** Módulo del menú dueño de una vista ('ventas-hoy' → 'ventas'); el propio id si ya es módulo. */
+export function moduloDeVista(nav, id) {
+  const v = normalizarVista(nav, id);
+  if (!v) return null;
+  return nav?.vistas?.[v] || v;
+}
+
+/** Filtro interno de Ventas para una vista/hash ('ventas-hoy' → 'hoy'; 'ventas-cobrar' → 'pendientes'). */
+export function filtroVentasDesdeVista(id) {
+  const v = ALIAS_VISTAS_VENTAS[id] || id;
+  const f = FILTROS_VENTAS.find(x => x.vista === v);
+  return f ? f.id : null;
+}
+
+/** Vista (hash) de un filtro interno de Ventas ('todas' → 'ventas-todas'). */
+export function vistaDesdeFiltroVentas(filtro) {
+  const f = FILTROS_VENTAS.find(x => x.id === filtro);
+  return f ? f.vista : null;
 }
 
 /**
