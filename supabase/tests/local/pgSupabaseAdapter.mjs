@@ -3,14 +3,18 @@
 // base local (OL-03B). Cada consulta o RPC es su propia transacción como
 // service_role (igual que PostgREST: una petición = una transacción); usa un
 // pool para que dos handlers simultáneos tengan conexiones distintas.
-// Solo el subconjunto que usan billing-create-invoice / billing-cancel-invoice
-// y _lib/auth.js. Solo pruebas locales; nunca producción.
+// Solo el subconjunto que usan billing-create-invoice / billing-cancel-invoice,
+// _lib/auth.js y, desde CLOSURE-1 (114), los webhooks de pago
+// (_lib/persistence.js: order/limit, update, upsert onConflict, delete).
+// `antesDeEscribir(op, tabla)` (opcional) se espera antes de cada escritura:
+// permite a una prueba alinear dos peticiones justo antes del INSERT.
+// Solo pruebas locales; nunca producción.
 const ident = (s) => {
   if (!/^[a-z_][a-z0-9_]*$/.test(s)) throw new Error('identificador no permitido: ' + s);
   return s;
 };
 
-export function makePgSupabase(pool, { tokens = {}, fallar = {} } = {}) {
+export function makePgSupabase(pool, { tokens = {}, fallar = {}, antesDeEscribir = null } = {}) {
   const enServicio = async (sql, params) => {
     const cl = await pool.connect();
     try {
@@ -28,9 +32,29 @@ export function makePgSupabase(pool, { tokens = {}, fallar = {} } = {}) {
     }
   };
   const from = (table) => {
-    const q = { op: 'select', cols: '*', where: [], params: [], single: null, payload: null };
+    const q = { op: 'select', cols: '*', where: [], params: [], single: null, payload: null, orden: null, limite: null, conflicto: null };
+    const valor = (v) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : v);
+    const filtro = () => (q.where.length ? ' WHERE ' + q.where.join(' AND ') : '');
     const exec = async () => {
       try {
+        if (q.op !== 'select' && antesDeEscribir) await antesDeEscribir(q.op, table);
+        if (q.op === 'update') {
+          const keys = Object.keys(q.payload).map(ident);
+          const r = await enServicio(`UPDATE ${ident(table)} SET ${keys.map((k, i) => `${k} = $${q.params.length + i + 1}`).join(', ')}${filtro()} RETURNING *`,
+            [...q.params, ...keys.map(k => valor(q.payload[k]))]);
+          return { data: q.single ? r.rows[0] : r.rows, error: null };
+        }
+        if (q.op === 'delete') {
+          const r = await enServicio(`DELETE FROM ${ident(table)}${filtro()} RETURNING *`, q.params);
+          return { data: r.rows, error: null };
+        }
+        if (q.op === 'upsert') {
+          const keys = Object.keys(q.payload).map(ident);
+          const conf = q.conflicto.split(',').map(s => ident(s.trim()));
+          const r = await enServicio(`INSERT INTO ${ident(table)} (${keys.join(', ')}) VALUES (${keys.map((_, i) => '$' + (i + 1)).join(', ')})
+            ON CONFLICT (${conf.join(', ')}) DO UPDATE SET ${keys.map(k => `${k} = EXCLUDED.${k}`).join(', ')} RETURNING *`, keys.map(k => valor(q.payload[k])));
+          return { data: q.single ? r.rows[0] : r.rows, error: null };
+        }
         if (q.op === 'insert') {
           const keys = Object.keys(q.payload).map(ident);
           const vals = keys.map((k) => { const v = q.payload[k]; return v !== null && typeof v === 'object' ? JSON.stringify(v) : v; });
@@ -38,7 +62,7 @@ export function makePgSupabase(pool, { tokens = {}, fallar = {} } = {}) {
           return { data: q.single ? r.rows[0] : r.rows, error: null };
         }
         const cols = q.cols === '*' ? '*' : q.cols.split(',').map(s => ident(s.trim())).join(', ');
-        const r = await enServicio(`SELECT ${cols} FROM ${ident(table)}${q.where.length ? ' WHERE ' + q.where.join(' AND ') : ''}`, q.params);
+        const r = await enServicio(`SELECT ${cols} FROM ${ident(table)}${filtro()}${q.orden || ''}${q.limite ? ' LIMIT ' + q.limite : ''}`, q.params);
         if (q.single === 'maybe') return { data: r.rows[0] ?? null, error: null };
         if (q.single === 'single') return r.rows.length === 1 ? { data: r.rows[0], error: null } : { data: null, error: { code: 'PGRST116', message: 'no rows' } };
         return { data: r.rows, error: null };
@@ -51,6 +75,11 @@ export function makePgSupabase(pool, { tokens = {}, fallar = {} } = {}) {
       eq(col, val) { q.params.push(val); q.where.push(`${ident(col)}::text = $${q.params.length}::text`); return b; },
       in(col, vals) { q.params.push((vals || []).map(String)); q.where.push(`${ident(col)}::text = ANY($${q.params.length}::text[])`); return b; },
       insert(p) { q.op = 'insert'; q.payload = p; return b; },
+      update(p) { q.op = 'update'; q.payload = p; return b; },
+      upsert(p, { onConflict } = {}) { q.op = 'upsert'; q.payload = p; q.conflicto = onConflict; return b; },
+      delete() { q.op = 'delete'; return b; },
+      order(col, { ascending = true } = {}) { q.orden = ` ORDER BY ${ident(col)} ${ascending ? 'ASC' : 'DESC'}`; return b; },
+      limit(nn) { q.limite = Math.max(1, Number.parseInt(nn, 10) || 1); return b; },
       single() { q.single = 'single'; return b; },
       maybeSingle() { q.single = 'maybe'; return b; },
       then(res, rej) { return exec().then(res, rej); },

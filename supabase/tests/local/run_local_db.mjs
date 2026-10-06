@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -138,6 +138,13 @@ await c.query(`
   -- Producción (verificado 2026-09-28): productos solo tiene trg_productos_upd (sin trigger de stock positivo).
   DROP TRIGGER IF EXISTS trg_stock_positive ON productos;
   DROP INDEX IF EXISTS idx_clientes_rfc;
+  -- Producción (verificado 2026-10-06, solo lectura): SIN idx_pagos_ref. 001 lo
+  -- crea y 015 solo "si los datos están limpios"; en producción quedó ausente.
+  -- CLOSURE-1: la base local antes de 114 debe ser igual; 114 es quien lo crea.
+  DROP INDEX IF EXISTS idx_pagos_ref;
+  -- Producción (verificado 2026-10-06): pagos.referencia es NOT NULL DEFAULT ''
+  -- ('' = "sin referencia", fuera del índice parcial); el repo la deja sin default.
+  ALTER TABLE pagos ALTER COLUMN referencia SET DEFAULT '';
   -- Producción (verificado 2026-09-27): RLS DESHABILITADO en estas 4 tablas.
   ALTER TABLE pagos DISABLE ROW LEVEL SECURITY;
   ALTER TABLE cuentas_por_cobrar DISABLE ROW LEVEL SECURITY;
@@ -3814,6 +3821,276 @@ await concCfdi('tras 113');
 await handlersCfdi('tras 113');
 await handlersComplemento('tras 113');
 console.log('  OL-03B (concurrencia + handlers) y OL-04 (handlers de complemento) tras 113: PASS');
+
+// ═══ 114 — CLOSURE-1: referencia de pago única (R-01) ═══
+// Base local = producción para esta garantía: idx_pagos_ref AUSENTE antes de 114
+// (paridad arriba). Primero se REPRODUCE R-01 sin índice (dos entregas
+// simultáneas del mismo webhook → dos pagos), luego 114 debe FALLAR CERRADO con
+// esos datos sucios, y solo con datos limpios se aplica (×2).
+{
+  const ok = (await c.query(`SELECT to_regclass('public.idx_pagos_ref') IS NULL AS a`)).rows[0].a;
+  console.log(`  PAGOS_REF_PARITY_CHECK[pre-114]: ${ok ? 'PASS (idx_pagos_ref ausente, como producción)' : 'FAIL'}`);
+  if (!ok) process.exit(1);
+}
+const SUITES_114 = [...SUITES_113, ['113', '113_complementos_pago_test.sql']];
+const ADMIN114 = '11470000-0000-0000-0000-000000000001';
+const limpiar114 = `BEGIN; SET LOCAL session_replication_role = replica;
+  DELETE FROM payment_webhook_events WHERE provider_reference LIKE 'W114%' OR provider_reference LIKE 'evt_W114%';
+  DELETE FROM payment_intents WHERE provider_reference LIKE 'W114%';
+  DELETE FROM movimientos_contables WHERE orden_id BETWEEN 11471 AND 11489;
+  DELETE FROM pagos WHERE orden_id BETWEEN 11471 AND 11489 OR referencia LIKE '%W114%' OR referencia LIKE 'C114-%';
+  DELETE FROM cuentas_por_cobrar WHERE orden_id BETWEEN 11471 AND 11489;
+  DELETE FROM stock_operaciones WHERE orden_id BETWEEN 11471 AND 11489;
+  DELETE FROM ordenes WHERE id BETWEEN 11471 AND 11489;
+  DELETE FROM clientes WHERE id = 11471; DELETE FROM usuarios WHERE id = 11471; DELETE FROM auth.users WHERE id = '${ADMIN114}';
+  COMMIT;`;
+const preparar114 = async () => {
+  await c.query(limpiar114);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) VALUES ('${ADMIN114}', 'a@t114w');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (11471, 'Admin W114', 'a@t114w', 'Admin', 'Activo', '${ADMIN114}');
+    INSERT INTO clientes (id, nombre, rfc, saldo, credito_autorizado, limite_credito) VALUES (11471, 'Cliente W114', 'AAA010101AAA', 1000, true, 100000);
+    INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro) VALUES
+      (11471, 'OV-11471', 11471, 'Cliente W114', 'x', 100, 'Creada',    'QR / Link de pago', 'Contado'),
+      (11472, 'OV-11472', 11471, 'Cliente W114', 'x', 200, 'Entregada', 'Crédito (fiado)',   'Credito'),
+      (11473, 'OV-11473', 11471, 'Cliente W114', 'x', 100, 'Creada',    'QR / Link de pago', 'Contado'),
+      (11474, 'OV-11474', 11471, 'Cliente W114', 'x', 100, 'Creada',    'QR / Link de pago', 'Contado'),
+      (11475, 'OV-11475', 11471, 'Cliente W114', 'x', 100, 'Creada',    'QR / Link de pago', 'Contado'),
+      (11476, 'OV-11476', 11471, 'Cliente W114', 'x', 100, 'Creada',    'QR / Link de pago', 'Contado'),
+      (11477, 'OV-11477', 11471, 'Cliente W114', 'x', 200, 'Entregada', 'Crédito (fiado)',   'Credito'),
+      (11478, 'OV-11478', 11471, 'Cliente W114', 'x', 100, 'Entregada', 'Transferencia',     'Contado'),
+      (11479, 'OV-11479', 11471, 'Cliente W114', 'x', 100, 'Entregada', 'Transferencia',     'Contado'),
+      (11480, 'OV-11480', 11471, 'Cliente W114', 'x', 100, 'Entregada', 'Efectivo',          'Contado'),
+      (11481, 'OV-11481', 11471, 'Cliente W114', 'x', 300, 'Entregada', 'Crédito (fiado)',   'Credito'),
+      (11482, 'OV-11482', 11471, 'Cliente W114', 'x', 100, 'Entregada', 'Crédito (fiado)',   'Credito'),
+      (11483, 'OV-11483', 11471, 'Cliente W114', 'x', 100, 'Entregada', 'Crédito (fiado)',   'Credito'),
+      (11484, 'OV-11484', 11471, 'Cliente W114', 'x', 100, 'Entregada', 'Efectivo',          'Contado');
+    INSERT INTO cuentas_por_cobrar (id, cliente_id, orden_id, fecha_venta, fecha_vencimiento, monto_original, monto_pagado, saldo_pendiente, estatus, concepto)
+      SELECT id, 11471, id, CURRENT_DATE, CURRENT_DATE + 30, total, 0, total, 'Pendiente', 'W114' FROM ordenes WHERE id IN (11472, 11477, 11481, 11482, 11483);
+    COMMIT;`);
+};
+async function webhooksPago114(etiqueta, { soloRepro = false } = {}) {
+  console.log(`── CLOSURE-1 WEBHOOKS STRIPE / MERCADO PAGO ↔ POSTGRES REAL (${etiqueta}; proveedores FALSOS, sin red)`);
+  const { pathToFileURL } = await import('node:url');
+  const { Pool } = require('pg');
+  const { makePgSupabase } = await import(pathToFileURL(path.join(ROOT, 'supabase/tests/local/pgSupabaseAdapter.mjs')).href);
+  const { createHandler: stripeH } = await import(pathToFileURL(path.join(ROOT, 'netlify/functions/billing-webhook-stripe/index.js')).href);
+  const { createHandler: mpH } = await import(pathToFileURL(path.join(ROOT, 'netlify/functions/billing-webhook-mercadopago/index.js')).href);
+  const { signMercadoPagoWebhook } = await import(pathToFileURL(path.join(ROOT, 'netlify/functions/_lib/paymentSecurity.js')).href);
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  const pool = new Pool({ host: '127.0.0.1', port: PORT, user: USER, database: DB, max: 8 });
+  const fetchReal = globalThis.fetch; let redReal = 0;
+  globalThis.fetch = async () => { redReal += 1; throw new Error('red real prohibida en pruebas'); };
+  // Barrera: alinea las N peticiones justo antes del INSERT en pagos (ambas ya
+  // pasaron el pre-chequeo SELECT por referencia y el de pendiente).
+  const barrera = (nn) => { let llegados = 0; let soltar; const p = new Promise(r => { soltar = r; });
+    return async () => { llegados += 1; if (llegados >= nn) soltar(); await Promise.race([p, sleep(4000)]); }; };
+  const cliente = (bar) => makePgSupabase(pool, { antesDeEscribir: async (op, t) => { if (bar && op === 'insert' && t === 'pagos') await bar(); } });
+  const stripe = (sb) => stripeH({ getSupabase: () => sb, constructEvent: (body) => JSON.parse(body) });
+  const evStripe = (evt, cs, ordenId, monto) => ({ httpMethod: 'POST', headers: { 'stripe-signature': 't=1,v1=prueba' },
+    body: JSON.stringify({ id: evt, type: 'checkout.session.completed', data: { object: { id: cs, payment_status: 'paid', status: 'complete',
+      amount_total: Math.round(monto * 100), currency: 'mxn', metadata: { orden_id: String(ordenId) } } } }) });
+  const SECRETO = 'secreto-de-prueba-114';
+  const mp = (sb, pagosMp) => mpH({ getSupabase: () => sb, getSecret: () => SECRETO, nowSec: () => 1_900_000_000,
+    fetchPayment: async (id) => pagosMp[String(id)] });
+  const evMp = (id, rid) => { const ts = '1900000000'; const v1 = signMercadoPagoWebhook({ dataId: id, requestId: rid, ts, secret: SECRETO });
+    return { httpMethod: 'POST', headers: { 'x-signature': `ts=${ts},v1=${v1}`, 'x-request-id': rid }, queryStringParameters: { 'data.id': id, type: 'payment' },
+      body: JSON.stringify({ type: 'payment', data: { id } }) }; };
+  const pagoMp = (id, ordenId, monto) => ({ id, status: 'approved', transaction_amount: monto, currency_id: 'MXN', external_reference: String(ordenId) });
+  const L = (r) => ({ status: r.statusCode, body: JSON.parse(r.body || '{}') });
+  const ef = async (oid) => (await c.query(`SELECT (SELECT count(*)::int FROM pagos WHERE orden_id = $1) AS pagos,
+      (SELECT COALESCE(sum(monto), 0)::float FROM pagos WHERE orden_id = $1) AS suma,
+      (SELECT count(DISTINCT referencia)::int FROM pagos WHERE orden_id = $1) AS refs,
+      (SELECT count(*)::int FROM movimientos_contables WHERE orden_id = $1) AS movs,
+      (SELECT count(*)::int FROM stock_operaciones WHERE orden_id = $1) AS stock,
+      (SELECT estatus || '|' || COALESCE(ruta_id::text, '-') || '|' || metodo_pago FROM ordenes WHERE id = $1) AS orden,
+      (SELECT monto_pagado::float || '|' || saldo_pendiente::float || '|' || estatus FROM cuentas_por_cobrar WHERE orden_id = $1) AS cxc`, [oid])).rows[0];
+  const saldo = async () => Number((await c.query(`SELECT saldo FROM clientes WHERE id = 11471`)).rows[0].saldo);
+
+  if (soloRepro) {
+    // R-01 reproducido: SIN índice, dos entregas simultáneas del MISMO evento.
+    const s0 = await saldo(); const bar = barrera(2); const sb = cliente(bar);
+    const rs = (await Promise.all([stripe(sb)(evStripe('evt_W114_R', 'W114_cs_R', 11477, 200)), stripe(sb)(evStripe('evt_W114_R', 'W114_cs_R', 11477, 200))])).map(L);
+    const e = await ef(11477);
+    ok(rs.every(r => r.status === 200 && r.body.applied === true) && e.pagos === 2 && e.refs === 1 && e.suma === 400 && (await saldo()) === s0 - 400,
+      `R01-REPRO (sin idx_pagos_ref, esperado): la misma entrega duplicada a la vez → ${e.pagos} pagos con la misma referencia, suma ${e.suma}, saldo del cliente ${s0} → ${await saldo()} (doble efecto)`);
+  } else {
+    // W1. Stripe: la misma entrega dos veces A LA VEZ, orden con CxC.
+    let s0 = await saldo(); let bar = barrera(2); let sb = cliente(bar);
+    let rs = (await Promise.all([stripe(sb)(evStripe('evt_W114_1', 'W114_cs_1', 11472, 200)), stripe(sb)(evStripe('evt_W114_1', 'W114_cs_1', 11472, 200))])).map(L);
+    let e = await ef(11472);
+    const intents = Number((await c.query(`SELECT count(*) FROM payment_intents WHERE provider = 'stripe' AND provider_reference = 'W114_cs_1'`)).rows[0].count);
+    const eventos = (await c.query(`SELECT count(*)::int AS n, bool_and(processed) AS p FROM payment_webhook_events WHERE provider_reference = 'evt_W114_1'`)).rows[0];
+    ok(rs.every(r => r.status === 200) && rs.filter(r => r.body.applied === true).length === 1 && rs.filter(r => r.body.code === 'duplicate').length === 1,
+      `W1a Stripe: misma entrega simultánea (ambas pasaron el pre-chequeo) → una "applied", la otra "duplicate" por 23505 (200, sin reintento) [${rs.map(r => r.body.code).join(', ')}]`);
+    ok(e.pagos === 1 && e.suma === 200 && e.cxc === '200|0|Pagada' && (await saldo()) === s0 - 200 && intents === 1 && eventos.n === 2 && eventos.p === true,
+      `W1b sin segundo efecto: 1 pago, CxC ${e.cxc}, saldo del cliente −200 una vez, 1 payment_intent, 2 eventos registrados y procesados`);
+    ok(e.movs === 0 && e.stock === 0 && e.orden === 'Entregada|-|Crédito (fiado)',
+      'W1c sin efecto de ingreso contable, inventario ni ruta; estatus y método de crédito sin cambio');
+    // W2. Stripe: la misma entrega otra vez, después (reintento normal).
+    s0 = await saldo();
+    const r2 = L(await stripe(cliente(null))(evStripe('evt_W114_1', 'W114_cs_1', 11472, 200)));
+    e = await ef(11472);
+    ok(r2.status === 200 && r2.body.code === 'duplicate' && e.pagos === 1 && (await saldo()) === s0, 'W2 reintento posterior de la misma entrega: "duplicate", sin efectos');
+    // W3. Mercado Pago: la misma notificación dos veces a la vez (contado, sin CxC).
+    s0 = await saldo(); bar = barrera(2); sb = cliente(bar);
+    const pm = { W114001: pagoMp('W114001', 11471, 100) };
+    rs = (await Promise.all([mp(sb, pm)(evMp('W114001', 'rid-1')), mp(sb, pm)(evMp('W114001', 'rid-2'))])).map(L);
+    e = await ef(11471);
+    ok(rs.every(r => r.status === 200) && rs.filter(r => r.body.applied === true).length === 1 && rs.filter(r => r.body.code === 'duplicate').length === 1
+       && e.pagos === 1 && e.suma === 100 && e.orden === 'Creada|-|QR / Link de pago' && e.movs === 0 && e.stock === 0 && (await saldo()) === s0,
+      `W3 Mercado Pago: misma notificación simultánea → un pago (mercadopago:W114001); la otra "duplicate"; sin entrega, inventario ni ingreso [${rs.map(r => r.body.code).join(', ')}]`);
+    // W4. Stripe: dos pagos DISTINTOS a la vez (también alineados) → ambos.
+    bar = barrera(2); sb = cliente(bar);
+    rs = (await Promise.all([stripe(sb)(evStripe('evt_W114_4a', 'W114_cs_4a', 11473, 100)), stripe(sb)(evStripe('evt_W114_4b', 'W114_cs_4b', 11474, 100))])).map(L);
+    ok(rs.every(r => r.status === 200 && r.body.applied === true) && (await ef(11473)).pagos === 1 && (await ef(11474)).pagos === 1,
+      'W4 Stripe: dos sesiones distintas al mismo tiempo → dos pagos (stripe:W114_cs_4a, stripe:W114_cs_4b)');
+    // W5. Mercado Pago: dos pagos distintos a la vez → ambos.
+    bar = barrera(2); sb = cliente(bar);
+    const pm2 = { W114005: pagoMp('W114005', 11475, 100), W114006: pagoMp('W114006', 11476, 100) };
+    rs = (await Promise.all([mp(sb, pm2)(evMp('W114005', 'rid-5')), mp(sb, pm2)(evMp('W114006', 'rid-6'))])).map(L);
+    ok(rs.every(r => r.status === 200 && r.body.applied === true) && (await ef(11475)).pagos === 1 && (await ef(11476)).pagos === 1,
+      'W5 Mercado Pago: dos pagos distintos al mismo tiempo → dos pagos');
+    const refs = (await c.query(`SELECT string_agg(referencia, ',' ORDER BY referencia) AS r FROM pagos WHERE orden_id BETWEEN 11471 AND 11476`)).rows[0].r;
+    ok(refs === 'mercadopago:W114001,mercadopago:W114005,mercadopago:W114006,stripe:W114_cs_1,stripe:W114_cs_4a,stripe:W114_cs_4b',
+      `W6 referencias de proveedor intactas (sin transformar): ${refs}`);
+  }
+  ok(redReal === 0, 'W7 ninguna llamada a la red real');
+  globalThis.fetch = fetchReal;
+  await pool.end();
+  if (!okAll) { console.log(`RESULTADO: FALLÓ (CLOSURE-1 webhooks ${etiqueta})`); process.exit(1); }
+}
+async function conc114() {
+  console.log('── CLOSURE-1 CONCURRENCIA (dos conexiones reales)');
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  const a = await connect(); const b = await connect();
+  const rol = async (cl, quien) => {
+    await cl.query('BEGIN');
+    if (quien === 'srv') { await cl.query('SET LOCAL ROLE service_role'); await cl.query(`SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true)`); }
+    else { await cl.query('SET LOCAL ROLE authenticated'); await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub: ADMIN114 })]); }
+  };
+  // A ejecuta y queda SIN confirmar; B arranca; tras 500 ms se ve si B espera; A confirma; B termina.
+  const carrera = async (quien, sqlA, pA, sqlB, pB) => {
+    await rol(a, quien); await rol(b, quien);
+    const ra = await a.query(sqlA, pA).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(sqlB, pB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const n = async (sql, p) => Number(Object.values((await c.query(sql, p)).rows[0])[0]);
+  const saldo = () => n(`SELECT saldo FROM clientes WHERE id = 11471`);
+  const INS = `INSERT INTO pagos (cliente_id, orden_id, monto, metodo_pago, fecha, referencia, saldo_antes, saldo_despues) VALUES (11471, 11484, 1, 'QR / Link de pago', fin_hoy(), 'C114-RAW', 0, 0) RETURNING id`;
+  // C1. Inserción directa (como el webhook) con la misma referencia en dos transacciones.
+  let r = await carrera('srv', INS, [], INS, []);
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && r.rb.code === '23505' && await n(`SELECT count(*) FROM pagos WHERE referencia = 'C114-RAW'`) === 1,
+    'C1 dos inserciones simultáneas con la misma referencia: la segunda espera y se rechaza (23505); un solo renglón');
+  // C2. registrar_pago_orden en DOS órdenes con la MISMA referencia manual: el IF EXISTS no ve
+  //     el pago sin confirmar de la otra; el índice es el respaldo final.
+  const RPO = `SELECT registrar_pago_orden($1::bigint, 'Transferencia', 'C114-SPEI') AS r`;
+  r = await carrera('admin', RPO, [11478], RPO, [11479]);
+  ok(r.ra.ok && r.ra.row.r.aplicado === true && !r.rb.ok && r.bloqueado && r.rb.code === '23505'
+     && await n(`SELECT count(*) FROM pagos WHERE orden_id = 11479`) === 0 && await n(`SELECT count(*) FROM movimientos_contables WHERE orden_id = 11479`) === 0
+     && await n(`SELECT count(*) FROM pagos WHERE referencia = 'C114-SPEI'`) === 1 && await n(`SELECT count(*) FROM movimientos_contables WHERE orden_id = 11478`) === 1,
+    'C2 misma referencia manual en dos órdenes a la vez: ambas pasan el IF EXISTS; la segunda choca con el índice (23505) y se revierte entera (sin pago ni ingreso)');
+  // C3. registrar_pago_orden de la MISMA orden a la vez (sin referencia): serializado por la orden.
+  const RPO2 = `SELECT registrar_pago_orden(11480, 'Efectivo') AS r`;
+  r = await carrera('admin', RPO2, [], RPO2, []);
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && r.rb.row.r.motivo === 'ya_pagada'
+     && await n(`SELECT count(*) FROM pagos WHERE orden_id = 11480`) === 1 && await n(`SELECT count(*) FROM movimientos_contables WHERE orden_id = 11480`) === 1,
+    'C3 el mismo cobro de una orden dos veces a la vez: el segundo espera y responde "ya_pagada"; un pago y un ingreso');
+  // C4. Dos abonos legítimos de la MISMA CxC a la vez, sin referencia.
+  let s0 = await saldo();
+  const ABO = `SELECT abonar_cxc(11481, 100, 'Efectivo') AS r`;
+  r = await carrera('admin', ABO, [], ABO, []);
+  const seg = (await c.query(`SELECT count(DISTINCT to_char(created_at, 'YYYYMMDD-HH24MISS'))::int AS s, count(DISTINCT referencia)::int AS refs, count(*)::int AS n FROM pagos WHERE cxc_id = 11481`)).rows[0];
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && seg.n === 2 && seg.refs === 2 && await n(`SELECT saldo_pendiente FROM cuentas_por_cobrar WHERE id = 11481`) === 100
+     && await saldo() === s0 - 200,
+    `C4 dos abonos de la misma CxC a la vez sin referencia: ambos aplican con referencias distintas (segundos de inicio distintos: ${seg.s}; el formato anterior por segundo habría chocado si es 1); CxC 300 → 100, saldo −200`);
+  // C5. La MISMA referencia manual en la MISMA CxC a la vez: la segunda espera la CxC y la ve.
+  s0 = await saldo();
+  const ABM = `SELECT abonar_cxc(11481, 50, 'Transferencia SPEI', 'C114-MAN') AS r`;
+  r = await carrera('admin', ABM, [], ABM, []);
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && r.rb.code === '23505' && /ya está registrada/.test(r.rb.msg)
+     && await n(`SELECT count(*) FROM pagos WHERE referencia = 'C114-MAN'`) === 1 && await n(`SELECT saldo_pendiente FROM cuentas_por_cobrar WHERE id = 11481`) === 50 && await saldo() === s0 - 50,
+    'C5 la misma referencia manual en la misma CxC a la vez: un abono; el otro rechazado con mensaje claro; CxC y saldo una sola vez');
+  // C6. La MISMA referencia manual en DOS CxC distintas a la vez: sin candado común; el índice decide.
+  s0 = await saldo();
+  const AB2 = `SELECT abonar_cxc($1::bigint, 50, 'Transferencia SPEI', 'C114-DUP2') AS r`;
+  r = await carrera('admin', AB2, [11482], AB2, [11483]);
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && r.rb.code === '23505'
+     && await n(`SELECT count(*) FROM pagos WHERE referencia = 'C114-DUP2'`) === 1 && await n(`SELECT monto_pagado FROM cuentas_por_cobrar WHERE id = 11483`) === 0
+     && await n(`SELECT count(*) FROM movimientos_contables WHERE orden_id = 11483`) === 0 && await saldo() === s0 - 50,
+    'C6 misma referencia manual en dos CxC a la vez: la segunda choca con el índice (23505) y se revierte entera (CxC, ingreso y saldo intactos)');
+  await a.end(); await b.end();
+  if (!okAll) { console.log('RESULTADO: FALLÓ (CLOSURE-1 concurrencia)'); process.exit(1); }
+}
+const huella114 = async () => new Map((await c.query(`SELECT 'fn ' || p.oid::regprocedure::text AS k, md5(pg_get_functiondef(p.oid)) AS h FROM pg_proc p
+    WHERE p.pronamespace = 'public'::regnamespace AND p.prokind = 'f' AND p.proname !~ '^t[0-9]*_'
+  UNION ALL SELECT 'idx ' || i.relname, md5(pg_get_indexdef(i.oid)) FROM pg_index x JOIN pg_class i ON i.oid = x.indexrelid WHERE i.relnamespace = 'public'::regnamespace
+  UNION ALL SELECT 'trg ' || t.tgrelid::regclass || '.' || t.tgname, md5(pg_get_triggerdef(t.oid)) FROM pg_trigger t WHERE NOT t.tgisinternal AND t.tgrelid::regclass::text !~ '^t[0-9]*_'
+  UNION ALL SELECT 'acl ' || p.oid::regprocedure::text, COALESCE(p.proacl::text, '') FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname !~ '^t[0-9]*_'`)).rows.map(x => [x.k, x.h]));
+// 1. R-01 reproducido sin índice.
+await preparar114();
+await webhooksPago114('pre-114', { soloRepro: true });
+// 2. Datos sucios (el duplicado recién creado): 114 debe abortar SIN cambiar nada.
+{
+  const antes = await huella114();
+  const stmts = splitSql(fs.readFileSync(path.join(ROOT, 'supabase', '114_referencia_pago_unica.sql'), 'utf8'));
+  let error = null;
+  for (const st of stmts) { try { await c.query(st); } catch (e) { error = e; break; } }
+  await c.query('ROLLBACK').catch(() => {});
+  const despues = await huella114();
+  const cambios = [...new Set([...antes.keys(), ...despues.keys()])].filter(k => antes.get(k) !== despues.get(k));
+  const ok = error && error.code === '23505' && /repetida/.test(error.message) && cambios.length === 0
+    && (await c.query(`SELECT to_regclass('public.idx_pagos_ref') IS NULL AS a`)).rows[0].a
+    && Number((await c.query(`SELECT count(*) FROM pagos WHERE referencia = 'stripe:W114_cs_R'`)).rows[0].count) === 2;
+  console.log(`  ${ok ? 'OK' : 'FAIL'}: 114-SUCIO con una referencia repetida: aborta en el pre-chequeo [${error?.code} ${error?.message}]; sin índice, abonar_cxc y catálogo sin cambio (${cambios.length} cambios); los datos NO se tocan (2 renglones siguen)`);
+  if (!ok) { console.log('RESULTADO: FALLÓ (114 pre-chequeo de datos sucios)'); process.exit(1); }
+}
+await c.query(limpiar114);
+// 3. Datos limpios: aplicar 114 dos veces; el catálogo cambia EXACTAMENTE en abonar_cxc e idx_pagos_ref.
+const antes114 = await huella114();
+for (const k of [1, 2]) {
+  console.log(`── aplicar 114 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '114_referencia_pago_unica.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+{
+  const despues = await huella114();
+  const cambios = [...new Set([...antes114.keys(), ...despues.keys()])].filter(k => antes114.get(k) !== despues.get(k)).sort();
+  const ok = JSON.stringify(cambios) === JSON.stringify(['fn abonar_cxc(bigint,numeric,text,text,bigint)', 'idx idx_pagos_ref']);
+  console.log(`  CATALOG_DIFF[114]: ${ok ? 'PASS' : 'FAIL'} ${JSON.stringify(cambios)} (ACL de abonar_cxc sin cambio)`);
+  if (!ok) process.exit(1);
+}
+if (!(await rlsCheck('tras 114 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 114)'); process.exit(1); }
+console.log('── PRUEBAS 114');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/114_referencia_pago_unica_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (114)'); process.exit(1); }
+}
+await preparar114();
+await webhooksPago114('tras 114');
+await conc114();
+await c.query(limpiar114);
+await reruns090('114', ['072']);
+for (const [etq, f] of [...SUITES_114, ['111', '111_operaciones_cfdi_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 114)`); process.exit(1); }
+  console.log(`  ${etq} tras 114: PASS`);
+}
+await concCfdi('tras 114');
+await handlersCfdi('tras 114');
+await handlersComplemento('tras 114');
+console.log('  CLOSURE-1 (webhooks + concurrencia) y OL-03B / OL-04 (concurrencia + handlers) tras 114: PASS');
 
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
