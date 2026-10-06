@@ -1,6 +1,6 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-06 (etapa CERRADA EN PRODUCCIÓN; go-live GL-1 en contención). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-06 (etapa CERRADA EN PRODUCCIÓN; go-live GL-1 CERRADO). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
@@ -162,8 +162,8 @@ previas. CUBOPOLAR aún no se pone oficialmente a operar en la empresa (los poco
 producción son pruebas previas, no evidencia de adopción). PD-01 y todo desarrollo de producto:
 **FROZEN** hasta tener evidencia de operación real.
 
-**GL-1 (credenciales expuestas en el repositorio PÚBLICO): PARTIALLY CLOSED — FACTURAMA SANDBOX
-ROTATION PENDING.**
+**GL-1 (credenciales expuestas en el repositorio PÚBLICO): CLOSED — OWNER ACCEPTED SANDBOX
+RESIDUAL RISK (2026-10-06).**
 - Cuentas e2e de producción (Admin / Ventas / Chofer, `is_test_account`, ids 66–68): **DISABLED**
   — baneadas con la Auth Admin API de Supabase (hasta 2126) con contraseña aleatoria nueva no
   conservada, y `usuarios.estatus = 'Inactivo'`. Login con las contraseñas publicadas: rechazado
@@ -179,9 +179,10 @@ ROTATION PENDING.**
 - E2E CI (`e2e-smokes`): **MANUAL ONLY / PRODUCTION PROHIBITED** (sin cron ni push; el job se niega
   a correr contra `sistema.cubopolar.com`). Secretos `E2E_*` de GitHub conservados hasta que exista
   staging. E2E SMOKES MUST NOT RUN AGAINST PRODUCTION.
-- Credenciales SANDBOX de Facturama (publicadas y en uso en Netlify): **PENDING OWNER ROTATION**
-  (no hay API para cambiar la contraseña; se rota en el portal de Facturama y luego se actualiza
-  `FACTURAMA_PASSWORD` en Netlify sin imprimirla). Facturama LIVE: no tocado.
+- Credenciales SANDBOX de Facturama (publicadas en el historial y en uso en Netlify): **OWNER
+  ACCEPTED RISK — NOT ROTATED** (decisión del dueño 2026-10-06; NO bloqueante). La aceptación aplica
+  solo al SANDBOX, nunca a credenciales LIVE. No se modificó Facturama ni `FACTURAMA_PASSWORD`;
+  Facturama LIVE no tocado. Al hacer el corte a producción (GL-3) se usan credenciales LIVE nuevas.
 - Datos de negocio de producción: **UNCHANGED** (comparación antes/después idéntica; `error_log` 192).
 - Observación (sin tocar): el link bonito `/nota/:id?t=` responde 400; la función directa sí valida.
 
