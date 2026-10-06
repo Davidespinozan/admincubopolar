@@ -1,45 +1,86 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-05. Lo actualizan los skills `activar-produccion` (al cerrar una fase)
-y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
+Actualizado: 2026-10-06 (reconciliación post OL-02). Lo actualizan los skills `activar-produccion`
+(al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Commit: `afc545caa75bc10493dfda5ae2e5c1c552de3a1f` (`main`) — DEPLOYED (Netlify
-  `6ac3e2470e05bf0009ed053b`, ready 2026-10-05) y VALIDATED IN PRODUCTION el 2026-10-05.
-- Base de datos: migraciones aplicadas hasta la 108 (cada una verificada al activarse).
-- Conteos registrados en la verificación de 108 (cambian con cada fase; no son invariantes):
-  118 funciones · 77 policies · 40 tablas · 39 secuencias · 1 vista.
-- Centinelas: `error_log` max id 192 · OV-0086 md5 `c253d4337b2db7c286c08605f94cc8b9` ·
-  anon sin acceso a tablas ni funciones. Se revisan con `supabase/tests/prod/conteos.sql`.
+- Commit: `8b61a2eb25f02ec2143dd8c3d3b51bac3b1bd6ff` (`main` = `origin/main`) — DEPLOYED (Netlify
+  `6ac464890642ca0008522841`, ready 2026-10-06T03:01Z, deploy publicado) y verificado en solo
+  lectura el 2026-10-06 (bundle vivo contiene `completar_venta_directa`).
+- Base de datos: migraciones aplicadas hasta la **110** (se aplican con `supabase db query`; no hay
+  tabla de historial: la "cabeza" se verifica por la presencia y huella de los objetos).
+- Conteos tras 110 (cambian con cada fase; no son invariantes): 120 funciones · 77 policies ·
+  40 tablas · 39 secuencias · 1 vista · 44 triggers en `public` (6 en `ordenes`).
+- Huellas (md5 de `pg_get_functiondef`): `completar_venta_directa` (109) `5825f5e3072a1d5a98961752a5eb5cc6` ·
+  `ordenes_guard_entrega_directa` (110) `9eac14f606d8c0f0fb4a8851cc32b640`.
+- Webhooks del link desplegados (digest Netlify): stripe `d50a7b654379` · mercadopago `c6ae953b0992`.
+- Centinelas: `error_log` max id 192 · auditoría max id 724 · OV-0086 md5
+  `c253d4337b2db7c286c08605f94cc8b9` · anon sin acceso a tablas ni funciones · EMP-5 99,000 @ 1 ·
+  EMP-25 9,800 @ 2. Se revisan con `supabase/tests/prod/conteos.sql`.
 
-## Última fase cerrada
-PACKAGING COST BASIS INTEGRITY — CLOSED IN PRODUCTION (2026-10-05) · migraciones
-`107_base_costo_empaque_reverso.sql` y `108_contencion_base_costo_empaque.sql` · commit de
-implementación y desplegado `afc545caa75bc10493dfda5ae2e5c1c552de3a1f`. Invariante: ninguna
-unidad de empaque entra fuera de una recepción de compra (o del reverso de una producción, al
-costo unitario guardado); el empaque solo baja por ajuste; su existencia nunca es negativa; un
-empaque nuevo nace en 0 y sin costo; un empaque con existencia, uso o historia no se borra por
-API. Sustituye hacia adelante la apertura declarada al dar de alta de 106; sin reparación
-histórica: las aperturas de EMP-5 (99,000 @ 1) y EMP-25 (9,800 @ 2) quedan intactas.
-Anterior: PACKAGING COST (106, commit 6116171).
+## Fases desde la base anterior (afc545c, 108) — todas en el commit desplegado
+| Fase | Commit | Estado verificado |
+|---|---|---|
+| PACKAGING COST BASIS INTEGRITY (107/108) | afc545c · docs 08184e2 | CLOSED IN PRODUCTION (2026-10-05); intacto |
+| Role UI A1/A2 · A3 · A4 · A5 (primitivas, Almacén de Bolsas, Ventas, Producción, Chofer) | fe05e38 · d0ae300 · 13f7855 · 6cce6d7 | DEPLOYED (solo UI) |
+| Role UI B · B2 (shell compartido, `navRolLogic`) | 39e3788 · eca353b | DEPLOYED (solo UI) |
+| Role UI B3 · B3.1 (barra inferior móvil) | aa4a2ea · 6c87826 | DEPLOYED (solo UI) |
+| Role UI B3.2 (Producción por módulo) · B3.4 (Ventas por módulo) | a61445d · fb6b546 | DEPLOYED (solo UI) |
+| OL-01A honestidad del cobro del vendedor | a83ccfc | DEPLOYED |
+| OL-02B contrato `completar_venta_directa` (109) | 2e513c0 | MIGRATION APPLIED / VERIFIED |
+| OL-02C venta directa por el contrato (Ventas y Admin) · OL-02C.1 pagos de órdenes propias | 6906dc5 · 23b3e54 | DEPLOYED / TECHNICALLY VERIFIED |
+| OL-02D1 el webhook del link solo registra el pago | 3077aca | DEPLOYED / TECHNICALLY VERIFIED |
+| OL-02D2 contención del camino heredado sin ruta (110) | 8b61a2e | MIGRATION APPLIED ONCE + DEPLOYED / TECHNICALLY VERIFIED |
+
+B3.3 y B3.5 (Ventas IA) y OL-01 / OL-02 / OL-02D fueron auditorías sin commit. El cierre del
+dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI ni de OL-02.
+
+## Ciclo de vida de la orden (vigente, verificado en código y producción)
+- **Venta sin ruta** (`Creada`, o `Asignada` sin ruta): la entrega física solo ocurre por
+  `completar_venta_directa` (109): asignación explícita por SKU y cuarto (varios cuartos), salida de
+  `cuartos_frios.stock`, pago (contado) o CxC a 30 días (crédito), `Entregada`, idempotencia por
+  operación y todo en una transacción. Ventas solo sobre sus órdenes; Admin sobre cualquiera.
+- **Link de pago:** el webhook registra SOLO el pago (y el método); no entrega ni mueve inventario.
+  Pagado ≠ entregado: la entrega es `completar_venta_directa` en modo `pagado_link`.
+- **Con ruta:** la entrega física es del chofer (en línea u offline) y del cierre de ruta
+  (`cerrar_ruta_financiero`); Admin puede marcar entregada una orden con ruta (dos pasos, ver residuales).
+- **110:** fuera del contexto de contrato, nadie (Ventas, Admin ni service role) lleva a `Entregada`
+  una orden sin ruta desde `Creada`/`Asignada`/`En ruta`. No vigila `Facturada → Entregada`
+  (cancelación de CFDI). Reversión documentada en el encabezado de 110 (reabre el camino heredado).
+- "Enviar a ruta" (Ventas) deja la orden `Asignada` SIN ruta; Admin le asigna la ruta después.
 
 ## Trabajo actual
 Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno.
-
-**ROLE UI CONVERGENCE — AUDITED / DESIGN PROPOSED / NOT STARTED** (auditoría de solo lectura
-2026-10-05, comparada con el repositorio Renovacell). Dirección aprobada solo como rumbo: Opción A
-(primitivas visuales compartidas) → Opción B (shell compartido + navegación por rol). NO
-autorizado: Opción C, Opción D, cambiar Facturación / Sin asignar, unificar los textos de método
-de pago, tocar permisos, RLS, RPC, semántica de `supaStore`, scoping de datos ni workflows.
-Se abre como bloque independiente cuando el dueño lo autorice.
-
-**Reestructura de contexto.** Fase 1 COMMITTED localmente (commit `092b1f5`, solo documentación:
-no es una versión nueva de la aplicación ni cambia la base de producción). Fase 2 PENDING y sin
-autorizar: tarjetas restantes, archivar documentos obsoletos, reducir memoria privada.
+- **DIRECT-SALE P0:** CONTAINED en interfaz, REST y webhook (109 + D1 + 110). Ver residual P1-1:
+  las funciones de facturación son un camino de servidor no contenido.
+- **ORDER LIFECYCLE INTEGRITY:** NO cerrado; quedan los residuales de abajo.
+- **B3.6 (Ventas como un solo espacio de trabajo):** bloqueo de ciclo de vida CERRADO; NOT STARTED;
+  alcance recomendado en la auditoría post OL-02 (2026-10-06), pendiente de revisión del dueño.
+- **ROLE UI CONVERGENCE:** Opción C y D siguen NO autorizadas; Facturación / Sin asignar sin cambio.
+- **Reestructura de contexto:** Fase 2 PENDING y sin autorizar.
 
 ## Residuales abiertos
+Ciclo de vida de la orden y pagos:
+- **P1-1 Facturación fuera del ciclo de vida (nuevo, 2026-10-06):** `billing-create-invoice` (service
+  role) pone `Facturada` sin revisar el estatus ni el dueño de la orden (roles Admin, Facturación,
+  Ventas), y `billing-cancel-invoice` la regresa a `Entregada` sin revisar dueño. Encadenadas pueden
+  dejar `Entregada` una orden sin salida de inventario ni cobro, y un vendedor puede actuar sobre
+  órdenes ajenas. La interfaz solo ofrece facturar órdenes `Entregada`. Requiere auditoría propia.
+- **P1-2 Bypass general de service role:** 105 exime a service role/JWT nulo de todas las
+  transiciones; 110 solo cubre la entrega sin ruta. P1-1 es su caso concreto.
+- **P1-3 Entrega de Admin con ruta en dos pasos** (estatus por REST y luego ingreso/CxC), latente.
+- **P1-4 "Venta directa" manual** en Producción (`salida_cuarto_manual`, 103) descuenta cuarto sin
+  ligarse a una orden: se puede descontar a mano y además completar la orden por 109.
+- Pagos: `pagos.read_all` (todo usuario activo lee todos los pagos, backlog de seguridad); ventana
+  de 200 pagos en el cliente; el webhook escribe el método después de insertar el pago; el chofer
+  puede sobrescribir el método de una orden con ruta ya pagada por link.
+- Confiabilidad: el realtime no resincroniza tras reconectar (`subscribe()` sin estado; el evento
+  `online` solo muestra el aviso).
+Otros:
+- Producción: "Producido hoy" suma todas las filas de `produccion` del día, incluidas
+  transformaciones y producciones revertidas.
 - Empaque y costo: sin corrección ni reverso de compra; la CxP de una compra todavía se puede
   editar o borrar por REST.
 - Inventario: espejo `productos.stock` de producto terminado desfasado (no autoritativo);
@@ -50,6 +91,7 @@ autorizar: tarjetas restantes, archivar documentos obsoletos, reducir memoria pr
 - Nómina: sin reverso de un periodo pagado.
 - Costeo: costo completo de manufactura y margen por SKU no se modelan (decisión, no defecto).
 - Operación: sin pruebas E2E de escritura; el `.env` local apunta a producción.
+- Documentación: `finanzas.md` no lista `completar_venta_directa`; no hay tarjeta de órdenes/rutas.
 
 ## Cerrado — no reabrir sin evidencia nueva
 | Tema | Evidencia (migraciones / suites) | Tarjeta |
@@ -62,7 +104,11 @@ autorizar: tarjetas restantes, archivar documentos obsoletos, reducir memoria pr
 | Nómina canónica | 100/101 | pendiente |
 | Devolución de cliente | 104/105 | pendiente |
 
+Verificado técnicamente, sin cierre del dueño: venta directa atómica y su contención (109, 110;
+suites `109_venta_directa_test.sql`, `110_contencion_entrega_directa_test.sql`).
+
 Sustituciones intencionales (no son regresiones): 095 (`update_stocks_atomic` sin acceso de la
-API desde 105), 072 (merma FIFO entre cuartos retirada en 103; merma sin valuación desde 106) y
-106 (apertura declarada al dar de alta un empaque, sustituida por 108: nace en 0).
+API desde 105), 072 (merma FIFO entre cuartos retirada en 103; merma sin valuación desde 106),
+106 (apertura declarada al dar de alta un empaque, sustituida por 108: nace en 0) y 110 (la entrega
+sin ruta en dos pasos de Ventas/Admin/service role, sustituida por `completar_venta_directa`).
 Sin reparación histórica: OV-0086 y los egresos legados de costo (1400) quedan intactos.
