@@ -32,6 +32,7 @@ import {
 import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
 import { traducirError } from '../utils/errorMessages';
 import { TABLAS_CORE_RT, TABLAS_SLICE_RT } from './realtimeLogic';
+import { complementoPendienteOrden } from './complementoLogic';
 import { normalizarReporteFinanciero } from './finanzasLogic';
 import { fechaElegida, camposFechaCosto, buildPagarCxPArgs } from './fechaNegocioLogic';
 import { buildEditarReciboArgs } from './nominaLogic';
@@ -96,6 +97,8 @@ const EMPTY = {
   costosFijos: [], costosHistorial: [],
   camiones: [],
   invoiceAttempts: [],
+  cfdiOperaciones: [],
+  pagosCxc: [],
   notificaciones: [],
   choferUbicaciones: [],
   devoluciones: [],
@@ -281,7 +284,7 @@ export function useSupaStore(userId, userName, userRol) {
   // + invoice_attempts. Cambia una → se recargan juntas.
   const fetchCore = useCallback(async () => {
     try {
-      const [cli, prod, pe, ord, ol, rut, cf, usr, umb, cxc, emp, cam, invAttempts] = await Promise.all([
+      const [cli, prod, pe, ord, ol, rut, cf, usr, umb, cxc, emp, cam, invAttempts, cfdiOps, pagosCxcRows] = await Promise.all([
         safeRows(supabase.from('clientes').select('*').order('id')),
         safeRows(supabase.from('productos').select('*').order('id')),
         safeRows(supabase.from('precios_esp').select('*').order('id')),
@@ -295,6 +298,10 @@ export function useSupaStore(userId, userName, userRol) {
         safeRows(supabase.from('empleados').select('*').order('id')),
         safeRows(supabase.from('camiones').select('*').order('id')),
         safeRows(supabase.from('invoice_attempts').select('orden_id, provider_reference, status, created_at, request_payload').order('id', { ascending: false }).limit(300)),
+        // OL-04: operaciones CFDI (RLS: Admin / Facturación); estado del complemento por pago.
+        safeRows(supabase.from('cfdi_operaciones').select('id, orden_id, tipo, generacion, estado, pago_id, relacionado_uuid, parcialidad, cfdi_uuid, proveedor_id, cfdi_metodo_pago, lease_hasta, updated_at').order('created_at', { ascending: false }).limit(500)),
+        // OL-04: pagos ligados a CxC (cualquier camino: cobro, webhook, cierre de ruta) para el estado de complementos.
+        safeRows(supabase.from('pagos').select('id, orden_id, cxc_id, monto, fecha, metodo_pago, saldo_antes, saldo_despues').not('cxc_id', 'is', null).order('id', { ascending: false }).limit(500)),
       ]);
 
       // Configuracion de empresa (singleton id=1)
@@ -472,16 +479,11 @@ export function useSupaStore(userId, userName, userRol) {
         }
       }
 
-      // ── Alertas de complemento pendiente (PPD sin complemento) ──
-      const complementoMap = {};
-      for (const a of (invAttempts || [])) {
-        const payload = a.request_payload || {};
-        if (payload.CfdiType === 'P' && a.orden_id && a.status === 'success') {
-          complementoMap[a.orden_id] = true;
-        }
-      }
+      // ── Alertas de complemento pendiente (OL-04: por pago; PPD con pagos emitibles o por conciliar) ──
+      const opsCfdi = (cfdiOps || []).map(toCamel);
+      const pagosCxc = (pagosCxcRows || []).map(toCamel);
       for (const o of ordenes) {
-        if (o.facturama_id && s(o.metodo_pago).toLowerCase().includes('crédito') && !complementoMap[o.id]) {
+        if (o.facturama_id && complementoPendienteOrden(toCamel(o), pagosCxc, opsCfdi)) {
           alertas.push({
             id: `comp-${o.id}`,
             tipo: 'accionable',
@@ -536,6 +538,8 @@ export function useSupaStore(userId, userName, userRol) {
           saldoPendiente: Number(c.saldo_pendiente),
         })),
         invoiceAttempts: (invAttempts || []).map(toCamel),
+        cfdiOperaciones: (cfdiOps || []).map(toCamel),
+        pagosCxc: (pagosCxcRows || []).map(p => ({ ...toCamel(p), monto: Number(p.monto) })),
         configEmpresa: configEmpresaRow ? toCamel(configEmpresaRow) : null,
       }));
 
@@ -2316,26 +2320,23 @@ export function useSupaStore(userId, userName, userRol) {
         }
       },
 
-      reintentarComplemento: async (ordenId) => {
-        const { data: ord } = await supabase.from('ordenes').select('facturama_uuid, folio').eq('id', ordenId).single();
-        if (!ord?.facturama_uuid) { t()?.error('La orden no tiene UUID de factura'); return { message: 'Sin UUID' }; }
-        const { data: cxc } = await supabase.from('cuentas_por_cobrar').select('*').eq('orden_id', ordenId).order('id', { ascending: false }).limit(1).single();
-        if (!cxc) { t()?.error('No se encontró cuenta por cobrar para esta orden'); return { message: 'Sin CxC' }; }
-        if (Number(cxc.monto_pagado) <= 0) { t()?.error('No hay pagos registrados para generar complemento'); return { message: 'Sin pagos' }; }
+      // OL-04: el complemento se emite POR PAGO; el servidor toma montos, saldos,
+      // fecha, forma de pago y parcialidad del renglón de pagos (sin cifras del cliente).
+      emitirComplemento: async (pagoId) => {
         try {
-          await backendPost('billing-create-complemento', {
-            cxcId: cxc.id,
-            monto: Number(cxc.monto_pagado),
-            metodoPago: 'Transferencia',
-            saldoAntes: Number(cxc.monto_original),
-            saldoDespues: Number(cxc.saldo_pendiente),
-          });
-          notify('complemento', 'Complemento generado', `Complemento de pago para ${s(ord.folio)} (reintento)`, '📎', String(ordenId));
-          t()?.success('Complemento de pago generado exitosamente');
-          log('Complemento', 'Facturación', `Reintento orden ${ordenId}`);
+          const resp = await backendPost('billing-create-complemento', { pagoId });
+          if (resp?.alreadyIssued) {
+            t()?.info('Ese pago ya tiene su complemento emitido');
+          } else {
+            t()?.success(`Complemento de pago emitido (parcialidad ${resp?.parcialidad ?? ''})`);
+            notify('complemento', 'Complemento generado', `Complemento de pago del pago #${pagoId}`, '📎', String(pagoId));
+            log('Complemento', 'Facturación', `Pago ${pagoId}`);
+          }
           rf();
+          return undefined;
         } catch (err) {
-          t()?.error('Error al generar complemento: ' + (err.message || ''));
+          t()?.error(err?.message || 'Error al generar el complemento');
+          rf();
           return err;
         }
       },
@@ -2378,7 +2379,6 @@ export function useSupaStore(userId, userName, userRol) {
           t()?.error(abonoErr.message || 'Error al registrar el abono');
           return abonoErr;
         }
-        const nuevoSaldo = Number(abono?.saldo_despues ?? 0);
         const nuevoEstatus = s(abono?.estatus) || 'Parcial';
 
         // Generar Complemento de Pago (CFDI tipo P) automáticamente si la orden tiene factura PPD timbrada
@@ -2389,17 +2389,15 @@ export function useSupaStore(userId, userName, userRol) {
             .eq('id', cxc.orden_id)
             .maybeSingle();
           const esPPD = s(ordenFacturada?.metodo_pago).toLowerCase().includes('crédito');
-          if (ordenFacturada?.facturama_uuid && esPPD) {
+          // OL-04: solo el identificador del pago; el servidor decide si aplica
+          // (factura vigente PPD) y arma el complemento con los datos del pago.
+          if (ordenFacturada?.facturama_uuid && esPPD && abono?.pago_id) {
             try {
-              await backendPost('billing-create-complemento', {
-                cxcId,
-                monto: montoNum,
-                metodoPago: metodoPago || 'Efectivo',
-                saldoAntes: cxc.saldo_pendiente,
-                saldoDespues: Math.max(0, nuevoSaldo),
-              });
-              notify('complemento', 'Complemento generado', `Complemento de pago automático para ${s(ordenFacturada.folio)}`, '📎', String(cxc.orden_id));
-              t()?.success('Complemento de pago generado automáticamente');
+              const comp = await backendPost('billing-create-complemento', { pagoId: abono.pago_id });
+              if (!comp?.alreadyIssued) {
+                notify('complemento', 'Complemento generado', `Complemento de pago automático para ${s(ordenFacturada.folio)}`, '📎', String(cxc.orden_id));
+                t()?.success('Complemento de pago generado automáticamente');
+              }
             } catch (compErr) {
               // El cobro ya se registró — notificamos el fallo para reintento manual
               notify('complemento_error', 'Error en complemento', `No se pudo generar complemento para ${s(ordenFacturada.folio)}: ${compErr.message || 'Error desconocido'}`, '⚠️', String(cxc.orden_id));

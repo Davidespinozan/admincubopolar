@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -3644,6 +3644,177 @@ await conc087();
 await fe087();
 console.log('  concurrencia + frontend↔DB (076, 087, 092, 093, 102, 104, 106, 107, 109, 110, OL-03B) tras 112: PASS');
 
+// ═══ 113 — complementos de pago por pago (OL-04; aditiva) ═══
+{
+  const ok = (await c.query(`SELECT to_regprocedure('public.reservar_complemento_cfdi(bigint,bigint,integer)') IS NULL
+                               AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'cfdi_operaciones' AND column_name = 'pago_id') AS a`)).rows[0].a;
+  console.log(`  COMPLEMENTO_PARITY_CHECK[pre-113]: ${ok ? 'PASS' : 'FAIL'}`);
+  if (!ok) process.exit(1);
+}
+const SUITES_113 = [...SUITES_112, ['112', '112_contencion_facturada_test.sql']];
+async function handlersComplemento(etiqueta) {
+  console.log(`── OL-04 COMPLEMENTOS: NETLIFY FUNCTIONS ↔ POSTGRES REAL (${etiqueta}; proveedor FALSO)`);
+  const { pathToFileURL } = await import('node:url');
+  const { Pool } = require('pg');
+  const { makePgSupabase } = await import(pathToFileURL(path.join(ROOT, 'supabase/tests/local/pgSupabaseAdapter.mjs')).href);
+  const { createHandler: inv } = await import(pathToFileURL(path.join(ROOT, 'netlify/functions/billing-create-invoice/index.js')).href);
+  const { createHandler: comp } = await import(pathToFileURL(path.join(ROOT, 'netlify/functions/billing-create-complemento/index.js')).href);
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const q1 = async (sql, p) => (await c.query(sql, p)).rows[0];
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  const AUTH = (k) => '11400000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM invoice_attempts WHERE orden_id BETWEEN 11401 AND 11409; DELETE FROM cfdi_operaciones WHERE orden_id BETWEEN 11401 AND 11409;
+    DELETE FROM movimientos_contables WHERE orden_id BETWEEN 11401 AND 11409; DELETE FROM pagos WHERE orden_id BETWEEN 11401 AND 11409 OR referencia LIKE 'H113-%';
+    DELETE FROM cuentas_por_cobrar WHERE id BETWEEN 11401 AND 11409; DELETE FROM orden_lineas WHERE orden_id BETWEEN 11401 AND 11409;
+    DELETE FROM ordenes WHERE id BETWEEN 11401 AND 11409; DELETE FROM clientes WHERE id = 11401;
+    DELETE FROM usuarios WHERE id BETWEEN 11401 AND 11409; DELETE FROM auth.users WHERE id::text LIKE '11400000-%'; COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) SELECT ('11400000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'k' || k || '@t114' FROM generate_series(1, 5) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (11401, 'Admin K', 'k1@t114', 'Admin', 'Activo', '${AUTH(1)}'), (11402, 'Fact K', 'k2@t114', 'Facturación', 'Activo', '${AUTH(2)}'),
+      (11403, 'Ventas KA', 'k3@t114', 'Ventas', 'Activo', '${AUTH(3)}'), (11404, 'Ventas KB', 'k4@t114', 'Ventas', 'Activo', '${AUTH(4)}'),
+      (11405, 'Chofer K', 'k5@t114', 'Chofer', 'Activo', '${AUTH(5)}');
+    INSERT INTO clientes (id, nombre, rfc, regimen, cp, saldo, credito_autorizado, limite_credito) VALUES (11401, 'Cliente K SA', 'AAA010101AAA', '601', '34000', 0, true, 100000);
+    INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id) VALUES
+      (11401, 'OV-11401', 11401, 'Cliente K SA', 'x', 300, 'Entregada', 'Crédito (fiado)', 'Credito', 11403),
+      (11402, 'OV-11402', 11401, 'Cliente K SA', 'x', 100, 'Entregada', 'Crédito (fiado)', 'Credito', 11404);
+    UPDATE ordenes SET delivered_at = now() WHERE id IN (11401, 11402);
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) VALUES (11401, 'HPC-5K', 10, 30, 300), (11402, 'HPC-5K', 5, 20, 100);
+    INSERT INTO cuentas_por_cobrar (id, cliente_id, orden_id, fecha_venta, fecha_vencimiento, monto_original, monto_pagado, saldo_pendiente, estatus, concepto)
+      VALUES (11401, 11401, 11401, CURRENT_DATE, CURRENT_DATE + 30, 300, 0, 300, 'Pendiente', 'K'), (11402, 11401, 11402, CURRENT_DATE, CURRENT_DATE + 30, 100, 0, 100, 'Pendiente', 'K');
+    COMMIT;`);
+  const abonar = async (cxc, monto, metodo, ref) => {
+    const r = await c.query(`BEGIN; SET LOCAL ROLE authenticated; SELECT set_config('request.jwt.claims', $$${JSON.stringify({ role: 'authenticated', sub: AUTH(1) })}$$, true);
+      SELECT (abonar_cxc(${cxc}, ${monto}, '${metodo}', '${ref}') ->> 'pago_id')::bigint AS id; COMMIT;`);
+    return Number(r.find(x => x.command === 'SELECT' && x.rows[0]?.id).rows[0].id);
+  };
+  const pool = new Pool({ host: '127.0.0.1', port: PORT, user: USER, database: DB, max: 6 });
+  const tokens = { 'jwt-admin': { id: AUTH(1) }, 'jwt-fact': { id: AUTH(2) }, 'jwt-va': { id: AUTH(3) }, 'jwt-vb': { id: AUTH(4) }, 'jwt-chofer': { id: AUTH(5) } };
+  const fetchReal = globalThis.fetch; let redReal = 0;
+  globalThis.fetch = () => { redReal++; throw new Error('red real prohibida'); };
+  const proveedor = (guion, { barrera = false } = {}) => {
+    const calls = []; let soltar; const llega2 = new Promise(r => { soltar = r; });
+    const fetchImpl = async (url, init) => {
+      calls.push({ url: String(url), method: init.method, body: init.body ? JSON.parse(init.body) : null });
+      if (calls.length >= 2) soltar();
+      if (barrera && calls.length === 1) await Promise.race([llega2, sleep(600)]);
+      const paso = guion[Math.min(calls.length - 1, guion.length - 1)];
+      if (paso === 'colgado') return new Promise((_, rej) => init.signal?.addEventListener('abort', () => rej(new Error('aborted'))));
+      const [status, raw] = paso;
+      return { ok: status < 300, status, json: async () => raw };
+    };
+    return { calls, fetchImpl, getConfig: () => ({ username: 'stub', password: 'stub', baseUrl: 'https://facturama.invalid' }) };
+  };
+  const OK = (id) => [201, { Id: 'FM-' + id, Complement: { TaxStamp: { Uuid: 'UUID-' + id } } }];
+  const mk = (prov, fallar = {}, timeoutMs = 2000) => {
+    const sup = makePgSupabase(pool, { tokens, fallar });
+    const deps = { getSupabase: () => sup, fetchImpl: prov.fetchImpl, getConfig: prov.getConfig, timeoutMs, leaseSegundos: 120 };
+    return { timbrar: inv(deps), complemento: comp(deps) };
+  };
+  const ev = (who, body) => ({ httpMethod: 'POST', headers: { authorization: `Bearer jwt-${who}` }, body: JSON.stringify(body) });
+  const L = (r) => ({ status: r.statusCode, body: JSON.parse(r.body || '{}') });
+  const efectos = async () => JSON.stringify(await q1(`SELECT (SELECT string_agg(id || ':' || estatus, ',' ORDER BY id) FROM ordenes WHERE id IN (11401, 11402)) o,
+    (SELECT string_agg(id || ':' || monto_pagado || ':' || saldo_pendiente, ',' ORDER BY id) FROM cuentas_por_cobrar WHERE id IN (11401, 11402)) x,
+    (SELECT count(*) || ':' || COALESCE(sum(monto), 0) FROM pagos WHERE orden_id IN (11401, 11402)) p, (SELECT count(*) FROM movimientos_contables WHERE orden_id IN (11401, 11402)) m`));
+
+  // Pago ANTES de la factura.
+  const p1 = await abonar(11401, 100, 'Efectivo', 'H113-1');
+  let prov = proveedor([OK('X')]); let h = mk(prov);
+  let r = L(await h.complemento(ev('admin', { pagoId: p1 })));
+  ok(r.status === 409 && r.body.code === 'SIN_CFDI_VIGENTE' && prov.calls.length === 0, 'K1 pago anterior a la factura: no elegible (SIN_CFDI_VIGENTE), cero proveedor');
+  // Factura PPD por el handler real; registra el modo fiscal.
+  prov = proveedor([OK('I1')]); h = mk(prov);
+  r = L(await h.timbrar(ev('admin', { ordenId: 11401 })));
+  ok(r.status === 200 && (await q1(`SELECT cfdi_metodo_pago FROM cfdi_operaciones WHERE orden_id = 11401 AND tipo = 'emision' AND estado = 'exitosa'`)).cfdi_metodo_pago === 'PPD',
+    'K2 factura PPD timbrada por el handler: la operación registra cfdi_metodo_pago = PPD');
+  const p2 = await abonar(11401, 120, 'Transferencia SPEI', 'H113-2');
+  const p3 = await abonar(11401, 80, 'Tarjeta (terminal)', 'H113-3');
+  const ef0 = await efectos();
+  // Dos solicitudes simultáneas del MISMO pago: una llamada.
+  prov = proveedor([OK('C1')], { barrera: true }); h = mk(prov);
+  let rs = (await Promise.all([h.complemento(ev('admin', { pagoId: p1 })), h.complemento(ev('fact', { pagoId: p1 }))])).map(L);
+  ok(prov.calls.length === 1 && rs.filter(x => x.status === 200 && !x.body.alreadyIssued).length === 1 && rs.some(x => x.status === 409 && x.body.code === 'OPERACION_EN_CURSO'),
+    `K3 dos complementos simultáneos del mismo pago: ${prov.calls.length} llamada(s) al proveedor; uno 200, el otro 409 OPERACION_EN_CURSO`);
+  const pay = prov.calls[0]?.body || {}; const P = pay.Complemento?.Payments?.[0] || {}; const D = P.RelatedDocuments?.[0] || {};
+  const fecha1 = (await q1(`SELECT to_char(fecha, 'YYYY-MM-DD') f FROM pagos WHERE id = $1`, [p1])).f;
+  ok(pay.CfdiType === 'P' && pay.Receiver?.CfdiUse === 'CP01' && !('Currency' in pay) && !('PaymentMethod' in pay) && !('PaymentForm' in pay)
+     && pay.Folio === `P${p1}G1` && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(pay.Date)
+     && P.Date === fecha1 && P.PaymentForm === '01' && P.Currency === 'MXN' && P.Amount === 100
+     && D.Uuid === 'UUID-I1' && D.PartialityNumber === 1 && D.PreviousBalanceAmount === 300 && D.AmountPaid === 100 && D.ImpSaldoInsoluto === 200 && D.Currency === 'MXN',
+    'K4 payload tipo P según la guía oficial: Complemento.Payments.RelatedDocuments; fecha = pagos.fecha; parcialidad 1; 300 → 200; sin Currency/PaymentMethod/PaymentForm generales; Folio+Date fijos');
+  // Replay del mismo pago: cero proveedor.
+  prov = proveedor([OK('Z')]); h = mk(prov);
+  r = L(await h.complemento(ev('admin', { pagoId: p1 })));
+  ok(r.status === 200 && r.body.alreadyIssued && r.body.complementoUuid === 'UUID-C1' && prov.calls.length === 0, 'K5 mismo pago otra vez: devuelve el existente; cero proveedor');
+  // Cuerpo manipulado: rechazado antes de todo.
+  r = L(await h.complemento(ev('admin', { pagoId: p2, monto: 1, saldoAntes: 5, saldoDespues: 4, metodoPago: 'Efectivo' })));
+  ok(r.status === 400 && r.body.code === 'CAMPOS_FISCALES_NO_PERMITIDOS' && prov.calls.length === 0, 'K6 montos/saldos/método del cliente: rechazados (400), cero proveedor');
+  // Ventas B sobre la orden de Ventas A; Chofer.
+  r = L(await h.complemento(ev('vb', { pagoId: p2 })));
+  const rCh = L(await h.complemento(ev('chofer', { pagoId: p2 })));
+  ok(r.status === 403 && rCh.status === 400 && prov.calls.length === 0, 'K7 Ventas B (orden ajena) 403 y Chofer 400: cero proveedor');
+  // Ventas A (dueña) → pago 2, parcialidad 2.
+  prov = proveedor([OK('C2')]); h = mk(prov);
+  r = L(await h.complemento(ev('va', { pagoId: p2 })));
+  const D2 = prov.calls[0]?.body?.Complemento?.Payments?.[0]?.RelatedDocuments?.[0] || {};
+  ok(r.status === 200 && r.body.parcialidad === 2 && D2.PartialityNumber === 2 && D2.PreviousBalanceAmount === 200 && D2.ImpSaldoInsoluto === 80
+     && prov.calls[0].body.Complemento.Payments[0].PaymentForm === '03', 'K8 Ventas A (dueña) emite el pago 2: parcialidad 2, 200 → 80, forma 03 (otro pago, otro complemento)');
+  // Pago 3: timeout → incierta; reintento sin proveedor.
+  prov = proveedor(['colgado']); h = mk(prov, {}, 150);
+  r = L(await h.complemento(ev('fact', { pagoId: p3 })));
+  const r3b = L(await h.complemento(ev('fact', { pagoId: p3 })));
+  ok(r.status === 502 && r.body.code === 'RESULTADO_INCIERTO' && r3b.body.code === 'OPERACION_INCIERTA' && prov.calls.length === 1,
+    'K9 timeout: 502 RESULTADO_INCIERTO; el reintento NO llama al proveedor (OPERACION_INCIERTA)');
+  const op3 = (await q1(`SELECT id FROM cfdi_operaciones WHERE pago_id = $1 AND estado = 'incierta'`, [p3])).id;
+  await c.query(`BEGIN; SET LOCAL ROLE service_role; SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    SELECT conciliar_operacion_cfdi('${op3}', 'no_emitida', '{"evidencia":"Facturama: folio P${p3}G1 no existe"}', 11402); COMMIT;`);
+  prov = proveedor([OK('C3')]); h = mk(prov);
+  r = L(await h.complemento(ev('fact', { pagoId: p3 })));
+  const D3 = prov.calls[0]?.body?.Complemento?.Payments?.[0]?.RelatedDocuments?.[0] || {};
+  ok(r.status === 200 && D3.PartialityNumber === 3 && D3.PreviousBalanceAmount === 80 && D3.ImpSaldoInsoluto === 0 && prov.calls.length === 1,
+    'K10 conciliado como no emitido, Facturación emite el pago 3: parcialidad 3, 80 → 0');
+  ok(await efectos() === ef0, 'K11 los complementos no cambiaron orden, CxC, pagos ni contabilidad');
+  // Caída tras el proveedor (la base no registra): bloqueo, sin segundo timbrado.
+  const q1p = await abonar(11402, 60, 'Efectivo', 'H113-4');
+  prov = proveedor([OK('I2')]); h = mk(prov);
+  await h.timbrar(ev('admin', { ordenId: 11402 }));
+  prov = proveedor([OK('C4')]); h = mk(prov, { finalizar_operacion_cfdi: 1 });
+  r = L(await h.complemento(ev('admin', { pagoId: q1p })));
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica; UPDATE cfdi_operaciones SET lease_hasta = now() - interval '1 second' WHERE pago_id = ${q1p}; COMMIT;`);
+  const r4b = L(await mk(prov).complemento(ev('vb', { pagoId: q1p })));
+  ok(r.status === 502 && r.body.code === 'FINALIZACION_PENDIENTE' && r.body.complementoUuid === 'UUID-C4' && r4b.body.code === 'OPERACION_INCIERTA' && prov.calls.length === 1,
+    'K12 timbró pero la base no registró: 502 con el UUID; al vencer queda incierta y el reintento NO vuelve a timbrar');
+  ok(redReal === 0, 'K13 ninguna llamada a la red real');
+  globalThis.fetch = fetchReal;
+  await pool.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log(`RESULTADO: FALLÓ (OL-04 handlers ${etiqueta})`); process.exit(1); }
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 113 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '113_complementos_pago.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 113 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 113)'); process.exit(1); }
+console.log('── PRUEBAS 113');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/113_complementos_pago_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (113)'); process.exit(1); }
+}
+await reruns090('113', ['072']);
+for (const [etq, f] of [...SUITES_113, ['111', '111_operaciones_cfdi_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 113)`); process.exit(1); }
+  console.log(`  ${etq} tras 113: PASS`);
+}
+await concCfdi('tras 113');
+await handlersCfdi('tras 113');
+await handlersComplemento('tras 113');
+console.log('  OL-03B (concurrencia + handlers) y OL-04 (handlers de complemento) tras 113: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -3700,7 +3871,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   'ordenes_guard_entrega_directa',
   // 111 / 112 (OL-03B)
   'reservar_operacion_cfdi', 'cfdi_aplicar_resultado', 'finalizar_operacion_cfdi', 'vencer_operaciones_cfdi', 'conciliar_operacion_cfdi',
-  'ordenes_guard_facturada'];
+  'ordenes_guard_facturada',
+  // 113 (OL-04)
+  'reservar_complemento_cfdi'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

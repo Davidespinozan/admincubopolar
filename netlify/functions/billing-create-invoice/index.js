@@ -313,7 +313,9 @@ export const createHandler = ({
       respuesta = await timbrarEnFacturama(payload, proveedor);
       clase = clasificarEmision(respuesta);
     }
-    const datos = { ...clase.datos, detalle: { ...(clase.datos.detalle || {}), payload_hash_final: huellaPayload(payload) } };
+    // OL-04: cómo se emitió este CFDI (PPD / PUE) queda registrado en la operación
+    // (fuente fiscal inmutable para los complementos de pago).
+    const datos = { ...clase.datos, metodo_pago_sat: payload.PaymentMethod, detalle: { ...(clase.datos.detalle || {}), payload_hash_final: huellaPayload(payload) } };
 
     // 11. Finalización (transacción corta): registra el resultado y, si fue
     // emitida, Entregada → Facturada solo si la orden sigue Entregada.

@@ -1,6 +1,42 @@
 import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, EmptyState, s, n, fmtDate, fmtMoney, useToast } from './viewsCommon';
 import CancelarCFDIModal from '../CancelarCFDIModal';
 import { isSandboxMode } from '../../lib/facturamaMode';
+import { estadoComplementosOrden, ESTADO_COMPLEMENTO } from '../../data/complementoLogic';
+
+// OL-04: estado del complemento POR PAGO (parcialidad, monto, fecha) y acción sobre ESE pago.
+const ETIQUETA_COMPLEMENTO = {
+  [ESTADO_COMPLEMENTO.EMITIDO]: ['✓ Complemento emitido', 'bg-emerald-50 text-emerald-700'],
+  [ESTADO_COMPLEMENTO.EN_PROCESO]: ['En proceso', 'bg-blue-50 text-blue-700'],
+  [ESTADO_COMPLEMENTO.REQUIERE_CONCILIACION]: ['Requiere conciliación', 'bg-red-50 text-red-700'],
+  [ESTADO_COMPLEMENTO.ESPERA_ANTERIOR]: ['Espera parcialidad anterior', 'bg-slate-100 text-slate-600'],
+  [ESTADO_COMPLEMENTO.BLOQUEADO]: ['Otra operación en curso', 'bg-slate-100 text-slate-600'],
+  [ESTADO_COMPLEMENTO.NO_ELEGIBLE]: ['No elegible', 'bg-slate-100 text-slate-600'],
+};
+function PagosComplemento({ orden, pagos, operaciones, onEmitir, emitiendo }) {
+  const st = estadoComplementosOrden(orden, pagos, operaciones);
+  if (!st.aplica) return null;
+  return (
+    <div className="mt-1 w-full space-y-1 pl-2" data-testid="complementos-por-pago">
+      {st.pagos.map(f => {
+        const [txt, cls] = ETIQUETA_COMPLEMENTO[f.estado] || [];
+        return (
+          <div key={f.pago.id} className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+            <span className="font-semibold">Parcialidad {f.parcialidad}</span>
+            <span>{fmtMoney(f.pago.monto)} · {fmtDate(f.pago.fecha)}</span>
+            {f.estado === ESTADO_COMPLEMENTO.EMITIBLE ? (
+              <button onClick={() => onEmitir(f.pago.id)} disabled={emitiendo === f.pago.id}
+                className="rounded bg-amber-50 px-2.5 py-1 text-[10px] font-bold text-amber-800 hover:bg-amber-100 disabled:opacity-60">
+                {emitiendo === f.pago.id ? 'Emitiendo…' : 'Emitir complemento'}
+              </button>
+            ) : (
+              <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${cls}`} title={f.motivo || f.cfdiUuid || ''}>{txt}</span>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export function FacturacionView({ data, actions }) {
   const toast = useToast();
@@ -22,9 +58,12 @@ export function FacturacionView({ data, actions }) {
     setPreviewOrden(null);
   }, [actions, toast]);
 
-const handleReintento = useCallback(async (ordenId) => {
-      await actions.reintentarComplemento?.(ordenId);
-    }, [actions]);
+  const [emitiendo, setEmitiendo] = useState(null);
+  const handleEmitirComplemento = useCallback(async (pagoId) => {
+    if (emitiendo) return;
+    setEmitiendo(pagoId);
+    try { await actions.emitirComplemento?.(pagoId); } finally { setEmitiendo(null); }
+  }, [actions, emitiendo]);
 
   // Órdenes timbradas (incluye canceladas, que conservan facturama_id como histórico).
   const ordenesTimbradasAll = useMemo(() => (data.ordenes || []).filter(o => o.facturama_id), [data.ordenes]);
@@ -34,17 +73,6 @@ const handleReintento = useCallback(async (ordenId) => {
     return ordenesTimbradasAll;
   }, [ordenesTimbradasAll, filtroEstado]);
 
-  // Para cada orden timbrada: saber si tiene complemento generado
-  const complementosPorOrden = useMemo(() => {
-    const map = {};
-    for (const a of (data.invoiceAttempts || [])) {
-      const payload = a.requestPayload || {};
-      if (payload.CfdiType === 'P' && a.ordenId && a.status === 'success') {
-        map[a.ordenId] = true;
-      }
-    }
-    return map;
-  }, [data.invoiceAttempts]);
 
   // Clientes map for preview
   const clientesMap = useMemo(() => {
@@ -126,7 +154,6 @@ const handleReintento = useCallback(async (ordenId) => {
         <div className="space-y-2">
           {ordenesTimbradas.map(o => {
             const esPPD = s(o.metodo_pago).toLowerCase().includes('crédito');
-            const tieneComplemento = complementosPorOrden[o.id];
             const cancelado = !!o.cfdi_cancelado_at;
             return (
               <div key={o.id} className={`flex items-center justify-between py-2 border-b border-slate-50 last:border-0 gap-2 flex-wrap ${cancelado ? 'opacity-70' : ''}`}>
@@ -155,13 +182,6 @@ const handleReintento = useCallback(async (ordenId) => {
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${esPPD ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
                     {esPPD ? 'PPD' : 'PUE'}
                   </span>
-                  {!cancelado && esPPD && (
-                    tieneComplemento ?
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">✓ Complemento</span> :
-                        <button onClick={() => handleReintento(o.id)} className="text-[10px] font-bold px-2.5 py-1 rounded bg-red-50 text-red-600 hover:bg-red-100 transition-colors">
-                          ⚠ Reintentar complemento
-                      </button>
-                  )}
                   {!cancelado && !esPPD && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">✓ Pagado</span>}
                   {!cancelado && (
                     <button
@@ -173,6 +193,7 @@ const handleReintento = useCallback(async (ordenId) => {
                     </button>
                   )}
                 </div>
+                <PagosComplemento orden={o} pagos={data.pagosCxc} operaciones={data.cfdiOperaciones} onEmitir={handleEmitirComplemento} emitiendo={emitiendo} />
               </div>
             );
           })}
