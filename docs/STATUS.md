@@ -1,15 +1,16 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-06 (reconciliación post OL-02). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-06 (activación OL-03A). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Commit: `8b61a2eb25f02ec2143dd8c3d3b51bac3b1bd6ff` (`main` = `origin/main`) — DEPLOYED (Netlify
-  `6ac464890642ca0008522841`, ready 2026-10-06T03:01Z, deploy publicado) y verificado en solo
-  lectura el 2026-10-06 (bundle vivo contiene `completar_venta_directa`).
-- Base de datos: migraciones aplicadas hasta la **110** (se aplican con `supabase db query`; no hay
+- Código de la aplicación: `d6375ad` (OL-03A, solo Netlify Functions de facturación), publicado
+  junto con este commit de documentación (`main` = `origin/main`). El id del deploy de Netlify y su
+  verificación quedan en el reporte de activación de OL-03A (2026-10-06). Base anterior verificada:
+  `8b61a2eb25f02ec2143dd8c3d3b51bac3b1bd6ff` (Netlify `6ac464890642ca0008522841`).
+- Base de datos: migraciones aplicadas hasta la **110**, sin cambio en OL-03A (se aplican con `supabase db query`; no hay
   tabla de historial: la "cabeza" se verifica por la presencia y huella de los objetos).
 - Conteos tras 110 (cambian con cada fase; no son invariantes): 120 funciones · 77 policies ·
   40 tablas · 39 secuencias · 1 vista · 44 triggers en `public` (6 en `ordenes`).
@@ -33,9 +34,11 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 | OL-02C venta directa por el contrato (Ventas y Admin) · OL-02C.1 pagos de órdenes propias | 6906dc5 · 23b3e54 | DEPLOYED / TECHNICALLY VERIFIED |
 | OL-02D1 el webhook del link solo registra el pago | 3077aca | DEPLOYED / TECHNICALLY VERIFIED |
 | OL-02D2 contención del camino heredado sin ruta (110) | 8b61a2e | MIGRATION APPLIED ONCE + DEPLOYED / TECHNICALLY VERIFIED |
+| STATUS reconciliado hasta 110 | 63da5b4 | solo documentación |
+| OL-03A contención del timbrado/cancelación de CFDI (servidor, antes del proveedor) | d6375ad | DEPLOYED con esta activación; sin migración |
 
-B3.3 y B3.5 (Ventas IA) y OL-01 / OL-02 / OL-02D fueron auditorías sin commit. El cierre del
-dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI ni de OL-02.
+B3.3 y B3.5 (Ventas IA) y OL-01 / OL-02 / OL-02D / OL-03 fueron auditorías sin commit. El cierre
+del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI, OL-02 ni OL-03A.
 
 ## Ciclo de vida de la orden (vigente, verificado en código y producción)
 - **Venta sin ruta** (`Creada`, o `Asignada` sin ruta): la entrega física solo ocurre por
@@ -50,12 +53,26 @@ dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI ni
   una orden sin ruta desde `Creada`/`Asignada`/`En ruta`. No vigila `Facturada → Entregada`
   (cancelación de CFDI). Reversión documentada en el encabezado de 110 (reabre el camino heredado).
 - "Enviar a ruta" (Ventas) deja la orden `Asignada` SIN ruta; Admin le asigna la ruta después.
+- **Facturación (OL-03A, Netlify `billing-create-invoice` / `billing-cancel-invoice`, service role):**
+  antes de llamar al proveedor se exige rol Admin/Facturación (toda la empresa) o Ventas (solo SUS
+  órdenes: `vendedor_id` = actor; sin vendedor no es de nadie); timbrar solo una orden `Entregada`
+  (el pago no se exige: crédito = PPD); cancelar solo una orden `Facturada` con CFDI vigente. El CFDI
+  lo arma el servidor (un `facturamaPayload` del cliente se rechaza). Tras el proveedor, UPDATE
+  condicional `Entregada → Facturada` / `Facturada → Entregada` con resultado verificado; si la orden
+  cambió, responde 409 y la bitácora queda `review:orden_no_actualizada` (sin rollback automático del
+  CFDI). La base de datos todavía NO impone `Facturada` solo desde `Entregada` (OL-03B).
 
 ## Trabajo actual
 Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno.
-- **DIRECT-SALE P0:** CONTAINED en interfaz, REST y webhook (109 + D1 + 110). Ver residual P1-1:
-  las funciones de facturación son un camino de servidor no contenido.
-- **ORDER LIFECYCLE INTEGRITY:** NO cerrado; quedan los residuales de abajo.
+- **DIRECT-SALE P0:** CONTAINED FOR UI / REST / WEBHOOK (109 + D1 + 110).
+- **INVOICING LIFECYCLE BYPASS (OL-03):** CONTAINED SERVER-SIDE IN OL-03A BEFORE PROVIDER.
+- **DATABASE DEFENSE IN DEPTH:** PENDING OL-03B (migración 111 no creada).
+- **INVOICING CONCURRENCY:** dos solicitudes realmente simultáneas todavía pueden emitir DOS CFDI en
+  el proveedor; la segunda escritura local se rechaza (409) y queda marcada para revisión. OL-03B
+  debe resolverlo ANTES de llamar al proveedor.
+- **ORDER LIFECYCLE INTEGRITY:** NO cerrado. **INVOICING INTEGRITY:** NO cerrado.
+- **Siguiente fase:** OL-03B, primero diseño/auditoría de solo lectura (defensa en base de datos
+  `Entregada ↔ Facturada` y serialización/idempotencia previa al proveedor).
 - **B3.6 (Ventas como un solo espacio de trabajo):** bloqueo de ciclo de vida CERRADO; NOT STARTED;
   alcance recomendado en la auditoría post OL-02 (2026-10-06), pendiente de revisión del dueño.
 - **ROLE UI CONVERGENCE:** Opción C y D siguen NO autorizadas; Facturación / Sin asignar sin cambio.
@@ -63,13 +80,17 @@ Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno.
 
 ## Residuales abiertos
 Ciclo de vida de la orden y pagos:
-- **P1-1 Facturación fuera del ciclo de vida (nuevo, 2026-10-06):** `billing-create-invoice` (service
-  role) pone `Facturada` sin revisar el estatus ni el dueño de la orden (roles Admin, Facturación,
-  Ventas), y `billing-cancel-invoice` la regresa a `Entregada` sin revisar dueño. Encadenadas pueden
-  dejar `Entregada` una orden sin salida de inventario ni cobro, y un vendedor puede actuar sobre
-  órdenes ajenas. La interfaz solo ofrece facturar órdenes `Entregada`. Requiere auditoría propia.
+- **P1-1 Facturación (OL-03):** el bypass (timbrar cualquier estatus → `Facturada` con fecha de
+  entrega e ingreso; cancelar → `Entregada`; cruce de vendedores; CFDI del cliente) está contenido en
+  el servidor por OL-03A. Abierto (OL-03B): ventana de CFDI duplicado con solicitudes simultáneas
+  (no hay candado previo al proveedor) y ninguna regla de base de datos sobre `Facturada`.
+  Sin evidencia de daño histórico en producción (0 `invoice_attempts`, ninguna orden con CFDI).
 - **P1-2 Bypass general de service role:** 105 exime a service role/JWT nulo de todas las
-  transiciones; 110 solo cubre la entrega sin ruta. P1-1 es su caso concreto.
+  transiciones; 110 solo cubre la entrega sin ruta.
+- **Complementos de pago:** `billing-create-complemento` no revisa dueño y confía en montos/saldos
+  enviados por el cliente (sin cambio en OL-03A).
+- **Ayudante de dueño compartido:** `canAccessOrden` deja a cualquier vendedor una orden sin vendedor
+  (checkout, sincronización de pago y recibo); la facturación ya no lo usa.
 - **P1-3 Entrega de Admin con ruta en dos pasos** (estatus por REST y luego ingreso/CxC), latente.
 - **P1-4 "Venta directa" manual** en Producción (`salida_cuarto_manual`, 103) descuenta cuarto sin
   ligarse a una orden: se puede descontar a mano y además completar la orden por 109.
