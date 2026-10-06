@@ -1,15 +1,16 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-06 (activación OL-03B). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-06 (activación B3.6). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Código de la aplicación: `9a94881c7acfaf566517c2036d99679d04112f44` (OL-03B) — DEPLOYED (Netlify
-  `6ac521a708997e00090cd30a`, ready 2026-10-06T16:29Z) y verificado en solo lectura; este commit de
-  documentación se publica encima sin cambios de código. Bases anteriores: `cfce0f2` (OL-03A,
-  Netlify `6ac46fc1e30f49000853ab23`), `8b61a2e` (110).
+- Código de la aplicación: `c09d82a00fd8423e3decedab3e470c033bd7bb22` (B3.6, solo frontend) — DEPLOYED
+  (Netlify `6ac528ef37388600080f70d9`, ready 2026-10-06T16:59Z) y verificado en solo lectura (bundle
+  vivo y digests de las 17 Functions idénticos a OL-03B); este commit de documentación se publica
+  encima sin cambios de código. Bases anteriores: `9a94881` (OL-03B, Netlify
+  `6ac521a708997e00090cd30a`), `cfce0f2` (OL-03A), `8b61a2e` (110).
 - Base de datos: migraciones aplicadas hasta la **112** (111 el 2026-10-06T16:27Z, 112 el
   16:29:58Z, una vez cada una; se aplican con `supabase db query`; no hay tabla de historial: la
   "cabeza" se verifica por la presencia y huella de los objetos).
@@ -41,7 +42,8 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 | OL-02D2 contención del camino heredado sin ruta (110) | 8b61a2e | MIGRATION APPLIED ONCE + DEPLOYED / TECHNICALLY VERIFIED |
 | STATUS reconciliado hasta 110 | 63da5b4 | solo documentación |
 | OL-03A contención del timbrado/cancelación de CFDI (servidor, antes del proveedor) | d6375ad · docs cfce0f2 | DEPLOYED / TECHNICALLY VERIFIED; sin migración |
-| OL-03B una operación CFDI a la vez por orden (111) y defensa en base de datos (112) | 9a94881 | MIGRATIONS APPLIED ONCE (111 → Netlify → 112) + DEPLOYED / TECHNICALLY VERIFIED |
+| OL-03B una operación CFDI a la vez por orden (111) y defensa en base de datos (112) | 9a94881 · docs 09be417 | MIGRATIONS APPLIED ONCE (111 → Netlify → 112) + DEPLOYED / TECHNICALLY VERIFIED |
+| Role UI B3.6 Ventas como UN espacio de trabajo (filtros Pendientes / Hoy / Todas) | c09d82a | DEPLOYED / TECHNICALLY VERIFIED (solo UI; sin migración) |
 
 B3.3 y B3.5 (Ventas IA) y OL-01 / OL-02 / OL-02D / OL-03 fueron auditorías sin commit. El cierre
 del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI, OL-02 ni OL-03A/B.
@@ -96,10 +98,17 @@ Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno.
   automático; `requested` conserva `Facturada`; el cierre de ruta conserva `Facturada`. La
   activación no cambió datos de negocio (0 operaciones CFDI, 0 sin resolver).
 - **ORDER LIFECYCLE INTEGRITY:** NO cerrado. **INVOICING INTEGRITY:** NO cerrado (residuales abajo).
-- **Siguiente fase:** revisión del dueño → OL-04 (complementos de pago) o B3.6.
-- **B3.6 (Ventas como un solo espacio de trabajo):** bloqueo de ciclo de vida CERRADO; NOT STARTED;
-  alcance recomendado en la auditoría post OL-02 (2026-10-06), pendiente de revisión del dueño.
-- **ROLE UI CONVERGENCE:** Opción C y D siguen NO autorizadas; Facturación / Sin asignar sin cambio.
+- **Siguiente fase:** revisión del dueño → OL-04 (complementos de pago).
+- **B3.6 (Ventas como un solo espacio de trabajo):** DEPLOYED / TECHNICALLY VERIFIED. Ventas tiene UN
+  módulo en el menú; filtros internos Pendientes (`#/ventas`) / Hoy (`#/ventas-hoy`) / Todas
+  (`#/ventas-todas`); `#/ventas-cobrar` (B3.4) es alias de `#/ventas`. Pendientes = la tarjeta ofrece
+  Cobrar / Cobrar entrega (Creada, o Asignada sin ruta), en dos grupos (por cobrar / pagadas por link
+  por entregar); las que tiene el chofer solo como dato. Escritorio y móvil con el mismo espacio de
+  trabajo; sin barra inferior para Ventas (un solo módulo); Nueva venta como acción principal de tamaño
+  normal. "Ver como" de Admin, alcance por vendedor, venta directa, links de pago, ruta/Chofer, OL-03A y
+  OL-03B sin cambio; base de datos hasta 112 sin cambio; sin mutación de datos de negocio.
+- **ROLE UI CONVERGENCE:** A1–B3.6 desplegadas; el programa NO se declara cerrado (residuales de UI
+  abajo). Opción C y D siguen NO autorizadas; Facturación / Sin asignar sin cambio.
 - **Reestructura de contexto:** Fase 2 PENDING y sin autorizar.
 
 ## Residuales abiertos
@@ -137,6 +146,9 @@ Otros:
 - Costeo: costo completo de manufactura y margen por SKU no se modelan (decisión, no defecto).
 - Operación: sin pruebas E2E de escritura; el `.env` local apunta a producción.
 - Documentación: `finanzas.md` no lista `completar_venta_directa`; no hay tarjeta de órdenes/rutas.
+- UI (tras B3.6): Clientes para Ventas sigue diferido; la cabecera suelta (fuera del shell) de la vista
+  de Ventas ya no se usa y sigue en el código; no se hizo QA visual autenticada en producción (la
+  evidencia es de pruebas de render estático y de navegación).
 
 ## Cerrado — no reabrir sin evidencia nueva
 | Tema | Evidencia (migraciones / suites) | Tarjeta |
