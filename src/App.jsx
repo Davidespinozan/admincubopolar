@@ -6,6 +6,7 @@ import { useSupaStore } from './data/supaStore'
 import { supabase } from './lib/supabase'
 import { setUserContext, Sentry } from './lib/sentry'
 import { buildUserFromSessionAndProfile } from './lib/sessionUser'
+import { pagosVisiblesVendedor } from './data/alcancePagosLogic'
 
 // Fase B: todas las experiencias por rol viven dentro del shell compartido
 // (CuboPolarERP decide sidebar/enfoque y módulos con navRolLogic). Las vistas
@@ -234,7 +235,10 @@ function App() {
         if (matchOwner(c, usuarioActualId, authUserId, usuarioActual?.nombre)) return true
         return clienteIds.has(String(c.id))
       })
-      const pagosPropios = (data.pagos || []).filter(p => matchOwner(p, usuarioActualId, authUserId, usuarioActual?.nombre))
+      // OL-02C.1: el pago es de la ORDEN (orden_id → vendedor); usuario_id es
+      // quien lo registró. Se conserva lo que ya coincidía (matchOwner) y,
+      // además, los pagos de SUS órdenes (webhook del link, Admin o chofer).
+      const pagosPropios = pagosVisiblesVendedor(data.pagos, ordenesPropias, p => matchOwner(p, usuarioActualId, authUserId, usuarioActual?.nombre))
       return {
         ...data,
         ordenes: ordenesPropias,
