@@ -15,6 +15,7 @@ import {
   resolverOperacion as resolverOperacionCierre,
 } from './cierreFinancieroLogic';
 import { buildRegistrarDevolucionArgs, mensajeErrorDevolucion } from './devolucionesLogic';
+import { buildCompletarVentaDirectaArgs, mensajeErrorVentaDirecta } from './ventaDirectaLogic';
 import { camposAltaProducto, mensajeErrorEmpaque } from './empaqueLogic';
 import {
   validateConfirmarCarga,
@@ -1159,6 +1160,36 @@ export function useSupaStore(userId, userName, userRol) {
         } catch (e) {
           console.error('[updateOrdenEstatus] excepción:', e);
           t()?.error('Error inesperado al actualizar orden');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // ── VENTA DIRECTA DE PLANTA (OL-02C / mig 109) ──
+      // UN contrato atómico: salida física de los cuartos asignados +
+      // Entregada + pago (contado) o CxC (crédito, 30 días) o entrega de un
+      // pedido ya pagado por link. Este camino NO usa updateOrdenEstatus ni
+      // llama aparte a registrar_pago_orden / crear_cxc_orden / salida de
+      // cuarto: el servidor hace todo en una transacción. La asignación
+      // {sku, cuarto_id, cantidad} es explícita; el servidor nunca elige.
+      // operacionId: lo fija la vista por intento (reintento = mismo UUID).
+      completarVentaDirecta: async (payload = {}) => {
+        const guard = requireRol(['Admin', 'Ventas']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        const built = buildCompletarVentaDirectaArgs({ ...payload, operacionId: payload.operacionId || nuevoOperacionId() });
+        if (built.error) { t()?.error(built.error); return { error: built.error }; }
+        try {
+          const { data, error } = await supabase.rpc('completar_venta_directa', built.args);
+          if (error) {
+            const msg = mensajeErrorVentaDirecta(error);
+            console.warn('[completarVentaDirecta] rpc completar_venta_directa:', error.message);
+            t()?.error(msg);
+            return { error: msg };
+          }
+          rf();
+          return { data, replay: data?.replay === true };
+        } catch (e) {
+          console.error('[completarVentaDirecta] excepción:', e);
+          t()?.error('Error de conexión al completar la venta. Reintenta: el mismo intento no se duplica.');
           return { error: e?.message || 'Error inesperado' };
         }
       },

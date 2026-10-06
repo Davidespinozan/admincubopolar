@@ -2,6 +2,8 @@ import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, Fo
 import NuevaVentaModal from '../NuevaVentaModal';
 import EditarVentaModal from '../EditarVentaModal';
 import DevolucionModal from '../DevolucionModal';
+import VentaDirectaOrigen, { useVentaDirecta } from '../VentaDirectaOrigen';
+import { esElegibleVentaDirecta, modoVentaDirecta, linkPagadoCompleto, METODO_LINK } from '../../data/ventaDirectaLogic';
 
 export function OrdenesView({ data, actions, user }) {
   const toast = useToast();
@@ -63,10 +65,21 @@ export function OrdenesView({ data, actions, user }) {
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [shortUrl, setShortUrl] = useState(null);
   const [generandoLink, setGenerandoLink] = useState(false);
-  const cobrarOrden = (ord, tipo) => { setPagoModal({...ord, tipoCobro: tipo || "oficina"}); setPagoForm({metodo:"Efectivo",referencia:""}); setCheckoutUrl(null); setShortUrl(null); };
+  // OL-02C: una orden SIN ruta (Creada o Asignada) se cobra y entrega con el
+  // mismo contrato atómico que Ventas (completar_venta_directa, origen físico
+  // explícito). Las órdenes con ruta conservan su flujo de ruta.
+  const venta = useVentaDirecta({ actions, cuartosFrios: data.cuartosFrios });
+  const cobrarOrden = (ord, tipo) => {
+    setPagoModal({...ord, tipoCobro: tipo || "oficina", entregaPagada: tipo === "pagado"}); setPagoForm({metodo:"Efectivo",referencia:""}); setCheckoutUrl(null); setShortUrl(null);
+    if (esElegibleVentaDirecta(ord)) venta.iniciar(ord); else venta.terminar();
+  };
+  const cerrarCobro = () => { setCheckoutUrl(null); setShortUrl(null); setPagoModal(null); venta.terminar(); };
+  const directa = !!pagoModal && esElegibleVentaDirecta(pagoModal);
+  const modoCobro = directa ? (pagoModal.entregaPagada ? 'pagado_link' : modoVentaDirecta(pagoForm.metodo)) : null;
+  const sinClienteCredito = modoCobro === 'credito' && !(pagoModal?.clienteId || pagoModal?.cliente_id);
   const confirmarCobro = async () => {
     if (!pagoModal) return;
-    if (pagoForm.metodo === "QR / Link de pago") {
+    if (!pagoModal.entregaPagada && pagoForm.metodo === "QR / Link de pago") {
       setGenerandoLink(true);
       try {
         const result = await actions.crearCheckoutPago?.(pagoModal.id, checkoutProvider);
@@ -84,6 +97,18 @@ export function OrdenesView({ data, actions, user }) {
       }
       return;
     }
+    if (directa) {
+      if (!modoCobro || venta.enviando) return;
+      if (sinClienteCredito) { toast?.error('La venta a crédito requiere cliente'); return; }
+      if (!venta.validacion.ok) { toast?.error('Indica de qué cuarto sale cada producto'); return; }
+      const metodo = modoCobro === 'pagado_link' ? METODO_LINK : pagoForm.metodo;
+      const r = await venta.completar({ modo: modoCobro, metodo, referencia: metodo === "Transferencia SPEI" ? pagoForm.referencia : null });
+      if (!r || r.error) return; // el store ya mostró el error; el diálogo sigue abierto
+      toast?.success(modoCobro === 'pagado_link' ? "Pedido " + s(pagoModal.folio) + " entregado" : "Orden " + s(pagoModal.folio) + " cobrada y entregada - " + metodo);
+      cerrarCobro();
+      return;
+    }
+    // Orden con ruta: flujo de ruta existente (sin cambio en OL-02C).
     const err = await actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo);
     if (err) {
       toast?.error("No se pudo registrar el cobro");
@@ -157,7 +182,7 @@ export function OrdenesView({ data, actions, user }) {
               {v === "No entregada" && motivoNoEntrega && (
                 <span className="text-[10px] text-slate-500 italic truncate max-w-[160px]" title={motivoNoEntrega}>{motivoNoEntrega}</span>
               )}
-              <span className="hidden md:inline">{v==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">Asignar ruta</button></>}{v==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"entrega")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar entrega</button>}{v==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">→ Facturar</button>}</span>
+              <span className="hidden md:inline">{v==="Creada"&&<>{linkPagadoCompleto(r, data.pagos)?<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"pagado")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Entregar pagado</button>:<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">Cobrar</button>}<button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">Asignar ruta</button></>}{v==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,linkPagadoCompleto(r, data.pagos)?"pagado":"entrega")}} className="text-xs text-emerald-600 font-semibold px-2 py-0.5">{linkPagadoCompleto(r, data.pagos)?"Entregar pagado":"Cobrar entrega"}</button>}{v==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="text-xs text-slate-600 hover:text-slate-900 font-semibold px-2 py-0.5">→ Facturar</button>}</span>
             </div>
           );
         }},
@@ -269,8 +294,8 @@ export function OrdenesView({ data, actions, user }) {
         })();
         return <div>
           <span className="text-xs text-slate-400">{fmtDate(r.fecha)} · {prodsLegibles}</span>
-          {est==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r)}} className="mt-2 w-full text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2.5 rounded-lg min-h-[44px]">Cobrar</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="mt-2 w-full text-xs font-semibold text-slate-700 bg-slate-100 px-3 py-2.5 rounded-lg min-h-[44px]">Asignar a ruta</button></>}
-          {est==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,"entrega")}} className="mt-2 w-full text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2.5 rounded-lg min-h-[44px]">Cobrar entrega</button>}
+          {est==="Creada"&&<><button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,linkPagadoCompleto(r, data.pagos)?"pagado":undefined)}} className="mt-2 w-full text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2.5 rounded-lg min-h-[44px]">{linkPagadoCompleto(r, data.pagos)?"Entregar pagado":"Cobrar"}</button><button onClick={(e)=>{e.stopPropagation();actions.updateOrdenEstatus(r.id,"Asignada")}} className="mt-2 w-full text-xs font-semibold text-slate-700 bg-slate-100 px-3 py-2.5 rounded-lg min-h-[44px]">Asignar a ruta</button></>}
+          {est==="Asignada"&&<button onClick={(e)=>{e.stopPropagation();cobrarOrden(r,linkPagadoCompleto(r, data.pagos)?"pagado":"entrega")}} className="mt-2 w-full text-xs font-semibold text-emerald-600 bg-emerald-50 px-3 py-2.5 rounded-lg min-h-[44px]">{linkPagadoCompleto(r, data.pagos)?"Entregar pagado":"Cobrar entrega"}</button>}
           {est==="Entregada"&&<button onClick={(e)=>{e.stopPropagation();actions.timbrar(r.folio)}} className="mt-2 w-full text-xs font-semibold text-slate-700 bg-slate-100 px-3 py-2.5 rounded-lg min-h-[44px]">→ Facturar</button>}
         </div>;
       }}
@@ -368,10 +393,12 @@ export function OrdenesView({ data, actions, user }) {
 
     {/* MODAL DE COBRO - VENTAS */}
     {pagoModal && (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={()=>setPagoModal(null)}>
-        <div className="bg-white w-full max-w-md rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
-          <h3 className="font-bold text-lg text-slate-800 mb-1">Cobrar orden {s(pagoModal.folio)}</h3>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={()=>{ if (!venta.enviando) cerrarCobro(); }}>
+        <div className="bg-white w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl p-5" onClick={e=>e.stopPropagation()}>
+          <h3 className="font-bold text-lg text-slate-800 mb-1">{pagoModal.entregaPagada ? 'Entregar orden' : 'Cobrar orden'} {s(pagoModal.folio)}</h3>
           <p className="text-sm text-slate-500 mb-4">{s(pagoModal.cliente)} &mdash; <span className="font-bold text-slate-800">{fmtMoney(pagoModal.total)}</span></p>
+          {pagoModal.entregaPagada && <p className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">Pagado con link. Confirma de qué cuarto sale el pedido.</p>}
+          {!pagoModal.entregaPagada && <>
           <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">M&eacute;todo de pago</label>
           <div className="grid grid-cols-2 gap-2 mb-4">
             {["Efectivo","Transferencia SPEI","Tarjeta (terminal)","QR / Link de pago","Crédito (fiado)"].map(m=>(
@@ -388,6 +415,9 @@ export function OrdenesView({ data, actions, user }) {
                 className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Últimos 6 dígitos"/>
             </div>
           )}
+          </>}
+          {sinClienteCredito && <p className="mb-4 text-xs font-semibold text-amber-700">La venta a crédito requiere cliente.</p>}
+          {modoCobro && <div className="mb-2"><VentaDirectaOrigen venta={venta} disabled={venta.enviando} /></div>}
 
           {pagoForm.metodo==="QR / Link de pago" && checkoutUrl && (
             <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
@@ -409,8 +439,14 @@ export function OrdenesView({ data, actions, user }) {
             </div>
           )}
           <div className="flex gap-2 mt-4">
-            <button onClick={()=>{setCheckoutUrl(null);setShortUrl(null);setPagoModal(null)}} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600">{checkoutUrl ? 'Cerrar' : 'Cancelar'}</button>
-            {!checkoutUrl && <button onClick={confirmarCobro} disabled={generandoLink} className={`flex-1 py-2.5 text-white rounded-xl text-sm font-bold ${generandoLink ? 'bg-slate-400' : 'bg-emerald-600'}`}>{generandoLink ? 'Generando link…' : pagoForm.metodo==="QR / Link de pago" ? 'Generar link de pago' : 'Confirmar cobro'}</button>}
+            <button onClick={cerrarCobro} disabled={venta.enviando} className="flex-1 py-2.5 border border-slate-200 rounded-xl text-sm font-semibold text-slate-600">{checkoutUrl ? 'Cerrar' : 'Cancelar'}</button>
+            {!checkoutUrl && (() => {
+              const bloqueado = generandoLink || venta.enviando || (!!modoCobro && (!venta.validacion.ok || sinClienteCredito));
+              const etiqueta = generandoLink ? 'Generando link…' : venta.enviando ? 'Registrando…'
+                : modoCobro === 'pagado_link' ? 'Entregar pedido' : modoCobro === 'credito' ? 'Registrar crédito y entregar'
+                : modoCobro === 'contado' ? 'Cobrar y entregar' : pagoForm.metodo==="QR / Link de pago" ? 'Generar link de pago' : 'Confirmar cobro';
+              return <button onClick={confirmarCobro} disabled={bloqueado} className={`flex-1 py-2.5 text-white rounded-xl text-sm font-bold ${bloqueado ? 'bg-slate-400' : 'bg-emerald-600'}`}>{etiqueta}</button>;
+            })()}
           </div>
         </div>
       </div>

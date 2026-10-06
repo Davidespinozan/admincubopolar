@@ -47,19 +47,19 @@ describe('A3: Ventas — presentación nueva, negocio idéntico', () => {
   });
   it('llamadas de negocio y argumentos idénticos', () => {
     expect(v).toMatch(/const result = await actions\.crearCheckoutPago\?\.\(pagoModal\.id, checkoutProvider\);/);
-    // OL-01A: mismas llamadas y argumentos; el éxito solo se declara si el store lo confirma.
-    expect(v).toMatch(/await ejecutarMutacion\(\(\) => actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo\), \{/);
+    // OL-02C: el cobro directo ya no hace Creada → Entregada por updateOrdenEstatus; va por el contrato atómico.
+    expect(v).not.toMatch(/updateOrdenEstatus\(pagoModal\.id, "Entregada"/);
+    expect(v).toMatch(/const r = await venta\.completar\(\{ modo: modoCobro, metodo, referencia: metodo === "Transferencia SPEI" \? pagoForm\.referencia : null \}\);/);
     expect(v).toMatch(/await ejecutarMutacion\(\(\) => actions\.updateOrdenEstatus\(o\.id, "Asignada"\), \{ onExito: \(\) => showToast\("Asignada a ruta"\) \}\);/);
     expect(v).toMatch(/const \[checkoutProvider\] = useState\('stripe'\);/);
-    expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus', 'actions.updateOrdenEstatus']);
+    expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus']);   // OL-02C: el cobro directo va por useVentaDirecta → completarVentaDirecta
   });
   it('métodos de pago persistidos y flujo de cobro idénticos', () => {
     expect(v).toMatch(/const PAGOS = \["Efectivo", "Transferencia SPEI", "Tarjeta \(terminal\)", "QR \/ Link de pago", "Crédito \(fiado\)"\];/);
-    expect(v).toMatch(/if \(pagoForm\.metodo === "QR \/ Link de pago"\) \{/);
-    expect(v).toMatch(/pagoForm\.metodo\.includes\("Crédito"\) \|\| pagoForm\.metodo\.includes\("fiado"\) \? "Venta a crédito registrada" : "Cobrado — " \+ pagoForm\.metodo/);
+    // Link de pago: mismo flujo (genera el link; no mueve inventario ni entrega).
+    expect(v).toMatch(/if \(!pagoModal\.entregaPagada && pagoForm\.metodo === "QR \/ Link de pago"\) \{/);
     expect(v).toMatch(/pagoForm\.metodo === "Transferencia SPEI" &&/);
-    expect(v).toMatch(/disabled=\{generandoLink \|\| confirmandoCobro\}/);
-    expect(v).toMatch(/const cobrar = \(ord\) => \{ setPagoModal\(ord\); setPagoForm\(\{ metodo: "Efectivo", referencia: "" \}\); setCheckoutUrl\(null\); setShortUrl\(null\); \};/);
+    expect(v).toMatch(/setPagoForm\(\{ metodo: "Efectivo", referencia: "" \}\); setCheckoutUrl\(null\); setShortUrl\(null\);/);
   });
   it('alcance por vendedor y vista previa de Admin idénticos', () => {
     const owned = v.slice(v.indexOf('const isOwnedBy = useCallback'), v.indexOf('}, [user]);'));
@@ -343,7 +343,7 @@ describe('B3.4: cada módulo de Ventas tiene su propio contexto (solo presentaci
     expect(tarjeta).toMatch(/\{acc\.cobrar && acc\.enviarARuta && \([\s\S]*cobrar\(o\)\}>Cobrar<[\s\S]*enviarARuta\(o\)/);
     expect(tarjeta).toMatch(/\{acc\.cobrarEntrega && \([\s\S]*cobrar\(o\)\}[^>]*>Cobrar entrega</);
     expect((v.match(/<Card key=\{o\.id\}/g) || []).length).toBe(1);
-    expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus', 'actions.updateOrdenEstatus']);
+    expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus']);   // OL-02C: el cobro directo va por useVentaDirecta → completarVentaDirecta
   });
   it('Hoy: Vendido hoy (semántica existente), órdenes de hoy con desglose y última venta', () => {
     expect(ctx).toMatch(/label="Vendido hoy" value=\{fmtMoney\(resumenHoy\.vendidoHoy\)\}/);
@@ -377,13 +377,12 @@ describe('OL-01A: honestidad del cobro del vendedor (contención; ciclo de vida 
   const v = sinComentarios(src('../components/VentasStandaloneView.jsx'));
   const cobro = v.slice(v.indexOf('const confirmarCobro = async'), v.indexOf('const hoy = diaNegocio();'));
   const envio = v.slice(v.indexOf('const enviarARuta = async'), v.indexOf('const tarjetaOrden ='));
-  it('cobro: el toast de éxito y el cierre del diálogo viven SOLO en onExito (resultado confirmado)', () => {
-    const exito = cobro.slice(cobro.indexOf('onExito: () => {'), cobro.indexOf('},', cobro.indexOf('onExito: () => {')));
-    expect(exito).toMatch(/showToast\(pagoForm\.metodo\.includes\("Crédito"\)/);
-    expect(exito).toMatch(/setPagoModal\(null\);/);
-    expect((cobro.match(/setPagoModal\(null\)/g) || []).length).toBe(1);
-    expect((cobro.match(/Cobrado — /g) || []).length).toBe(1);
-    expect(cobro).not.toMatch(/await actions\.updateOrdenEstatus/);   // ya no se espera "a ciegas"
+  it('cobro: el toast de éxito y el cierre del diálogo solo tras el resultado confirmado (OL-02C: contrato atómico)', () => {
+    const tras = cobro.slice(cobro.indexOf('const r = await venta.completar('));
+    expect(tras).toMatch(/^const r = await venta\.completar\([^;]*\);\s*if \(!r \|\| r\.error\) return;\s*showToast\(/);
+    expect((cobro.match(/cerrarCobro\(\)/g) || []).length).toBe(1);
+    expect((cobro.match(/Cobrado y entregado — /g) || []).length).toBe(1);
+    expect(cobro).not.toMatch(/await actions\.updateOrdenEstatus/);
   });
   it('enviar a ruta: éxito solo confirmado; sin doble envío; misma llamada (no adjunta ruta)', () => {
     expect(envio).toMatch(/if \(enviandoRuta\) return;/);
@@ -398,7 +397,7 @@ describe('OL-01A: honestidad del cobro del vendedor (contención; ciclo de vida 
     expect(etiqueta.slice(0, etiqueta.indexOf('</p>'))).not.toMatch(/onClick|FormBtn|actions\./);
   });
   it('sin cambios de contratos: mismas acciones del store; Admin y Chofer intactos', () => {
-    expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus', 'actions.updateOrdenEstatus']);
+    expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus']);   // OL-02C: el cobro directo va por useVentaDirecta → completarVentaDirecta
     const admin = src('../components/views/OrdenesView.jsx');
     expect(admin).toMatch(/const err = await actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo\);\s*if \(err\) \{\s*toast\?\.error\("No se pudo registrar el cobro"\);\s*return;/);
     const chofer = src('../components/ChoferView.jsx');

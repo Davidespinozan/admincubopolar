@@ -3,6 +3,8 @@ import { diaNegocio } from '../utils/fechas';
 import { s, fmtMoney, fmtDate, extraerTelefono } from '../utils/safe';
 import { resumenPorCobrar, resumenVentasHoy, resumenHistorial, textoDesglose } from '../data/ventasResumenLogic';
 import { accionesCobroVentas, ejecutarMutacion } from '../data/ventasCobroLogic';
+import { modoVentaDirecta, linkPagadoCompleto, METODO_LINK } from '../data/ventaDirectaLogic';
+import VentaDirectaOrigen, { useVentaDirecta } from './VentaDirectaOrigen';
 import { EmptyState } from './ui/Skeleton';
 import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
@@ -13,7 +15,7 @@ import { Icons } from './ui/Icons';
 
 // Fase A3 (convergencia visual por rol): esta vista usa las primitivas del
 // shell de Administración. El flujo (Por cobrar / Hoy / Todas, nueva venta por
-// NuevaVentaModal variant="standalone", cobro por updateOrdenEstatus o link de
+// NuevaVentaModal variant="standalone", cobro y entrega por completar_venta_directa (OL-02C) o link de
 // pago por crearCheckoutPago), el alcance por vendedor (isOwnedBy) y los
 // métodos de pago no cambian.
 //   embedded: la vista vive dentro del shell compartido (sin cabecera propia).
@@ -37,7 +39,6 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
   const [checkoutUrl, setCheckoutUrl] = useState(null);
   const [shortUrl, setShortUrl] = useState(null);
   const [generandoLink, setGenerandoLink] = useState(false);
-  const [confirmandoCobro, setConfirmandoCobro] = useState(false);
   const [enviandoRuta, setEnviandoRuta] = useState(null); // OL-01A: id de la orden en envío a ruta
 
   const showToast = (msg, tipo = "success") => { (toast?.[tipo] || toast?.info)?.(msg); };
@@ -59,11 +60,24 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
   const isAdminPreview = user?.rol === 'Admin';
   const ordenesUsuario = useMemo(() => isAdminPreview ? (data.ordenes || []) : (data.ordenes || []).filter(o => isOwnedBy(o)), [data.ordenes, isOwnedBy, isAdminPreview]);
 
-  const cobrar = (ord) => { setPagoModal(ord); setPagoForm({ metodo: "Efectivo", referencia: "" }); setCheckoutUrl(null); setShortUrl(null); };
+  // OL-02C: la venta directa (cobro + salida física + Entregada) va por UN
+  // contrato del servidor (completar_venta_directa). El link de pago es otro
+  // momento: genera el link y no mueve inventario; la entrega de un pedido ya
+  // pagado por link se hace después con "Entregar pedido pagado".
+  const venta = useVentaDirecta({ actions, cuartosFrios: data.cuartosFrios });
+  const cobrar = (ord, { entregaPagada = false } = {}) => {
+    const fresca = (data.ordenes || []).find(x => String(x.id) === String(ord?.id)) || ord;
+    setPagoModal({ ...fresca, entregaPagada });
+    setPagoForm({ metodo: "Efectivo", referencia: "" }); setCheckoutUrl(null); setShortUrl(null);
+    venta.iniciar(fresca);
+  };
+  const cerrarCobro = () => { setPagoModal(null); setCheckoutUrl(null); setShortUrl(null); venta.terminar(); };
+  const modoCobro = pagoModal?.entregaPagada ? 'pagado_link' : modoVentaDirecta(pagoForm.metodo);
+  const sinClienteCredito = modoCobro === 'credito' && !(pagoModal?.clienteId || pagoModal?.cliente_id);
 
   const confirmarCobro = async () => {
     if (!pagoModal) return;
-    if (pagoForm.metodo === "QR / Link de pago") {
+    if (!pagoModal.entregaPagada && pagoForm.metodo === "QR / Link de pago") {
       setGenerandoLink(true);
       try {
         const result = await actions.crearCheckoutPago?.(pagoModal.id, checkoutProvider);
@@ -81,22 +95,20 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
       }
       return;
     }
-    if (confirmandoCobro) return;
-    setConfirmandoCobro(true);
+    if (!modoCobro || venta.enviando) return;
+    if (sinClienteCredito) { showToast('La venta a crédito requiere cliente', 'error'); return; }
+    if (!venta.validacion.ok) { showToast('Indica de qué cuarto sale cada producto', 'error'); return; }
+    const metodo = modoCobro === 'pagado_link' ? METODO_LINK : pagoForm.metodo;
     try {
-      // OL-01A: éxito y cierre SOLO si el store lo confirma. Si falla, el store
-      // ya mostró el error; el diálogo queda abierto para corregir o reintentar.
-      await ejecutarMutacion(() => actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo), {
-        onExito: () => {
-          showToast(pagoForm.metodo.includes("Crédito") || pagoForm.metodo.includes("fiado") ? "Venta a crédito registrada" : "Cobrado — " + pagoForm.metodo);
-          setPagoModal(null);
-        },
-      });
+      // Éxito y cierre SOLO con el resultado del servidor; si falla, el store
+      // ya mostró el error y el diálogo queda abierto (mismo intento = mismo UUID).
+      const r = await venta.completar({ modo: modoCobro, metodo, referencia: metodo === "Transferencia SPEI" ? pagoForm.referencia : null });
+      if (!r || r.error) return;
+      showToast(modoCobro === 'pagado_link' ? `Pedido ${s(pagoModal.folio)} entregado` : modoCobro === 'credito' ? "Venta a crédito registrada y entregada" : "Cobrado y entregado — " + metodo);
+      cerrarCobro();
     } catch (e) {
-      console.error('Error confirmando cobro:', e);
+      console.error('Error completando la venta directa:', e);
       showToast('Error al cobrar. Verifica tu conexión.', 'error');
-    } finally {
-      setConfirmandoCobro(false);
     }
   };
 
@@ -136,7 +148,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
   // Tarjeta de orden: mismo contenido; acciones según accionesCobroVentas
   // (OL-01A): Creada → Cobrar / Enviar a ruta; Asignada sin ruta → Cobrar
   // entrega; Asignada con ruta → sin cobro del vendedor (la cobra el chofer).
-  const tarjetaOrden = (o) => { const acc = accionesCobroVentas(o); return (
+  const tarjetaOrden = (o) => { const acc = accionesCobroVentas(o); const pagado = linkPagadoCompleto(o, data.pagos); return (
     <Card key={o.id} padding="p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
@@ -154,13 +166,16 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
       </div>
       {acc.cobrar && acc.enviarARuta && (
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <FormBtn success onClick={() => cobrar(o)}>Cobrar</FormBtn>
+          {pagado
+            ? <FormBtn success onClick={() => cobrar(o, { entregaPagada: true })}>Entregar pedido pagado</FormBtn>
+            : <FormBtn success onClick={() => cobrar(o)}>Cobrar</FormBtn>}
           <FormBtn onClick={() => enviarARuta(o)} disabled={enviandoRuta === o.id}
             className="border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100"><Icons.Truck /> Enviar a ruta</FormBtn>
         </div>
       )}
-      {acc.cobrarEntrega && (
-        <FormBtn onClick={() => cobrar(o)} className="mt-3 w-full border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">Cobrar entrega</FormBtn>
+      {acc.cobrarEntrega && (pagado
+        ? <FormBtn onClick={() => cobrar(o, { entregaPagada: true })} className="mt-3 w-full border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">Entregar pedido pagado</FormBtn>
+        : <FormBtn onClick={() => cobrar(o)} className="mt-3 w-full border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100">Cobrar entrega</FormBtn>
       )}
       {acc.enRutaDelChofer && (
         <p className="mt-3 flex items-center gap-1.5 rounded-[12px] border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600" data-testid="orden-en-ruta-chofer">
@@ -286,12 +301,16 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
       />
 
       {/* ═══ MODAL COBRO ═══ */}
-      <Modal open={!!pagoModal} onClose={() => setPagoModal(null)} kicker="Cobranza" safeBottom closeOnEscape={!generandoLink && !confirmandoCobro}
-        title={pagoModal ? `Cobrar ${s(pagoModal.folio)}` : ""}>
+      <Modal open={!!pagoModal} onClose={cerrarCobro} kicker={pagoModal?.entregaPagada ? "Entrega" : "Cobranza"} safeBottom closeOnEscape={!generandoLink && !venta.enviando}
+        title={pagoModal ? `${pagoModal.entregaPagada ? 'Entregar' : 'Cobrar'} ${s(pagoModal.folio)}` : ""}>
         {pagoModal && (<>
           <p className="mb-4 text-sm text-slate-500">{s(pagoModal.cliente)} — <span className="font-bold text-slate-800">{fmtMoney(pagoModal.total)}</span>
             {pagoModal.requiereFactura && <span className="ml-2 rounded-full border border-violet-200/80 bg-violet-100/80 px-2 py-0.5 text-[10px] font-bold text-violet-900">FACTURA</span>}
           </p>
+          {pagoModal.entregaPagada && (
+            <p className="mb-4 rounded-[12px] border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-800">Pagado con link. Confirma de qué cuarto sale el pedido.</p>
+          )}
+          {!pagoModal.entregaPagada && (<>
           <SectionLabel className="mb-2">Método de pago</SectionLabel>
           <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {PAGOS.map(m => (
@@ -305,6 +324,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
               <FormInput label="Referencia" value={pagoForm.referencia} onChange={e => setPagoForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Últimos 6 dígitos" />
             </div>
           )}
+          </>)}
 
           {pagoForm.metodo === "QR / Link de pago" && checkoutUrl && (
             <Card tone="success" padding="p-4" className="mb-4 space-y-3">
@@ -323,15 +343,22 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
                   return <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center justify-center rounded-[16px] bg-emerald-600 px-5 py-3 text-xs font-semibold text-white hover:bg-emerald-700">Enviar por WhatsApp</a>;
                 })()}
               </div>
-              <button type="button" onClick={() => { setCheckoutUrl(null); setShortUrl(null); setPagoModal(null); }} className="w-full py-2 text-xs font-semibold text-slate-500">Cerrar</button>
+              <p className="text-[11px] text-slate-500">El pedido se entrega cuando el pago se confirme.</p>
+              <button type="button" onClick={cerrarCobro} className="w-full py-2 text-xs font-semibold text-slate-500">Cerrar</button>
             </Card>
           )}
-          {pagoForm.metodo === "Crédito (fiado)" && (
-            <Card tone="warning" padding="p-3" className="mb-4"><p className="text-xs font-semibold text-amber-800">Se agregará al saldo del cliente</p></Card>
+          {!pagoModal.entregaPagada && pagoForm.metodo === "Crédito (fiado)" && (
+            <Card tone="warning" padding="p-3" className="mb-4"><p className="text-xs font-semibold text-amber-800">{sinClienteCredito ? "La venta a crédito requiere cliente" : "Se agregará al saldo del cliente (vence en 30 días)"}</p></Card>
+          )}
+          {modoCobro && (
+            <div className="mb-4"><VentaDirectaOrigen venta={venta} disabled={venta.enviando} /></div>
           )}
           {!checkoutUrl && (
-            <FormBtn success size="lg" className="w-full" onClick={confirmarCobro} disabled={generandoLink || confirmandoCobro}>
-              {generandoLink ? 'Generando link…' : confirmandoCobro ? 'Cobrando…' : pagoForm.metodo === "QR / Link de pago" ? "Generar link de pago" : "Confirmar cobro"}
+            <FormBtn success size="lg" className="w-full" onClick={confirmarCobro}
+              disabled={generandoLink || venta.enviando || (!!modoCobro && (!venta.validacion.ok || sinClienteCredito))}>
+              {generandoLink ? 'Generando link…' : venta.enviando ? 'Registrando…'
+                : modoCobro === 'pagado_link' ? 'Entregar pedido' : modoCobro === 'credito' ? 'Registrar crédito y entregar'
+                : modoCobro === 'contado' ? 'Cobrar y entregar' : 'Generar link de pago'}
             </FormBtn>
           )}
         </>)}
