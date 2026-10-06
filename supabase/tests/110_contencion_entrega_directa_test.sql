@@ -186,6 +186,7 @@ SELECT t110_assert((SELECT strpos(d, 'fin_marcar_ctx()') > 0 AND strpos(d, 'fin_
                     FROM (SELECT pg_get_functiondef('public.cerrar_ruta_financiero(uuid,bigint,jsonb,bigint,text)'::regprocedure) AS d) x),
   '110-11 cerrar_ruta_financiero marca el contexto de contrato ANTES de entregar (las suites del cierre corren tras 110)');
 BEGIN; SET LOCAL ROLE service_role; SELECT t110_servicio();
+SELECT set_config('app.cfdi_ctx', CASE WHEN to_regprocedure('public.ordenes_guard_facturada()') IS NULL THEN '' ELSE 'cancelacion' END, true);  -- 112 (OL-03B): Facturada solo con contexto de CFDI
 SELECT t110_assert(t110_upd($q$UPDATE ordenes SET estatus = 'Entregada', cfdi_cancelado_at = now() WHERE id = 11007$q$) = 1, '110-12 cancelación de CFDI (service role): Facturada → Entregada permitida');
 COMMIT;
 SELECT t110_assert(t110_est(11007) = 'Entregada', '110-12 la orden vuelve a Entregada tras cancelar el CFDI');

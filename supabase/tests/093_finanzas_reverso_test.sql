@@ -121,7 +121,8 @@ COMMIT;
 INSERT INTO t93_ids VALUES ('d1', (SELECT delivered_at::text FROM ordenes WHERE folio = 'OV-9305'));
 SELECT t93_assert((SELECT v FROM t93_ids WHERE k = 'd1') IS NOT NULL, '093-11 al entrar a Entregada el servidor fija delivered_at');
 BEGIN; SET LOCAL ROLE service_role; SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
-UPDATE ordenes SET delivered_at = '2020-01-01', estatus = 'Facturada' WHERE folio = 'OV-9305';
+SELECT set_config('app.cfdi_ctx', CASE WHEN to_regprocedure('public.ordenes_guard_facturada()') IS NULL THEN '' ELSE 'emision' END, true);  -- 112 (OL-03B): Facturada solo con contexto de CFDI
+UPDATE ordenes SET delivered_at = '2020-01-01', estatus = 'Facturada', facturama_id = 'fm-9305', facturama_uuid = 'uuid-9305' WHERE folio = 'OV-9305';
 COMMIT;
 SELECT t93_assert((SELECT delivered_at::text = (SELECT v FROM t93_ids WHERE k = 'd1') AND estatus = 'Facturada' FROM ordenes WHERE folio = 'OV-9305'), '093-12 Entregada → Facturada (backend) conserva delivered_at; el valor enviado se ignora incluso para service_role');
 BEGIN;
@@ -129,7 +130,8 @@ SET LOCAL session_replication_role = replica;
 INSERT INTO ordenes (folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, fecha) VALUES ('OV-93L1', 9340, 'Cliente 93', 'legado', 77, 'Entregada', 'Efectivo', 'Contado', '2021-03-10');
 COMMIT;
 BEGIN; SET LOCAL ROLE service_role; SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
-UPDATE ordenes SET estatus = 'Facturada' WHERE folio = 'OV-93L1';
+SELECT set_config('app.cfdi_ctx', CASE WHEN to_regprocedure('public.ordenes_guard_facturada()') IS NULL THEN '' ELSE 'emision' END, true);  -- 112 (OL-03B): Facturada solo con contexto de CFDI
+UPDATE ordenes SET estatus = 'Facturada', facturama_id = 'fm-93l1', facturama_uuid = 'uuid-93l1' WHERE folio = 'OV-93L1';
 COMMIT;
 SELECT t93_assert((SELECT delivered_at IS NULL FROM ordenes WHERE folio = 'OV-93L1'), '093-13 fila legada entregada: no se inventa delivered_at (ni al facturarla después)');
 SELECT t93_assert((reporte_financiero('2021-03-10', '2021-03-10') -> 'resultados' ->> 'ventas_legado')::numeric >= 77

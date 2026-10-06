@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -2849,7 +2849,9 @@ async function conc104() {
   ok(r.ra.ok && r.rb.ok && r.bloqueado && await cf() === 49 && await n(`SELECT count(*) FROM cuartos_frios WHERE (stock->>'C104-A')::int < 0`) === 0,
      '104-C5 merma de 10 y devolución de 5 al mismo cuarto: serializadas (54 − 10 + 5 = 49), sin negativos');
   // 6. Devolución mientras el backend factura la orden.
-  r = await carrera(null, `UPDATE ordenes SET estatus = 'Facturada' WHERE id = 10466 RETURNING id AS r`, [],
+  // 112 (OL-03B): el backend factura dentro del contexto de CFDI y con su identidad (como finalizar_operacion_cfdi).
+  r = await carrera(null, `WITH ctx AS (SELECT set_config('app.cfdi_ctx', CASE WHEN to_regprocedure('public.ordenes_guard_facturada()') IS NULL THEN '' ELSE 'emision' END, true) AS v)
+                           UPDATE ordenes SET estatus = 'Facturada', facturama_id = 'FM-C104', facturama_uuid = 'UUID-C104' FROM ctx WHERE id = 10466 RETURNING id AS r`, [],
                     SUB(1), DEV, ['a4c10000-0000-0000-0000-000000000009', 10466, '[{"sku":"C104-A","cantidad":1}]', 'Efectivo', 'Merma', null]);
   ok(r.ra.ok && r.rb.ok && r.bloqueado && r.rb.row.r.requiere_nota_credito === true,
      '104-C6 facturación concurrente: la devolución espera la orden y ve Facturada (nota fiscal pendiente)');
@@ -3401,6 +3403,247 @@ await conc087();
 await fe087();
 console.log('  concurrencia + frontend↔DB (076, 087, 092, 093, 102, 104, 106, 107, 109, 110) tras 110: PASS');
 
+// ═══ 111 — operaciones CFDI (OL-03B; aditiva) ═══
+{
+  const ok = (await c.query(`SELECT to_regclass('public.cfdi_operaciones') IS NULL AND to_regprocedure('public.reservar_operacion_cfdi(bigint,text,bigint,text,text,text,integer)') IS NULL
+                               AND to_regprocedure('public.ordenes_guard_facturada()') IS NULL
+                               AND md5(pg_get_functiondef('public.cerrar_ruta_financiero(uuid,bigint,jsonb,bigint,text)'::regprocedure)) = '9b93ce16242718a4bfeb6783ea99bc64' AS a`)).rows[0].a;
+  console.log(`  CFDI_PARITY_CHECK[pre-111]: ${ok ? 'PASS' : 'FAIL'} (cierre de ruta = producción 9b93ce16)`);
+  if (!ok) process.exit(1);
+}
+const SUITES_111 = [...SUITES_110, ['110', '110_contencion_entrega_directa_test.sql']];
+async function concCfdi(etiqueta) {
+  console.log(`── OL-03B CONCURRENCIA EN LA BASE (dos conexiones reales, ${etiqueta})`);
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM cfdi_operaciones WHERE orden_id BETWEEN 11161 AND 11169; DELETE FROM orden_lineas WHERE orden_id BETWEEN 11161 AND 11169;
+    DELETE FROM ordenes WHERE id BETWEEN 11161 AND 11169; DELETE FROM usuarios WHERE id = 11161; COMMIT;`);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus) VALUES (11161, 'AdminC111', 'c111@t', 'Admin', 'Activo');
+    INSERT INTO ordenes (id, folio, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, facturama_id, facturama_uuid) VALUES
+      (11161, 'OV-11161', 'C', 'x', 20, 'Entregada', 'Efectivo', 'Contado', NULL, NULL),
+      (11162, 'OV-11162', 'C', 'x', 20, 'Facturada', 'Efectivo', 'Contado', 'FM-C162', 'UUID-C162'),
+      (11163, 'OV-11163', 'C', 'x', 20, 'Facturada', 'Efectivo', 'Contado', 'FM-C163', 'UUID-C163');
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const srv = async (cl) => { await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE service_role'); await cl.query(`SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true)`); };
+  const carrera = async (sqlA, sqlB) => {
+    await srv(a); await srv(b);
+    const ra = await a.query(sqlA).then(r => r.rows[0].r, e => ({ error: e.code }));
+    let done = false;
+    const prB = b.query(sqlB).then(r => r.rows[0].r, e => ({ error: e.code })).finally(() => { done = true; });
+    await sleep(400);
+    const bloqueado = !done;
+    await a.query('COMMIT');
+    const rb = await prB; await b.query('COMMIT');
+    return { ra, rb, bloqueado };
+  };
+  const R = (o, tipo, extra = '') => `SELECT reservar_operacion_cfdi(${o}, '${tipo}', 11161, 'h'${extra}) AS r`;
+  let r = await carrera(R(11161, 'emision'), R(11161, 'emision'));
+  ok(r.ra.ok === true && r.bloqueado && r.rb.ok === false && r.rb.codigo === 'OPERACION_EN_CURSO' && r.rb.operacion_id === r.ra.operacion_id,
+    'C111-1 dos reservas de emisión simultáneas: la segunda ESPERA el bloqueo de la orden y recibe OPERACION_EN_CURSO (una sola operación)');
+  r = await carrera(R(11162, 'cancelacion', ", '02'"), R(11162, 'cancelacion', ", '02'"));
+  ok(r.ra.ok === true && r.bloqueado && r.rb.codigo === 'OPERACION_EN_CURSO', 'C111-2 dos reservas de cancelación simultáneas: una sola operación');
+  r = await carrera(R(11163, 'cancelacion', ", '02'"), R(11163, 'emision'));
+  ok(r.ra.ok === true && r.bloqueado && r.rb.ok === false && ['OPERACION_EN_CURSO', 'CFDI_VIGENTE'].includes(r.rb.codigo),
+    `C111-3 cancelación y emisión a la vez sobre la misma orden: serializadas (${r.rb.codigo})`);
+  const n = Number((await c.query(`SELECT count(*) FROM cfdi_operaciones WHERE orden_id BETWEEN 11161 AND 11163`)).rows[0].count);
+  ok(n === 3, `C111-4 exactamente una operación por orden tras las carreras (${n})`);
+  await a.end(); await b.end();
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM cfdi_operaciones WHERE orden_id BETWEEN 11161 AND 11169; DELETE FROM ordenes WHERE id BETWEEN 11161 AND 11169; DELETE FROM usuarios WHERE id = 11161; COMMIT;`);
+  if (!okAll) { console.log(`RESULTADO: FALLÓ (OL-03B concurrencia ${etiqueta})`); process.exit(1); }
+}
+async function handlersCfdi(etiqueta) {
+  console.log(`── OL-03B NETLIFY FUNCTIONS ↔ POSTGRES REAL (${etiqueta}; proveedor FALSO)`);
+  const { pathToFileURL } = await import('node:url');
+  const { Pool } = require('pg');
+  const { makePgSupabase } = await import(pathToFileURL(path.join(ROOT, 'supabase/tests/local/pgSupabaseAdapter.mjs')).href);
+  const { createHandler: inv } = await import(pathToFileURL(path.join(ROOT, 'netlify/functions/billing-create-invoice/index.js')).href);
+  const { createHandler: can } = await import(pathToFileURL(path.join(ROOT, 'netlify/functions/billing-cancel-invoice/index.js')).href);
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const q1 = async (sql, p) => (await c.query(sql, p)).rows[0];
+  const AUTH = (k) => '11300000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM invoice_attempts WHERE orden_id BETWEEN 11301 AND 11319; DELETE FROM cfdi_operaciones WHERE orden_id BETWEEN 11301 AND 11319;
+    DELETE FROM orden_lineas WHERE orden_id BETWEEN 11301 AND 11319; DELETE FROM ordenes WHERE id BETWEEN 11301 AND 11319;
+    DELETE FROM clientes WHERE id = 11301; DELETE FROM usuarios WHERE id BETWEEN 11301 AND 11309; DELETE FROM auth.users WHERE id::text LIKE '11300000-%'; COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) SELECT ('11300000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'h' || k || '@t113' FROM generate_series(1, 4) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (11301, 'Admin H', 'h1@t113', 'Admin', 'Activo', '${AUTH(1)}'), (11302, 'Fact H', 'h2@t113', 'Facturación', 'Activo', '${AUTH(2)}'),
+      (11303, 'Ventas HA', 'h3@t113', 'Ventas', 'Activo', '${AUTH(3)}'), (11304, 'Ventas HB', 'h4@t113', 'Ventas', 'Activo', '${AUTH(4)}');
+    INSERT INTO clientes (id, nombre, rfc, saldo, credito_autorizado, limite_credito) VALUES (11301, 'Cliente H', 'XAXX010101000', 0, true, 1000);
+    INSERT INTO ordenes (id, folio, cliente_id, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id, facturama_id, facturama_uuid) VALUES
+      (11301, 'OV-11301', 11301, 'Cliente H', 'x', 40, 'Entregada', 'Efectivo',        'Contado', 11303, NULL, NULL),
+      (11302, 'OV-11302', 11301, 'Cliente H', 'x', 40, 'Entregada', 'Efectivo',        'Contado', 11304, NULL, NULL),
+      (11303, 'OV-11303', 11301, 'Cliente H', 'x', 40, 'Entregada', 'Crédito (fiado)', 'Credito', 11303, NULL, NULL),
+      (11304, 'OV-11304', 11301, 'Cliente H', 'x', 40, 'Entregada', 'Efectivo',        'Contado', 11303, NULL, NULL),
+      (11305, 'OV-11305', 11301, 'Cliente H', 'x', 40, 'Entregada', 'Efectivo',        'Contado', 11303, NULL, NULL),
+      (11306, 'OV-11306', 11301, 'Cliente H', 'x', 40, 'Facturada', 'Efectivo',        'Contado', 11303, 'FM-H306', 'UUID-H306'),
+      (11307, 'OV-11307', 11301, 'Cliente H', 'x', 40, 'Creada',    'Efectivo',        'Contado', 11303, NULL, NULL);
+    UPDATE ordenes SET delivered_at = now() WHERE id BETWEEN 11301 AND 11306;
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) SELECT id, 'HPC-5K', 2, 20, 40 FROM ordenes WHERE id BETWEEN 11301 AND 11307;
+    COMMIT;`);
+  const pool = new Pool({ host: '127.0.0.1', port: PORT, user: USER, database: DB, max: 6 });
+  const tokens = { 'jwt-admin': { id: AUTH(1) }, 'jwt-fact': { id: AUTH(2) }, 'jwt-va': { id: AUTH(3) }, 'jwt-vb': { id: AUTH(4) } };
+  const fetchReal = globalThis.fetch; let redReal = 0;
+  globalThis.fetch = () => { redReal++; throw new Error('red real prohibida'); };
+  // Proveedor falso con barrera: la primera llamada espera (hasta 600 ms) a que llegue una segunda.
+  const proveedor = (guion, { barrera = false } = {}) => {
+    const calls = []; let soltar; const llega2 = new Promise(r => { soltar = r; });
+    const fetchImpl = async (url, init) => {
+      calls.push({ url: String(url), method: init.method, body: init.body ? JSON.parse(init.body) : null });
+      if (calls.length >= 2) soltar();
+      if (barrera && calls.length === 1) await Promise.race([llega2, sleep(600)]);
+      const paso = guion[Math.min(calls.length - 1, guion.length - 1)];
+      if (paso === 'colgado') return new Promise((_, rej) => init.signal?.addEventListener('abort', () => rej(new Error('aborted'))));
+      const [status, raw] = paso;
+      return { ok: status < 300, status, json: async () => raw };
+    };
+    return { calls, fetchImpl, getConfig: () => ({ username: 'stub', password: 'stub', baseUrl: 'https://facturama.invalid' }) };
+  };
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  const mk = (prov, fallar = {}, timeoutMs = 2000) => {
+    const sup = makePgSupabase(pool, { tokens, fallar });
+    const deps = { getSupabase: () => sup, fetchImpl: prov.fetchImpl, getConfig: prov.getConfig, timeoutMs, leaseSegundos: 120 };
+    return { timbrar: inv(deps), cancelar: can(deps) };
+  };
+  const ev = (who, body) => ({ httpMethod: 'POST', headers: { authorization: `Bearer jwt-${who}` }, body: JSON.stringify(body) });
+  const L = (r) => ({ status: r.statusCode, body: JSON.parse(r.body || '{}') });
+  const ord = async (id) => q1(`SELECT estatus, facturama_uuid AS u, cfdi_cancelado_at IS NOT NULL AS cancelado FROM ordenes WHERE id = $1`, [id]);
+  const opsDe = async (id) => (await c.query(`SELECT tipo || generacion || ':' || estado AS x FROM cfdi_operaciones WHERE orden_id = $1 ORDER BY created_at, generacion`, [id])).rows.map(x => x.x);
+
+  // H1 — dos timbrados simultáneos: UNA llamada al proveedor (compuerta dura).
+  let prov = proveedor([[201, { Id: 'FM-H1', Folio: 'H1', Uuid: 'UUID-H1' }]], { barrera: true });
+  let h = mk(prov);
+  let rs = (await Promise.all([h.timbrar(ev('admin', { ordenId: 11301 })), h.timbrar(ev('fact', { ordenId: 11301 }))])).map(L);
+  ok(prov.calls.length === 1 && rs.filter(r => r.status === 200 && !r.body.alreadyInvoiced).length === 1
+     && rs.some(r => r.status === 409 && r.body.code === 'OPERACION_EN_CURSO') && (await ord(11301)).estatus === 'Facturada',
+    `H1 dos timbrados simultáneos (proveedor con barrera): ${prov.calls.length} llamada(s) al proveedor; uno 200, el otro 409 OPERACION_EN_CURSO; orden Facturada`);
+  // H2 — dos cancelaciones simultáneas: UNA llamada.
+  prov = proveedor([[200, { Status: 'canceled' }]], { barrera: true });
+  h = mk(prov);
+  rs = (await Promise.all([h.cancelar(ev('admin', { ordenId: 11301, motivo: '02' })), h.cancelar(ev('fact', { ordenId: 11301, motivo: '02' }))])).map(L);
+  ok(prov.calls.length === 1 && rs.filter(r => r.status === 200 && r.body.cancelled).length === 1 && (await ord(11301)).estatus === 'Entregada',
+    `H2 dos cancelaciones simultáneas: ${prov.calls.length} llamada(s) DELETE; una cancela, la otra no cruza; orden de vuelta a Entregada`);
+  // H3 — re-facturación gen 2.
+  prov = proveedor([[201, { Id: 'FM-H3', Uuid: 'UUID-H3' }]]); h = mk(prov);
+  ok(L(await h.timbrar(ev('va', { ordenId: 11301 }))).status === 200 && (await ord(11301)).u === 'UUID-H3'
+     && (await opsDe(11301)).join(',') === 'emision1:exitosa,cancelacion1:exitosa,emision2:exitosa',
+    'H3 re-facturación tras cancelación confirmada: generación 2 (Ventas dueño)');
+  // H4 — Ventas sobre la orden de otro vendedor.
+  prov = proveedor([[201, { Id: 'X', Uuid: 'X' }]]); h = mk(prov);
+  ok(L(await h.timbrar(ev('va', { ordenId: 11302 }))).status === 403 && prov.calls.length === 0 && (await opsDe(11302)).length === 0,
+    'H4 Ventas A sobre la orden de Ventas B: 403, cero proveedor, cero operaciones');
+  // H5 — crédito entregado y sin pagar.
+  prov = proveedor([[201, { Id: 'FM-H5', Uuid: 'UUID-H5' }]]); h = mk(prov);
+  ok(L(await h.timbrar(ev('va', { ordenId: 11303 }))).status === 200 && prov.calls[0].body.PaymentMethod === 'PPD' && (await ord(11303)).estatus === 'Facturada',
+    'H5 venta a crédito entregada y sin pagar: se timbra (PPD)');
+  // H6 — timeout → incierta; reintento sin proveedor.
+  prov = proveedor(['colgado']); h = mk(prov, {}, 150);
+  const r6 = L(await h.timbrar(ev('admin', { ordenId: 11304 })));
+  const r6b = L(await h.timbrar(ev('fact', { ordenId: 11304 })));
+  ok(r6.status === 502 && r6.body.code === 'RESULTADO_INCIERTO' && r6b.body.code === 'OPERACION_INCIERTA' && prov.calls.length === 1
+     && (await opsDe(11304)).join(',') === 'emision1:incierta' && (await ord(11304)).estatus === 'Entregada',
+    'H6 timeout del proveedor: 502 RESULTADO_INCIERTO, operación incierta; el reintento NO llama al proveedor');
+  // H7 — el proveedor timbró y la finalización falló (caída tras el proveedor).
+  prov = proveedor([[201, { Id: 'FM-H7', Uuid: 'UUID-H7' }]]); h = mk(prov, { finalizar_operacion_cfdi: 1 });
+  const r7 = L(await h.timbrar(ev('admin', { ordenId: 11305 })));
+  ok(r7.status === 502 && r7.body.code === 'FINALIZACION_PENDIENTE' && r7.body.facturamaUuid === 'UUID-H7' && (await ord(11305)).estatus === 'Entregada'
+     && (await opsDe(11305)).join(',') === 'emision1:en_curso', 'H7 timbró pero la base no registró: 502 FINALIZACION_PENDIENTE con el UUID; operación sigue reservada');
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica; UPDATE cfdi_operaciones SET lease_hasta = now() - interval '1 second' WHERE orden_id = 11305; COMMIT;`);
+  const r7b = L(await mk(prov).timbrar(ev('admin', { ordenId: 11305 })));
+  ok(r7b.body.code === 'OPERACION_INCIERTA' && prov.calls.length === 1 && (await opsDe(11305)).join(',') === 'emision1:incierta',
+    'H7b al vencer el lease la operación pasa a incierta: el reintento NO vuelve a timbrar');
+  const opH7 = (await q1(`SELECT id FROM cfdi_operaciones WHERE orden_id = 11305`)).id;
+  await c.query(`BEGIN; SET LOCAL ROLE service_role; SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
+    SELECT conciliar_operacion_cfdi('${opH7}', 'emitida', '{"evidencia":"Facturama: CFDI FM-H7 existe","proveedor_id":"FM-H7","cfdi_uuid":"UUID-H7"}', 11302); COMMIT;`);
+  ok((await ord(11305)).estatus === 'Facturada' && (await ord(11305)).u === 'UUID-H7', 'H7c conciliación con evidencia: la orden queda Facturada con el CFDI que sí existía (sin segundo timbrado)');
+  // H8 — cancelación solicitada (pendiente).
+  prov = proveedor([[200, { Status: 'requested' }]]); h = mk(prov);
+  const r8 = L(await h.cancelar(ev('va', { ordenId: 11306, motivo: '02' })));
+  const r8b = L(await h.cancelar(ev('admin', { ordenId: 11306, motivo: '02' })));
+  const r8c = L(await h.timbrar(ev('admin', { ordenId: 11306 })));
+  ok(r8.status === 202 && r8.body.code === 'CANCELACION_SOLICITADA' && r8b.status === 202 && r8b.body.code === 'CANCELACION_PENDIENTE' && r8c.body.alreadyInvoiced
+     && prov.calls.length === 1 && (await ord(11306)).estatus === 'Facturada' && !(await ord(11306)).cancelado,
+    'H8 cancelación solicitada: 202; la orden SIGUE Facturada; otra cancelación (202 pendiente) o un timbrado no llaman al proveedor');
+  // H9 — orden no entregada: nada cruza.
+  prov = proveedor([[201, { Id: 'X', Uuid: 'X' }]]); h = mk(prov);
+  ok(L(await h.timbrar(ev('admin', { ordenId: 11307 }))).status === 409 && prov.calls.length === 0 && (await opsDe(11307)).length === 0,
+    'H9 orden Creada: 409 antes de reservar; cero proveedor');
+  ok(redReal === 0, 'H10 ninguna llamada a la red real (fetch global bloqueado)');
+  globalThis.fetch = fetchReal;
+  await pool.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log(`RESULTADO: FALLÓ (OL-03B handlers ${etiqueta})`); process.exit(1); }
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 111 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '111_operaciones_cfdi.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 111 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 111)'); process.exit(1); }
+console.log('── PRUEBAS 111');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/111_operaciones_cfdi_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (111)'); process.exit(1); }
+}
+await reruns090('111', ['072']);
+for (const [etq, f] of SUITES_111) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 111)`); process.exit(1); }
+  console.log(`  ${etq} tras 111: PASS`);
+}
+await concCfdi('tras 111');
+await handlersCfdi('tras 111, antes de la guarda 112: código nuevo compatible');
+
+// ═══ 112 — contención: Facturada solo por contrato; cierre de ruta conserva Facturada ═══
+{
+  const ok = (await c.query(`SELECT to_regprocedure('public.ordenes_guard_facturada()') IS NULL AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ordenes_guard_facturada')
+                               AND md5(pg_get_functiondef('public.cerrar_ruta_financiero(uuid,bigint,jsonb,bigint,text)'::regprocedure)) = '9b93ce16242718a4bfeb6783ea99bc64' AS a`)).rows[0].a;
+  console.log(`  FACTURADA_PARITY_CHECK[pre-112]: ${ok ? 'PASS' : 'FAIL'}`);
+  if (!ok) process.exit(1);
+}
+const SUITES_112 = [...SUITES_111, ['111', '111_operaciones_cfdi_test.sql']];
+for (const k of [1, 2]) {
+  console.log(`── aplicar 112 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '112_contencion_facturada.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 112 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 112)'); process.exit(1); }
+console.log('── PRUEBAS 112');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/112_contencion_facturada_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (112)'); process.exit(1); }
+}
+await reruns090('112', ['072']);
+for (const [etq, f] of SUITES_112) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 112)`); process.exit(1); }
+  console.log(`  ${etq} tras 112: PASS`);
+}
+await concCfdi('tras 112');
+await handlersCfdi('tras 112');
+console.log('── concurrencia + frontend↔DB tras 112');
+await conc110();
+await conc109();
+await conc107();
+await conc106();
+await conc104();
+await conc102();
+await conc093();
+await conc092();
+await conc076();
+await fe076();
+await conc087();
+await fe087();
+console.log('  concurrencia + frontend↔DB (076, 087, 092, 093, 102, 104, 106, 107, 109, 110, OL-03B) tras 112: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -3454,7 +3697,10 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 109
   'completar_venta_directa',
   // 110
-  'ordenes_guard_entrega_directa'];
+  'ordenes_guard_entrega_directa',
+  // 111 / 112 (OL-03B)
+  'reservar_operacion_cfdi', 'cfdi_aplicar_resultado', 'finalizar_operacion_cfdi', 'vencer_operaciones_cfdi', 'conciliar_operacion_cfdi',
+  'ordenes_guard_facturada'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

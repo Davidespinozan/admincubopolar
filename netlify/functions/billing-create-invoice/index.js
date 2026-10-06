@@ -7,8 +7,18 @@ import { buildCfdiReceiver } from '../_lib/invoiceLogic.js';
 import { translateFacturamaError } from '../_lib/translateFacturama.js';
 import { withSentry } from '../_lib/sentry.js';
 import {
-  autorizarOrdenFacturacion, precondicionTimbrado, rolPuedeFacturar, updateCondicionalOk, validarCuerpoTimbrado,
+  autorizarOrdenFacturacion, precondicionTimbrado, rolPuedeFacturar, validarCuerpoTimbrado,
 } from '../_lib/facturacionGuard.js';
+import {
+  clasificarEmision, huellaPayload, llamarProveedor, respuestaReservaRechazada,
+} from '../_lib/cfdiOperacion.js';
+
+// OL-03B: tiempo límite de la llamada a Facturama y lease de la reserva.
+// El repositorio no fija el tiempo máximo de las Netlify Functions; 8 s deja
+// margen para registrar el resultado dentro de un límite corto. Un proceso que
+// muere después no reabre nada: su reserva vence a 'incierta' (120 s).
+const PROVEEDOR_TIMEOUT_MS = 8000;
+const LEASE_SEGUNDOS = 120;
 
 const PAYMENT_FORM_MAP = {
   'Efectivo': '01',
@@ -170,38 +180,34 @@ const getOrderContext = async ({ supabase, orden }) => {
   return { orden, cliente, lineas, issuerZip };
 };
 
-const createFacturamaInvoice = async (payload, { fetchImpl, getConfig }) => {
+// OL-03B: la llamada al proveedor nunca lanza; devuelve la respuesta (o su
+// ausencia) para clasificarla. Tiempo límite explícito.
+const timbrarEnFacturama = async (payload, { fetchImpl, getConfig, timeoutMs }) => {
   const config = getConfig();
   const credentials = Buffer.from(`${config.username}:${config.password}`).toString('base64');
-
-  const response = await fetchImpl(`${config.baseUrl}/3/cfdis`, {
+  return llamarProveedor(fetchImpl, `${config.baseUrl}/3/cfdis`, {
     method: 'POST',
-    headers: {
-      authorization: `Basic ${credentials}`,
-      'content-type': 'application/json',
-    },
+    headers: { authorization: `Basic ${credentials}`, 'content-type': 'application/json' },
     body: JSON.stringify(payload),
-  });
-
-  const raw = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    if (response.status === 401) throw new Error('Credenciales de Facturama incorrectas (401)');
-    // 🟡 I1 Tanda 4: traducir errores de Facturama a mensaje legible
-    // antes de lanzar. El detail crudo (JSON ModelState) se conserva
-    // en el log de invoice_attempts.response_payload para diagnóstico.
-    const friendly = translateFacturamaError(raw, response.status);
-    const detail = JSON.stringify(raw?.ModelState || raw);
-    const err = new Error(friendly);
-    err.facturamaDetail = detail;
-    err.facturamaRaw = raw;
-    throw err;
-  }
-
-  return raw;
+  }, timeoutMs);
 };
 
-// OL-03A — orden de las comprobaciones. TODO lo siguiente ocurre ANTES de
-// contactar al proveedor; un rechazo no llama a Facturama ni escribe la orden:
+const mensajeRechazo = (r) => {
+  if (r?.status === 401) return 'Credenciales de Facturama incorrectas (401)';
+  // 🟡 I1 Tanda 4: error de Facturama traducido; el crudo queda en la bitácora.
+  return translateFacturamaError(r?.raw || {}, r?.status);
+};
+
+const registrarIntento = async (supabase, intento) => {
+  try {
+    await insertInvoiceAttempt(intento, supabase);
+  } catch (logErr) {
+    console.error('[billing-create-invoice] bitácora falló:', logErr?.message || logErr);
+  }
+};
+
+// Orden de las comprobaciones. TODO lo siguiente ocurre ANTES de contactar al
+// proveedor; un rechazo no llama a Facturama ni escribe la orden:
 //   1. autenticación (JWT + perfil activo, identidad canónica);
 //   2. rol (Admin, Facturación, Ventas);
 //   3. cuerpo: sin CFDI armado por el cliente; ordenId o folio;
@@ -209,20 +215,28 @@ const createFacturamaInvoice = async (payload, { fetchImpl, getConfig }) => {
 //   5. dueño: Ventas solo su orden (vendedor_id); Admin/Facturación, toda la empresa;
 //   6. CFDI vigente → respuesta idempotente existente (alreadyInvoiced), sin proveedor;
 //   7. estatus = 'Entregada' (cumplimiento físico; el pago no se exige: crédito = PPD);
-//   8. contexto fiscal derivado por el servidor (líneas, cliente, catálogo, CP).
-// Tras el timbrado: UPDATE condicional Entregada → Facturada, verificado. Si la
-// orden cambió mientras se timbraba, NO se declara éxito (el CFDI queda en
-// invoice_attempts con su UUID para revisión; no se cancela automáticamente).
+//   8. contexto fiscal derivado por el servidor (líneas, cliente, catálogo, CP);
+//   9. OL-03B: reserva en la base (reservar_operacion_cfdi): una sola operación
+//      activa o sin resolver por orden; el perdedor de una carrera NO llama al
+//      proveedor. La base revalida estatus, CFDI vigente y dueño con la orden
+//      bloqueada.
+// Después del proveedor (fuera de toda transacción): finalizar_operacion_cfdi
+// registra el resultado y, solo si fue 'emitida', mueve Entregada → Facturada
+// en la misma transacción. Un resultado desconocido queda 'incierta' y bloquea
+// cualquier reintento hasta conciliarlo.
 export const createHandler = ({
   getSupabase = getSupabaseAdmin,
   fetchImpl = (...args) => fetch(...args),
   getConfig = getFacturamaConfig,
+  timeoutMs = Number(process.env.FACTURAMA_TIMEOUT_MS) || PROVEEDOR_TIMEOUT_MS,
+  leaseSegundos = Number(process.env.CFDI_LEASE_SEGUNDOS) || LEASE_SEGUNDOS,
 } = {}) => async (event) => {
   if (event.httpMethod !== 'POST') return methodNotAllowed(['POST']);
 
   let body = null;
   let supabase = null;
   let ordenRef = null;
+  let operacion = null;
 
   // P0.1 se conserva: sin configuración del servidor → 503 explícito (falla cerrada).
   try {
@@ -268,89 +282,92 @@ export const createHandler = ({
     }
 
     const { cliente, lineas, issuerZip } = await getOrderContext({ supabase, orden });
-    const proveedor = { fetchImpl, getConfig };
-
     let payload = buildFacturamaPayload({ orden, cliente, lineas, issuerZip });
 
-    let invoice;
-    try {
-      invoice = await createFacturamaInvoice(payload, proveedor);
-    } catch (firstErr) {
-      // If RFC was rejected, retry as público general
-      const isRfcError = firstErr.message && firstErr.message.includes('RFC');
-      if (isRfcError && payload.Receiver?.Rfc !== 'XAXX010101000') {
-        payload = buildFacturamaPayload({ orden, cliente: null, lineas, issuerZip });
-        invoice = await createFacturamaInvoice(payload, proveedor);
-      } else {
-        throw firstErr;
+    // 9. Reserva (transacción corta en la base; sin proveedor todavía).
+    const res = await supabase.rpc('reservar_operacion_cfdi', {
+      p_orden_id: orden.id, p_tipo: 'emision', p_actor_id: auth.profile.id,
+      p_payload_hash: huellaPayload(payload), p_lease_segundos: leaseSegundos,
+    });
+    if (res.error) {
+      return serverError('No se pudo reservar el timbrado; no se contactó a Facturama. Reintenta.', res.error.message);
+    }
+    const reserva = res.data || {};
+    if (!reserva.ok) {
+      if (reserva.codigo === 'CFDI_VIGENTE') {
+        return ok({ alreadyInvoiced: true, ordenId: orden.id, folio: orden.folio, facturamaUuid: reserva.facturama_uuid, facturamaFolio: reserva.facturama_folio });
       }
+      const r = respuestaReservaRechazada(reserva);
+      return json(r.status, r.body);
     }
+    operacion = reserva.operacion_id;
 
-    // OL-03A: la orden se marca Facturada SOLO si sigue Entregada (el estado
-    // que se validó antes del proveedor). Primero la
-    // orden (es el candado de idempotencia: un reintento ve el CFDI vigente),
-    // después la bitácora. Si la re-facturación viene de un CFDI cancelado se
-    // limpian sus anotaciones para que el nuevo timbre sea el vigente.
-    const upd = await supabase
-      .from('ordenes')
-      .update({
-        estatus: 'Facturada',
-        facturama_id: invoice.Id || null,
-        facturama_folio: invoice.Folio || null,
-        facturama_uuid: invoice.Uuid || invoice.uuid || null,
-        cfdi_cancelado_at: null,
-        cfdi_cancelado_motivo: null,
-        cfdi_cancelado_motivo_detalle: null,
-        cfdi_cancelado_uuid_sustituto: null,
-        cfdi_cancelado_por: null,
-      })
-      .eq('id', orden.id)
-      .eq('estatus', 'Entregada')
-      .select('id');
-    const actualizada = updateCondicionalOk(upd, orden.id);
-
-    try {
-      await insertInvoiceAttempt({
-        orden_id: orden.id,
-        provider: 'facturama',
-        provider_reference: invoice.Id || invoice.Folio || String(orden.id),
-        status: actualizada ? 'success' : 'review:orden_no_actualizada',
-        request_payload: payload,
-        response_payload: invoice,
-      }, supabase);
-    } catch (logErr) {
-      console.error('[billing-create-invoice] bitácora falló:', logErr?.message || logErr);
+    // 10. Proveedor (fuera de toda transacción). Reintento como público general
+    // si Facturama rechazó el RFC: el primer intento fue un rechazo definitivo,
+    // así que sigue siendo una sola emisión por operación.
+    const proveedor = { fetchImpl, getConfig, timeoutMs };
+    let respuesta = await timbrarEnFacturama(payload, proveedor);
+    let clase = clasificarEmision(respuesta);
+    if (clase.resultado === 'fallida' && /RFC/.test(mensajeRechazo(respuesta)) && payload.Receiver?.Rfc !== 'XAXX010101000') {
+      payload = buildFacturamaPayload({ orden, cliente: null, lineas, issuerZip });
+      respuesta = await timbrarEnFacturama(payload, proveedor);
+      clase = clasificarEmision(respuesta);
     }
+    const datos = { ...clase.datos, detalle: { ...(clase.datos.detalle || {}), payload_hash_final: huellaPayload(payload) } };
 
-    if (!actualizada) {
-      const uuid = invoice.Uuid || invoice.uuid || invoice.Id || null;
-      return json(409, {
-        error: `CFDI timbrado (${uuid}) pero la orden ${orden.folio} cambió de estado mientras se timbraba; no se marcó Facturada. Revísalo en Facturación antes de reintentar.`,
-        code: 'ORDEN_CAMBIO_TRAS_TIMBRAR',
-        facturamaUuid: uuid,
-        details: upd?.error?.message || null,
+    // 11. Finalización (transacción corta): registra el resultado y, si fue
+    // emitida, Entregada → Facturada solo si la orden sigue Entregada.
+    const fin = await supabase.rpc('finalizar_operacion_cfdi', { p_operacion_id: operacion, p_resultado: clase.resultado, p_datos: datos });
+    const uuid = datos.cfdi_uuid || null;
+
+    await registrarIntento(supabase, {
+      orden_id: orden.id,
+      provider: 'facturama',
+      provider_reference: datos.proveedor_id || operacion,
+      status: fin.error ? 'review:finalizacion_pendiente'
+        : clase.resultado === 'emitida' ? (fin.data?.estado === 'exitosa' ? 'success' : 'review:orden_no_actualizada')
+        : clase.resultado === 'fallida' ? 'error' : 'uncertain',
+      request_payload: payload,
+      response_payload: { operacion_id: operacion, http: respuesta.status ?? null, raw: respuesta.raw ?? null, error: respuesta.error ?? null },
+    });
+
+    if (fin.error) {
+      // El proveedor ya respondió pero la base no registró el resultado: la
+      // operación sigue reservada (al vencer pasa a incierta). No se declara
+      // éxito ni se reintenta solo.
+      return json(502, {
+        error: `${clase.resultado === 'emitida' ? `CFDI timbrado (${uuid})` : 'Respuesta de Facturama recibida'} pero no se pudo registrar en la base; quedó pendiente de conciliación. No reintentes.`,
+        code: 'FINALIZACION_PENDIENTE', operacionId: operacion, facturamaUuid: uuid, details: fin.error.message,
       });
     }
-
-    return ok({ invoice });
+    if (clase.resultado === 'emitida') {
+      if (fin.data?.estado !== 'exitosa') {
+        return json(409, {
+          error: `CFDI timbrado (${uuid}) pero la orden ${orden.folio} cambió de estado mientras se timbraba; no se marcó Facturada. Quedó en revisión en Facturación.`,
+          code: 'ORDEN_CAMBIO_TRAS_TIMBRAR', operacionId: operacion, facturamaUuid: uuid,
+        });
+      }
+      return ok({ invoice: respuesta.raw, operacionId: operacion });
+    }
+    if (clase.resultado === 'fallida') {
+      return json(422, { error: mensajeRechazo(respuesta), code: 'PROVEEDOR_RECHAZO', operacionId: operacion });
+    }
+    return json(502, {
+      error: 'No se pudo confirmar con Facturama si el CFDI se timbró. La operación quedó pendiente de conciliación; no reintentes hasta revisarla.',
+      code: 'RESULTADO_INCIERTO', operacionId: operacion,
+    });
   } catch (error) {
+    // Una excepción después de reservar deja la operación reservada: al vencer
+    // el lease pasa a incierta (nunca a fallida).
     if (ordenRef && supabase) {
-      try {
-        await insertInvoiceAttempt({
-          orden_id: ordenRef.id,
-          provider: 'facturama',
-          provider_reference: ordenRef.folio || null,
-          status: 'error',
-          request_payload: { ordenId: body?.ordenId || null, folio: body?.folio || null },
-          response_payload: {
-            message: error.message,
-            // 🟡 I1: preservamos el ModelState crudo para diagnóstico
-            // posterior. El usuario solo ve error.message (traducido).
-            facturamaDetail: error.facturamaDetail,
-            facturamaRaw: error.facturamaRaw,
-          },
-        }, supabase);
-      } catch {}
+      await registrarIntento(supabase, {
+        orden_id: ordenRef.id,
+        provider: 'facturama',
+        provider_reference: operacion || ordenRef.folio || null,
+        status: operacion ? 'uncertain' : 'error',
+        request_payload: { ordenId: body?.ordenId || null, folio: body?.folio || null },
+        response_payload: { message: error.message, operacion_id: operacion },
+      });
     }
     return serverError(error.message || 'Could not create invoice', error.message);
   }

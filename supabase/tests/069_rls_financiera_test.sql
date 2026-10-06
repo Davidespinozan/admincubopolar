@@ -388,7 +388,8 @@ BEGIN;
 SELECT t_actor('service_role', NULL); SET LOCAL ROLE service_role;
 INSERT INTO pagos (cliente_id, orden_id, monto, metodo_pago, referencia, saldo_antes, saldo_despues) VALUES (11, 200, 100, 'QR / Link de pago', 'stripe:cs_backend', 0, 0);
 UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'QR / Link de pago' WHERE id = 200;
-UPDATE ordenes SET estatus = 'Facturada', facturama_uuid = 'uuid-1' WHERE id = 200;
+SELECT set_config('app.cfdi_ctx', CASE WHEN to_regprocedure('public.ordenes_guard_facturada()') IS NULL THEN '' ELSE 'emision' END, true);  -- 112 (OL-03B): Facturada solo con contexto de CFDI
+UPDATE ordenes SET estatus = 'Facturada', facturama_id = 'fm-1', facturama_uuid = 'uuid-1' WHERE id = 200;
 RESET ROLE;
 SELECT t_assert((SELECT estatus = 'Facturada' AND facturama_uuid = 'uuid-1' FROM ordenes WHERE id = 200), 'Backend service_role conserva sus escrituras');
 ROLLBACK;

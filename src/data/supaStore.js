@@ -2292,6 +2292,14 @@ export function useSupaStore(userId, userName, userRol) {
             motivoDetalle: motivoDetalle || null,
             uuidSustituto: uuidSustituto || null,
           });
+          // OL-03B: una cancelación SOLICITADA (pendiente del SAT) no es una
+          // cancelación: el CFDI sigue vigente y la orden sigue Facturada.
+          if (resp?.pending) {
+            t()?.info('Cancelación solicitada al SAT; el CFDI sigue vigente hasta que se confirme');
+            log('Solicitar cancelación CFDI', 'Facturación', `Orden ${ordenId} — motivo ${motivo} (pendiente)`);
+            rf();
+            return undefined;
+          }
           if (resp?.alreadyCancelled) {
             t()?.info('El CFDI ya estaba cancelado');
           } else {

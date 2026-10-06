@@ -106,6 +106,8 @@ export function makeFakeSupabase(seed = {}, opts = {}) {
   const rpc = async (name, args) => {
     rpcs.push({ name, args });
     writes.push({ table: `rpc:${name}`, op: 'rpc', payload: args });
+    // opts.rpcImpl = { nombre: (args, db) => ({ data, error }) } — dobles de contratos (p. ej. CFDI, OL-03B).
+    if (opts.rpcImpl && typeof opts.rpcImpl[name] === 'function') return opts.rpcImpl[name](args, db);
     if (name === 'increment_saldo') {
       const c = (db.clientes || []).find(x => String(x.id) === String(args.p_cli));
       if (c) c.saldo = Number(c.saldo || 0) + Number(args.p_delta || 0);

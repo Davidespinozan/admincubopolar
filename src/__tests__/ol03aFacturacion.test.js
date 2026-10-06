@@ -9,6 +9,7 @@ import {
   autorizarOrdenFacturacion, precondicionTimbrado, precondicionCancelacion, validarCuerpoTimbrado, updateCondicionalOk, rolPuedeFacturar,
 } from '../../netlify/functions/_lib/facturacionGuard.js';
 import { makeFakeSupabase } from './helpers/fakeSupabase.js';
+import { makeCfdiRpc } from './helpers/fakeCfdiRpc.js';
 
 const ROLES = { admin: 'Admin', fact: 'Facturación', va: 'Ventas', vb: 'Ventas', chofer: 'Chofer', prod: 'Producción', bolsas: 'Almacén Bolsas', sin: 'Sin asignar' };
 const IDS = { admin: 1, fact: 2, va: 5, vb: 6, chofer: 9, prod: 3, bolsas: 4, sin: 7 };
@@ -49,8 +50,9 @@ function proveedorFalso({ antes } = {}) {
 
 const ev = (who, body) => ({ httpMethod: 'POST', headers: who ? { authorization: `Bearer jwt-${who}` } : {}, body: JSON.stringify(body) });
 const leer = (r) => ({ status: r.statusCode, body: JSON.parse(r.body || '{}') });
-const montar = (orden, extra, provOpts) => {
-  const fake = makeFakeSupabase(seed(orden, extra), { tokens });
+// OL-03B: los contratos de reserva/finalización (111) con su doble en memoria.
+const montar = (orden, extra, provOpts, rpcOpts) => {
+  const fake = makeFakeSupabase(seed(orden, extra), { tokens, rpcImpl: makeCfdiRpc(rpcOpts) });
   const prov = proveedorFalso(provOpts);
   const deps = { getSupabase: () => fake, fetchImpl: prov.fetchImpl, getConfig: prov.getConfig };
   return { fake, prov, timbrar: crearTimbrado(deps), cancelar: crearCancelacion(deps) };
@@ -149,7 +151,8 @@ describe('OL-03A timbrado: matriz de estatus (antes del proveedor)', () => {
     expect(fake.db.invoice_attempts).toHaveLength(1);
     expect(fake.db.invoice_attempts[0]).toMatchObject({ orden_id: 900, status: 'success' });
     // Nada fuera de la orden y la bitácora: ni pagos, CxC, contabilidad, inventario ni rutas.
-    expect(fake.writes.map(w => w.table).sort()).toEqual(['invoice_attempts', 'ordenes']);
+    // OL-03B: la orden se mueve SOLO por el contrato (reserva + finalización); sin UPDATE directo.
+    expect(fake.writes.map(w => w.table).sort()).toEqual(['invoice_attempts', 'rpc:finalizar_operacion_cfdi', 'rpc:reservar_operacion_cfdi']);
   });
 });
 
@@ -269,16 +272,16 @@ describe('OL-03A timbrado: escritura posterior al proveedor', () => {
     expect(fake.db.ordenes[0]).toMatchObject({ estatus: 'Cancelada', facturama_uuid: null });
     expect(fake.db.invoice_attempts[0]).toMatchObject({ status: 'review:orden_no_actualizada' });
   });
-  it('error de la base al actualizar → 409 (nunca éxito silencioso)', async () => {
-    const { fake } = montar(ORDEN());
-    const from = fake.from;
-    const roto = { ...fake, from: (t) => { const b = from(t); if (t !== 'ordenes') return b; const upd = b.update; b.update = (p) => { upd(p); b.then = (res) => Promise.resolve({ data: null, error: { message: 'guarda rechazó' } }).then(res); return b; }; return b; } };
-    const prov = proveedorFalso();
-    const h = crearTimbrado({ getSupabase: () => roto, fetchImpl: prov.fetchImpl, getConfig: prov.getConfig });
-    const r = leer(await h(ev('admin', { ordenId: 900 })));
-    expect(r.status).toBe(409);
-    expect(r.body.details).toBe('guarda rechazó');
+  it('la base no registra el resultado tras el proveedor → 502 FINALIZACION_PENDIENTE (nunca éxito silencioso)', async () => {
+    const { fake, prov, timbrar } = montar(ORDEN(), {}, {}, { fallarFinalizar: 1 });
+    const r = leer(await timbrar(ev('admin', { ordenId: 900 })));
+    expect(r).toMatchObject({ status: 502, body: { code: 'FINALIZACION_PENDIENTE', facturamaUuid: 'UUID-STUB-1' } });
+    expect(prov.calls).toHaveLength(1);
     expect(fake.db.ordenes[0].estatus).toBe('Entregada');
+    expect(fake.db.cfdi_operaciones[0].estado).toBe('en_curso');   // al vencer, incierta: no se reintenta solo
+    const r2 = leer(await timbrar(ev('admin', { ordenId: 900 })));
+    expect(r2).toMatchObject({ status: 409, body: { code: 'OPERACION_EN_CURSO' } });
+    expect(prov.calls).toHaveLength(1);
   });
   it('reintento tras el éxito → alreadyInvoiced; una sola llamada al proveedor', async () => {
     const { prov, timbrar } = montar(ORDEN());
@@ -287,17 +290,15 @@ describe('OL-03A timbrado: escritura posterior al proveedor', () => {
     expect(r2.body).toMatchObject({ alreadyInvoiced: true, facturamaUuid: 'UUID-STUB-1' });
     expect(prov.calls).toHaveLength(1);
   });
-  it('dos solicitudes simultáneas: a lo más una gana; la otra NO pisa el CFDI ganador ni declara éxito', async () => {
+  it('dos solicitudes simultáneas: UNA sola llamada al proveedor (OL-03B); la otra no cruza la frontera', async () => {
     const { fake, prov, timbrar } = montar(ORDEN());
     const rs = (await Promise.all([timbrar(ev('admin', { ordenId: 900 })), timbrar(ev('fact', { ordenId: 900 }))])).map(leer);
+    expect(prov.calls).toHaveLength(1);
     const exitos = rs.filter(r => r.status === 200 && !r.body.alreadyInvoiced);
     expect(exitos).toHaveLength(1);
-    const ganador = exitos[0].body.invoice.Uuid;
-    expect(fake.db.ordenes[0]).toMatchObject({ estatus: 'Facturada', facturama_uuid: ganador });
-    // Sin candado previo al proveedor ambos pueden llegar a Facturama (residual
-    // documentado); el perdedor responde 409 con el UUID para revisión.
-    expect(prov.calls.length).toBeLessThanOrEqual(2);
-    for (const r of rs.filter(x => x.status !== 200)) expect(r).toMatchObject({ status: 409, body: { code: 'ORDEN_CAMBIO_TRAS_TIMBRAR' } });
+    expect(fake.db.ordenes[0]).toMatchObject({ estatus: 'Facturada', facturama_uuid: exitos[0].body.invoice.Uuid });
+    const otra = rs.find(r => r !== exitos[0]);
+    expect(otra.status === 409 ? otra.body.code === 'OPERACION_EN_CURSO' : otra.body.alreadyInvoiced === true).toBe(true);
   });
   it('re-facturación de una orden Entregada con CFDI cancelado → nuevo CFDI vigente, anotaciones limpias', async () => {
     const { prov, fake, timbrar } = montar(ORDEN({ ...CFDI, cfdi_cancelado_at: '2026-10-01T00:00:00Z', cfdi_cancelado_motivo: '02' }));
