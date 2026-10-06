@@ -174,9 +174,9 @@ SELECT t109_assert(t109_cf('CF-109A', 'P109-A') = 30 AND t109_cf('CF-109A', 'P10
 
 \echo '── 109: la FSM por REST no cambia (Creada → Entregada solo dentro del contrato)'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t109_actor(2);
-SELECT t109_err($q$UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Efectivo' WHERE id = 10918$q$, '109-40 Ventas por REST Creada → Entregada: negado', '42501', '%no permitida%');
+SELECT t109_err($q$UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Efectivo' WHERE id = 10918$q$, '109-40 Ventas por REST Creada → Entregada: negado (105; desde 110 la niega primero la guarda de entrega directa)', '42501', CASE WHEN to_regprocedure('public.ordenes_guard_entrega_directa()') IS NULL THEN '%no permitida%' ELSE '%completar_venta_directa%' END);
 SELECT t109_actor(1);
-SELECT t109_err($q$UPDATE ordenes SET estatus = 'Entregada' WHERE id = 10918$q$, '109-41 Admin por REST Creada → Entregada: negado', '42501', '%no permitida%');
+SELECT t109_err($q$UPDATE ordenes SET estatus = 'Entregada' WHERE id = 10918$q$, '109-41 Admin por REST Creada → Entregada: negado (105; desde 110 la niega primero la guarda de entrega directa)', '42501', CASE WHEN to_regprocedure('public.ordenes_guard_entrega_directa()') IS NULL THEN '%no permitida%' ELSE '%completar_venta_directa%' END);
 ROLLBACK;
 
 \echo '── 109: contado multi-cuarto (A: CF-109A 6 + CF-109B 4; B: CF-109C 5)'

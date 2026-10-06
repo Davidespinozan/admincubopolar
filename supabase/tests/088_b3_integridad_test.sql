@@ -205,7 +205,9 @@ ROLLBACK;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t88_actor(2);
 SELECT t88_err($q$SELECT registrar_pago_orden(8821, 'Efectivo')$q$, '088-64 Ventas: no cobra órdenes de ruta', '42501');
 ROLLBACK;
-UPDATE ordenes SET estatus = 'Entregada' WHERE id = 8824;
+-- Preparación: la orden queda entregada como lo haría un contrato del servidor
+-- (desde 110 nadie entrega por escritura directa una orden sin ruta).
+BEGIN; SELECT set_config('app.fin_ctx', 'rpc', true); UPDATE ordenes SET estatus = 'Entregada' WHERE id = 8824; COMMIT;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t88_actor(2);
 INSERT INTO t88_ids VALUES ('pg1', registrar_pago_orden(8824, 'Efectivo', NULL, 8801)::text);
 COMMIT;

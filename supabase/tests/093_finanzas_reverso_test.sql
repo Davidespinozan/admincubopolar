@@ -114,7 +114,9 @@ UPDATE ordenes SET delivered_at = '2020-01-01' WHERE folio = 'OV-9305';
 COMMIT;
 SELECT t93_assert((SELECT delivered_at IS NULL FROM ordenes WHERE folio = 'OV-9305'), '093-10 orden aún no entregada: delivered_at no se puede escribir desde la API');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(1);
+SELECT set_config('app.fin_ctx', 'rpc', true);   -- preparación como contrato del servidor (110: sin entrega directa sin ruta)
 UPDATE ordenes SET estatus = 'Entregada' WHERE folio = 'OV-9305';
+SELECT set_config('app.fin_ctx', '', true);
 COMMIT;
 INSERT INTO t93_ids VALUES ('d1', (SELECT delivered_at::text FROM ordenes WHERE folio = 'OV-9305'));
 SELECT t93_assert((SELECT v FROM t93_ids WHERE k = 'd1') IS NOT NULL, '093-11 al entrar a Entregada el servidor fija delivered_at');
@@ -137,10 +139,14 @@ SELECT t93_assert((reporte_financiero('2021-03-10', '2021-03-10') -> 'resultados
 INSERT INTO t93_ids VALUES ('b0', t93_rep()::text);
 -- Venta de contado entregada y cobrada (flujo nuevo de mostrador: pago canónico).
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(1);
+SELECT set_config('app.fin_ctx', 'rpc', true);   -- preparación como contrato del servidor (110: sin entrega directa sin ruta)
 UPDATE ordenes SET estatus = 'Entregada' WHERE folio = 'OV-9301';
+SELECT set_config('app.fin_ctx', '', true);
 SELECT registrar_pago_orden(t93_o('OV-9301'), 'Efectivo');
 -- Venta a crédito entregada: CxC; cobro posterior de 300.
+SELECT set_config('app.fin_ctx', 'rpc', true);   -- preparación como contrato del servidor (110: sin entrega directa sin ruta)
 UPDATE ordenes SET estatus = 'Entregada' WHERE folio = 'OV-9302';
+SELECT set_config('app.fin_ctx', '', true);
 SELECT crear_cxc_orden(t93_o('OV-9302'), 30);
 SELECT abonar_cxc((SELECT id FROM cuentas_por_cobrar WHERE orden_id = t93_o('OV-9302')), 300, 'Efectivo');
 -- Compra de empaque de contado (200).
@@ -192,7 +198,9 @@ SELECT t93_assert(t93_saldo('b0', 'cxc_pendiente') = 200, '093-28 CxC pendiente 
 INSERT INTO t93_ids VALUES ('b1', t93_rep()::text);
 BEGIN; SET LOCAL ROLE service_role; SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
 INSERT INTO pagos (cliente_id, orden_id, monto, metodo_pago, fecha, referencia, saldo_antes, saldo_despues) VALUES (9340, t93_o('OV-9303'), 250, 'QR / Link de pago', fin_hoy(), 'mercadopago:T93', 0, 0);
+SELECT set_config('app.fin_ctx', 'rpc', true);   -- preparación como contrato del servidor (110: sin entrega directa sin ruta)
 UPDATE ordenes SET estatus = 'Entregada' WHERE folio = 'OV-9303';
+SELECT set_config('app.fin_ctx', '', true);
 COMMIT;
 SELECT t93_assert(t93_d('b1', 'flujo', 'entradas') = 250 AND t93_d('b1', 'resultados', 'ventas_entregadas') = 250
   AND (SELECT delivered_at IS NOT NULL FROM ordenes WHERE folio = 'OV-9303'), '093-30 webhook: entrada de efectivo una vez (pagos) e ingreso una vez (entrega), sin ingreso contable redundante');
@@ -236,7 +244,9 @@ SELECT t93_assert(t93_d('b3', 'flujo', 'salidas') = 80 AND t93_d('b3', 'resultad
 \echo '── 093: devoluciones'
 INSERT INTO t93_ids VALUES ('b4', t93_rep()::text);
 BEGIN; SET LOCAL ROLE authenticated; SELECT t93_actor(1);
+SELECT set_config('app.fin_ctx', 'rpc', true);   -- preparación como contrato del servidor (110: sin entrega directa sin ruta)
 UPDATE ordenes SET estatus = 'Entregada' WHERE folio = 'OV-9304';
+SELECT set_config('app.fin_ctx', '', true);
 SELECT crear_cxc_orden(t93_o('OV-9304'), 30);
 COMMIT;
 INSERT INTO t93_ids VALUES ('b5', t93_rep()::text);

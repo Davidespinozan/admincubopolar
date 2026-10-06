@@ -251,7 +251,25 @@ DO $$ DECLARE v_n INT; BEGIN
   END IF;
 END $$;
 SELECT t_actor('authenticated', 'ventas@t'); SET LOCAL ROLE authenticated;
-UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Transferencia SPEI' WHERE id = 205;
+-- 110: la venta sin ruta ya no se entrega por escritura directa (se usa
+-- completar_venta_directa). Antes de 110 se conserva el flujo original; desde
+-- 110 se comprueba el rechazo y la orden se entrega como paso de contrato para
+-- seguir probando el cobro (S, U y el no-duplicado).
+DO $m$ BEGIN
+  IF to_regprocedure('public.ordenes_guard_entrega_directa()') IS NULL THEN
+    UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Transferencia SPEI' WHERE id = 205;
+  ELSE
+    BEGIN
+      UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Transferencia SPEI' WHERE id = 205;
+      RAISE EXCEPTION 'FAIL: M (110) Ventas entregó por escritura directa una orden sin ruta';
+    EXCEPTION WHEN insufficient_privilege THEN
+      RAISE NOTICE 'OK: M (110) la escritura directa sin ruta se rechaza; la venta sin ruta usa completar_venta_directa';
+    END;
+    PERFORM set_config('app.fin_ctx', 'rpc', true);
+    UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Transferencia SPEI' WHERE id = 205;
+    PERFORM set_config('app.fin_ctx', '', true);
+  END IF;
+END $m$;
 SELECT t_assert((SELECT estatus = 'Entregada' AND metodo_pago = 'Transferencia SPEI' FROM ordenes WHERE id = 205), 'M. Ventas marca Entregada con método al cobrar');
 SELECT registrar_pago_orden(205, 'Transferencia SPEI', 'SPEI-123', 2);
 RESET ROLE;

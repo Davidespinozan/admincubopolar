@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -3284,6 +3284,123 @@ await conc087();
 await fe087();
 console.log('  concurrencia + frontend↔DB (076, 087, 092, 093, 102, 104, 106, 107, 109) tras 109: PASS');
 
+// ═══ 110 — contención del camino heredado de venta directa (OL-02D2; aditiva) ═══
+{
+  const ok = (await c.query(`SELECT to_regprocedure('public.ordenes_guard_entrega_directa()') IS NULL
+                               AND NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'trg_ordenes_guard_entrega_directa') AS a`)).rows[0].a;
+  console.log(`  ENTREGA_DIRECTA_PARITY_CHECK[pre-110]: ${ok ? 'PASS' : 'FAIL'}`);
+  if (!ok) process.exit(1);
+}
+const SUITES_110 = [...SUITES_109, ['109', '109_venta_directa_test.sql']];
+async function conc110() {
+  console.log('── 110 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const SUB = (k) => 'b1c00000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const OP = (k) => 'b1c10000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM movimientos_contables WHERE orden_id BETWEEN 11061 AND 11069;
+    DELETE FROM inventario_mov WHERE producto LIKE 'C110-%';
+    DELETE FROM stock_operaciones WHERE operacion_id::text LIKE 'b1c1%' OR orden_id BETWEEN 11061 AND 11069;
+    DELETE FROM pagos WHERE orden_id BETWEEN 11061 AND 11069;
+    DELETE FROM orden_lineas WHERE orden_id BETWEEN 11061 AND 11069; DELETE FROM ordenes WHERE id BETWEEN 11061 AND 11069;
+    DELETE FROM rutas WHERE id BETWEEN 11061 AND 11069;
+    DELETE FROM auditoria WHERE detalle LIKE 'OV-1106%' OR detalle LIKE 'Orden #1106%' OR usuario LIKE '%C110%';
+    DELETE FROM cuartos_frios WHERE id = 'CF-C110'; DELETE FROM productos WHERE sku LIKE 'C110-%';
+    DELETE FROM usuarios WHERE id BETWEEN 11061 AND 11069; DELETE FROM auth.users WHERE id::text LIKE 'b1c00000-%';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) SELECT ('b1c00000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'c' || k || '@t110c' FROM generate_series(1, 2) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (11061, 'AdminC110', 'c1@t110c', 'Admin', 'Activo', '${SUB(1)}'), (11062, 'VentasC110', 'c2@t110c', 'Ventas', 'Activo', '${SUB(2)}');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('C110-X', 'Hielo C110', 'Producto Terminado', 10, 0, 0);
+    INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-C110', 'Cuarto C110', '{"C110-X": 20}');
+    INSERT INTO rutas (id, folio, nombre, estatus, chofer_id, carga, carga_autorizada, extra_autorizado, carga_real) VALUES (11061, 'R-11061', 'C110 ruta', 'Programada', NULL, '{}', '{}', '{}', '{}');
+    INSERT INTO ordenes (id, folio, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, vendedor_id)
+      SELECT 11060 + k, 'OV-1106' || k, 'Cliente C110', 'x', 20, 'Asignada', 'Efectivo', 'Contado', 11062 FROM generate_series(1, 4) k;
+    INSERT INTO orden_lineas (orden_id, sku, cantidad, precio_unit, subtotal) SELECT 11060 + k, 'C110-X', 2, 10, 20 FROM generate_series(1, 4) k;
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const carrera = async (subA, sqlA, pA, subB, sqlB, pB) => {
+    await actor(a, subA); await actor(b, subB);
+    const ra = await a.query(sqlA, pA).then(r => ({ ok: true, row: r.rows[0], count: r.rowCount }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(sqlB, pB).then(r => ({ ok: true, row: r.rows[0], count: r.rowCount }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const VIEJO = `UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Efectivo' WHERE id = $1`;
+  const VD = `SELECT completar_venta_directa($1::uuid, $2::bigint, 'contado', 'Efectivo', '[{"sku":"C110-X","cuarto_id":"CF-C110","cantidad":2}]') AS r`;
+  const ASIGNAR = `SELECT asignar_orden($1::bigint, 11061, 11061) AS r`;
+  const estado = async (id) => (await c.query(`SELECT estatus::text AS e, ruta_id FROM ordenes WHERE id = $1`, [id])).rows[0];
+  const cf = async () => n(`SELECT COALESCE((stock->>'C110-X')::int, 0) FROM cuartos_frios WHERE id = 'CF-C110'`);
+  // 1. Contrato primero, cliente viejo después (misma orden).
+  let r = await carrera(SUB(2), VD, [OP(1), 11061], SUB(2), VIEJO, [11061]);
+  ok(r.ra.ok && r.bloqueado && (await estado(11061)).e === 'Entregada' && await cf() === 18
+     && await n(`SELECT count(*) FROM pagos WHERE orden_id = 11061`) === 1 && await n(`SELECT count(*) FROM inventario_mov WHERE referencia = 'venta_directa/11061'`) === 1,
+     `110-18a contrato y cliente viejo a la vez: el viejo espera la orden y ya la encuentra Entregada (${r.rb.ok ? 'sin cambio' : r.rb.code}); un pago, una salida`);
+  // 2. Cliente viejo primero (rechazado por 110, conserva el bloqueo hasta su ROLLBACK), contrato después.
+  r = await carrera(SUB(2), VIEJO, [11062], SUB(2), VD, [OP(2), 11062]);
+  ok(!r.ra.ok && r.ra.code === '42501' && r.rb.ok && (await estado(11062)).e === 'Entregada' && await cf() === 16
+     && await n(`SELECT count(*) FROM pagos WHERE orden_id = 11062`) === 1,
+     '110-18b cliente viejo rechazado (42501) y el contrato completa la misma orden: un pago, una salida');
+  // 3. Admin asigna ruta mientras el cliente viejo intenta entregar sin ruta.
+  r = await carrera(SUB(1), ASIGNAR, [11063], SUB(2), VIEJO, [11063]);
+  let e = await estado(11063);
+  ok(r.ra.ok && r.bloqueado && r.rb.ok && r.rb.count === 0 && e.e === 'Asignada' && Number(e.ruta_id) === 11061,
+     '110-19a asignación de ruta y cliente viejo a la vez: tras la ruta la orden ya no es de Ventas (0 filas); queda Asignada con ruta, sin entrega');
+  // 4. Cliente viejo primero (rechazado) y luego la asignación de ruta.
+  r = await carrera(SUB(2), VIEJO, [11064], SUB(1), ASIGNAR, [11064]);
+  e = await estado(11064);
+  ok(!r.ra.ok && r.ra.code === '42501' && r.rb.ok && e.e === 'Asignada' && Number(e.ruta_id) === 11061 && await n(`SELECT count(*) FROM pagos WHERE orden_id = 11064`) === 0,
+     '110-19b cliente viejo rechazado y la asignación de ruta procede; ninguna entrega sin ruta escapa');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (110 concurrencia)'); process.exit(1); }
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 110 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '110_contencion_entrega_directa.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 110 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 110)'); process.exit(1); }
+console.log('── PRUEBAS 110');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/110_contencion_entrega_directa_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (110)'); process.exit(1); }
+}
+await reruns090('110', ['072']);
+for (const [etq, f] of SUITES_110) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 110)`); process.exit(1); }
+  console.log(`  ${etq} tras 110: PASS`);
+}
+await conc110();
+console.log('── concurrencia + frontend↔DB tras 110');
+await conc109();
+await conc107();
+await conc106();
+await conc104();
+await conc102();
+await conc093();
+await conc092();
+await conc076();
+await fe076();
+await conc087();
+await fe087();
+console.log('  concurrencia + frontend↔DB (076, 087, 092, 093, 102, 104, 106, 107, 109, 110) tras 110: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -3335,7 +3452,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 104
   'registrar_devolucion','empaque_tiene_dependencias',
   // 109
-  'completar_venta_directa'];
+  'completar_venta_directa',
+  // 110
+  'ordenes_guard_entrega_directa'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

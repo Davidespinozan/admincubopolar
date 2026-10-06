@@ -136,7 +136,11 @@ SELECT asignar_orden(8120, NULL, 8102);
 SELECT t81_assert(t81_orden(8120) = 'Asignada/NULL', '081-15 Ventas: asignar_orden con ruta NULL (080) PASS');
 SELECT t81_err($q$SELECT asignar_orden(8121, 8101, 8102)$q$, '081-16 Ventas: asignar_orden a ruta concreta sigue denegado (080)', '42501');
 SELECT t81_err($q$SELECT asignar_orden(8121, 8101, 8101)$q$, '081-17 Ventas: p_usuario_id de Admin no autoriza', '42501');
-SELECT t81_assert(t81_rows($q$UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Transferencia', folio_nota = 'N-81' WHERE id = 8123$q$) = 1 AND t81_orden(8123) = 'Entregada/NULL', '081-18 Ventas: cobro directo (estatus, metodo_pago, folio_nota) sigue funcionando');
+-- 081-18 depende de la fase: antes de 110 el cobro directo sin ruta entregaba; desde 110 la venta sin
+-- ruta se entrega solo con completar_venta_directa (la escritura directa se rechaza con 42501).
+SELECT CASE WHEN to_regprocedure('public.ordenes_guard_entrega_directa()') IS NULL
+  THEN t81_assert(t81_rows($q$UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Transferencia', folio_nota = 'N-81' WHERE id = 8123$q$) = 1 AND t81_orden(8123) = 'Entregada/NULL', '081-18 Ventas: cobro directo (estatus, metodo_pago, folio_nota) sigue funcionando (antes de 110)')
+  ELSE t81_err($q$UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Transferencia', folio_nota = 'N-81' WHERE id = 8123$q$, '081-18 Ventas: cobro directo sin ruta ya no entrega (110: completar_venta_directa)', '42501') END;
 SELECT t81_assert(t81_rows($q$UPDATE ordenes SET direccion_entrega = 'Calle 1', referencia_entrega = 'portón' WHERE id = 8121$q$) = 1, '081-19 Ventas: campos de entrega editables sin tocar ruta');
 ROLLBACK;
 
