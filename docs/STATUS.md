@@ -1,6 +1,6 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-07 (modelo de barra OP-01E activo; Día 0 OP-02 configurado). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-07 (OP-03: GO-LIVE READY — OWNER OPENING DATA ONLY). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
@@ -208,7 +208,8 @@ en sandbox; CP y régimen de la empresa vacíos): OPEN — diferido por el dueñ
 - Limitaciones aceptadas: SKUs fijos en el contrato; sin venta de media barra "desnuda" (sin
   inventario fraccionario); el kardex de una preparación se traza por la referencia `preparacion/PB-…`.
 
-**OP-02 Día 0 (2026-10-07T00:16:49Z, una transacción, autorizado por el dueño): CONFIGURED con bloqueos.**
+**OP-02 Día 0 (2026-10-07T00:16:49Z, una transacción, autorizado por el dueño): CLOSED.** Empaque de
+picada, triturada y enfriamiento asignado en OP-03 (2026-10-07T03:18:42Z).
 
 | SKU | Producto | Precio | Empaque | Mínimo |
 |---|---|---|---|---|
@@ -216,10 +217,10 @@ en sandbox; CP y régimen de la empresa vacíos): OPEN — diferido por el dueñ
 | HPC-25K | Hielo Purificado en Cubos 25 kg | $92 | EMP-25 | 400 (sin cambio) |
 | HPT-5K | Hielo Purificado Triturado 5 kg | $36 | EMP-5 | 50 (sin cambio) |
 | HPT-25K | Hielo Purificado Triturado 25 kg | $98 | EMP-25 | 50 (sin cambio) |
-| HEC-25K | Hielo en Cubos para Enfriamiento 25 kg (nuevo) | $72 | **pendiente** | 0 |
+| HEC-25K | Hielo en Cubos para Enfriamiento 25 kg (nuevo) | $72 | EMP-25 | 0 |
 | HIB-50K | Barra de Hielo ~50 kg | $120 | ninguno (por diseño) | 0 |
-| HIP-25K | Picada de Barra ~25 kg | $60 | **pendiente (EMP-25 confirmado)** | 0 |
-| HIT-25K | Triturada de Barra ~25 kg | $60 | **pendiente (EMP-25 confirmado)** | 0 |
+| HIP-25K | Picada de Barra ~25 kg | $60 | EMP-25 | 0 |
+| HIT-25K | Triturada de Barra ~25 kg | $60 | EMP-25 | 0 |
 
 - `HIT-5K` (Insumo de agosto, sin historia comprobada): eliminado. Sin nombres "Insumo" en el catálogo.
 - Inventario físico de producto terminado = **0** en los 3 cuartos, por el contrato de conteo
@@ -229,15 +230,19 @@ en sandbox; CP y régimen de la empresa vacíos): OPEN — diferido por el dueñ
   hasta que el dueño identifique clientes; se capturan por cliente en Precios (sin automatización).
 - El espejo `productos.stock` de HIB-50K conserva 100 (no autoritativo; backlog B-25); el inventario real es el de cuartos.
 
-**Bloqueos antes de la primera operación real:**
-1. **Conteo físico real de bolsas** (EMP-5 99,000 y EMP-25 9,800 son aperturas no verificadas del
-   2026-10-03): ajustar a la baja al conteo real; entradas adicionales solo por recepción de compra real.
-   Hasta entonces la producción de hielo embolsado consume existencia de bolsas no verificada.
-2. **Asignar EMP-25 a `HIP-25K` / `HIT-25K`** junto con el conteo de bolsas (se dejó sin asignar a
-   propósito: preparar desde barra sigue BLOQUEADO hasta entonces).
-3. **Empaque de `HEC-25K`** (confirmar qué bolsa usa el hielo de enfriamiento); su producción está
-   bloqueada en la interfaz hasta asignarlo.
-4. Usuarios reales por rol, camiones reales y clientes / crédito (OP-01, sección 12) — siguen pendientes.
+**OP-03 (preparación operativa final): GO-LIVE READY — OWNER OPENING DATA ONLY.**
+- Ensayo operativo de punta a punta en local (`supabase/tests/op03_ensayo_operativo_test.sql`, dentro del
+  runner tras 115): producción en Máquina 30 y Máquina Barra, preparar picada/triturada, venta de mostrador
+  (público $31, barra $120, preparados $60), precio especial por cliente ($28), ruta (carga firmada, cobro,
+  merma de ruta, conteo final), merma de cuarto, reverso válido y rechazado. Sin datos de prueba en producción.
+- Procedimiento del Día 1: `docs/OPERACION_DIA1.md`.
+- **Antes de la primera producción real (procedimiento de apertura, no software):** conteo físico de bolsas
+  EMP-5 y EMP-25 (ajuste a la baja o recepción de compra real) y conteo de producto/barras si existen. Las
+  existencias actuales de bolsas (99,000 / 9,800) NO están verificadas: **no producir ni preparar antes del conteo.**
+- Datos del dueño pendientes: usuario(s) Ventas; confirmar que `daen97` (Chofer) y `david` (Producción) son las
+  personas reales; segundo chofer si aplica; camiones reales (el camión `david / nununu / 1234` es de prueba y
+  no se puede desactivar desde la interfaz: no usarlo); clientes reales y quién recibe precio comercial.
+- Usuarios: Santiago (Admin) listo; E2E (Admin/Ventas/Chofer) y QA inactivos — no usar.
 
 **GL-2:** READY — validación del primer cobro real pendiente. **GL-3** (Facturama LIVE): DEFERRED; no
 timbrar hasta cerrarlo. **PD-01:** FROZEN hasta tener uso real. OL y CLOSURE-1: CLOSED.
