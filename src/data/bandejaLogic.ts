@@ -19,6 +19,7 @@ export interface DataBandeja {
   alertas?: Fila[];
   facturacionPendiente?: Fila[];
   leads?: Fila[];
+  actividadesAbiertas?: Fila[];
 }
 
 export interface TareaBandeja {
@@ -137,6 +138,20 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
   }
 
   // ── 6. Ventas creadas sin asignar a ruta ──
+  // ── PD-02: actividades del calendario vencidas (estado calculado por el servidor) ──
+  const actVencidas = (d.actividadesAbiertas || []).filter(a => String(a.estado || '') === 'vencida');
+  if (actVencidas.length > 0) {
+    tareas.push({
+      id: 'actividades-vencidas',
+      prioridad: 'alta',
+      icono: '🗓️',
+      titulo: plural(actVencidas.length, 'actividad vencida', 'actividades vencidas'),
+      detalle: 'Mantenimientos, pagos u obligaciones que pasaron su fecha límite sin completarse.',
+      modulo: 'calendario',
+      count: actVencidas.length,
+    });
+  }
+
   const sinRuta = (d.ordenes || []).filter(o => String(o.estatus || '') === 'Creada');
   if (sinRuta.length > 0) {
     tareas.push({

@@ -13,7 +13,7 @@ import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
 import { navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
-  MODULO_ASISTENCIA, MODULO_MI_ASISTENCIA, idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas } from '../data/navRolLogic';
+  MODULO_ASISTENCIA, MODULO_MI_ASISTENCIA, MODULO_CALENDARIO, MODULO_MIS_ACTIVIDADES, idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas } from '../data/navRolLogic';
 import { BottomNav } from './ui/Components';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
@@ -41,6 +41,7 @@ const DevolucionesView    = lazy(() => import('./views/DevolucionesView.jsx').th
 const BandejaView         = lazy(() => import('./views/BandejaView.jsx').then(m => ({ default: m.BandejaView })));
 const AsistenciaView      = lazy(() => import('./views/AsistenciaView.jsx').then(m => ({ default: m.AsistenciaView })));
 const MiAsistenciaView    = lazy(() => import('./MiAsistenciaView'));
+const CalendarioView      = lazy(() => import('./views/CalendarioView.jsx').then(m => ({ default: m.CalendarioView })));
 // Fase B: las vistas por rol son contenido del shell compartido (lazy, como antes en App.jsx).
 const ChoferView                = lazy(() => import('./ChoferView'));
 const BolsasView                = lazy(() => import('./BolsasView'));
@@ -339,6 +340,8 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       case 'kardex': return <KardexView data={data} />;
       case MODULO_ASISTENCIA.id: return <AsistenciaView {...vp} />;
       case MODULO_MI_ASISTENCIA.id: return <MiAsistenciaView actions={actions} />;
+      case MODULO_CALENDARIO.id: return <CalendarioView {...vp} />;
+      case MODULO_MIS_ACTIVIDADES.id: return <CalendarioView {...vp} personal />;
       // Fase B: vistas por rol como contenido del shell (misma lógica, misma autorización).
       // B3.6: un solo módulo Ventas; el filtro interno sale del hash (ventas / ventas-hoy / ventas-todas).
       case 'ventas': case 'ventas-hoy': case 'ventas-todas':
@@ -354,7 +357,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   const go = useCallback((id) => { const v = normalizarVista(nav, id); if (v) setView(v); setMobileDrawerOpen(false); }, [nav]);
   // B3.6: el módulo del menú dueño de la vista (filtro interno → su módulo).
   const modulo = moduloDeVista(nav, view) || view;
-  const current = ALL_ITEMS.find(n => n.id === modulo) || (modulo === MODULO_MI_ASISTENCIA.id ? MODULO_MI_ASISTENCIA : undefined);
+  const current = ALL_ITEMS.find(n => n.id === modulo) || [MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES].find(n => n.id === modulo);
   const currentArea = areaDeModulo(nav, modulo) || nav.areas[0];
   const currentMeta = AREA_META[currentArea?.id] || AREA_META.operacion;
 
@@ -367,7 +370,9 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
           <Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>
             {view === MODULO_MI_ASISTENCIA.id
               ? <div className="mx-auto max-w-lg px-4 py-4"><MiAsistenciaView actions={actions} onVolver={() => go(MODULO_CHOFER.id)} /></div>
-              : <ChoferView user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} onMiAsistencia={() => go(MODULO_MI_ASISTENCIA.id)} />}
+              : view === MODULO_MIS_ACTIVIDADES.id
+              ? <div className="mx-auto max-w-2xl px-4 py-4"><CalendarioView {...vp} personal onVolver={() => go(MODULO_CHOFER.id)} /></div>
+              : <ChoferView user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} onMiAsistencia={() => go(MODULO_MI_ASISTENCIA.id)} onMisActividades={() => go(MODULO_MIS_ACTIVIDADES.id)} />}
           </Suspense>
         </ChunkErrorBoundary>
       </div>
@@ -481,6 +486,12 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
               <button onClick={() => go(MODULO_MI_ASISTENCIA.id)} className={`relative flex h-9 w-9 items-center justify-center rounded-[14px] border transition-colors lg:h-11 lg:w-11 lg:rounded-[16px] ${view === MODULO_MI_ASISTENCIA.id ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white/80 text-slate-500 hover:bg-white hover:text-slate-800'}`}
                 title="Mi asistencia" aria-label="Mi asistencia" data-testid="boton-mi-asistencia">
                 <Icons.Clock />
+              </button>
+            )}
+            {nav.chrome.misActividades && (
+              <button onClick={() => go(MODULO_MIS_ACTIVIDADES.id)} className={`relative flex h-9 w-9 items-center justify-center rounded-[14px] border transition-colors lg:h-11 lg:w-11 lg:rounded-[16px] ${view === MODULO_MIS_ACTIVIDADES.id ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white/80 text-slate-500 hover:bg-white hover:text-slate-800'}`}
+                title="Mis actividades" aria-label="Mis actividades" data-testid="boton-mis-actividades">
+                <Icons.Calendar />
               </button>
             )}
             {nav.chrome.busqueda && <BusquedaGlobal data={data} onNavigate={go} />}

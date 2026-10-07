@@ -24,13 +24,22 @@
 // los demás roles, una vista sin entrada de menú (botón de la cabecera).
 export const MODULO_ASISTENCIA = { id: "asistencia", label: "Asistencia", icon: "Clock" };
 export const MODULO_MI_ASISTENCIA = { id: "mi-asistencia", label: "Mi asistencia", icon: "Clock" };
-const VISTA_MI_ASISTENCIA = { [MODULO_MI_ASISTENCIA.id]: MODULO_MI_ASISTENCIA.id };
+// PD-02 (mig 118): "Calendario" (Admin, área Operación) y "Mis actividades"
+// (lo asignado a la persona; módulo del Empleado y vista para los demás roles).
+export const MODULO_CALENDARIO = { id: "calendario", label: "Calendario", icon: "Calendar" };
+export const MODULO_MIS_ACTIVIDADES = { id: "mis-actividades", label: "Mis actividades", icon: "Calendar" };
+const VISTA_MI_ASISTENCIA = {
+  [MODULO_MI_ASISTENCIA.id]: MODULO_MI_ASISTENCIA.id,
+  [MODULO_MIS_ACTIVIDADES.id]: MODULO_MIS_ACTIVIDADES.id,
+};
+const SOLO_ADMIN = new Set([MODULO_ASISTENCIA.id, MODULO_CALENDARIO.id]);
 
 export const AREAS_ADMIN = [
   { id: "operacion", label: "Operación", icon: "Factory", color: "blue",
     items: [
       { id: "dashboard", label: "Resumen", icon: "Dashboard" },
       { id: "bandeja", label: "Mi bandeja", icon: "ClipboardCheck" },
+      MODULO_CALENDARIO,
       { id: "produccion", label: "Producción", icon: "Factory" },
       { id: "inventario", label: "Congeladores", icon: "Warehouse" },
       { id: "mermas", label: "Mermas", icon: "AlertTriangle" },
@@ -71,8 +80,8 @@ export const AREAS_ADMIN = [
   },
 ];
 
-// Facturación y Sin asignar: los mismos 25 módulos de siempre (Asistencia es solo de Admin).
-export const AREAS_BACKOFFICE = AREAS_ADMIN.map(a => ({ ...a, items: a.items.filter(i => i.id !== MODULO_ASISTENCIA.id) }));
+// Facturación y Sin asignar: los mismos 25 módulos de siempre (Asistencia y Calendario son solo de Admin).
+export const AREAS_BACKOFFICE = AREAS_ADMIN.map(a => ({ ...a, items: a.items.filter(i => !SOLO_ADMIN.has(i.id)) }));
 
 // B3.6: Ventas — un módulo y sus filtros internos (no son módulos del menú).
 export const MODULO_VENTAS = { id: "ventas", label: "Ventas", icon: "ShoppingCart" };
@@ -103,11 +112,11 @@ export const PRINCIPALES_MOVIL_ADMIN = ["dashboard", "bandeja", "ordenes", "cobr
 export const MAX_DESTINOS_MOVIL = 5;
 export const MODULO_CHOFER = { id: "chofer-ruta", label: "Mi ruta", icon: "Truck" };
 
-// miAsistencia: botón "Mi asistencia" en la cabecera (el rol Empleado ya la tiene como único módulo).
-const CHROME_ADMIN = { busqueda: true, firmas: true, alertas: true, notificaciones: true, verComo: true, miAsistencia: true };
+// miAsistencia / misActividades: botones de la cabecera (el rol Empleado ya los tiene como módulos).
+const CHROME_ADMIN = { busqueda: true, firmas: true, alertas: true, notificaciones: true, verComo: true, miAsistencia: true, misActividades: true };
 const CHROME_BACKOFFICE = { ...CHROME_ADMIN, verComo: false };
-const CHROME_CAMPO = { busqueda: false, firmas: false, alertas: false, notificaciones: false, verComo: false, miAsistencia: true };
-const CHROME_EMPLEADO = { ...CHROME_CAMPO, miAsistencia: false };
+const CHROME_CAMPO = { busqueda: false, firmas: false, alertas: false, notificaciones: false, verComo: false, miAsistencia: true, misActividades: true };
+const CHROME_EMPLEADO = { ...CHROME_CAMPO, miAsistencia: false, misActividades: false };
 
 export const NAV_ROLES = {
   Admin: { modo: "completo", areas: AREAS_ADMIN, inicio: "dashboard", chrome: CHROME_ADMIN, persistirAreas: true, vistas: VISTA_MI_ASISTENCIA },
@@ -133,10 +142,10 @@ export const NAV_ROLES = {
     vistas: VISTA_MI_ASISTENCIA,
   },
   Chofer: { modo: "enfoque", inicio: MODULO_CHOFER.id, chrome: CHROME_CAMPO, persistirAreas: false, areas: [{ id: "ruta", label: "Ruta", icon: "Truck", color: "blue", items: [MODULO_CHOFER] }], vistas: VISTA_MI_ASISTENCIA },
-  // WF-0: rol mínimo. Solo "Mi asistencia": sin back office, sin datos de negocio, sin "Ver como".
+  // WF-0: rol mínimo. Solo "Mi asistencia" y "Mis actividades": sin back office, sin datos de negocio, sin "Ver como".
   Empleado: {
     modo: "completo", inicio: MODULO_MI_ASISTENCIA.id, chrome: CHROME_EMPLEADO, persistirAreas: false,
-    areas: [{ id: "personal", label: "Personal", icon: "Clock", color: "purple", items: [MODULO_MI_ASISTENCIA] }],
+    areas: [{ id: "personal", label: "Personal", icon: "Clock", color: "purple", items: [MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES] }],
   },
 };
 

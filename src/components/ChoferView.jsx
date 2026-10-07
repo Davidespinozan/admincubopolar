@@ -33,13 +33,20 @@ const CONTENIDO = "mx-auto w-full max-w-[640px] px-4 pt-4 md:max-w-3xl lg:max-w-
 const LABEL = "mb-1.5 block text-sm font-medium text-slate-700";
 const FOTO_LABEL = "flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-[16px] border-2 border-dashed py-3 text-xs font-semibold";
 
-export default function ChoferView({ user, data, actions, onLogout, onMiAsistencia }) {
+export default function ChoferView({ user, data, actions, onLogout, onMiAsistencia, onMisActividades }) {
   const [stepOverride, setStepOverride] = useState(null);
   // PD-01: acceso a "Mi asistencia" (entrada / salida) desde cualquier paso.
   const botonAsistencia = onMiAsistencia ? (
     <button type="button" onClick={onMiAsistencia} data-testid="chofer-mi-asistencia"
       className="inline-flex min-h-[36px] items-center justify-center rounded-[13px] border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/15">
       Asistencia
+    </button>
+  ) : null;
+  // PD-02: "Mis actividades" junto a la asistencia.
+  const botonActividades = onMisActividades ? (
+    <button type="button" onClick={onMisActividades} data-testid="chofer-mis-actividades"
+      className="inline-flex min-h-[36px] items-center justify-center rounded-[13px] border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/15">
+      Actividades
     </button>
   ) : null;
 
@@ -877,7 +884,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
   if (step === "cargar") return (
     <div className={CHOFER_SHELL} data-testid="chofer-shell">
       <ModoPruebaBanner />
-      <RoleHeader compact kicker="Chofer" title="Cargar camión" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} right={botonAsistencia}>
+      <RoleHeader compact kicker="Chofer" title="Cargar camión" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} right={<>{botonAsistencia}{botonActividades}</>}>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[16px] border border-white/10 bg-white/10 px-3 py-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">Paso 1 de 3</span>
           <span className="text-sm font-semibold text-white">Marca cuánto cargaste</span>
@@ -943,7 +950,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     return (
       <div className={CHOFER_SHELL} data-testid="chofer-shell">
         <ModoPruebaBanner />
-        <RoleHeader compact kicker="Chofer · Paso 2 de 3" title="Producción debe autorizar" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} right={botonAsistencia} />
+        <RoleHeader compact kicker="Chofer · Paso 2 de 3" title="Producción debe autorizar" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} right={<>{botonAsistencia}{botonActividades}</>} />
         <div className={`${CONTENIDO} space-y-4`}>
           <Card tone="warning" className="text-center">
             <p className="mb-2 flex justify-center text-amber-700 [&>svg]:h-10 [&>svg]:w-10"><Icons.Clock /></p>
@@ -1077,7 +1084,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     return (
       <div className={CHOFER_SHELL} data-testid="chofer-shell">
         <ModoPruebaBanner />
-        <RoleHeader compact kicker="Chofer · Lista para salir" title="Carga firmada ✓" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} right={botonAsistencia} />
+        <RoleHeader compact kicker="Chofer · Lista para salir" title="Carga firmada ✓" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} right={<>{botonAsistencia}{botonActividades}</>} />
         <div className={`${CONTENIDO} space-y-4`}>
           <Card tone="success" className="text-center">
             <p className="mb-2 flex justify-center text-emerald-700 [&>svg]:h-10 [&>svg]:w-10"><Icons.Check /></p>
@@ -1109,6 +1116,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       <RoleHeader compact kicker="Chofer" title="En ruta" subtitle={s(user?.nombre)} accent="cyan"
         right={<>
           {botonAsistencia}
+          {botonActividades}
           <button type="button" onClick={() => setMapaVisible(v => !v)}
             className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-[13px] px-4 py-2.5 text-xs font-bold transition-all ${mapaVisible ? 'bg-blue-500 text-white' : 'bg-white/15 text-cyan-200'}`}>
             <Icons.MapPin /> {mapaVisible ? 'Ocultar mapa' : 'Ver mapa'}
@@ -1495,7 +1503,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         <ModoPruebaBanner />
         <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
         <RoleHeader compact kicker="Chofer · Paso 3 de 3" title="Cierre de ruta" subtitle={`${s(user?.nombre)} · ${fmtDate(new Date())}`} accent="cyan"
-          right={<>{botonAsistencia}{!rutaCerrada && <button type="button" onClick={() => setStep("ruta")} className="inline-flex min-h-[44px] items-center rounded-[13px] border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white">← Volver</button>}</>} />
+          right={<>{botonAsistencia}{botonActividades}{!rutaCerrada && <button type="button" onClick={() => setStep("ruta")} className="inline-flex min-h-[44px] items-center rounded-[13px] border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white">← Volver</button>}</>} />
         <div className={`${CONTENIDO} space-y-4`}>
           <Card>
             <SectionLabel className="mb-3">Inventario del camión</SectionLabel>

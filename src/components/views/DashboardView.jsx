@@ -7,6 +7,7 @@ import { EmptyState } from '../ui/Skeleton';
 import { s, n, fmtDateTime, fmtMoney, fmtPct } from '../../utils/safe';
 import { rangoMes, lineasEstadoResultados, lineasFlujoEfectivo } from '../../data/finanzasLogic';
 import { esPreparacion } from '../../data/preparacionBarraLogic';
+import { resumenActividades } from '../../data/calendarioLogic';
 
 // ── FIX P3: ALL DERIVED STATE NOW MEMOIZED ──
 // BEFORE: 4 reduce/filter calls ran on every render — even when user
@@ -296,8 +297,23 @@ export default function DashboardView({ data, user, actions, onNavigate }) {
     return acciones;
   }, [ordPend, tableroDemanda, cxcPendiente, data.cuentasPorCobrar, data.clientes]);
 
+  // PD-02: resumen compacto del calendario (estados calculados por el servidor).
+  const resumenCal = resumenActividades(data.actividadesAbiertas, diaNegocio());
+  const hayCal = resumenCal.pendientesHoy + resumenCal.porVencer + resumenCal.vencidas > 0;
+
   return (
     <div>
+      {hayCal && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3" data-testid="dashboard-calendario">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-semibold text-slate-800">Calendario</span>
+            <span className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-900">Pendientes hoy {resumenCal.pendientesHoy}</span>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-700">Por vencer {resumenCal.porVencer}</span>
+            <span className="rounded-full border border-red-300 bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-800">Vencidas {resumenCal.vencidas}</span>
+          </div>
+          {onNavigate && <button onClick={() => onNavigate('calendario')} className="rounded-[12px] bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Ver calendario →</button>}
+        </div>
+      )}
       {/* ═══ ZONA 1: HOY (lo accionable) ═══ */}
       {accionablesHoy.length > 0 && (
         <div className="mb-4 md:mb-6 rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-white to-cyan-50/40 p-5 md:p-7 shadow-[0_18px_40px_rgba(8,20,27,0.08)]">

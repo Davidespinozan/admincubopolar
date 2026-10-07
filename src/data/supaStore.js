@@ -8,6 +8,7 @@ import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
 import { mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
+import { buildActividadDatos, buildCompletarArgs, buildEditarOcurrenciaArgs, sumarDiasISO } from './calendarioLogic';
 import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs, esErrorDeRed, mensajeErrorLlamada, rolSinDatosNegocio } from './asistenciaLogic';
 import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, buildAjusteCuartoArgs, buildMermaCuartoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
 import {
@@ -93,7 +94,7 @@ const EMPTY = {
   rutas: [], produccion: [], inventarioMov: [], cuartosFrios: [],
   alertas: [], facturacionPendiente: [], conciliacion: [],
   auditoria: [], usuarios: [], umbrales: [], pagos: [],
-  comodatos: [], leads: [], empleados: [], nominaPeriodos: [],
+  comodatos: [], leads: [], empleados: [], nominaPeriodos: [], actividadesAbiertas: [],
   nominaRecibos: [], movContables: [], mermas: [], cuentasPorCobrar: [],
   cuentasPorPagar: [], pagosProveedores: [],
   costosFijos: [], costosHistorial: [],
@@ -555,18 +556,29 @@ export function useSupaStore(userId, userName, userRol) {
   // ── Fetch all data ──────────────────────────────────────────
   // Carga inicial y refresh completo tras acciones (rf()): núcleo +
   // todos los slices en paralelo. El realtime usa las piezas sueltas.
+  // PD-02 (mig 118): ocurrencias abiertas visibles para la sesión (estado del servidor),
+  // para el resumen del Dashboard y el detector de Bandeja. Falla en silencio.
+  const fetchActividades = useCallback(async () => {
+    try {
+      const hoy = diaNegocio();
+      const { data, error } = await supabase.rpc('calendario', { p_desde: sumarDiasISO(hoy, -1095), p_hasta: sumarDiasISO(hoy, 4), p_solo_mias: false, p_solo_abiertas: true });
+      if (error) return;
+      setData(prev => ({ ...prev, actividadesAbiertas: data?.ocurrencias || [] }));
+    } catch { /* sin calendario: el resumen queda vacío */ }
+  }, []);
+
   const fetchAll = useCallback(async () => {
     // WF-0: el rol Empleado no carga datos de negocio (su pantalla lee mi_asistencia()).
     if (rolSinDatosNegocio(userRolRef.current)) { setLoading(false); return; }
     try {
-      await Promise.all([fetchCore(), ...TABLAS_SLICE_RT.map(t => fetchSlice(t))]);
+      await Promise.all([fetchCore(), ...TABLAS_SLICE_RT.map(t => fetchSlice(t)), fetchActividades()]);
     } catch (err) {
       console.error('[fetchAll] ❌ catch error:', err?.message || err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [fetchCore, fetchSlice]);
+  }, [fetchCore, fetchSlice, fetchActividades]);
 
   // Re-fetch on mount y cuando cambia el userId (ej. después del login)
   // Wait for Supabase auth session to be ready when there is a userId to avoid
@@ -1617,6 +1629,69 @@ export function useSupaStore(userId, userName, userRol) {
         const { data, error } = await supabase.rpc('corregir_asistencia', built.args);
         if (error) return { error: (error.message || '').replace(/^corregir_asistencia:\s*/, '') || 'No se pudo corregir' };
         t()?.success('Corrección registrada');
+        return { data };
+      },
+
+      // ── PD-02 (mig 118): calendario operativo. Estado, fechas y permisos los
+      // decide el servidor; crear/editar/desactivar solo Admin.
+      calendario: async (desde, hasta, { soloMias = false, soloAbiertas = false } = {}) => {
+        try {
+          const { data, error } = await supabase.rpc('calendario', { p_desde: desde, p_hasta: hasta, p_solo_mias: soloMias, p_solo_abiertas: soloAbiertas });
+          if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
+          return { data };
+        } catch (e) {
+          return { error: mensajeErrorLlamada(e, enLinea()) };
+        }
+      },
+
+      completarOcurrencia: async (params) => {
+        const built = buildCompletarArgs(params);
+        if (built.error) return { error: built.error };
+        try {
+          const { data, error } = await supabase.rpc('completar_ocurrencia', built.args);
+          if (error) {
+            const msg = /solo la completa Admin/i.test(error.message || '') ? 'Esta actividad solo la completa Admin.'
+              : (error.message || '').replace(/^completar_ocurrencia:\s*/, '') || 'No se pudo completar';
+            return { error: msg, red: esErrorDeRed(error, enLinea()), operacionId: built.args.p_operacion_id };
+          }
+          fetchActividades();
+          return { data, operacionId: built.args.p_operacion_id };
+        } catch (e) {
+          return { error: mensajeErrorLlamada(e, enLinea()), red: esErrorDeRed(e, enLinea()), operacionId: built.args.p_operacion_id };
+        }
+      },
+
+      guardarActividad: async (id, form, operacionId) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const built = buildActividadDatos(form);
+        if (built.error) return { error: built.error };
+        const { data, error } = await supabase.rpc('guardar_actividad', { p_operacion_id: operacionId || nuevoOperacionId(), p_id: id ? Number(id) : null, p_datos: built.datos });
+        if (error) return { error: (error.message || '').replace(/^guardar_actividad:\s*/, '') || 'No se pudo guardar' };
+        t()?.success(id ? 'Se creó una versión nueva para los periodos siguientes' : 'Actividad creada');
+        fetchActividades();
+        return { data };
+      },
+
+      editarOcurrencia: async (params) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const built = buildEditarOcurrenciaArgs(params);
+        if (built.error) return { error: built.error };
+        const { data, error } = await supabase.rpc('editar_ocurrencia', built.args);
+        if (error) return { error: (error.message || '').replace(/^editar_ocurrencia:\s*/, '') || 'No se pudo editar' };
+        t()?.success('Ocurrencia actualizada');
+        fetchActividades();
+        return { data };
+      },
+
+      desactivarActividad: async (id, motivo) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const { data, error } = await supabase.rpc('desactivar_actividad', { p_actividad_id: Number(id), p_motivo: String(motivo || '').trim() });
+        if (error) return { error: (error.message || '').replace(/^desactivar_actividad:\s*/, '') || 'No se pudo desactivar' };
+        t()?.success('Actividad desactivada');
+        fetchActividades();
         return { data };
       },
 
