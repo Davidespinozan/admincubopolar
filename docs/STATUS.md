@@ -1,22 +1,22 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-06 (etapa CERRADA EN PRODUCCIÓN; go-live GL-1 CERRADO). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-07 (modelo de barra OP-01E activo; Día 0 OP-02 configurado). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Repositorio desplegado: `3bdf4cee064f6fa40e5857dc2bbebb6ce2a34ae3` (CLOSURE-1) — DEPLOYED (Netlify
-  `6ac54515e0440600084d4beb`, ready 2026-10-06T19:02Z). Sin cambio de código de aplicación ni de
-  funciones respecto de OL-04 (los 17 digests de Netlify Functions idénticos; el commit solo trae la
-  migración 114 y pruebas); este commit de documentación se publica encima sin cambios de código.
-  Código de aplicación vigente: `5f1632b` (OL-04). Bases anteriores: `c09d82a` (B3.6), `9a94881`
-  (OL-03B), `cfce0f2` (OL-03A), `8b61a2e` (110).
-- Base de datos: migraciones aplicadas hasta la **114** (111 el 2026-10-06T16:27Z, 112 el
-  16:29:58Z, 113 el 17:51:58Z, 114 el 18:58:15Z, una vez cada una; se aplican con `supabase db query`;
-  no hay tabla de historial: la "cabeza" se verifica por la presencia y huella de los objetos).
-  SHA-256 de 114: `c5b5b82f83db1baae5390ccca197244c146881c1a400a9ed437c4060155d623a`; 109–113 sin cambio.
-- Conteos tras 114 (cambian con cada fase; no son invariantes): 127 funciones · 78 policies ·
+- Repositorio desplegado: `95d69a345126124f66be91718e08274913914f25` (OP-01E, modelo de barra) —
+  DEPLOYED (Netlify `6ac58d12b1753f0008180e8a`, ready 2026-10-07T00:07Z); bundle vivo verificado
+  ("Máquina Barra", "Preparar barra"; sin entrada de Transformaciones); 17 digests de Netlify Functions
+  sin cambio. Este commit de documentación se publica encima sin cambios de código. Bases anteriores:
+  `3bdf4ce` (CLOSURE-1), `5f1632b` (OL-04), `c09d82a` (B3.6), `9a94881` (OL-03B), `cfce0f2` (OL-03A).
+- Base de datos: migraciones aplicadas hasta la **115** (111 el 2026-10-06T16:27Z, 112 el
+  16:29:58Z, 113 el 17:51:58Z, 114 el 18:58:15Z, 115 el 2026-10-07T00:05:37Z, una vez cada una; se
+  aplican con `supabase db query`; no hay tabla de historial: la "cabeza" se verifica por la presencia y
+  huella de los objetos). SHA-256 de 114: `c5b5b82f83db1baae5390ccca197244c146881c1a400a9ed437c4060155d623a`;
+  de 115: `0b96309f0270256cbfdc3964f6bfd179a278959fd93f05c9d67e09ac4541a4e9`; 109–114 sin cambio.
+- Conteos tras 115 (cambian con cada fase; no son invariantes): 129 funciones · 78 policies ·
   41 tablas · 39 secuencias · 1 vista · 45 triggers en `public` (7 en `ordenes`).
 - Huellas (md5 de `pg_get_functiondef`): `completar_venta_directa` (109) `5825f5e3072a1d5a98961752a5eb5cc6` ·
   `ordenes_guard_entrega_directa` (110) `9eac14f606d8c0f0fb4a8851cc32b640` ·
@@ -186,8 +186,61 @@ RESIDUAL RISK (2026-10-06).**
 - Datos de negocio de producción: **UNCHANGED** (comparación antes/después idéntica; `error_log` 192).
 - Observación (sin tocar): el link bonito `/nota/:id?t=` responde 400; la función directa sí valida.
 
-**GL-2** (Stripe en modo TEST con links visibles): OPEN. **GL-3** (Facturama en sandbox; CP y régimen
-de la empresa vacíos): OPEN. OL y CLOSURE-1: siguen CLOSED.
+**GL-2** (Stripe): READY — OWNER LIVE TEST REQUIRED (el dueño configuró en Netlify la llave restringida
+LIVE, la publicable LIVE y el secreto del webhook LIVE `cubopolar-webhook` → `/.netlify/functions/billing-webhook-stripe`,
+eventos `checkout.session.completed` y `.expired`; redeploy 2026-10-06; los valores secretos no son legibles,
+así que el modo LIVE y la coincidencia del secreto se confirman con el primer link real). **GL-3** (Facturama
+en sandbox; CP y régimen de la empresa vacíos): OPEN — diferido por el dueño. OL y CLOSURE-1: siguen CLOSED.
+
+## Modelo de barra y Día 0 — 2026-10-07
+**OP-01D / OP-01D.1 (modelo de barra de septiembre 2026): IMPLEMENTED · OP-01E: ACTIVE IN PRODUCTION**
+(migración 115 + commit `95d69a3`).
+- 1 barra física ~50 kg = 1 unidad (`HIB-50K`), producida en **Máquina Barra** sin empaque (excepción
+  explícita solo para la barra).
+- `registrar_preparacion_barra` (Admin / Producción): N barras enteras → 2N bolsas de picada
+  (`HIP-25K`) o triturada (`HIT-25K`) en el mismo cuarto, consumiendo 2N del empaque CONFIGURADO en la
+  salida; atómico, idempotente, sin negativos. Vender después lo preparado no vuelve a consumir barra
+  ni empaque. `revertir_preparacion_barra` (Admin): reverso único al costo histórico.
+- `registrar_produccion` (definición de 106 + un rechazo): `HIP-25K` / `HIT-25K` no se producen por
+  máquina (solo nacen de preparar). `conciliacion_empaque` cuenta el empaque de las preparaciones.
+- Transformaciones (agosto): SUPERSEDED, fuera de la operación (backend e historial intactos).
+- Funciones en producción idénticas (md5) al build que pasó el gate local completo.
+- Limitaciones aceptadas: SKUs fijos en el contrato; sin venta de media barra "desnuda" (sin
+  inventario fraccionario); el kardex de una preparación se traza por la referencia `preparacion/PB-…`.
+
+**OP-02 Día 0 (2026-10-07T00:16:49Z, una transacción, autorizado por el dueño): CONFIGURED con bloqueos.**
+
+| SKU | Producto | Precio | Empaque | Mínimo |
+|---|---|---|---|---|
+| HPC-5K | Hielo Purificado en Cubos 5 kg | $31 | EMP-5 | 1500 (sin cambio) |
+| HPC-25K | Hielo Purificado en Cubos 25 kg | $92 | EMP-25 | 400 (sin cambio) |
+| HPT-5K | Hielo Purificado Triturado 5 kg | $36 | EMP-5 | 50 (sin cambio) |
+| HPT-25K | Hielo Purificado Triturado 25 kg | $98 | EMP-25 | 50 (sin cambio) |
+| HEC-25K | Hielo en Cubos para Enfriamiento 25 kg (nuevo) | $72 | **pendiente** | 0 |
+| HIB-50K | Barra de Hielo ~50 kg | $120 | ninguno (por diseño) | 0 |
+| HIP-25K | Picada de Barra ~25 kg | $60 | **pendiente (EMP-25 confirmado)** | 0 |
+| HIT-25K | Triturada de Barra ~25 kg | $60 | **pendiente (EMP-25 confirmado)** | 0 |
+
+- `HIT-5K` (Insumo de agosto, sin historia comprobada): eliminado. Sin nombres "Insumo" en el catálogo.
+- Inventario físico de producto terminado = **0** en los 3 cuartos, por el contrato de conteo
+  (`ajustar_existencia_cuarto`; CF-1 HPC-5K 990→0, CF-2 HPC-25K 100→0, CF-3 HIT-25K 90→0). Sin ventas ni
+  mermas fabricadas; la historia previa (producción, mermas, órdenes, pagos, kardex) se conserva.
+- Precios especiales ($28 HPC-5K desde 20 bolsas/semana; $87 HPC-25K desde 10 bolsas/semana): **pendientes**
+  hasta que el dueño identifique clientes; se capturan por cliente en Precios (sin automatización).
+- El espejo `productos.stock` de HIB-50K conserva 100 (no autoritativo; backlog B-25); el inventario real es el de cuartos.
+
+**Bloqueos antes de la primera operación real:**
+1. **Conteo físico real de bolsas** (EMP-5 99,000 y EMP-25 9,800 son aperturas no verificadas del
+   2026-10-03): ajustar a la baja al conteo real; entradas adicionales solo por recepción de compra real.
+   Hasta entonces la producción de hielo embolsado consume existencia de bolsas no verificada.
+2. **Asignar EMP-25 a `HIP-25K` / `HIT-25K`** junto con el conteo de bolsas (se dejó sin asignar a
+   propósito: preparar desde barra sigue BLOQUEADO hasta entonces).
+3. **Empaque de `HEC-25K`** (confirmar qué bolsa usa el hielo de enfriamiento); su producción está
+   bloqueada en la interfaz hasta asignarlo.
+4. Usuarios reales por rol, camiones reales y clientes / crédito (OP-01, sección 12) — siguen pendientes.
+
+**GL-2:** READY — validación del primer cobro real pendiente. **GL-3** (Facturama LIVE): DEFERRED; no
+timbrar hasta cerrarlo. **PD-01:** FROZEN hasta tener uso real. OL y CLOSURE-1: CLOSED.
 
 ## Backlog aceptado (32: P2 8 · P3 24) — no impide el cierre
 Clasificado en la auditoría final de cierre (2026-10-06). Ninguno se promueve a MUST-FIX sin
