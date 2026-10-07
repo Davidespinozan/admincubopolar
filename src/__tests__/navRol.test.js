@@ -5,7 +5,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
-  NAV_ROLES, AREAS_ADMIN, MODULO_VENTAS, FILTROS_VENTAS, ALIAS_VISTAS_VENTAS, MODULOS_PRODUCCION, MODULO_BOLSAS, MODULO_CHOFER,
+  NAV_ROLES, AREAS_ADMIN, AREAS_BACKOFFICE, MODULO_ASISTENCIA, MODULO_MI_ASISTENCIA, MODULO_VENTAS, FILTROS_VENTAS, ALIAS_VISTAS_VENTAS, MODULOS_PRODUCCION, MODULO_BOLSAS, MODULO_CHOFER,
   navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial,
   idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas,
 } from '../data/navRolLogic';
@@ -20,6 +20,9 @@ const ADMIN_25 = [
   'contabilidad', 'cobros', 'proveedores', 'devoluciones', 'costos', 'facturacion', 'conciliacion', 'nomina',
   'empleados', 'kardex', 'auditoria', 'configuracion',
 ];
+// WF-0 + PD-01: Admin suma "Asistencia" (área Equipo, tras Empleados); Facturación y Sin asignar no.
+const ADMIN_26 = [...ADMIN_25.slice(0, ADMIN_25.indexOf('empleados') + 1), 'asistencia', ...ADMIN_25.slice(ADMIN_25.indexOf('empleados') + 1)];
+const modulosAdmin = (rol) => (rol === 'Admin' ? ADMIN_26 : ADMIN_25);
 
 describe('matriz de navegación por rol', () => {
   it('todo rol válido tiene navegación y un módulo inicial dentro de su menú', () => {
@@ -31,12 +34,12 @@ describe('matriz de navegación por rol', () => {
     }
     expect(navParaRol('Rol inexistente')).toBe(NAV_ROLES['Sin asignar']);
   });
-  it('Admin, Facturación y Sin asignar: los mismos 25 módulos de siempre (alcance sin cambio)', () => {
+  it('Admin, Facturación y Sin asignar: sus 25 módulos de siempre; Admin además Asistencia (WF-0 + PD-01)', () => {
     for (const rol of ['Admin', 'Facturación', 'Sin asignar']) {
       const nav = navParaRol(rol);
       expect(nav.modo).toBe('completo');
-      expect(nav.areas).toBe(AREAS_ADMIN);
-      expect([...idsModulos(nav)]).toEqual(ADMIN_25);
+      expect(nav.areas).toBe(rol === 'Admin' ? AREAS_ADMIN : AREAS_BACKOFFICE);
+      expect([...idsModulos(nav)]).toEqual(modulosAdmin(rol));
       expect(nav.inicio).toBe('dashboard');
       expect(nav.chrome.busqueda && nav.chrome.alertas && nav.chrome.notificaciones && nav.chrome.firmas).toBe(true);
     }
@@ -44,6 +47,30 @@ describe('matriz de navegación por rol', () => {
     expect(navParaRol('Facturación').chrome.verComo).toBe(false);
     expect(navParaRol('Sin asignar').chrome.verComo).toBe(false);
     expect(AREAS_ADMIN.map(a => a.id)).toEqual(['operacion', 'comercial', 'finanzas', 'equipo']);
+    expect(AREAS_BACKOFFICE.map(a => a.id)).toEqual(['operacion', 'comercial', 'finanzas', 'equipo']);
+    expect(areaDeModulo(navParaRol('Admin'), MODULO_ASISTENCIA.id).id).toBe('equipo');
+  });
+  it('WF-0: Empleado = solo "Mi asistencia"; nunca cae al back office de respaldo', () => {
+    const nav = navParaRol('Empleado');
+    expect(nav).toBe(NAV_ROLES.Empleado);
+    expect(nav).not.toBe(NAV_ROLES['Sin asignar']);
+    expect(nav.modo).toBe('completo');
+    expect([...idsModulos(nav)]).toEqual([MODULO_MI_ASISTENCIA.id]);
+    expect([...idsVistas(nav)]).toEqual([MODULO_MI_ASISTENCIA.id]);
+    expect(nav.inicio).toBe('mi-asistencia');
+    expect(Object.values(nav.chrome).some(Boolean)).toBe(false);   // sin búsqueda, alertas, notificaciones, firmas, Ver como
+    for (const id of [...ADMIN_26, 'ventas', 'prod-producir', 'bolsas-almacen', 'chofer-ruta', 'asistencia']) {
+      expect(normalizarVista(nav, id), id).toBeNull();
+    }
+  });
+  it('PD-01: "Mi asistencia" es vista (sin entrada de menú) para los demás roles; "Asistencia" solo en el menú de Admin', () => {
+    for (const rol of ['Admin', 'Facturación', 'Sin asignar', 'Ventas', 'Producción', 'Almacén Bolsas', 'Chofer']) {
+      const nav = navParaRol(rol);
+      expect(normalizarVista(nav, 'mi-asistencia'), rol).toBe('mi-asistencia');
+      expect(idsModulos(nav).has('mi-asistencia'), rol).toBe(false);
+      expect(nav.chrome.miAsistencia, rol).toBe(true);
+      expect(idsModulos(nav).has('asistencia'), rol).toBe(rol === 'Admin');
+    }
   });
   it('Ventas: UN módulo (B3.6); Producción: sus cuatro; Bolsas: uno; Chofer: enfoque', () => {
     expect([...idsModulos(navParaRol('Ventas'))]).toEqual(['ventas']);
@@ -92,13 +119,14 @@ describe('matriz de navegación por rol', () => {
     expect(abre('#/ventas-todas')).toEqual(['ventas-todas', 'ventas', 'todas']);
     expect(abre('#/ventas')).toEqual(['ventas', 'ventas', 'pendientes']);
     expect(abre('#/cobros')).toEqual([null, null, null]);                          // un hash de Admin no abre nada en Ventas
-    expect([...idsVistas(v)].sort()).toEqual(['ventas', 'ventas-cobrar', 'ventas-hoy', 'ventas-todas']);
+    expect([...idsVistas(v)].sort()).toEqual(['mi-asistencia', 'ventas', 'ventas-cobrar', 'ventas-hoy', 'ventas-todas']);
   });
   it('B3.6: los demás roles no tienen vistas ni alias extra (mismo ruteo de siempre)', () => {
     for (const rol of ['Admin', 'Facturación', 'Sin asignar', 'Producción', 'Almacén Bolsas', 'Chofer']) {
       const nav = navParaRol(rol);
       // OP-01D: Producción conserva el hash heredado '#/prod-trans' como alias de "Preparar barra".
-      const extra = rol === 'Producción' ? ['prod-trans'] : [];
+      // PD-01: todos suman la vista "mi-asistencia" (botón de la cabecera, sin entrada de menú).
+      const extra = ['mi-asistencia', ...(rol === 'Producción' ? ['prod-trans'] : [])];
       expect([...idsVistas(nav)], rol).toEqual([...idsModulos(nav), ...extra]);
       for (const id of idsModulos(nav)) { expect(normalizarVista(nav, id)).toBe(id); expect(moduloDeVista(nav, id)).toBe(id); }
       expect(normalizarVista(nav, 'ventas-hoy'), rol).toBeNull();
@@ -144,14 +172,16 @@ describe('B: shell compartido y ruteo', () => {
     expect(shell).toMatch(/nav\.chrome\.busqueda && <BusquedaGlobal/);
     expect(shell).toMatch(/nav\.chrome\.firmas && <BotonFirmasPendientes/);
     expect(shell).toMatch(/if \(nav\.modo === 'enfoque'\) \{/);
-    expect(shell).toMatch(/<ChoferView user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
+    expect(shell).toMatch(/<ChoferView user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} onMiAsistencia=\{\(\) => go\(MODULO_MI_ASISTENCIA\.id\)\} \/>/);
+    expect(shell).toMatch(/view === MODULO_MI_ASISTENCIA\.id\s*\? <div className="mx-auto max-w-lg px-4 py-4"><MiAsistenciaView actions=\{actions\} onVolver=\{\(\) => go\(MODULO_CHOFER\.id\)\} \/><\/div>/);
+    expect(shell).toMatch(/nav\.chrome\.miAsistencia && \(/);
     expect(shell).toMatch(/case 'ventas': case 'ventas-hoy': case 'ventas-todas':\s*return <VentasStandaloneView embedded filtro=\{filtroVentasDesdeVista\(view\)\} onFiltro=\{f => go\(vistaDesdeFiltroVentas\(f\)\)\} user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
     expect(shell).toMatch(/<ProduccionStandaloneView embedded tab=\{tabDesdeModulo\(view\)\} onTab=\{t => go\(moduloDesdeTab\('Producción', t\)\)\} user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
     expect(shell).toMatch(/<BolsasView embedded user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
     expect(shell).toMatch(/const vistaDeHash = useCallback\(\(hash\) => normalizarVista\(nav, viewDesdeHash\(hash, IDS_VISTAS\)\), \[nav, IDS_VISTAS\]\);/);
     expect(shell).toMatch(/useState\(\(\) => vistaDeHash\(window\.location\.hash\) \|\| nav\.inicio\)/);
     // B3.6: título, área y entrada activa del menú salen del módulo dueño de la vista.
-    expect(shell).toMatch(/const modulo = moduloDeVista\(nav, view\) \|\| view;\s*const current = ALL_ITEMS\.find\(n => n\.id === modulo\);/);
+    expect(shell).toMatch(/const modulo = moduloDeVista\(nav, view\) \|\| view;\s*const current = ALL_ITEMS\.find\(n => n\.id === modulo\) \|\| \(modulo === MODULO_MI_ASISTENCIA\.id \? MODULO_MI_ASISTENCIA : undefined\);/);
     expect(shell).toMatch(/const active = modulo === item\.id;/);
     // alias y primer sync sin paso extra en el historial
     expect(shell).toMatch(/if \(!window\.location\.hash \|\| vistaDeHash\(window\.location\.hash\) === view\) \{\s*window\.history\.replaceState/);
@@ -190,7 +220,7 @@ describe('B3: navegación inferior móvil derivada del mismo modelo', async () =
       expect(b.mas, rol).toBe(true);
       expect(b.items.map(i => i.id), rol).toEqual(PRINCIPALES_MOVIL_ADMIN);
       expect(b.items.length + 1, rol).toBeLessThanOrEqual(MAX_DESTINOS_MOVIL);
-      expect([...idsModulos(navParaRol(rol))], rol).toEqual(ADMIN_25);   // alcance intacto
+      expect([...idsModulos(navParaRol(rol))], rol).toEqual(modulosAdmin(rol));   // alcance intacto (+ Asistencia en Admin)
     }
     expect(PRINCIPALES_MOVIL_ADMIN).toEqual(['dashboard', 'bandeja', 'ordenes', 'cobros']);
     // uno por área de trabajo: Operación (resumen, bandeja), Comercial (ventas), Finanzas (por cobrar)

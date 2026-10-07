@@ -19,6 +19,13 @@
 // adelante y los enlaces guardados abran el mismo filtro; '#/ventas-cobrar'
 // (B3.4) queda como alias de '#/ventas' (Pendientes).
 
+// WF-0 + PD-01 (mig 116): asistencia. "Asistencia" (Admin) es un módulo del
+// área Equipo; "Mi asistencia" es la ÚNICA pantalla del rol Empleado y, para
+// los demás roles, una vista sin entrada de menú (botón de la cabecera).
+export const MODULO_ASISTENCIA = { id: "asistencia", label: "Asistencia", icon: "Clock" };
+export const MODULO_MI_ASISTENCIA = { id: "mi-asistencia", label: "Mi asistencia", icon: "Clock" };
+const VISTA_MI_ASISTENCIA = { [MODULO_MI_ASISTENCIA.id]: MODULO_MI_ASISTENCIA.id };
+
 export const AREAS_ADMIN = [
   { id: "operacion", label: "Operación", icon: "Factory", color: "blue",
     items: [
@@ -56,12 +63,16 @@ export const AREAS_ADMIN = [
   { id: "equipo", label: "Equipo", icon: "Users", color: "purple",
     items: [
       { id: "empleados", label: "Empleados", icon: "UserCheck" },
+      MODULO_ASISTENCIA,
       { id: "kardex", label: "Kardex", icon: "ClipboardCheck" },
       { id: "auditoria", label: "Auditoría", icon: "Shield" },
       { id: "configuracion", label: "Ajustes", icon: "Settings" },
     ]
   },
 ];
+
+// Facturación y Sin asignar: los mismos 25 módulos de siempre (Asistencia es solo de Admin).
+export const AREAS_BACKOFFICE = AREAS_ADMIN.map(a => ({ ...a, items: a.items.filter(i => i.id !== MODULO_ASISTENCIA.id) }));
 
 // B3.6: Ventas — un módulo y sus filtros internos (no son módulos del menú).
 export const MODULO_VENTAS = { id: "ventas", label: "Ventas", icon: "ShoppingCart" };
@@ -92,19 +103,21 @@ export const PRINCIPALES_MOVIL_ADMIN = ["dashboard", "bandeja", "ordenes", "cobr
 export const MAX_DESTINOS_MOVIL = 5;
 export const MODULO_CHOFER = { id: "chofer-ruta", label: "Mi ruta", icon: "Truck" };
 
-const CHROME_ADMIN = { busqueda: true, firmas: true, alertas: true, notificaciones: true, verComo: true };
+// miAsistencia: botón "Mi asistencia" en la cabecera (el rol Empleado ya la tiene como único módulo).
+const CHROME_ADMIN = { busqueda: true, firmas: true, alertas: true, notificaciones: true, verComo: true, miAsistencia: true };
 const CHROME_BACKOFFICE = { ...CHROME_ADMIN, verComo: false };
-const CHROME_CAMPO = { busqueda: false, firmas: false, alertas: false, notificaciones: false, verComo: false };
+const CHROME_CAMPO = { busqueda: false, firmas: false, alertas: false, notificaciones: false, verComo: false, miAsistencia: true };
+const CHROME_EMPLEADO = { ...CHROME_CAMPO, miAsistencia: false };
 
 export const NAV_ROLES = {
-  Admin: { modo: "completo", areas: AREAS_ADMIN, inicio: "dashboard", chrome: CHROME_ADMIN, persistirAreas: true },
-  "Facturación": { modo: "completo", areas: AREAS_ADMIN, inicio: "dashboard", chrome: CHROME_BACKOFFICE, persistirAreas: true },
-  "Sin asignar": { modo: "completo", areas: AREAS_ADMIN, inicio: "dashboard", chrome: CHROME_BACKOFFICE, persistirAreas: true },
+  Admin: { modo: "completo", areas: AREAS_ADMIN, inicio: "dashboard", chrome: CHROME_ADMIN, persistirAreas: true, vistas: VISTA_MI_ASISTENCIA },
+  "Facturación": { modo: "completo", areas: AREAS_BACKOFFICE, inicio: "dashboard", chrome: CHROME_BACKOFFICE, persistirAreas: true, vistas: VISTA_MI_ASISTENCIA },
+  "Sin asignar": { modo: "completo", areas: AREAS_BACKOFFICE, inicio: "dashboard", chrome: CHROME_BACKOFFICE, persistirAreas: true, vistas: VISTA_MI_ASISTENCIA },
   Ventas: {
     modo: "completo", inicio: MODULO_VENTAS.id, chrome: CHROME_CAMPO, persistirAreas: false,
     areas: [{ id: "ventas", label: "Ventas", icon: "ShoppingCart", color: "emerald", items: [MODULO_VENTAS] }],
     // vistas que no son entradas del menú → módulo dueño (los filtros con hash propio)
-    vistas: { "ventas-hoy": MODULO_VENTAS.id, "ventas-todas": MODULO_VENTAS.id },
+    vistas: { "ventas-hoy": MODULO_VENTAS.id, "ventas-todas": MODULO_VENTAS.id, ...VISTA_MI_ASISTENCIA },
     alias: ALIAS_VISTAS_VENTAS,
   },
   "Producción": {
@@ -112,15 +125,23 @@ export const NAV_ROLES = {
     areas: [{ id: "planta", label: "Planta", icon: "Factory", color: "blue", items: MODULOS_PRODUCCION }],
     // Hash heredado de la pestaña de Transformación → la de preparar.
     alias: { "prod-trans": "prod-preparar" },
+    vistas: VISTA_MI_ASISTENCIA,
   },
   "Almacén Bolsas": {
     modo: "completo", inicio: MODULO_BOLSAS.id, chrome: CHROME_CAMPO, persistirAreas: false,
     areas: [{ id: "almacen", label: "Almacén", icon: "Box", color: "amber", items: [MODULO_BOLSAS] }],
+    vistas: VISTA_MI_ASISTENCIA,
   },
-  Chofer: { modo: "enfoque", inicio: MODULO_CHOFER.id, chrome: CHROME_CAMPO, persistirAreas: false, areas: [{ id: "ruta", label: "Ruta", icon: "Truck", color: "blue", items: [MODULO_CHOFER] }] },
+  Chofer: { modo: "enfoque", inicio: MODULO_CHOFER.id, chrome: CHROME_CAMPO, persistirAreas: false, areas: [{ id: "ruta", label: "Ruta", icon: "Truck", color: "blue", items: [MODULO_CHOFER] }], vistas: VISTA_MI_ASISTENCIA },
+  // WF-0: rol mínimo. Solo "Mi asistencia": sin back office, sin datos de negocio, sin "Ver como".
+  Empleado: {
+    modo: "completo", inicio: MODULO_MI_ASISTENCIA.id, chrome: CHROME_EMPLEADO, persistirAreas: false,
+    areas: [{ id: "personal", label: "Personal", icon: "Clock", color: "purple", items: [MODULO_MI_ASISTENCIA] }],
+  },
 };
 
-/** Navegación del rol. Un rol desconocido cae al shell completo de respaldo (como hoy: App.jsx lo mandaba al shell admin). */
+/** Navegación del rol. Un rol desconocido cae al shell completo de respaldo (como hoy: App.jsx lo mandaba al shell admin).
+ *  'Empleado' tiene su propia entrada: nunca cae al respaldo de back office. */
 export function navParaRol(rol) {
   return NAV_ROLES[rol] || NAV_ROLES["Sin asignar"];
 }

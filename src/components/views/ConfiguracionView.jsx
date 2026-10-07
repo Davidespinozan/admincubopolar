@@ -183,6 +183,7 @@ export function ConfiguracionView({ data, actions, user }) {
             s(u.rol) === "Ventas" ? "bg-emerald-100 text-emerald-700" :
             s(u.rol) === "Producción" ? "bg-amber-100 text-amber-700" :
             s(u.rol) === "Almacén Bolsas" ? "bg-orange-100 text-orange-700" :
+            s(u.rol) === "Empleado" ? "bg-violet-100 text-violet-700" :
             s(u.rol) === "Sin asignar" ? "bg-red-100 text-red-600" :
             "bg-slate-100 text-slate-600"
           }`}>{s(u.rol)}</span>
@@ -205,7 +206,7 @@ export function ConfiguracionView({ data, actions, user }) {
             <p className="text-[10px] text-slate-400 mt-1">El correo y contraseña se manejan en Supabase Auth</p>
           </div>
         )}
-        <FormSelect label="Rol — define qué módulo ve al entrar" options={["Admin", "Ventas", "Chofer", "Producción", "Almacén Bolsas", "Facturación", "Sin asignar"]} value={form.rol} onChange={e => setForm({ ...form, rol: e.target.value })} />
+        <FormSelect label="Rol — define qué módulo ve al entrar" options={["Admin", "Ventas", "Chofer", "Producción", "Almacén Bolsas", "Facturación", "Empleado", "Sin asignar"]} value={form.rol} onChange={e => setForm({ ...form, rol: e.target.value })} />
         <div className="bg-slate-50 rounded-lg p-3">
           <p className="text-xs text-slate-500 font-semibold mb-1">¿Qué ve cada rol?</p>
           <p className="text-[10px] text-slate-400">Admin → Todo el sistema</p>

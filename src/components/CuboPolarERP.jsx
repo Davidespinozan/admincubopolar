@@ -13,7 +13,7 @@ import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
 import { navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
-  idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas } from '../data/navRolLogic';
+  MODULO_ASISTENCIA, MODULO_MI_ASISTENCIA, idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas } from '../data/navRolLogic';
 import { BottomNav } from './ui/Components';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
@@ -39,6 +39,8 @@ const CostosView        = lazy(() => import('./views/CostosView.jsx').then(m => 
 const CuentasPorPagarView = lazy(() => import('./views/CuentasPorPagarView.jsx').then(m => ({ default: m.CuentasPorPagarView })));
 const DevolucionesView    = lazy(() => import('./views/DevolucionesView.jsx').then(m => ({ default: m.DevolucionesView })));
 const BandejaView         = lazy(() => import('./views/BandejaView.jsx').then(m => ({ default: m.BandejaView })));
+const AsistenciaView      = lazy(() => import('./views/AsistenciaView.jsx').then(m => ({ default: m.AsistenciaView })));
+const MiAsistenciaView    = lazy(() => import('./MiAsistenciaView'));
 // Fase B: las vistas por rol son contenido del shell compartido (lazy, como antes en App.jsx).
 const ChoferView                = lazy(() => import('./ChoferView'));
 const BolsasView                = lazy(() => import('./BolsasView'));
@@ -184,6 +186,7 @@ const AREA_META = {
   planta:  { tagline: 'Producción', subtitle: 'planta y congeladores', chip: 'border-cyan-200/80 bg-cyan-100/80 text-cyan-900', glow: 'from-cyan-300/50 via-sky-200/40 to-transparent' },
   almacen: { tagline: 'Almacén', subtitle: 'empaque', chip: 'border-amber-200/80 bg-amber-100/80 text-amber-900', glow: 'from-amber-200/50 via-orange-200/30 to-transparent' },
   ruta:    { tagline: 'Ruta', subtitle: 'entregas', chip: 'border-cyan-200/80 bg-cyan-100/80 text-cyan-900', glow: 'from-cyan-300/50 via-sky-200/40 to-transparent' },
+  personal: { tagline: 'Mi asistencia', subtitle: 'entrada y salida', chip: 'border-violet-200/80 bg-violet-100/80 text-violet-900', glow: 'from-violet-200/40 via-slate-200/30 to-transparent' },
 };
 
 // Fase B: `rolVista` es el rol cuya experiencia se pinta (el propio, o el de
@@ -334,6 +337,8 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       case 'comodatos': return <ComodatosView {...vp} />;
       case 'leads': return <LeadsView {...vp} />;
       case 'kardex': return <KardexView data={data} />;
+      case MODULO_ASISTENCIA.id: return <AsistenciaView {...vp} />;
+      case MODULO_MI_ASISTENCIA.id: return <MiAsistenciaView actions={actions} />;
       // Fase B: vistas por rol como contenido del shell (misma lógica, misma autorización).
       // B3.6: un solo módulo Ventas; el filtro interno sale del hash (ventas / ventas-hoy / ventas-todas).
       case 'ventas': case 'ventas-hoy': case 'ventas-todas':
@@ -349,7 +354,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   const go = useCallback((id) => { const v = normalizarVista(nav, id); if (v) setView(v); setMobileDrawerOpen(false); }, [nav]);
   // B3.6: el módulo del menú dueño de la vista (filtro interno → su módulo).
   const modulo = moduloDeVista(nav, view) || view;
-  const current = ALL_ITEMS.find(n => n.id === modulo);
+  const current = ALL_ITEMS.find(n => n.id === modulo) || (modulo === MODULO_MI_ASISTENCIA.id ? MODULO_MI_ASISTENCIA : undefined);
   const currentArea = areaDeModulo(nav, modulo) || nav.areas[0];
   const currentMeta = AREA_META[currentArea?.id] || AREA_META.operacion;
 
@@ -360,7 +365,9 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       <div className="min-h-dvh text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''} data-modo="enfoque">
         <ChunkErrorBoundary viewName={MODULO_CHOFER.id}>
           <Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>
-            <ChoferView user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />
+            {view === MODULO_MI_ASISTENCIA.id
+              ? <div className="mx-auto max-w-lg px-4 py-4"><MiAsistenciaView actions={actions} onVolver={() => go(MODULO_CHOFER.id)} /></div>
+              : <ChoferView user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} onMiAsistencia={() => go(MODULO_MI_ASISTENCIA.id)} />}
           </Suspense>
         </ChunkErrorBoundary>
       </div>
@@ -470,6 +477,12 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
             <p className="font-display truncate text-base font-bold tracking-[-0.04em] text-slate-900 lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
           </div>
           <div className="relative flex flex-shrink-0 items-center gap-2">
+            {nav.chrome.miAsistencia && (
+              <button onClick={() => go(MODULO_MI_ASISTENCIA.id)} className={`relative flex h-9 w-9 items-center justify-center rounded-[14px] border transition-colors lg:h-11 lg:w-11 lg:rounded-[16px] ${view === MODULO_MI_ASISTENCIA.id ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white/80 text-slate-500 hover:bg-white hover:text-slate-800'}`}
+                title="Mi asistencia" aria-label="Mi asistencia" data-testid="boton-mi-asistencia">
+                <Icons.Clock />
+              </button>
+            )}
             {nav.chrome.busqueda && <BusquedaGlobal data={data} onNavigate={go} />}
             {nav.chrome.firmas && <BotonFirmasPendientes user={usuarioRol || user} data={data} actions={actions} />}
             {nav.chrome.alertas && <button onClick={() => { setAlertasOpen(!alertasOpen); setNotifOpen(false); }} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>

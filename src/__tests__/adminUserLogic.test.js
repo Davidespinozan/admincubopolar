@@ -10,7 +10,7 @@ import {
 } from '../data/adminUserLogic';
 
 describe('ROLES_VALIDOS', () => {
-  it('contiene los 7 roles canónicos del ERP con tildes y casing correcto', () => {
+  it('contiene los 8 roles canónicos del ERP con tildes y casing correcto (WF-0: + Empleado)', () => {
     expect(ROLES_VALIDOS).toEqual([
       'Admin',
       'Ventas',
@@ -19,6 +19,7 @@ describe('ROLES_VALIDOS', () => {
       'Almacén Bolsas',
       'Facturación',
       'Sin asignar',
+      'Empleado',
     ]);
   });
 });

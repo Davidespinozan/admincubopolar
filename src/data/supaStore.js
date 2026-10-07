@@ -8,6 +8,7 @@ import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
 import { mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
+import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs, esErrorDeRed, mensajeErrorLlamada, rolSinDatosNegocio } from './asistenciaLogic';
 import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, buildAjusteCuartoArgs, buildMermaCuartoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
 import {
   normalizarEntregasCierre, claveCierreFinanciero, buildCerrarFinancieroArgs, interpretarCierreFinanciero,
@@ -555,6 +556,8 @@ export function useSupaStore(userId, userName, userRol) {
   // Carga inicial y refresh completo tras acciones (rf()): núcleo +
   // todos los slices en paralelo. El realtime usa las piezas sueltas.
   const fetchAll = useCallback(async () => {
+    // WF-0: el rol Empleado no carga datos de negocio (su pantalla lee mi_asistencia()).
+    if (rolSinDatosNegocio(userRolRef.current)) { setLoading(false); return; }
     try {
       await Promise.all([fetchCore(), ...TABLAS_SLICE_RT.map(t => fetchSlice(t))]);
     } catch (err) {
@@ -611,6 +614,7 @@ export function useSupaStore(userId, userName, userRol) {
   // notificaciones (la campana ve las alertas de los crons al
   // instante) y chofer_ubicaciones (GPS en vivo en el mapa del admin).
   useEffect(() => {
+    if (rolSinDatosNegocio(userRol)) return undefined;
     const timers = new Map();
     const disparar = (clave, fn, delay) => {
       if (timers.has(clave)) clearTimeout(timers.get(clave));
@@ -635,7 +639,7 @@ export function useSupaStore(userId, userName, userRol) {
       for (const t of timers.values()) clearTimeout(t);
       channels.forEach(ch => supabase.removeChannel(ch));
     };
-  }, [fetchCore, fetchSlice]);
+  }, [fetchCore, fetchSlice, userRol]);
 
   // ── Actions ─────────────────────────────────────────────────
   const actionsRef = useRef(null);
@@ -645,6 +649,7 @@ export function useSupaStore(userId, userName, userRol) {
     const urol  = () => userRolRef.current || '';
     const rf    = () => fetchAll();
     const t     = () => toastRef.current;
+    const enLinea = () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false);
     const log   = (accion, modulo, detalle) =>
       supabase.from('auditoria').insert({ usuario: uname(), accion, modulo, detalle }).then(() => {});
 
@@ -1532,6 +1537,104 @@ export function useSupaStore(userId, userName, userRol) {
           console.error('[prepararDesdeBarra] excepción:', e);
           return { error: mensajeErrorPreparacion(e) };
         }
+      },
+
+      // ── WF-0 + PD-01 (mig 116): asistencia. Persona, hora, turno y geocerca
+      // los decide el servidor; el cliente solo manda una lectura de ubicación.
+      miAsistencia: async () => {
+        try {
+          const { data, error } = await supabase.rpc('mi_asistencia');
+          if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
+          return { data };
+        } catch (e) {
+          return { error: mensajeErrorLlamada(e, enLinea()) };
+        }
+      },
+
+      // tipo 'entrada' | 'salida'. `red: true` = no hubo respuesta: el mismo
+      // toque se reintenta con la MISMA operación (idempotente en el servidor).
+      registrarAsistencia: async (tipo, coords, operacionId) => {
+        const built = buildRegistroArgs({ operacionId, coords });
+        if (built.error) return { error: built.error };
+        const fn = tipo === 'salida' ? 'registrar_salida' : 'registrar_entrada';
+        try {
+          const { data, error } = await supabase.rpc(fn, built.args);
+          if (error) return { error: mensajeErrorLlamada(error, enLinea()), red: esErrorDeRed(error, enLinea()), operacionId: built.args.p_operacion_id };
+          return { data, operacionId: built.args.p_operacion_id };
+        } catch (e) {
+          return { error: mensajeErrorLlamada(e, enLinea()), red: esErrorDeRed(e, enLinea()), operacionId: built.args.p_operacion_id };
+        }
+      },
+
+      asistenciaDia: async (fecha) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const { data, error } = await supabase.rpc('asistencia_dia', { p_fecha: fecha || null });
+        if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
+        return { data };
+      },
+
+      configAsistencia: async () => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const { data, error } = await supabase.rpc('config_asistencia');
+        if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
+        return { data };
+      },
+
+      guardarCentroTrabajo: async (form) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const built = buildCentroArgs(form);
+        if (built.error) return { error: built.error };
+        const { data, error } = await supabase.rpc('guardar_centro_trabajo', built.args);
+        if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
+        t()?.success('Centro de trabajo guardado');
+        return { data };
+      },
+
+      guardarTurno: async (form) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const built = buildTurnoArgs(form);
+        if (built.error) return { error: built.error };
+        const { data, error } = await supabase.rpc('guardar_turno', built.args);
+        if (error) {
+          const msg = /ya tiene un turno activo/i.test(error.message || '')
+            ? 'Ese empleado ya tiene un turno activo en alguno de esos días.'
+            : mensajeErrorLlamada(error, enLinea());
+          return { error: msg };
+        }
+        t()?.success('Turno guardado');
+        return { data };
+      },
+
+      corregirAsistencia: async (params) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const built = buildCorreccionArgs(params);
+        if (built.error) return { error: built.error };
+        const { data, error } = await supabase.rpc('corregir_asistencia', built.args);
+        if (error) return { error: (error.message || '').replace(/^corregir_asistencia:\s*/, '') || 'No se pudo corregir' };
+        t()?.success('Corrección registrada');
+        return { data };
+      },
+
+      // WF-0: liga (o desliga con null) la ficha de empleado con su usuario (1 a 1).
+      vincularEmpleadoUsuario: async (empleadoId, usuarioId) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const { data, error } = await supabase.rpc('vincular_empleado_usuario', {
+          p_empleado_id: Number(empleadoId), p_usuario_id: usuarioId ? Number(usuarioId) : null,
+        });
+        if (error) {
+          const msg = /ya está ligado/i.test(error.message || '') ? 'Ese usuario ya está ligado a otro empleado.' : mensajeErrorLlamada(error, enLinea());
+          t()?.error(msg);
+          return { error: msg };
+        }
+        t()?.success(usuarioId ? 'Acceso ligado al empleado' : 'Acceso desligado');
+        rf();
+        return { data };
       },
 
       // OP-01D (mig 115): revertir una preparación equivocada (solo Admin):

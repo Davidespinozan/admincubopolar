@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -4189,7 +4189,99 @@ for (const [etq, f] of [...SUITES_115, ['111', '111_operaciones_cfdi_test.sql']]
 }
 console.log('  OP-01D (preparación desde barra: suite + concurrencia) tras 115: PASS');
 
+// ═══ 116 — WF-0 + PD-01: rol Empleado, vínculo persona ↔ acceso, reloj checador ═══
+{
+  const ok = (await c.query(`SELECT to_regclass('public.asistencias') IS NULL AND to_regclass('public.centros_trabajo') IS NULL
+      AND to_regprocedure('public.registrar_entrada(uuid,double precision,double precision,numeric)') IS NULL
+      AND to_regclass('public.empleados_usuario_id_key') IS NULL
+      AND pg_get_constraintdef((SELECT oid FROM pg_constraint WHERE conname = 'usuarios_rol_check')) NOT LIKE '%Empleado%' AS a`)).rows[0].a;
+  console.log(`  ASISTENCIA_PARITY_CHECK[pre-116]: ${ok ? 'PASS' : 'FAIL'}`);
+  if (!ok) process.exit(1);
+}
+const SUITES_116 = [...SUITES_115, ['115', '115_preparacion_barra_test.sql']];
+async function conc116() {
+  console.log('── 116 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const SUB = '11660000-0000-0000-0000-000000000001';
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM asistencias WHERE empleado_id = 11661; DELETE FROM asistencia_intentos WHERE empleado_id = 11661;
+    DELETE FROM turnos WHERE empleado_id = 11661; DELETE FROM centros_trabajo WHERE nombre = 'Planta C116';
+    DELETE FROM empleados WHERE id = 11661; DELETE FROM usuarios WHERE id = 11661; DELETE FROM auth.users WHERE id = '${SUB}'; COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) VALUES ('${SUB}', 'c1@t116c');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (11661, 'Empleado C116', 'c1@t116c', 'Empleado', 'Activo', '${SUB}');
+    INSERT INTO empleados (id, nombre, puesto, depto, salario_diario, fecha_ingreso, estatus, usuario_id) VALUES (11661, 'Empleado C116', 'P', 'D', 1, '2026-01-01', 'Activo', 11661);
+    INSERT INTO centros_trabajo (nombre, latitud, longitud, radio_m, precision_max_m) VALUES ('Planta C116', 23.2494, -106.4111, 100, 50);
+    INSERT INTO turnos (empleado_id, centro_id, dias, hora_entrada, hora_salida, tolerancia_min, vigente_desde)
+      SELECT 11661, id, ARRAY[1,2,3,4,5,6,7]::smallint[], (date_trunc('minute', now() AT TIME ZONE 'America/Mazatlan') - interval '5 minutes')::time,
+             (date_trunc('minute', now() AT TIME ZONE 'America/Mazatlan') + interval '475 minutes')::time, 10, CURRENT_DATE - 3
+        FROM centros_trabajo WHERE nombre = 'Planta C116'; COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl) => { await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub: SUB })]); };
+  const carrera = async (fn, opA, opB) => {
+    const Q = `SELECT ${fn}($1::uuid, 23.2494, -106.4111, 10) AS r`;
+    await actor(a); await actor(b);
+    const ra = (await a.query(Q, [opA])).rows[0].r;
+    let done = false;
+    const prB = b.query(Q, [opB]).then(r => r.rows[0].r, e => ({ error: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query('COMMIT');
+    const rb = await prB;
+    await b.query(rb.error ? 'ROLLBACK' : 'COMMIT');
+    return { ra, rb, bloqueado };
+  };
+  const filas = async () => (await c.query(`SELECT count(*)::int AS n, count(salida_at)::int AS s FROM asistencias WHERE empleado_id = 11661`)).rows[0];
+  let r = await carrera('registrar_entrada', '11660000-0000-0000-0000-0000000000a1', '11660000-0000-0000-0000-0000000000a2');
+  let f = await filas();
+  ok(r.ra.ok && r.bloqueado && r.rb.ok === false && r.rb.codigo === 'ya_registrada' && f.n === 1,
+    `C116a dos entradas simultáneas (operaciones distintas): la segunda espera y responde ya_registrada; 1 fila (${JSON.stringify(r.rb)})`);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica; DELETE FROM asistencias WHERE empleado_id = 11661; COMMIT;`);
+  r = await carrera('registrar_entrada', '11660000-0000-0000-0000-0000000000b1', '11660000-0000-0000-0000-0000000000b1');
+  f = await filas();
+  ok(r.ra.ok && r.bloqueado && r.rb.ok === true && r.rb.replay === true && f.n === 1,
+    'C116b la misma entrada dos veces a la vez: un solo efecto; la segunda es replay');
+  r = await carrera('registrar_salida', '11660000-0000-0000-0000-0000000000c1', '11660000-0000-0000-0000-0000000000c2');
+  f = await filas();
+  ok(r.ra.ok && r.bloqueado && r.rb.ok === false && r.rb.codigo === 'ya_registrada' && f.s === 1,
+    `C116c dos salidas simultáneas (operaciones distintas): la segunda espera y responde ya_registrada (${JSON.stringify(r.rb.codigo)})`);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica; UPDATE asistencias SET salida_at = NULL, salida_lat = NULL, salida_lng = NULL,
+    salida_precision_m = NULL, salida_distancia_m = NULL, salida_dentro = NULL, operacion_salida = NULL, minutos_trabajados = NULL WHERE empleado_id = 11661; COMMIT;`);
+  r = await carrera('registrar_salida', '11660000-0000-0000-0000-0000000000d1', '11660000-0000-0000-0000-0000000000d1');
+  f = await filas();
+  ok(r.ra.ok && r.bloqueado && r.rb.ok === true && r.rb.replay === true && f.s === 1,
+    'C116d la misma salida dos veces a la vez: un solo efecto; la segunda es replay');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (116 concurrencia)'); process.exit(1); }
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 116 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '116_asistencia.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 116 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 116)'); process.exit(1); }
+console.log('── PRUEBAS 116');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/116_asistencia_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (116)'); process.exit(1); }
+}
+await conc116();
+await reruns090('116', ['072']);
+for (const [etq, f] of [...SUITES_116, ['111', '111_operaciones_cfdi_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 116)`); process.exit(1); }
+  console.log(`  ${etq} tras 116: PASS`);
+}
+console.log('  WF-0 + PD-01 (asistencia: suite + concurrencia) tras 116: PASS');
+
+
 // ═══ OP-03 — ensayo operativo de punta a punta (Día 0; producción, barra, mostrador, ruta, mermas, reverso) ═══
+// Va al final (tras 116): deja sus funciones auxiliares op3_*, que 090-04 marcaría en una re-corrida posterior.
 console.log('── ENSAYO OPERATIVO OP-03');
 {
   const rr = await runFile(c, path.join(ROOT, 'supabase/tests/op03_ensayo_operativo_test.sql'), { stopOnError: true, echo: true });
@@ -4256,7 +4348,10 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 113 (OL-04)
   'reservar_complemento_cfdi',
   // 115 (OP-01D)
-  'registrar_preparacion_barra', 'revertir_preparacion_barra'];
+  'registrar_preparacion_barra', 'revertir_preparacion_barra',
+  // 116 (WF-0 + PD-01)
+  'asistencia_turno_aplicable', 'asistencia_empleado_actual', 'asistencia_json', 'vincular_empleado_usuario', 'guardar_centro_trabajo',
+  'guardar_turno', 'registrar_entrada', 'registrar_salida', 'mi_asistencia', 'asistencia_dia', 'config_asistencia', 'corregir_asistencia'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

@@ -13,6 +13,8 @@ export const ROLES_VALIDOS = [
   'Almacén Bolsas',
   'Facturación',
   'Sin asignar',
+  // WF-0 (mig 116): solo "Mi asistencia"; sin back office.
+  'Empleado',
 ];
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
