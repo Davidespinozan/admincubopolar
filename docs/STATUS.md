@@ -1,29 +1,32 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-07 (WF-0 + PD-01: rol Empleado y reloj checador, 116 activa). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-07 (WF-0.1 + PD-02: aislamiento de lectura del Empleado y calendario operativo, 117/118 activas). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Repositorio desplegado: `dddedeed73c2ffba8b3802392d7428bf78eb497e` (WF-0 + PD-01) — DEPLOYED (Netlify
-  `6ac68685e4b00d0008957698`, ready 2026-10-07T17:51Z); bundle vivo verificado (`registrar_entrada`,
-  `registrar_salida`, `mi_asistencia`, `asistencia_dia`, `corregir_asistencia`, `vincular_empleado_usuario`,
-  `guardar_turno`, `mi-asistencia`). Netlify Functions: solo cambió `admin-create-user` (`790a38e810e0` →
-  `2a30a835df62`, intencional: acepta el rol `Empleado`); los otros 16 digests sin cambio. Este commit de
-  documentación se publica encima sin cambios de código. Bases anteriores: `95d69a3` (OP-01E),
+- Repositorio desplegado: `089c521ef460d66ec664eb86abd73bee08b58843` (WF-0.1 + PD-02) — DEPLOYED (Netlify
+  `6ac68d97adc0a60008b1d4d9`, ready 2026-10-07T18:21Z); bundle vivo verificado (`completar_ocurrencia`,
+  `guardar_actividad`, `editar_ocurrencia`, `desactivar_actividad`, `p_solo_abiertas`, `mis-actividades`,
+  `actividades-vencidas`, `dashboard-calendario`). Netlify Functions: los 17 digests idénticos al deploy anterior
+  (`admin-create-user` `2a30a835df62`, stripe `d50a7b654379`, mercadopago `c6ae953b0992`). Este commit de
+  documentación se publica encima sin cambios de código. Bases anteriores: `dddedee` (WF-0 + PD-01), `95d69a3` (OP-01E),
   `3bdf4ce` (CLOSURE-1), `5f1632b` (OL-04), `c09d82a` (B3.6), `9a94881` (OL-03B), `cfce0f2` (OL-03A).
-- Base de datos: migraciones aplicadas hasta la **116** (111 el 2026-10-06T16:27Z, 112 el
+- Base de datos: migraciones aplicadas hasta la **118** (111 el 2026-10-06T16:27Z, 112 el
   16:29:58Z, 113 el 17:51:58Z, 114 el 18:58:15Z, 115 el 2026-10-07T00:05:37Z, 116 el 2026-10-07T17:48:57Z,
-  una vez cada una; se
+  117 el 18:19:21Z, 118 el 18:19:56Z, una vez cada una; se
   aplican con `supabase db query`; no hay tabla de historial: la "cabeza" se verifica por la presencia y
   huella de los objetos). SHA-256 de 114: `c5b5b82f83db1baae5390ccca197244c146881c1a400a9ed437c4060155d623a`;
   de 115: `0b96309f0270256cbfdc3964f6bfd179a278959fd93f05c9d67e09ac4541a4e9`; de 116:
-  `66383f4f8c20cc150713dd961771813ac735453c0e82f6efc30eadbbe97e64b4`; 109–115 sin cambio.
-- Conteos tras 116 (cambian con cada fase; no son invariantes): 143 funciones · 83 policies ·
-  46 tablas · 44 secuencias · 1 vista · 45 triggers en `public` (7 en `ordenes`). El diff de 116 fue
-  EXACTAMENTE +14 funciones, +5 policies, +5 tablas, +5 secuencias, el CHECK `usuarios_rol_check` con
-  `'Empleado'` y el índice único parcial `empleados_usuario_id_key`; estado de negocio idéntico.
+  `66383f4f8c20cc150713dd961771813ac735453c0e82f6efc30eadbbe97e64b4`; de 117:
+  `45f027956dcae88dd93d0588692078995bedf48088a5b6a548273c02ff111fbb`; de 118:
+  `b4d2a77b730b99b999548408b37f5b763cbe4e8520d4228291a26f0c64923a8e`; 109–116 sin cambio.
+- Conteos tras 118 (cambian con cada fase; no son invariantes): 161 funciones · 85 policies ·
+  48 tablas · 46 secuencias · 1 vista · 47 triggers en `public` (7 en `ordenes`). Diff de 116: +14 funciones,
+  +5 policies, +5 tablas, +5 secuencias, CHECK de rol con `'Empleado'` e índice `empleados_usuario_id_key`.
+  Diff de 117: +1 función (`erp_lector_negocio`) y el USING de 24 policies (mismo nombre, comando, roles y tipo).
+  Diff de 118: +17 funciones, +2 policies, +2 tablas, +2 secuencias, +2 triggers. Estado de negocio idéntico en cada paso.
 - Huellas (md5 de `pg_get_functiondef`): `completar_venta_directa` (109) `5825f5e3072a1d5a98961752a5eb5cc6` ·
   `ordenes_guard_entrega_directa` (110) `9eac14f606d8c0f0fb4a8851cc32b640` ·
   `reservar_operacion_cfdi` `da2ef2b708a3d459b1fb462092b3225f` · `reservar_complemento_cfdi` (113)
@@ -36,7 +39,10 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
   `8aa2221b6bfc8173f174641724237866` · `registrar_salida` `79237670bbf721e068c769a5a7f0d149` ·
   `corregir_asistencia` `2d537842689bd849ec229ecb0d4a8054` · `asistencia_dia` `7df64f97f31c4842efd94eb45e538e50` ·
   `mi_asistencia` `467ee2f23865af200d632bd837b4cf68` (huella conjunta de las 14 funciones de 116:
-  `9bea838385faf7a54384c658dc61d020`).
+  `9bea838385faf7a54384c658dc61d020`) · 117: `erp_lector_negocio` `d97f617862eda14b2d86100221e9885b` · 118:
+  `calendario` `6b36ccfd86de471c73c16edd5d2ec28d` · `completar_ocurrencia` `7aae67bba2c0ce36ce4339f662813e9b` ·
+  `guardar_actividad` `23237091c7e62056cf1eafad8cc4244b` · `editar_ocurrencia` `244157be727c6e9ec7884c94d063bb2d` ·
+  `desactivar_actividad` `a951db0f61f5601f40302268faac5f9e` (huella conjunta de 118: `2add50fa4f4e64be367a509b40d61098`).
 - `idx_pagos_ref` (114): `CREATE UNIQUE INDEX idx_pagos_ref ON public.pagos USING btree (referencia)
   WHERE (referencia <> ''::text)` — LIVE; 0 referencias no vacías repetidas al activar.
 - Webhooks del link desplegados (digest Netlify): stripe `d50a7b654379` · mercadopago `c6ae953b0992`.
@@ -64,6 +70,7 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 | OL-04 complementos de pago por pago (113) | 5f1632b | MIGRATION APPLIED ONCE (113 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED |
 | CLOSURE-1 referencia de pago única (114; R-01 de la auditoría final) | 3bdf4ce | MIGRATION APPLIED ONCE + DEPLOYED / TECHNICALLY VERIFIED / OWNER ACCEPTED; R-01 CLOSED IN PRODUCTION |
 | WF-0 + PD-01 rol Empleado, vínculo empleado ↔ usuario y reloj checador geolocalizado (116) | dddedee | MIGRATION APPLIED ONCE (116 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED; sin cierre del dueño |
+| WF-0.1 aislamiento de lectura del Empleado (117) + PD-02 calendario operativo (118) | 089c521 | MIGRATIONS APPLIED ONCE (117 → 118 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED; sin cierre del dueño |
 
 B3.3 y B3.5 (Ventas IA) y OL-01 / OL-02 / OL-02D / OL-03 fueron auditorías sin commit. El cierre
 del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI, OL-02 ni OL-03A/B.
@@ -257,7 +264,38 @@ picada, triturada y enfriamiento asignado en OP-03 (2026-10-07T03:18:42Z).
 
 **GL-2:** READY — validación del primer cobro real pendiente. **GL-3** (Facturama LIVE): DEFERRED; no
 timbrar hasta cerrarlo. **PD-01:** implementado y activo (ver abajo; el dueño lo autorizó el 2026-10-07).
-**PD-02 (calendario):** NO iniciado. OL y CLOSURE-1: CLOSED.
+**PD-02 (calendario):** implementado y activo (ver abajo). OL y CLOSURE-1: CLOSED.
+
+## Calendario operativo (PD-02, mig 118) y aislamiento del Empleado (WF-0.1, mig 117) — 2026-10-07
+**DEPLOYED / TECHNICALLY VERIFIED — ACTIVIDADES REALES PENDIENTES DEL DUEÑO (0 actividades en producción).**
+- **WF-0.1:** las 24 policies de SELECT con `erp_es_activo()` usan `erp_lector_negocio()` (activo y rol ≠ `Empleado`).
+  El Empleado ya no lee por API clientes, órdenes, pagos, CxC/CxP, inventario, producción, rutas, costos,
+  configuración ni notificaciones (además de lo que ya era solo de Admin). Conserva su perfil, su asistencia y sus
+  actividades. Para los demás roles la condición es idéntica (suite 117: cada rol ve exactamente el total).
+- **Modelo:** `actividades` = plantilla versionada (trigger: la definición no se sobrescribe ni se borra);
+  `actividad_ocurrencias` = solo lo que pasó (completada o editada; trigger: una completada es inmutable). Las
+  ocurrencias se calculan al leer (`calendario(desde, hasta)`, máx. 1,100 días): no hay filas futuras ni procesos.
+- **Recurrencia:** única, semanal, mensual, anual, con ventana (inicio → límite). Si el día límite es menor que el de
+  inicio, termina en el periodo siguiente; la ocurrencia pertenece al periodo en que EMPIEZA (28 oct → 3 nov = octubre).
+  Día inexistente → último día del mes (31 → 30/28; 29 feb → 28 en años no bisiestos).
+- **Estado (servidor, `fin_hoy()` Mazatlán):** próxima / pendiente / vencida / completada; al completar se guardan la
+  hora del servidor, la fecha de negocio, quién, notas y la clasificación anticipada / en_ventana / tardía.
+- **Versiones:** "editar de aquí en adelante" cierra la versión y crea la sucesora a partir del periodo siguiente al
+  último ya iniciado o completado (una sola ocurrencia por periodo); "editar solo esta" guarda la ventana nueva con la
+  original y el motivo; "desactivar" deja de generar periodos futuros y conserva lo iniciado, vencido o completado.
+  Una edición individual de un periodo futuro queda sin efecto si después se editan las futuras (la nueva versión manda).
+- **Permisos:** crear/editar/desactivar solo Admin; el responsable (persona o rol) ve y completa lo suyo si
+  `asignado_puede_completar`; `visibilidad = 'admin'` (pagos, administrativas) solo Admin, también por API; sin
+  responsable = solo Admin. Completar no crea pagos ni movimientos ni toca máquinas, camiones o costos fijos.
+- **UX:** Calendario (Admin, área Operación: Mes, Próximas, Vencidas, Completadas, detalle, completar, editar,
+  desactivar); Mis actividades (Empleado como módulo; los demás roles con el botón del calendario en la cabecera; Chofer
+  con "Actividades" en todos sus pasos); Dashboard: una tarjeta compacta (pendientes hoy / por vencer ≤ 3 días /
+  vencidas); Bandeja: detector "actividades vencidas". Sin notificaciones.
+- Suites: `117_aislamiento_lectura_empleado_test.sql` (25), `118_calendario_operativo_test.sql` (79) + concurrencia
+  C118a/b en el runner; `src/__tests__/pd02Calendario.test.jsx`.
+- Reversión (sin actividades): DROP de funciones, triggers y tablas de 118; 117: ALTER POLICY … USING
+  (erp_es_activo()) en las 24 y DROP FUNCTION `erp_lector_negocio()` (reabre la lectura amplia del Empleado);
+  Netlify a `b3c324f`. Con actividades: no borrar historia.
 
 ## Personal y asistencia (WF-0 + PD-01, mig 116) — 2026-10-07
 **DEPLOYED / TECHNICALLY VERIFIED — CONFIGURACIÓN PENDIENTE DEL DUEÑO (fail closed).**
@@ -338,9 +376,10 @@ Otros:
 - Nómina: sin reverso de un periodo pagado.
 - Costeo: costo completo de manufactura y margen por SKU no se modelan (decisión, no defecto).
 - Operación: sin pruebas E2E de escritura; el `.env` local apunta a producción.
-- Asistencia (tras PD-01): las policies `read_all` heredadas dejan a todo usuario activo (también `Empleado`) leer por
-  API muchas tablas de negocio; la interfaz no las carga para Empleado y ningún contrato de escritura lo acepta, pero el
-  aislamiento de LECTURA por API no está cerrado (mismo backlog que `pagos.read_all`). Sin QA visual autenticada en
+- Asistencia (tras PD-01): la lectura amplia por API del Empleado quedó CERRADA por 117. Sigue abierta la de los demás
+  roles operativos (`pagos.read_all` y similares: backlog de seguridad). El Empleado aún puede INSERTAR en `auditoria` y
+  `notificaciones` (policies `insert_all` heredadas, sin lectura) y conocer booleanos de historia (`cuarto_tiene_historia`,
+  `empaque_tiene_dependencias`, `b4_ruta_con_historia`, `erp_foto_merma_en_uso`). Sin QA visual autenticada en
   producción (no se crean usuarios ni marcas de prueba). Sin consulta automática de la marca olvidada (> 24 h): la cierra
   Admin con una corrección. Las correcciones no se reintentan con la misma operación (un reintento tras perder la
   respuesta agrega otra fila al historial).
