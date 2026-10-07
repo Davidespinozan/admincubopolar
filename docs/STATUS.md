@@ -1,6 +1,6 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-07 (WF-0.1 + PD-02: aislamiento de lectura del Empleado y calendario operativo, 117/118 activas). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-07 (WF-0.2: superficie de API del Empleado cerrada, 119 activa; WF-0 / PD-01 / PD-02 CLOSED PROD). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
@@ -11,22 +11,26 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
   `guardar_actividad`, `editar_ocurrencia`, `desactivar_actividad`, `p_solo_abiertas`, `mis-actividades`,
   `actividades-vencidas`, `dashboard-calendario`). Netlify Functions: los 17 digests idénticos al deploy anterior
   (`admin-create-user` `2a30a835df62`, stripe `d50a7b654379`, mercadopago `c6ae953b0992`). Este commit de
-  documentación se publica encima sin cambios de código. Bases anteriores: `dddedee` (WF-0 + PD-01), `95d69a3` (OP-01E),
+  documentación se publica encima sin cambios de código. WF-0.2 (119) no cambió el frontend: su commit (migración,
+  pruebas, runner y STATUS) se publica sobre el mismo código. Bases anteriores: `dddedee` (WF-0 + PD-01), `95d69a3` (OP-01E),
   `3bdf4ce` (CLOSURE-1), `5f1632b` (OL-04), `c09d82a` (B3.6), `9a94881` (OL-03B), `cfce0f2` (OL-03A).
-- Base de datos: migraciones aplicadas hasta la **118** (111 el 2026-10-06T16:27Z, 112 el
+- Base de datos: migraciones aplicadas hasta la **119** (111 el 2026-10-06T16:27Z, 112 el
   16:29:58Z, 113 el 17:51:58Z, 114 el 18:58:15Z, 115 el 2026-10-07T00:05:37Z, 116 el 2026-10-07T17:48:57Z,
-  117 el 18:19:21Z, 118 el 18:19:56Z, una vez cada una; se
+  117 el 18:19:21Z, 118 el 18:19:56Z, 119 el 19:32:05Z, una vez cada una; se
   aplican con `supabase db query`; no hay tabla de historial: la "cabeza" se verifica por la presencia y
   huella de los objetos). SHA-256 de 114: `c5b5b82f83db1baae5390ccca197244c146881c1a400a9ed437c4060155d623a`;
   de 115: `0b96309f0270256cbfdc3964f6bfd179a278959fd93f05c9d67e09ac4541a4e9`; de 116:
   `66383f4f8c20cc150713dd961771813ac735453c0e82f6efc30eadbbe97e64b4`; de 117:
   `45f027956dcae88dd93d0588692078995bedf48088a5b6a548273c02ff111fbb`; de 118:
-  `b4d2a77b730b99b999548408b37f5b763cbe4e8520d4228291a26f0c64923a8e`; 109–116 sin cambio.
-- Conteos tras 118 (cambian con cada fase; no son invariantes): 161 funciones · 85 policies ·
+  `b4d2a77b730b99b999548408b37f5b763cbe4e8520d4228291a26f0c64923a8e`; de 119:
+  `cd499211b5d47eed71142401789d455a323a3007ab92cd72f3190127fc67f0ad`; 109–118 sin cambio.
+- Conteos tras 119 (cambian con cada fase; no son invariantes): 162 funciones · 85 policies ·
   48 tablas · 46 secuencias · 1 vista · 47 triggers en `public` (7 en `ordenes`). Diff de 116: +14 funciones,
   +5 policies, +5 tablas, +5 secuencias, CHECK de rol con `'Empleado'` e índice `empleados_usuario_id_key`.
   Diff de 117: +1 función (`erp_lector_negocio`) y el USING de 24 policies (mismo nombre, comando, roles y tipo).
-  Diff de 118: +17 funciones, +2 policies, +2 tablas, +2 secuencias, +2 triggers. Estado de negocio idéntico en cada paso.
+  Diff de 118: +17 funciones, +2 policies, +2 tablas, +2 secuencias, +2 triggers. Diff de 119: cuerpo de 5 funciones
+  (mismo ACL) + `erp_exigir_no_empleado` (sin EXECUTE para authenticated); policies y grants sin cambio (87 funciones
+  ejecutables por authenticated antes y después). Estado de negocio idéntico en cada paso.
 - Huellas (md5 de `pg_get_functiondef`): `completar_venta_directa` (109) `5825f5e3072a1d5a98961752a5eb5cc6` ·
   `ordenes_guard_entrega_directa` (110) `9eac14f606d8c0f0fb4a8851cc32b640` ·
   `reservar_operacion_cfdi` `da2ef2b708a3d459b1fb462092b3225f` · `reservar_complemento_cfdi` (113)
@@ -42,7 +46,11 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
   `9bea838385faf7a54384c658dc61d020`) · 117: `erp_lector_negocio` `d97f617862eda14b2d86100221e9885b` · 118:
   `calendario` `6b36ccfd86de471c73c16edd5d2ec28d` · `completar_ocurrencia` `7aae67bba2c0ce36ce4339f662813e9b` ·
   `guardar_actividad` `23237091c7e62056cf1eafad8cc4244b` · `editar_ocurrencia` `244157be727c6e9ec7884c94d063bb2d` ·
-  `desactivar_actividad` `a951db0f61f5601f40302268faac5f9e` (huella conjunta de 118: `2add50fa4f4e64be367a509b40d61098`).
+  `desactivar_actividad` `a951db0f61f5601f40302268faac5f9e` (huella conjunta de 118: `2add50fa4f4e64be367a509b40d61098`) ·
+  119: `erp_es_activo` `1e94bc1d08b13cd559e7e678c7e6347e` (antes `76b7c3fb…`) · `erp_exigir_no_empleado`
+  `51882a9b70cd7451ee315021c6db7bf0` · `cuarto_tiene_historia` `fc0be68ada0d71b41274c3d6e5f004d5` · `empaque_tiene_dependencias`
+  `0d9bbf77ae59aa1793079dd7ed66cf8d` · `b4_ruta_con_historia` `b4df8086727901167580ff9d2397b4d5` · `erp_foto_merma_en_uso`
+  `06f7fa1db7a55c57834ce1228b6c29b7` (idénticas a la base local que pasó el gate).
 - `idx_pagos_ref` (114): `CREATE UNIQUE INDEX idx_pagos_ref ON public.pagos USING btree (referencia)
   WHERE (referencia <> ''::text)` — LIVE; 0 referencias no vacías repetidas al activar.
 - Webhooks del link desplegados (digest Netlify): stripe `d50a7b654379` · mercadopago `c6ae953b0992`.
@@ -70,7 +78,12 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 | OL-04 complementos de pago por pago (113) | 5f1632b | MIGRATION APPLIED ONCE (113 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED |
 | CLOSURE-1 referencia de pago única (114; R-01 de la auditoría final) | 3bdf4ce | MIGRATION APPLIED ONCE + DEPLOYED / TECHNICALLY VERIFIED / OWNER ACCEPTED; R-01 CLOSED IN PRODUCTION |
 | WF-0 + PD-01 rol Empleado, vínculo empleado ↔ usuario y reloj checador geolocalizado (116) | dddedee | MIGRATION APPLIED ONCE (116 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED; sin cierre del dueño |
-| WF-0.1 aislamiento de lectura del Empleado (117) + PD-02 calendario operativo (118) | 089c521 | MIGRATIONS APPLIED ONCE (117 → 118 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED; sin cierre del dueño |
+| WF-0.1 aislamiento de lectura del Empleado (117) + PD-02 calendario operativo (118) | 089c521 | MIGRATIONS APPLIED ONCE (117 → 118 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED |
+| WF-0.2 cierre de la superficie de API del Empleado (119) | ver `git log` (feat(119)) | MIGRATION APPLIED ONCE (sin cambio de frontend) / TECHNICALLY VERIFIED |
+
+**Clasificación final (2026-10-07):** **WF-0 = CLOSED PROD** · **PD-01 = CLOSED PROD / CONFIGURATION PENDING** (solo
+centro de trabajo real, geocerca, turnos reales y vínculos empleado ↔ usuario) · **PD-02 = CLOSED PROD / OWNER DATA
+PENDING** (solo actividades reales, responsables, ventanas y visibilidad). Son datos de operación, no software pendiente.
 
 B3.3 y B3.5 (Ventas IA) y OL-01 / OL-02 / OL-02D / OL-03 fueron auditorías sin commit. El cierre
 del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI, OL-02 ni OL-03A/B.
@@ -266,6 +279,20 @@ picada, triturada y enfriamiento asignado en OP-03 (2026-10-07T03:18:42Z).
 timbrar hasta cerrarlo. **PD-01:** implementado y activo (ver abajo; el dueño lo autorizó el 2026-10-07).
 **PD-02 (calendario):** implementado y activo (ver abajo). OL y CLOSURE-1: CLOSED.
 
+## Superficie de API del Empleado (WF-0.2, mig 119) — 2026-10-07 — CLOSED PROD
+- Contrato del rol: sesión, perfil propio, Mi asistencia y Mis actividades. Nada más, en la base de datos.
+- Residuales verificados (reproducidos en el runner antes de 119): INSERT directo en `auditoria` y `notificaciones`,
+  UPDATE de `notificaciones`, subir/leer/borrar en su carpeta del bucket `mermas`, y 4 helpers sí/no de historia
+  (`cuarto_tiene_historia`, `empaque_tiene_dependencias`, `b4_ruta_con_historia`, `erp_foto_merma_en_uso`).
+- Cierre: `erp_es_activo()` = activo y rol ≠ Empleado (sus 6 consumidores son esas policies, 3 de `storage.objects`
+  que una migración no puede alterar; el texto de las policies no cambia y los demás roles no cambian); los 4 helpers
+  llaman a `erp_exigir_no_empleado()` (42501 solo para el Empleado; conservan su EXECUTE para los triggers de Admin).
+- Superficie para el Empleado (87 funciones ejecutables por authenticated): A requeridas 6 (`mi_asistencia`,
+  `registrar_entrada`, `registrar_salida`, `asistencia_empleado_actual`, `calendario`, `completar_ocurrencia`);
+  B plataforma 22 (identidad propia que también evalúan las policies, fecha/zona de negocio y cálculo puro); C negocio
+  58: todas rechazan al Empleado con 42501 (sondeo permanente en `119_cierre_api_empleado_test.sql`); 1 disparador de evento.
+- La auditoría de los contratos (asistencia, calendario, también la del Empleado al completar) sigue igual.
+
 ## Calendario operativo (PD-02, mig 118) y aislamiento del Empleado (WF-0.1, mig 117) — 2026-10-07
 **DEPLOYED / TECHNICALLY VERIFIED — ACTIVIDADES REALES PENDIENTES DEL DUEÑO (0 actividades en producción).**
 - **WF-0.1:** las 24 policies de SELECT con `erp_es_activo()` usan `erp_lector_negocio()` (activo y rol ≠ `Empleado`).
@@ -376,10 +403,10 @@ Otros:
 - Nómina: sin reverso de un periodo pagado.
 - Costeo: costo completo de manufactura y margen por SKU no se modelan (decisión, no defecto).
 - Operación: sin pruebas E2E de escritura; el `.env` local apunta a producción.
-- Asistencia (tras PD-01): la lectura amplia por API del Empleado quedó CERRADA por 117. Sigue abierta la de los demás
-  roles operativos (`pagos.read_all` y similares: backlog de seguridad). El Empleado aún puede INSERTAR en `auditoria` y
-  `notificaciones` (policies `insert_all` heredadas, sin lectura) y conocer booleanos de historia (`cuarto_tiene_historia`,
-  `empaque_tiene_dependencias`, `b4_ruta_con_historia`, `erp_foto_merma_en_uso`). Sin QA visual autenticada en
+- Asistencia (tras PD-01): la superficie de API del Empleado quedó CERRADA (117 lectura, 119 escritura y helpers).
+  Sigue abierta la lectura amplia de los demás roles operativos (`pagos.read_all` y similares: backlog de seguridad,
+  fuera de WF). PD-02: una edición individual de un periodo futuro queda sin efecto si después se editan las futuras
+  (limitación aceptada). Sin QA visual autenticada en
   producción (no se crean usuarios ni marcas de prueba). Sin consulta automática de la marca olvidada (> 24 h): la cierra
   Admin con una corrección. Las correcciones no se reintentan con la misma operación (un reintento tras perder la
   respuesta agrega otra fila al historial).

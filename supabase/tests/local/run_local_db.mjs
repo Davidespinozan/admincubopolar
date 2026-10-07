@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -4387,6 +4387,60 @@ for (const [etq, f] of [...SUITES_118, ['111', '111_operaciones_cfdi_test.sql']]
 console.log('  PD-02 (calendario: suite + concurrencia) tras 118: PASS');
 
 
+// ═══ 119 — WF-0.2: cierre de la superficie de API del Empleado ═══
+{
+  // Paridad con producción (md5 leídos en solo lectura el 2026-10-07).
+  const PROD119 = { erp_es_activo: '76b7c3fbd5e2cbaa16e7a2dfaac94cd9', b4_ruta_con_historia: 'b92908a9c1daaf7a336cad945f57d720',
+    cuarto_tiene_historia: 'c61070885bceb2088943216554b5f226', empaque_tiene_dependencias: 'd0a859d2cbadd3c1cd7e49deca2a227a',
+    erp_foto_merma_en_uso: 'd297afa082bcd2771a08ddd2b3354dda' };
+  const loc = Object.fromEntries((await c.query(`SELECT p.proname, md5(pg_get_functiondef(p.oid)) AS m FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = ANY($1)`, [Object.keys(PROD119)])).rows.map(r => [r.proname, r.m]));
+  const okP = Object.entries(PROD119).every(([k, v]) => loc[k] === v)
+    && (await c.query(`SELECT count(*)::int AS n FROM pg_policies WHERE coalesce(qual,'') || coalesce(with_check,'') LIKE '%erp_es_activo()%'`)).rows[0].n === 6;
+  console.log(`  EMPLEADO_API_PARITY_CHECK[pre-119 == producción]: ${okP ? 'PASS' : 'FAIL ' + JSON.stringify(loc)}`);
+  if (!okP) process.exit(1);
+  // Reproduce los residuales de producción ANTES de 119 (todo se deshace).
+  const SUB = '11970000-0000-0000-0000-000000000001';
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) VALUES ('${SUB}', 'r@t119r');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (11971, 'Empleado R119', 'r@t119r', 'Empleado', 'Activo', '${SUB}');
+    INSERT INTO storage.buckets (id, name) VALUES ('mermas', 'mermas') ON CONFLICT DO NOTHING;
+    SET LOCAL session_replication_role = origin; SET LOCAL ROLE authenticated;
+    SELECT set_config('request.jwt.claims', '{"role":"authenticated","sub":"${SUB}"}', true);`);
+  const intento = async (sql) => { await c.query('SAVEPOINT r'); try { await c.query(sql); await c.query('RELEASE SAVEPOINT r'); return 'PERMITIDO'; }
+    catch (e) { await c.query('ROLLBACK TO SAVEPOINT r'); return 'RECHAZADO ' + e.code; } };
+  const rep = {
+    auditoria: await intento(`INSERT INTO auditoria (usuario, accion, modulo, detalle) VALUES ('x', 'x', 'x', 'x')`),
+    notificaciones: await intento(`INSERT INTO notificaciones (tipo, titulo, mensaje) VALUES ('x', 'x', 'x')`),
+    storage_mermas: await intento(`INSERT INTO storage.objects (bucket_id, name) VALUES ('mermas', '${SUB}/x.jpg')`),
+    cuarto_tiene_historia: await intento(`SELECT cuarto_tiene_historia('CF-1')`),
+  };
+  await c.query('ROLLBACK');
+  const reproducido = Object.values(rep).every(v => v === 'PERMITIDO');
+  console.log(`  RESIDUALES_EMPLEADO[pre-119, deben estar PERMITIDOS]: ${reproducido ? 'REPRODUCIDOS' : 'NO REPRODUCIDOS'} ${JSON.stringify(rep)}`);
+  if (!reproducido) process.exit(1);
+}
+const SUITES_119 = [...SUITES_118, ['118', '118_calendario_operativo_test.sql']];
+for (const k of [1, 2]) {
+  console.log(`── aplicar 119 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '119_cierre_api_empleado.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 119 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 119)'); process.exit(1); }
+console.log('── PRUEBAS 119');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/119_cierre_api_empleado_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (119)'); process.exit(1); }
+}
+await reruns090('119', ['072']);
+for (const [etq, f] of [...SUITES_119, ['111', '111_operaciones_cfdi_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 119)`); process.exit(1); }
+  console.log(`  ${etq} tras 119: PASS`);
+}
+console.log('  WF-0.2 (superficie de API del Empleado cerrada) tras 119: PASS');
+
+
 // ═══ OP-03 — ensayo operativo de punta a punta (Día 0; producción, barra, mostrador, ruta, mermas, reverso) ═══
 // Va al final (tras 116): deja sus funciones auxiliares op3_*, que 090-04 marcaría en una re-corrida posterior.
 console.log('── ENSAYO OPERATIVO OP-03');
@@ -4463,7 +4517,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   'erp_lector_negocio',
   // 118 (PD-02)
   'actividad_visible', 'actividad_ocurrencia_json', 'calendario', 'completar_ocurrencia', 'guardar_actividad', 'editar_ocurrencia',
-  'desactivar_actividad'];
+  'desactivar_actividad',
+  // 119 (WF-0.2)
+  'erp_exigir_no_empleado'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
