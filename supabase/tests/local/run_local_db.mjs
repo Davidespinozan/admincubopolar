@@ -4189,6 +4189,13 @@ for (const [etq, f] of [...SUITES_115, ['111', '111_operaciones_cfdi_test.sql']]
 }
 console.log('  OP-01D (preparación desde barra: suite + concurrencia) tras 115: PASS');
 
+// ═══ OP-03 — ensayo operativo de punta a punta (Día 0; producción, barra, mostrador, ruta, mermas, reverso) ═══
+console.log('── ENSAYO OPERATIVO OP-03');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/op03_ensayo_operativo_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (ensayo OP-03)'); process.exit(1); }
+}
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
