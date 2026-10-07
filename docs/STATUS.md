@@ -1,23 +1,29 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-07 (OP-03: GO-LIVE READY — OWNER OPENING DATA ONLY). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-07 (WF-0 + PD-01: rol Empleado y reloj checador, 116 activa). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Repositorio desplegado: `95d69a345126124f66be91718e08274913914f25` (OP-01E, modelo de barra) —
-  DEPLOYED (Netlify `6ac58d12b1753f0008180e8a`, ready 2026-10-07T00:07Z); bundle vivo verificado
-  ("Máquina Barra", "Preparar barra"; sin entrada de Transformaciones); 17 digests de Netlify Functions
-  sin cambio. Este commit de documentación se publica encima sin cambios de código. Bases anteriores:
+- Repositorio desplegado: `dddedeed73c2ffba8b3802392d7428bf78eb497e` (WF-0 + PD-01) — DEPLOYED (Netlify
+  `6ac68685e4b00d0008957698`, ready 2026-10-07T17:51Z); bundle vivo verificado (`registrar_entrada`,
+  `registrar_salida`, `mi_asistencia`, `asistencia_dia`, `corregir_asistencia`, `vincular_empleado_usuario`,
+  `guardar_turno`, `mi-asistencia`). Netlify Functions: solo cambió `admin-create-user` (`790a38e810e0` →
+  `2a30a835df62`, intencional: acepta el rol `Empleado`); los otros 16 digests sin cambio. Este commit de
+  documentación se publica encima sin cambios de código. Bases anteriores: `95d69a3` (OP-01E),
   `3bdf4ce` (CLOSURE-1), `5f1632b` (OL-04), `c09d82a` (B3.6), `9a94881` (OL-03B), `cfce0f2` (OL-03A).
-- Base de datos: migraciones aplicadas hasta la **115** (111 el 2026-10-06T16:27Z, 112 el
-  16:29:58Z, 113 el 17:51:58Z, 114 el 18:58:15Z, 115 el 2026-10-07T00:05:37Z, una vez cada una; se
+- Base de datos: migraciones aplicadas hasta la **116** (111 el 2026-10-06T16:27Z, 112 el
+  16:29:58Z, 113 el 17:51:58Z, 114 el 18:58:15Z, 115 el 2026-10-07T00:05:37Z, 116 el 2026-10-07T17:48:57Z,
+  una vez cada una; se
   aplican con `supabase db query`; no hay tabla de historial: la "cabeza" se verifica por la presencia y
   huella de los objetos). SHA-256 de 114: `c5b5b82f83db1baae5390ccca197244c146881c1a400a9ed437c4060155d623a`;
-  de 115: `0b96309f0270256cbfdc3964f6bfd179a278959fd93f05c9d67e09ac4541a4e9`; 109–114 sin cambio.
-- Conteos tras 115 (cambian con cada fase; no son invariantes): 129 funciones · 78 policies ·
-  41 tablas · 39 secuencias · 1 vista · 45 triggers en `public` (7 en `ordenes`).
+  de 115: `0b96309f0270256cbfdc3964f6bfd179a278959fd93f05c9d67e09ac4541a4e9`; de 116:
+  `66383f4f8c20cc150713dd961771813ac735453c0e82f6efc30eadbbe97e64b4`; 109–115 sin cambio.
+- Conteos tras 116 (cambian con cada fase; no son invariantes): 143 funciones · 83 policies ·
+  46 tablas · 44 secuencias · 1 vista · 45 triggers en `public` (7 en `ordenes`). El diff de 116 fue
+  EXACTAMENTE +14 funciones, +5 policies, +5 tablas, +5 secuencias, el CHECK `usuarios_rol_check` con
+  `'Empleado'` y el índice único parcial `empleados_usuario_id_key`; estado de negocio idéntico.
 - Huellas (md5 de `pg_get_functiondef`): `completar_venta_directa` (109) `5825f5e3072a1d5a98961752a5eb5cc6` ·
   `ordenes_guard_entrega_directa` (110) `9eac14f606d8c0f0fb4a8851cc32b640` ·
   `reservar_operacion_cfdi` `da2ef2b708a3d459b1fb462092b3225f` · `reservar_complemento_cfdi` (113)
@@ -26,7 +32,11 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
   `0202dd24c784ef4c83a09c0dd5b86c4a` ·
   `ordenes_guard_facturada` (112) `7e33177cfb5551cfcd602e94b94343ea` · `cerrar_ruta_financiero`
   (112) `bbca26893810c7867be7b2fd33e6fb14` (antes `9b93ce16…`) · `abonar_cxc` (114)
-  `8a5a127c3cc45a4db71cf03bb515f185` (antes `b84b1d3a…`, de 088).
+  `8a5a127c3cc45a4db71cf03bb515f185` (antes `b84b1d3a…`, de 088) · 116: `registrar_entrada`
+  `8aa2221b6bfc8173f174641724237866` · `registrar_salida` `79237670bbf721e068c769a5a7f0d149` ·
+  `corregir_asistencia` `2d537842689bd849ec229ecb0d4a8054` · `asistencia_dia` `7df64f97f31c4842efd94eb45e538e50` ·
+  `mi_asistencia` `467ee2f23865af200d632bd837b4cf68` (huella conjunta de las 14 funciones de 116:
+  `9bea838385faf7a54384c658dc61d020`).
 - `idx_pagos_ref` (114): `CREATE UNIQUE INDEX idx_pagos_ref ON public.pagos USING btree (referencia)
   WHERE (referencia <> ''::text)` — LIVE; 0 referencias no vacías repetidas al activar.
 - Webhooks del link desplegados (digest Netlify): stripe `d50a7b654379` · mercadopago `c6ae953b0992`.
@@ -53,6 +63,7 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 | Role UI B3.6 Ventas como UN espacio de trabajo (filtros Pendientes / Hoy / Todas) | c09d82a · docs a9ce9d7 | DEPLOYED / TECHNICALLY VERIFIED (solo UI; sin migración) |
 | OL-04 complementos de pago por pago (113) | 5f1632b | MIGRATION APPLIED ONCE (113 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED |
 | CLOSURE-1 referencia de pago única (114; R-01 de la auditoría final) | 3bdf4ce | MIGRATION APPLIED ONCE + DEPLOYED / TECHNICALLY VERIFIED / OWNER ACCEPTED; R-01 CLOSED IN PRODUCTION |
+| WF-0 + PD-01 rol Empleado, vínculo empleado ↔ usuario y reloj checador geolocalizado (116) | dddedee | MIGRATION APPLIED ONCE (116 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED; sin cierre del dueño |
 
 B3.3 y B3.5 (Ventas IA) y OL-01 / OL-02 / OL-02D / OL-03 fueron auditorías sin commit. El cierre
 del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role UI, OL-02 ni OL-03A/B.
@@ -245,7 +256,32 @@ picada, triturada y enfriamiento asignado en OP-03 (2026-10-07T03:18:42Z).
 - Usuarios: Santiago (Admin) listo; E2E (Admin/Ventas/Chofer) y QA inactivos — no usar.
 
 **GL-2:** READY — validación del primer cobro real pendiente. **GL-3** (Facturama LIVE): DEFERRED; no
-timbrar hasta cerrarlo. **PD-01:** FROZEN hasta tener uso real. OL y CLOSURE-1: CLOSED.
+timbrar hasta cerrarlo. **PD-01:** implementado y activo (ver abajo; el dueño lo autorizó el 2026-10-07).
+**PD-02 (calendario):** NO iniciado. OL y CLOSURE-1: CLOSED.
+
+## Personal y asistencia (WF-0 + PD-01, mig 116) — 2026-10-07
+**DEPLOYED / TECHNICALLY VERIFIED — CONFIGURACIÓN PENDIENTE DEL DUEÑO (fail closed).**
+- **Rol `Empleado`** (WF-0): solo "Mi asistencia"; no carga datos de negocio ni realtime, sin búsqueda, alertas,
+  notificaciones, firmas ni "Ver como"; no cae al back office de "Sin asignar". Ningún contrato de escritura de
+  negocio acepta el rol (probado: producción, preparación, CxC, venta directa, órdenes por REST → 42501).
+- **Vínculo 1 a 1** `empleados.usuario_id` (índice único parcial) por `vincular_empleado_usuario` (Admin, auditado);
+  pantalla Asistencia → Accesos. Los demás roles abren "Mi asistencia" desde la cabecera (Chofer: botón en todos sus pasos).
+- **Reloj checador:** `registrar_entrada` exige precisión <= `precision_max_m` Y distancia <= `radio_m` (haversine en
+  el servidor; nunca distancia − precisión); `registrar_salida` se acepta fuera de la geocerca y queda marcada
+  (coordenadas, precisión, distancia, `salida_dentro = false`). Persona, hora y día laboral los decide el servidor
+  (America/Mazatlan; turno nocturno = día de la entrada programada; se marca desde 60 min antes). Retardo = después de
+  entrada + tolerancia (inclusive). Idempotencia por `operacion_id`; una asistencia por empleado, día y turno.
+  Rechazos guardan solo motivo, precisión y distancia (sin coordenadas). Ubicación: una lectura por toque, sin rastreo;
+  sin cola offline. **No toca nómina.**
+- **Admin:** Asistencia (tabla del día Empleado | Turno | Entrada | Estado | Salida, evidencia con mapa, intentos
+  rechazados, corrección con motivo obligatorio; el original queda y el historial es inmutable), Turnos y Centro de trabajo.
+- **Estado al activar:** 0 centros, 0 turnos, 0 asistencias, 0 vínculos, ningún usuario `Empleado`. Hasta que Admin
+  capture el centro de trabajo (coordenadas y radio reales), los turnos y los accesos, nadie puede marcar y la
+  pantalla dice "sin turno (configuración pendiente)". No se inventaron datos.
+- Suites: `supabase/tests/116_asistencia_test.sql` (98 aserciones) + concurrencia C116a–d en el runner;
+  `src/__tests__/pd01Asistencia.test.jsx`.
+- Reversión (sin registros): borrar funciones y tablas de 116, el índice `empleados_usuario_id_key` y volver el CHECK
+  de rol sin `'Empleado'` (antes cambiar de rol a quien lo tenga); revertir Netlify a `1a1c1c1`. Con registros: no borrar historia.
 
 ## Backlog aceptado (32: P2 8 · P3 24) — no impide el cierre
 Clasificado en la auditoría final de cierre (2026-10-06). Ninguno se promueve a MUST-FIX sin
@@ -302,6 +338,12 @@ Otros:
 - Nómina: sin reverso de un periodo pagado.
 - Costeo: costo completo de manufactura y margen por SKU no se modelan (decisión, no defecto).
 - Operación: sin pruebas E2E de escritura; el `.env` local apunta a producción.
+- Asistencia (tras PD-01): las policies `read_all` heredadas dejan a todo usuario activo (también `Empleado`) leer por
+  API muchas tablas de negocio; la interfaz no las carga para Empleado y ningún contrato de escritura lo acepta, pero el
+  aislamiento de LECTURA por API no está cerrado (mismo backlog que `pagos.read_all`). Sin QA visual autenticada en
+  producción (no se crean usuarios ni marcas de prueba). Sin consulta automática de la marca olvidada (> 24 h): la cierra
+  Admin con una corrección. Las correcciones no se reintentan con la misma operación (un reintento tras perder la
+  respuesta agrega otra fila al historial).
 - Documentación: `finanzas.md` no lista `completar_venta_directa`; no hay tarjeta de órdenes/rutas.
 - UI (tras B3.6): Clientes para Ventas sigue diferido; la cabecera suelta (fuera del shell) de la vista
   de Ventas ya no se usa y sigue en el código; no se hizo QA visual autenticada en producción (la

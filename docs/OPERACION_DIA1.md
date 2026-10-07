@@ -29,7 +29,13 @@ terminado está en 0 y las existencias de bolsas en el sistema **no están verif
 ## Admin
 
 - **Usuarios:** Configuración → crear usuario con su rol (Admin, Ventas, Producción, Chofer,
-  Facturación, Almacén Bolsas). Las cuentas de prueba (E2E, QA) están inactivas: no usarlas.
+  Facturación, Almacén Bolsas, **Empleado** = solo marca asistencia). Las cuentas de prueba (E2E, QA)
+  están inactivas: no usarlas.
+- **Asistencia (reloj checador):** Equipo → Asistencia. Una sola vez: *Centro de trabajo* (en la planta,
+  "Usar mi ubicación actual", radio y precisión máxima), *Turnos* por empleado y *Accesos* (ligar cada
+  empleado con su usuario). Sin esto nadie puede marcar. Cada persona marca en "Mi asistencia" (botón del
+  reloj arriba; el chofer, botón "Asistencia"): la entrada solo dentro de la planta; la salida se puede
+  marcar fuera y queda señalada. Las correcciones llevan motivo y quedan en el historial. No toca la nómina.
 - **Clientes:** Clientes → nuevo cliente (datos fiscales, contacto, dirección/ubicación, zona).
   El crédito y el límite solo los cambia Admin.
 - **Precios especiales:** Precios → por cliente y producto. Precio comercial vigente:
