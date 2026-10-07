@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { diaNegocio } from '../utils/fechas';
-import { resolverOperacion, claveProduccion, claveTransformacion } from '../data/produccionAtomicaLogic';
+import { resolverOperacion, claveProduccion } from '../data/produccionAtomicaLogic';
+import { MAQUINAS_PRODUCCION, SALIDAS_BARRA, seProduceSinEmpaque, skusProducibles, esPreparacion, vistaPreviaPreparacion, clavePreparacion } from '../data/preparacionBarraLogic';
 import { claveSalida, claveTraspaso, claveMermaCuarto, MOTIVOS_SALIDA_MANUAL, motivoSalidaManual } from '../data/stockContratosLogic';
 import { mermasActivas } from '../data/mermasLogic';
-import { resumenCongeladores, resumenMermas, resumenTransformacion } from '../data/produccionResumenLogic';
+import { resumenCongeladores, resumenMermas } from '../data/produccionResumenLogic';
 import { supabase } from '../lib/supabase';
 import { s, n, fmtDate, fmtPct, todayLocalISO } from '../utils/safe';
 import { compressImage } from '../utils/compressImage';
@@ -19,12 +20,12 @@ import { EmptyState } from './ui/Skeleton';
 // Fase A4 (convergencia visual por rol): esta vista usa las primitivas del
 // shell de Administración (cabecera, pestañas segmentadas, tarjetas, Modal,
 // FormInput/FormBtn, ChoiceButton, toast global). Los flujos (producir,
-// congeladores, mermas, transformación), sus validaciones, fotos, firmas,
+// congeladores, mermas, preparar desde barra), sus validaciones, fotos, firmas,
 // UUIDs de operación y llamadas al store no cambian.
 //   embedded: la vista vive dentro del shell compartido (sin cabecera propia).
 //   tab/onTab: pestaña controlada por el shell (menú por rol); sin ellas, estado interno.
 // empaqueMap se deriva dinámicamente de data.productos.empaque_sku
-const TABS = [{ k: "producir", l: "Producción", icon: "Factory" }, { k: "cuartos", l: "Congeladores", icon: "Warehouse" }, { k: "mermas", l: "Mermas", icon: "AlertTriangle" }, { k: "trans", l: "Trans.", icon: "Snowflake" }];
+const TABS = [{ k: "producir", l: "Producción", icon: "Factory" }, { k: "cuartos", l: "Congeladores", icon: "Warehouse" }, { k: "mermas", l: "Mermas", icon: "AlertTriangle" }, { k: "preparar", l: "Preparar", icon: "Snowflake" }];
 // B2: dentro del shell el contenido ocupa el workspace como las vistas de Admin.
 const CONTENIDO = "mx-auto w-full max-w-[640px] space-y-3 md:max-w-3xl lg:max-w-5xl";
 const CONTENIDO_SHELL = "w-full space-y-3";
@@ -39,9 +40,9 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const [modal, setModal] = useState(false);
   const [traspasoModal, setTraspasoModal] = useState(false);
   const [sacarModal, setSacarModal] = useState(null); // { cfId, cfNombre }
-  const [transModal, setTransModal] = useState(false);
-  const [transForm, setTransForm] = useState({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", cuarto_destino: "CF-1", notas: "" });
-  const [guardandoTrans, setGuardandoTrans] = useState(false);
+  // OP-01D: "Preparar desde barra" (reemplaza a las Transformaciones de agosto).
+  const [prepForm, setPrepForm] = useState({ cuarto: "CF-1", salida: SALIDAS_BARRA[0], barras: "" });
+  const [guardandoPrep, setGuardandoPrep] = useState(false);
 
   // Producir form — includes destino (congelador) + merma inline opcional
   const [form, setForm] = useState({ turno: "Turno 1", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1", conMerma: false, mermaCantidad: "", mermaCausa: "Bolsa rota" });
@@ -65,7 +66,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   // Mig 076: operacion_id del intento lógico (reintento/doble click = mismo
   // UUID) + guard síncrono contra submits paralelos antes del re-render.
   const opProdRef = useRef(null);
-  const opTransRef = useRef(null);
+  const opPrepRef = useRef(null);
   const opSalidaRef = useRef(null);   // R2 (084)
   // 102: merma de cuarto — UUID del intento y foto ya subida se conservan entre
   // reintentos (una respuesta perdida no duplica la pérdida).
@@ -73,7 +74,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const fotoMermaSubidaRef = useRef(null);
   const opTraspasoRef = useRef(null); // R2 (084)
   const enVueloProd = useRef(false);
-  const enVueloTrans = useRef(false);
+  const enVueloPrep = useRef(false);
 
   const toast = useToast();
   const showToast = (msg, tipo = "success") => { (toast?.[tipo] || toast?.info)?.(msg); };
@@ -194,7 +195,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const prodHoy = useMemo(() => {
     const hoy = diaNegocio();
-    return data.produccion.filter(p => p.fecha && p.fecha.slice(0, 10) === hoy);
+    return data.produccion.filter(p => p.fecha && p.fecha.slice(0, 10) === hoy && !esPreparacion(p));
   }, [data.produccion]);
 
   const totalHoy = useMemo(() => prodHoy.reduce((s, p) => s + n(p.cantidad), 0), [prodHoy]);
@@ -205,7 +206,8 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   }, [data.mermas]);
 
   const mermaHoy = useMemo(() => mermasHoyList.reduce((sum, item) => sum + n(item.cantidad), 0), [mermasHoyList]);
-  const skuOptions = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
+  // OP-01D: las bolsas de picada/triturada de barra solo nacen de "Preparar desde barra".
+  const skuOptions = useMemo(() => skusProducibles(data.productos), [data.productos]);
 
   // ───────────── PANEL "QUÉ NECESITAS PRODUCIR" ─────────────
   // Mismo cálculo que el dashboard de admin para mantener consistencia total.
@@ -277,7 +279,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     for (const p of productosHielo) acc[s(p.sku)] = 0;
     const hoy = diaNegocio();
     for (const pr of (data.produccion || [])) {
-      if (!s(pr.fecha).startsWith(hoy)) continue;
+      if (!s(pr.fecha).startsWith(hoy) || esPreparacion(pr)) continue;
       const sku = s(pr.sku);
       acc[sku] = (acc[sku] || 0) + n(pr.cantidad);
     }
@@ -301,51 +303,45 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const hayFaltante = useMemo(() => tableroDemanda.some(r => r.faltante > 0), [tableroDemanda]);
 
-  const insumos = useMemo(() => data.productos.filter(p => {
-    const t = s(p.tipo).toLowerCase(); const sk = s(p.sku).toLowerCase();
-    return t.includes('barra') || t.includes('insumo') || t.includes('materia') || sk.includes('bh-') || sk.includes('barra');
-  }), [data.productos]);
+  // OP-01D: preparar N barras enteras → 2N bolsas (picada o triturada); el
+  // servidor consume la barra y el empaque configurado en un solo paso.
+  const preparacionesHoy = useMemo(() => {
+    const hoy = diaNegocio();
+    return (data.produccion || []).filter(p => esPreparacion(p) && s(p.fecha).slice(0, 10) === hoy && s(p.estatus) !== 'Revertida');
+  }, [data.produccion]);
+  const resumenPrep = useMemo(() => ({
+    preparaciones: preparacionesHoy.length,
+    barras: preparacionesHoy.reduce((t, p) => t + n(p.input_kg ?? p.inputKg), 0),
+    bolsas: preparacionesHoy.reduce((t, p) => t + n(p.cantidad), 0),
+  }), [preparacionesHoy]);
+  const vistaPrep = useMemo(() => vistaPreviaPreparacion({
+    productos: data.productos, cuartos: data.cuartosFrios, cuartoId: prepForm.cuarto, salidaSku: prepForm.salida, barras: prepForm.barras,
+  }), [data.productos, data.cuartosFrios, prepForm]);
 
-  const transformaciones = useMemo(() => (data.produccion || []).filter(p => p.tipo === 'Transformacion'), [data.produccion]);
-
-  const transInputKg  = Number(transForm.input_kg  || 0);
-  const transOutputKg = Number(transForm.output_kg || 0);
-  const transMermaKg  = Math.max(0, transInputKg - transOutputKg);
-  const transRendimiento = transInputKg > 0 ? Math.round((transOutputKg / transInputKg) * 100) : 0;
-  const transStockInput = useMemo(() => {
-    const p = data.productos.find(x => x.sku === transForm.input_sku);
-    return p ? Number(p.stock || 0) : null;
-  }, [data.productos, transForm.input_sku]);
-
-  const registrarTransformacion = async () => {
-    if (guardandoTrans || enVueloTrans.current) return;
-    if (!transForm.input_sku || !transForm.output_sku || transInputKg <= 0 || transOutputKg <= 0) return;
-    if (!transForm.cuarto_destino) {
-      showToast('Selecciona el cuarto destino', 'error');
-      return;
-    }
-    const datos = { ...transForm, input_kg: transInputKg, output_kg: transOutputKg };
-    const op = resolverOperacion(opTransRef.current, claveTransformacion(datos));
-    opTransRef.current = op;
-    enVueloTrans.current = true;
-    setGuardandoTrans(true);
+  const registrarPreparacion = async () => {
+    if (guardandoPrep || enVueloPrep.current) return;
+    if (vistaPrep.bloqueo) { showToast(vistaPrep.bloqueo.mensaje, 'error'); return; }
+    const datos = { cuartoId: prepForm.cuarto, salidaSku: prepForm.salida, barras: Number(prepForm.barras) };
+    const op = resolverOperacion(opPrepRef.current, clavePreparacion(datos));
+    opPrepRef.current = op;
+    enVueloPrep.current = true;
+    setGuardandoPrep(true);
     try {
-      // Una sola RPC atómica; un error = el servidor revirtió todo.
-      const result = await actions.addTransformacion({ ...datos, operacionId: op.id });
+      const result = await actions.prepararDesdeBarra({ ...datos, operacionId: op.id });
       if (result?.error) {
-        showToast('Error: ' + result.error, 'error');
+        showToast(result.error, 'error');
         return; // se conserva el operacion_id: reintentar no duplica
       }
-      opTransRef.current = null;
-      showToast(`${result.replay ? 'Ya estaba registrada — ' : ''}${result.folio}: ${result.inputCantidad}× ${result.inputSku} → ${result.outputCantidad}× ${result.outputSku}`);
-      setTransModal(false);
-      setTransForm({ input_sku: "", input_kg: "", output_sku: "", output_kg: "", cuarto_destino: "CF-1", notas: "" });
+      opPrepRef.current = null;
+      const r = result?.data || {};
+      showToast(`${r.replay ? 'Ya estaba registrada — ' : ''}${s(r.folio)}: ${n(r.barras)} ${n(r.barras) === 1 ? 'barra' : 'barras'} → ${n(r.bolsas)} bolsas`);
+      setPrepForm(f => ({ ...f, barras: "" }));
     } catch (e) {
-      console.error('Error transformación:', e);
-      showToast('Error en transformación. Verifica tu conexión y reintenta.', 'error');
+      console.error('Error preparación:', e);
+      showToast('Error al preparar. Verifica tu conexión y reintenta.', 'error');
     } finally {
-      enVueloTrans.current = false;
-      setGuardandoTrans(false);
+      enVueloPrep.current = false;
+      setGuardandoPrep(false);
     }
   };
   const cuartos = data.cuartosFrios || [];
@@ -376,7 +372,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       showToast(`Stock insuficiente de ${bolsaSku} (disp: ${stockBolsa}, pediste ${n(form.cantidad)}). Compra empaque desde Insumos.`, 'error');
       return;
     }
-    if (!bolsaSku) {
+    if (!bolsaSku && !seProduceSinEmpaque(form.sku)) {
       showToast(`${form.sku} no tiene empaque configurado. Configurarlo en Catálogo antes de producir.`, 'error');
       return;
     }
@@ -558,8 +554,6 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   // otros tres dejan de repetirlo. Orden por módulo: resumen → acción → contenido.
   const resumenCuartos = useMemo(() => resumenCongeladores(data.cuartosFrios, data.productos), [data.cuartosFrios, data.productos]);
   const resumenMer = useMemo(() => resumenMermas(data.mermas, diaNegocio()), [data.mermas]);
-  const resumenTrans = useMemo(() => resumenTransformacion(data.produccion, diaNegocio()), [data.produccion]);
-  const kg = (v) => `${Number(v || 0).toLocaleString()} kg`;
 
   return (
     <div className={embedded ? "text-slate-900" : "min-h-dvh w-full text-slate-900"} data-testid="produccion-shell">
@@ -796,65 +790,67 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           </div>
         </>)}
 
-        {/* ═══ TAB: TRANSFORMACIONES ═══ */}
-        {tab === "trans" && (<>
-          <div className={RESUMEN} data-testid="resumen-transformacion">
-            <KpiTile label="Transformaciones hoy" value={resumenTrans.transformacionesHoy} hint={`${resumenTrans.historial} en el historial`} />
-            <KpiTile label="Entrada hoy" value={kg(resumenTrans.entradaKg)} hint="insumo transformado hoy" />
-            <KpiTile label="Salida hoy" value={kg(resumenTrans.salidaKg)} hint="producto obtenido hoy" />
+        {/* ═══ TAB: PREPARAR DESDE BARRA (OP-01D) ═══ */}
+        {tab === "preparar" && (<>
+          <div className={RESUMEN} data-testid="resumen-preparacion">
+            <KpiTile label="Preparaciones hoy" value={resumenPrep.preparaciones} />
+            <KpiTile label="Barras usadas hoy" value={resumenPrep.barras.toLocaleString()} />
+            <KpiTile label="Bolsas preparadas hoy" value={resumenPrep.bolsas.toLocaleString()} />
           </div>
-          {resumenTrans.ultima && (
-            <p className="px-1 text-xs text-slate-500" data-testid="ultima-transformacion">
-              <span className="font-semibold text-slate-700">Última:</span> {resumenTrans.ultima.folio} · {fmtDate(resumenTrans.ultima.fecha)} · {kg(resumenTrans.ultima.inputKg)} {resumenTrans.ultima.inputSku} → {kg(resumenTrans.ultima.outputKg)} {resumenTrans.ultima.outputSku}
-            </p>
-          )}
-          <FormBtn primary size="lg" className="w-full" onClick={() => setTransModal(true)}>
-            <Icons.Plus /> Nueva transformación
-          </FormBtn>
-
-          {transformaciones.length === 0 ? (
-            <Card>
-              <EmptyState
-                message="Sin transformaciones registradas"
-                icon="Snowflake"
-                hint="Las transformaciones de barras a triturado quedan aquí"
-                cta="+ Nueva transformación"
-                onCta={() => setTransModal(true)}
-              />
-            </Card>
-          ) : (
-            <div className="space-y-2">
-              <SectionLabel>Historial ({transformaciones.length})</SectionLabel>
-              <div className={embedded ? "grid grid-cols-1 gap-2 lg:grid-cols-2" : "space-y-2"}>
-              {transformaciones.slice().reverse().map(t => {
-                const rend = Number(t.rendimiento || 0);
-                const rendColor = rend >= 80 ? 'text-emerald-600 bg-emerald-50 border-emerald-200' : rend >= 65 ? 'text-amber-600 bg-amber-50 border-amber-200' : 'text-red-600 bg-red-50 border-red-200';
-                return (
-                  <Card key={t.id} padding="p-4">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="text-xs font-bold text-slate-500">{t.folio || t.id} · {fmtDate(t.fecha)}</p>
-                      <span className={`rounded-lg border px-2 py-0.5 text-xs font-extrabold ${rendColor}`}>{rend}%</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                      <div className="rounded-xl bg-slate-50 p-2">
-                        <p className="mb-0.5 text-slate-400">Entrada</p>
-                        <p className="font-extrabold text-slate-800">{Number(t.input_kg || 0)} kg</p>
-                        <p className="font-mono text-slate-500">{t.input_sku}</p>
-                      </div>
-                      <div className="rounded-xl bg-red-50 p-2">
-                        <p className="mb-0.5 text-red-400">Merma</p>
-                        <p className="font-extrabold text-red-700">{Number(t.merma_kg || 0)} kg</p>
-                      </div>
-                      <div className="rounded-xl bg-emerald-50 p-2">
-                        <p className="mb-0.5 text-emerald-600">Salida</p>
-                        <p className="font-extrabold text-emerald-800">{Number(t.output_kg || 0)} kg</p>
-                        <p className="font-mono text-emerald-600">{t.output_sku}</p>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })}
+          <Card padding="p-4">
+            <div className="space-y-4">
+              <div>
+                <label className={LABEL}>¿Qué vas a preparar?</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {SALIDAS_BARRA.map(sku => {
+                    const p = (data.productos || []).find(x => s(x.sku) === sku);
+                    return (
+                      <ChoiceButton key={sku} active={prepForm.salida === sku} onClick={() => setPrepForm(f => ({ ...f, salida: sku }))} className="text-left text-xs">
+                        {s(p?.nombre) || sku}
+                      </ChoiceButton>
+                    );
+                  })}
+                </div>
               </div>
+              <div>
+                <label className={LABEL}>¿De qué cuarto frío?</label>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {cuartos.map(cf => (
+                    <ChoiceButton key={cf.id} active={String(prepForm.cuarto) === String(cf.id)} onClick={() => setPrepForm(f => ({ ...f, cuarto: String(cf.id) }))} className="text-left text-xs">
+                      {s(cf.nombre)}
+                    </ChoiceButton>
+                  ))}
+                </div>
+              </div>
+              <FormInput label="Barras enteras a preparar" type="number" min="1" step="1" inputMode="numeric" value={prepForm.barras}
+                onChange={e => setPrepForm(f => ({ ...f, barras: e.target.value }))} inputClassName="text-center !text-lg font-bold" placeholder="Ej: 3"
+                hint={`Hay ${vistaPrep.barrasDisponibles.toLocaleString()} barras en este cuarto`} />
+              {vistaPrep.resumen && (
+                <div data-testid="vista-previa-preparacion">
+                  <Card tone={vistaPrep.bloqueo ? "danger" : "success"} padding="p-3">
+                    <p className="text-sm font-bold">{vistaPrep.resumen}</p>
+                    {vistaPrep.consumo && <p className="mt-0.5 text-xs">{vistaPrep.consumo}</p>}
+                    {vistaPrep.bloqueo && <p className="mt-1 text-xs font-bold">{vistaPrep.bloqueo.mensaje}</p>}
+                  </Card>
+                </div>
+              )}
+              {!vistaPrep.resumen && vistaPrep.bloqueo?.codigo === 'sin_empaque' && (
+                <Card tone="danger" padding="p-3"><p className="text-xs font-bold">{vistaPrep.bloqueo.mensaje}</p></Card>
+              )}
+            </div>
+            <FormBtn primary size="lg" className="mt-4 w-full" onClick={registrarPreparacion} disabled={guardandoPrep || !!vistaPrep.bloqueo}>
+              {guardandoPrep ? 'Guardando...' : 'Preparar'}
+            </FormBtn>
+          </Card>
+          {preparacionesHoy.length > 0 && (
+            <div className="space-y-2">
+              <SectionLabel>Preparado hoy ({preparacionesHoy.length})</SectionLabel>
+              {preparacionesHoy.slice().reverse().map(p => (
+                <Card key={p.id} padding="p-3">
+                  <p className="text-sm font-bold text-slate-800">{n(p.input_kg ?? p.inputKg)} {n(p.input_kg ?? p.inputKg) === 1 ? 'barra' : 'barras'} → {n(p.cantidad)} × {s(p.sku)}</p>
+                  <p className="text-xs text-slate-500">{s(p.folio)} · {s(p.cuarto_id ?? p.cuartoId)}</p>
+                </Card>
+              ))}
             </div>
           )}
         </>)}
@@ -923,6 +919,11 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 Disponibles (total empresa): {stockBolsa.toLocaleString()}{n(form.cantidad) > stockBolsa ? " — INSUFICIENTE" : ""}
               </p>
             </Card>
+          ) : form.sku && seProduceSinEmpaque(form.sku) ? (
+            <Card padding="p-3">
+              <p className="text-xs font-semibold">La barra se produce sin bolsa: no consume empaque.</p>
+              <p className="mt-0.5 text-xs text-slate-500">Cada barra física cuenta como 1.</p>
+            </Card>
           ) : form.sku ? (
             <Card tone="warning" padding="p-3">
               <p className="flex items-center gap-1.5 text-xs font-bold text-amber-800"><Icons.AlertTriangle /> {form.sku} no tiene empaque configurado</p>
@@ -932,7 +933,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           <div>
             <label className={LABEL}>Máquina</label>
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {["Máquina 30", "Máquina 20", "Máquina 15"].map(m => (
+              {MAQUINAS_PRODUCCION.map(m => (
                 <ChoiceButton key={m} active={form.maquina === m} onClick={() => setForm(f => ({ ...f, maquina: m }))} className="text-xs">
                   {m.replace("Máquina ", "Máq ")}
                 </ChoiceButton>
@@ -1162,74 +1163,6 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
         </FormBtn>
       </Modal>
 
-      {/* ═══ MODAL: Transformación ═══ */}
-      <Modal open={!!transModal} onClose={() => setTransModal(false)} kicker="Transformación" title="Barras → Hielo triturado" safeBottom closeOnEscape={!guardandoTrans}>
-        <div className="space-y-4">
-          <div>
-            <label className={LABEL}>¿Qué entró? (Insumo)</label>
-            {insumos.length === 0 ? (
-              <EmptyState
-                message="Sin insumos en el catálogo"
-                hint="Pide a Admin que agregue barras (kg) al catálogo"
-              />
-            ) : (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {insumos.map(p => (
-                  <ChoiceButton key={p.sku} tone="cyan" active={transForm.input_sku === s(p.sku)} onClick={() => setTransForm(f => ({ ...f, input_sku: s(p.sku) }))} className="text-left text-xs">
-                    <p>{s(p.nombre)}</p>
-                    <p className="font-mono text-[10px] opacity-70">{s(p.sku)} · {Number(p.stock || 0)} kg stock</p>
-                  </ChoiceButton>
-                ))}
-              </div>
-            )}
-            <div className="mt-2">
-              <FormInput label="Kilos a transformar" type="number" min="0" step="0.01" inputMode="decimal" value={transForm.input_kg} onChange={e => setTransForm(f => ({ ...f, input_kg: e.target.value }))}
-                inputClassName="text-center !text-lg font-bold" placeholder="kg a transformar"
-                error={transStockInput !== null && transInputKg > transStockInput ? `Stock insuficiente (${transStockInput} kg disponibles)` : undefined} />
-            </div>
-          </div>
-          <div>
-            <label className={LABEL}>¿Qué salió? (Producto)</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {skuOptions.map(p => (
-                <ChoiceButton key={p.sku} tone="emerald" active={transForm.output_sku === s(p.sku)} onClick={() => setTransForm(f => ({ ...f, output_sku: s(p.sku) }))} className="text-left text-xs">
-                  {s(p.nombre)}
-                </ChoiceButton>
-              ))}
-            </div>
-            <div className="mt-2">
-              <FormInput label="Kilos obtenidos" type="number" min="0" step="0.01" inputMode="decimal" value={transForm.output_kg} onChange={e => setTransForm(f => ({ ...f, output_kg: e.target.value }))}
-                inputClassName="text-center !text-lg font-bold" placeholder="kg obtenidos" />
-            </div>
-          </div>
-          {transInputKg > 0 && transOutputKg > 0 && (
-            <Card tone={transRendimiento >= 80 ? 'success' : transRendimiento >= 65 ? 'warning' : 'danger'} padding="p-3">
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                <div><p className="text-slate-400">Entrada</p><p className="font-extrabold text-slate-800">{transInputKg} kg</p></div>
-                <div><p className="text-red-400">Merma</p><p className="font-extrabold text-red-700">{transMermaKg.toFixed(1)} kg</p></div>
-                <div><p className="text-slate-400">Rendimiento</p><p className={`font-extrabold ${transRendimiento >= 80 ? 'text-emerald-700' : transRendimiento >= 65 ? 'text-amber-700' : 'text-red-700'}`}>{transRendimiento}%</p></div>
-              </div>
-            </Card>
-          )}
-          {/* Cuarto destino: el output va al CF (mig 057+ comportamiento híbrido) */}
-          <div>
-            <label className={LABEL}>¿A qué cuarto frío entra?</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {(cuartos || []).map(cf => (
-                <ChoiceButton key={cf.id} active={String(transForm.cuarto_destino) === String(cf.id)} onClick={() => setTransForm(f => ({ ...f, cuarto_destino: String(cf.id) }))} className="text-left text-xs">
-                  {s(cf.nombre)}
-                  <span className="block text-[10px] opacity-70">{s(cf.id)}</span>
-                </ChoiceButton>
-              ))}
-            </div>
-          </div>
-          <FormInput label="Notas (opcional)" type="text" value={transForm.notas} onChange={e => setTransForm(f => ({ ...f, notas: e.target.value }))} placeholder="Notas (opcional)" />
-        </div>
-        <FormBtn primary size="lg" className="mt-4 w-full" onClick={registrarTransformacion}
-          disabled={guardandoTrans || !transForm.input_sku || !transForm.output_sku || !transForm.cuarto_destino || transInputKg <= 0 || transOutputKg <= 0 || transOutputKg > transInputKg || (transStockInput !== null && transInputKg > transStockInput)}>
-          {guardandoTrans ? 'Guardando...' : 'Registrar transformación'}
-        </FormBtn>
-      </Modal>
     </div>
   );
 }

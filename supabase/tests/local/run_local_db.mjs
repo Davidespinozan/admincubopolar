@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -4092,6 +4092,103 @@ await handlersCfdi('tras 114');
 await handlersComplemento('tras 114');
 console.log('  CLOSURE-1 (webhooks + concurrencia) y OL-03B / OL-04 (concurrencia + handlers) tras 114: PASS');
 
+// ═══ 115 — OP-01D: "Preparar desde barra" (solo funciones) ═══
+{
+  const ok = (await c.query(`SELECT to_regprocedure('public.registrar_preparacion_barra(uuid,text,text,text,integer)') IS NULL
+                               AND to_regprocedure('public.revertir_preparacion_barra(uuid,bigint,text)') IS NULL AS a`)).rows[0].a;
+  console.log(`  PREPARACION_PARITY_CHECK[pre-115]: ${ok ? 'PASS' : 'FAIL'}`);
+  if (!ok) process.exit(1);
+  // OP-01D.1: 115 redefine registrar_produccion desde el texto de 106; la base
+  // local debe ser la MISMA función que producción (md5 leído en solo lectura el 2026-10-06).
+  const m = (await c.query(`SELECT md5(pg_get_functiondef('public.registrar_produccion(uuid,text,text,text,integer,text)'::regprocedure)) AS m`)).rows[0].m;
+  const okP = m === '845c3cd74d089e326be3663e44ba196c';
+  console.log(`  REGISTRAR_PRODUCCION_PARITY[pre-115 == producción]: ${okP ? 'PASS' : 'FAIL ' + m}`);
+  if (!okP) process.exit(1);
+}
+const SUITES_115 = [...SUITES_114, ['114', '114_referencia_pago_unica_test.sql']];
+async function conc115() {
+  console.log('── 115 CONCURRENCIA (dos conexiones reales)');
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  const SUB = '11560000-0000-0000-0000-000000000001';
+  const orig = (await c.query(`SELECT to_jsonb(p)::text AS j FROM productos p WHERE sku IN ('HIB-50K', 'HIP-25K', 'HIT-25K')`)).rows.map(r => r.j);
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM costos_historial WHERE referencia IN (SELECT 'PROD-' || id FROM produccion WHERE cuarto_id = 'CF-C115');
+    DELETE FROM produccion WHERE cuarto_id = 'CF-C115'; DELETE FROM inventario_mov WHERE cuarto_id = 'CF-C115' OR producto = 'C115-EMP';
+    DELETE FROM auditoria WHERE usuario LIKE 'Prod C115%'; DELETE FROM cuartos_frios WHERE id = 'CF-C115';
+    DELETE FROM usuarios WHERE id = 11561; DELETE FROM auth.users WHERE id = '${SUB}';
+    DELETE FROM productos WHERE sku IN ('C115-EMP', 'HIB-50K', 'HIP-25K', 'HIT-25K'); COMMIT;`;
+  await c.query(limpiar);
+  const preparar = async (barras, emp) => c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM produccion WHERE cuarto_id = 'CF-C115'; DELETE FROM cuartos_frios WHERE id = 'CF-C115';
+    DELETE FROM productos WHERE sku IN ('C115-EMP', 'HIB-50K', 'HIP-25K', 'HIT-25K');
+    INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario, empaque_sku) VALUES
+      ('C115-EMP', 'Bolsa C115', 'Empaque', 0, ${emp}, 1, NULL), ('HIB-50K', 'Barra', 'Producto Terminado', 120, 0, 0, NULL),
+      ('HIP-25K', 'Picada', 'Producto Terminado', 60, 0, 0, 'C115-EMP'), ('HIT-25K', 'Triturada', 'Producto Terminado', 60, 0, 0, 'C115-EMP');
+    INSERT INTO cuartos_frios (id, nombre, stock) VALUES ('CF-C115', 'Cuarto C115', '{"HIB-50K": ${barras}}'); COMMIT;`);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) VALUES ('${SUB}', 'c1@t115c');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (11561, 'Prod C115', 'c1@t115c', 'Producción', 'Activo', '${SUB}'); COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl) => { await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub: SUB })]); };
+  const PREP = `SELECT registrar_preparacion_barra($1::uuid, 'HIB-50K', 'HIP-25K', 'CF-C115', 1) AS r`;
+  const carrera = async (opA, opB) => {
+    await actor(a); await actor(b);
+    const ra = await a.query(PREP, [opA]).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(PREP, [opB]).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const estado = async () => (await c.query(`SELECT COALESCE((stock ->> 'HIB-50K')::int, 0) || '|' || COALESCE((stock ->> 'HIP-25K')::int, 0)
+      || '|' || (SELECT stock FROM productos WHERE sku = 'C115-EMP') AS e FROM cuartos_frios WHERE id = 'CF-C115'`)).rows[0].e;
+  // C11a: 1 barra, empaque de sobra, dos preparaciones de 1 barra a la vez.
+  await preparar(1, 100);
+  let r = await carrera('11560000-0000-0000-0000-0000000000a1', '11560000-0000-0000-0000-0000000000a2');
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && /Stock insuficiente.*HIB-50K/.test(r.rb.msg) && await estado() === '0|2|98',
+    `C11a 1 barra y dos preparaciones simultáneas: la segunda espera y falla; sin barra ni empaque negativos (${await estado()})`);
+  // C11b: barras de sobra, empaque para una sola preparación.
+  await preparar(10, 2);
+  r = await carrera('11560000-0000-0000-0000-0000000000b1', '11560000-0000-0000-0000-0000000000b2');
+  ok(r.ra.ok && !r.rb.ok && r.bloqueado && /Stock insuficiente.*C115-EMP/.test(r.rb.msg) && await estado() === '9|2|0',
+    `C11b empaque para una sola: la segunda espera y falla; sin empaque negativo (${await estado()})`);
+  // C11c: la MISMA operación dos veces a la vez: una prepara, la otra es replay.
+  await preparar(10, 100);
+  r = await carrera('11560000-0000-0000-0000-0000000000c1', '11560000-0000-0000-0000-0000000000c1');
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && r.rb.row.r.replay === true && await estado() === '9|2|98'
+     && Number((await c.query(`SELECT count(*) FROM produccion WHERE operacion_id = '11560000-0000-0000-0000-0000000000c1'`)).rows[0].count) === 1,
+    'C11c misma operación simultánea: un solo efecto; la segunda responde replay');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  for (const j of orig) await c.query(`BEGIN; SET LOCAL session_replication_role = replica; INSERT INTO productos SELECT (jsonb_populate_record(NULL::productos, $1::jsonb)).*; COMMIT;`, [j]);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (115 concurrencia)'); process.exit(1); }
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 115 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '115_preparacion_barra.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 115 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 115)'); process.exit(1); }
+console.log('── PRUEBAS 115');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/115_preparacion_barra_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (115)'); process.exit(1); }
+}
+await conc115();
+await reruns090('115', ['072']);
+for (const [etq, f] of [...SUITES_115, ['111', '111_operaciones_cfdi_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 115)`); process.exit(1); }
+  console.log(`  ${etq} tras 115: PASS`);
+}
+console.log('  OP-01D (preparación desde barra: suite + concurrencia) tras 115: PASS');
+
 const after = await catalogo();
 fs.writeFileSync(path.join(WORK, 'policies_after.txt'), after.join('\n'));
 console.log('── policies DESPUÉS:', after.length);
@@ -4150,7 +4247,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   'reservar_operacion_cfdi', 'cfdi_aplicar_resultado', 'finalizar_operacion_cfdi', 'vencer_operaciones_cfdi', 'conciliar_operacion_cfdi',
   'ordenes_guard_facturada',
   // 113 (OL-04)
-  'reservar_complemento_cfdi'];
+  'reservar_complemento_cfdi',
+  // 115 (OP-01D)
+  'registrar_preparacion_barra', 'revertir_preparacion_barra'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

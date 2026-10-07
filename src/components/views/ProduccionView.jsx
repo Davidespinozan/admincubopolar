@@ -1,14 +1,14 @@
 import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion } from './viewsCommon';
 import { diaNegocio, sumarDias } from '../../utils/fechas';
 import { useRef } from 'react';
-import { traducirError } from '../../utils/errorMessages';
-import { resolverOperacion, claveTransformacion } from '../../data/produccionAtomicaLogic';
+import { resolverOperacion } from '../../data/produccionAtomicaLogic';
+import { MAQUINAS_PRODUCCION, esPreparacion, reversibilidadPreparacion } from '../../data/preparacionBarraLogic';
 import { reversibilidadProduccion } from '../../data/produccionLogic';
 
 export function ProduccionView({ data, actions }) {
   const toast = useToast();
   const [, ConfirmEl] = useConfirm();
-  const [tab, setTab] = useState('produccion'); // 'produccion' | 'transformaciones'
+  const [tab, setTab] = useState('produccion'); // 'produccion' | 'preparaciones' (OP-01D: reemplaza a transformaciones)
 
   // ── Editar (admin solo gestiona, NO registra producción nueva) ──
   // Registro de producción ocurre exclusivamente en ProduccionStandaloneView
@@ -56,104 +56,35 @@ export function ProduccionView({ data, actions }) {
     setEditModal(false);
   };
 
-  // ── Transformación ──
-  const [tModal, setTModal] = useState(false);
-  const [tErrors, setTErrors] = useState({});
-  const [savingTrans, setSavingTrans] = useState(false);
-  // Mig 076: operacion_id del intento lógico + guard síncrono de submit.
-  const opTransRef = useRef(null);
-  const enVueloTrans = useRef(false);
-  // Default cuarto = primer cuarto frío disponible (mig 057+: el output
-  // de la transformación va al CF, no a productos.stock).
-  const cuartoDefault = useMemo(() => {
-    const cf = (data.cuartosFrios || [])[0];
-    return cf ? String(cf.id) : '';
-  }, [data.cuartosFrios]);
-  const TFORM_DEFAULT = { input_sku: "", input_kg: "", output_sku: "", output_kg: "", cuarto_destino: "", notas: "" };
-  const [tForm, setTForm] = useState(TFORM_DEFAULT);
-
-  // Materias primas (insumos) = productos con tipo "Materia Prima" o "Barra"
-  const insumos = useMemo(() =>
-    data.productos.filter(p => {
-      const tipo = s(p.tipo).toLowerCase();
-      return tipo.includes('barra') || tipo.includes('materia') || tipo.includes('insumo') || s(p.sku).toLowerCase().includes('bh-') || s(p.sku).toLowerCase().includes('barra');
-    }),
-  [data.productos]);
-
-  // Productos derivados para output (Producto Terminado)
-  const derivados = useMemo(() =>
-    data.productos.filter(p => s(p.tipo) === 'Producto Terminado'),
-  [data.productos]);
-
-  // Si no hay insumos separados, mostrar todos los productos como opciones
-  const inputOpts = useMemo(() => {
-    const list = insumos.length > 0 ? insumos : data.productos;
-    return list.map(p => ({ value: s(p.sku), label: `${s(p.sku)} — ${s(p.nombre)} (${n(p.stock)} kg disp.)` }));
-  }, [insumos, data.productos]);
-
-  const outputOpts = useMemo(() =>
-    derivados.map(p => ({ value: s(p.sku), label: `${s(p.sku)} — ${s(p.nombre)}` })),
-  [derivados]);
-
-  const inputKg   = n(tForm.input_kg);
-  const outputKg  = n(tForm.output_kg);
-  const mermaKg   = inputKg > 0 && outputKg > 0 ? Math.max(0, inputKg - outputKg) : 0;
-  const rendPct   = inputKg > 0 && outputKg > 0 ? Math.round((outputKg / inputKg) * 100) : 0;
-
-  const inputStock = useMemo(() => {
-    if (!tForm.input_sku) return 0;
-    const p = data.productos.find(x => s(x.sku) === tForm.input_sku);
-    return n(p?.stock);
-  }, [tForm.input_sku, data.productos]);
-
-  const saveTransformacion = async () => {
-    if (savingTrans || enVueloTrans.current) return;
-    const e = {};
-    if (!tForm.input_sku)              e.input_sku       = "Selecciona el insumo";
-    if (!tForm.output_sku)             e.output_sku      = "Selecciona el producto";
-    if (inputKg <= 0)                  e.input_kg        = "Ingresa los kg de entrada";
-    if (outputKg <= 0)                 e.output_kg       = "Ingresa los kg de salida";
-    if (outputKg > inputKg)            e.output_kg       = "La salida no puede superar la entrada";
-    if (inputKg > inputStock)          e.input_kg        = `Stock insuficiente (disp: ${inputStock} kg)`;
-    if (!tForm.cuarto_destino)         e.cuarto_destino  = "Selecciona el cuarto destino";
-    if (Object.keys(e).length) { setTErrors(e); return; }
-
-    const datos = {
-      input_sku:      tForm.input_sku,
-      input_kg:       inputKg,
-      output_sku:     tForm.output_sku,
-      output_kg:      outputKg,
-      cuarto_destino: tForm.cuarto_destino,
-      notas:          tForm.notas,
-    };
-    const op = resolverOperacion(opTransRef.current, claveTransformacion(datos));
-    opTransRef.current = op;
-    enVueloTrans.current = true;
-    setSavingTrans(true);
+  // ── OP-01D: revertir una preparación desde barra (solo Admin) ──
+  const [prepRev, setPrepRev] = useState(null);
+  const [prepMotivo, setPrepMotivo] = useState("");
+  const [revirtiendoPrep, setRevirtiendoPrep] = useState(false);
+  const opPrepRevRef = useRef(null);
+  const enVueloPrepRev = useRef(false);   // guard síncrono contra doble click antes del re-render
+  const confirmarReversoPreparacion = async () => {
+    if (revirtiendoPrep || enVueloPrepRev.current || !prepRev) return;
+    const motivo = s(prepMotivo).trim();
+    if (!motivo) { toast?.error('Escribe el motivo del reverso'); return; }
+    const op = resolverOperacion(opPrepRevRef.current, `reverso_preparacion|${prepRev.id}|${motivo}`);
+    opPrepRevRef.current = op;
+    enVueloPrepRev.current = true;
+    setRevirtiendoPrep(true);
     try {
-      // Una sola RPC atómica (registrar_transformacion); un error = rollback total.
-      const result = await actions.addTransformacion({ ...datos, operacionId: op.id });
-      if (result?.error) {
-        // El store ya disparó toast específico; no duplicar. Se conserva el
-        // operacion_id: reintentar con los mismos datos no duplica.
-        return;
-      }
-      opTransRef.current = null;
-      toast?.success(`${result.replay ? 'Ya estaba registrada — ' : 'Transformación registrada — '}${result.folio}: ${result.outputCantidad}× ${result.outputSku} (merma ${result.merma})`);
-      setTModal(false);
-      setTForm(TFORM_DEFAULT);
-      setTErrors({});
-    } catch (err) {
-      toast?.error(traducirError(err, "Error al registrar transformación"));
+      const r = await actions.revertirPreparacion(prepRev.id, motivo, { operacionId: op.id });
+      if (r?.error) return; // el store ya avisó; se conserva el operacion_id
+      opPrepRevRef.current = null;
+      toast?.success(`Preparación ${s(prepRev.folio)} revertida`);
+      setPrepRev(null);
     } finally {
-      enVueloTrans.current = false;
-      setSavingTrans(false);
+      enVueloPrepRev.current = false;
+      setRevirtiendoPrep(false);
     }
   };
 
   // ── Stats ──
   const prodNormal = useMemo(() => data.produccion.filter(p => !p.tipo || p.tipo === 'Produccion'), [data.produccion]);
-  const prodTransf = useMemo(() => data.produccion.filter(p => p.tipo === 'Transformacion'), [data.produccion]);
+  const prodPrep = useMemo(() => data.produccion.filter(esPreparacion), [data.produccion]);
 
   // ── Fase 12: Agrupación por día con turnos ──
   const [paginaActual, setPaginaActual] = useState(0);
@@ -240,16 +171,6 @@ export function ProduccionView({ data, actions }) {
     return { totalProd: total, enProceso: proc, confirmadas: conf };
   }, [prodNormal]);
 
-  const mermaTotal = useMemo(() =>
-    prodTransf.reduce((s, t) => s + n(t.merma_kg), 0),
-  [prodTransf]);
-
-  const rendPromedio = useMemo(() => {
-    const con = prodTransf.filter(t => n(t.rendimiento) > 0);
-    if (con.length === 0) return null;
-    return Math.round(con.reduce((s, t) => s + n(t.rendimiento), 0) / con.length);
-  }, [prodTransf]);
-
   const exportBtns = <>
     <button onClick={() => reporteProduccion(data.produccion, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
     <button onClick={() => reporteProduccion(data.produccion, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
@@ -258,9 +179,7 @@ export function ProduccionView({ data, actions }) {
   return (<div>
     <PageHeader
       title="Producción"
-      subtitle="Hielo y transformaciones"
-      action={tab === 'transformaciones' ? () => { setTForm({ ...TFORM_DEFAULT, cuarto_destino: cuartoDefault }); setTModal(true); setTErrors({}); } : null}
-      actionLabel={tab === 'transformaciones' ? "Registrar transformación" : null}
+      subtitle="Hielo y preparaciones desde barra"
       extraButtons={exportBtns}
     />
 
@@ -270,9 +189,9 @@ export function ProduccionView({ data, actions }) {
         className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'produccion' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
         Producción
       </button>
-      <button onClick={() => setTab('transformaciones')}
-        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'transformaciones' ? 'bg-orange-500 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
-        🧊 Transformaciones {prodTransf.length > 0 && <span className="ml-1 text-xs opacity-80">({prodTransf.length})</span>}
+      <button onClick={() => setTab('preparaciones')}
+        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'preparaciones' ? 'bg-orange-500 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
+        🧊 Preparaciones {prodPrep.length > 0 && <span className="ml-1 text-xs opacity-80">({prodPrep.length})</span>}
       </button>
     </div>
 
@@ -405,186 +324,48 @@ export function ProduccionView({ data, actions }) {
       </div>
     </>}
 
-    {/* ═══ TAB: TRANSFORMACIONES ═══ */}
-    {tab === 'transformaciones' && <>
-      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
-        <div className="bg-gradient-to-br from-orange-400 to-orange-600 rounded-2xl p-3 sm:p-5 text-white">
-          <p className="text-[10px] sm:text-xs font-semibold text-orange-100 uppercase mb-1">Lotes</p>
-          <p className="text-xl sm:text-3xl font-extrabold">{prodTransf.length}</p>
-          <p className="text-[10px] sm:text-xs text-orange-200 mt-0.5">transformaciones</p>
-        </div>
-        <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5">
-          <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">Merma total</p>
-          <p className="text-xl sm:text-3xl font-extrabold text-red-500">{mermaTotal.toLocaleString()}</p>
-          <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5">kg perdidos</p>
-        </div>
-        <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5">
-          <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">Rendimiento</p>
-          <p className={`text-xl sm:text-3xl font-extrabold ${rendPromedio >= 80 ? 'text-emerald-600' : rendPromedio >= 65 ? 'text-amber-500' : 'text-red-500'}`}>
-            {rendPromedio !== null ? rendPromedio + '%' : '—'}
-          </p>
-          <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5">promedio</p>
-        </div>
-      </div>
-
-      {prodTransf.length === 0 ? (
+    {/* ═══ TAB: PREPARACIONES DESDE BARRA (OP-01D) ═══ */}
+    {tab === 'preparaciones' && <>
+      {prodPrep.length === 0 ? (
         <EmptyState
-          message="Sin transformaciones registradas"
-          hint="Registra cuando tritures o piques barras de hielo para obtener hielo molido o escarchado"
-          cta="Registrar primera transformación"
-          onCta={() => { setTForm({ ...TFORM_DEFAULT, cuarto_destino: cuartoDefault }); setTModal(true); setTErrors({}); }}
+          message="Sin preparaciones registradas"
+          hint="Producción registra en su vista cuántas barras pica o tritura (cada barra = 2 bolsas)"
         />
       ) : (
         <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
           <div className="space-y-3">
-            {prodTransf.slice().reverse().map(t => (
-              <div key={t.id} className="border border-slate-100 rounded-xl p-4">
-                <div className="flex items-start justify-between gap-2 mb-3">
+            {prodPrep.slice().reverse().map(t => {
+              const rev = reversibilidadPreparacion(t);
+              return (
+                <div key={t.id} className="border border-slate-100 rounded-xl p-4 flex items-center justify-between gap-3">
                   <div>
-                    <span className="font-mono text-xs font-bold text-orange-600">{s(t.folio)}</span>
-                    <span className="text-xs text-slate-400 ml-2">{fmtDate(t.fecha)}</span>
-                  </div>
-                  {n(t.rendimiento) > 0 && (
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${n(t.rendimiento) >= 80 ? 'bg-emerald-100 text-emerald-700' : n(t.rendimiento) >= 65 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}`}>
-                      {n(t.rendimiento)}% rendimiento
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-3 gap-3 text-center">
-                  <div className="bg-slate-50 rounded-lg p-2.5">
-                    <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Entrada</p>
-                    <p className="text-sm font-bold text-slate-800">{n(t.input_kg)} kg</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      {(() => {
-                        const p = (data.productos || []).find(x => s(x.sku) === s(t.input_sku));
-                        return p ? s(p.nombre) : s(t.input_sku);
-                      })()}
+                    <p className="text-sm font-bold text-slate-800">{n(t.input_kg)} {n(t.input_kg) === 1 ? 'barra' : 'barras'} → {n(t.cantidad)} × {s(t.sku)}</p>
+                    <p className="text-xs text-slate-400">
+                      <span className="font-mono font-bold text-orange-600">{s(t.folio)}</span> · {fmtDate(t.fecha)} · {s(t.cuarto_id)} · empaque {n(t.empaque_cantidad)} {s(t.empaque_sku)}
                     </p>
                   </div>
-                  <div className="bg-orange-50 rounded-lg p-2.5">
-                    <p className="text-[10px] font-semibold text-red-400 uppercase mb-1">Merma</p>
-                    <p className="text-sm font-bold text-red-600">{n(t.merma_kg)} kg</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">perdidos</p>
-                  </div>
-                  <div className="bg-emerald-50 rounded-lg p-2.5">
-                    <p className="text-[10px] font-semibold text-emerald-500 uppercase mb-1">Salida</p>
-                    <p className="text-sm font-bold text-emerald-700">{n(t.output_kg)} kg</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      {(() => {
-                        const p = (data.productos || []).find(x => s(x.sku) === s(t.sku));
-                        return p ? s(p.nombre) : s(t.sku);
-                      })()}
-                    </p>
-                  </div>
+                  {s(t.estatus) === 'Revertida'
+                    ? <StatusBadge status="Revertida" />
+                    : rev.reversible && (
+                      <button onClick={() => { setPrepRev(t); setPrepMotivo(""); opPrepRevRef.current = null; }} title="Revertir preparación"
+                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-xs font-semibold">Revertir</button>
+                    )}
                 </div>
-                {s(t.destino) && <p className="text-xs text-slate-400 mt-2">Notas: {s(t.destino)}</p>}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
     </>}
 
-    {/* ═══ MODAL: Registrar transformación ═══ */}
-    <Modal open={tModal} onClose={()=>setTModal(false)} title="Registrar transformación de hielo">
-      <div className="space-y-4">
-        {/* Explicación */}
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-3 text-xs text-orange-800">
-          Registra cuántos <strong>kg de barra</strong> entraron y cuántos <strong>kg de hielo procesado</strong> obtuviste. La merma se calcula automáticamente.
-        </div>
-
-        {/* Entrada */}
-        <div>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Entrada (insumo)</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Insumo *</label>
-              <select
-                value={tForm.input_sku}
-                onChange={e => setTForm(f => ({...f, input_sku: e.target.value}))}
-                className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-orange-400 ${tErrors.input_sku ? 'border-red-300' : 'border-slate-200'}`}
-              >
-                <option value="">Seleccionar…</option>
-                {inputOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              {tErrors.input_sku && <p className="text-xs text-red-500 mt-1">{tErrors.input_sku}</p>}
-            </div>
-            <FormInput
-              label="Kg de entrada *"
-              type="number"
-              min="0"
-              step="0.01"
-              value={tForm.input_kg}
-              onChange={e => setTForm(f => ({...f, input_kg: e.target.value}))}
-              placeholder="Ej: 150"
-              error={tErrors.input_kg}
-            />
-          </div>
-          {tForm.input_sku && <p className="text-xs text-slate-400 mt-1">Stock disponible: <strong>{inputStock} kg</strong></p>}
-        </div>
-
-        {/* Salida */}
-        <div>
-          <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Salida (producto obtenido)</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Producto *</label>
-              <select
-                value={tForm.output_sku}
-                onChange={e => setTForm(f => ({...f, output_sku: e.target.value}))}
-                className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:border-orange-400 ${tErrors.output_sku ? 'border-red-300' : 'border-slate-200'}`}
-              >
-                <option value="">Seleccionar…</option>
-                {outputOpts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-              {tErrors.output_sku && <p className="text-xs text-red-500 mt-1">{tErrors.output_sku}</p>}
-            </div>
-            <FormInput
-              label="Kg obtenidos *"
-              type="number"
-              min="0"
-              step="0.01"
-              value={tForm.output_kg}
-              onChange={e => setTForm(f => ({...f, output_kg: e.target.value}))}
-              placeholder="Ej: 120"
-              error={tErrors.output_kg}
-            />
-          </div>
-        </div>
-
-        {/* Resumen en tiempo real */}
-        {inputKg > 0 && outputKg > 0 && (
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="bg-slate-50 rounded-xl p-3">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1">Entrada</p>
-              <p className="text-lg font-extrabold text-slate-800">{inputKg} kg</p>
-            </div>
-            <div className={`rounded-xl p-3 ${mermaKg > inputKg * 0.3 ? 'bg-red-50' : 'bg-orange-50'}`}>
-              <p className="text-[10px] font-semibold text-red-400 uppercase mb-1">Merma</p>
-              <p className={`text-lg font-extrabold ${mermaKg > inputKg * 0.3 ? 'text-red-600' : 'text-orange-500'}`}>{mermaKg} kg</p>
-            </div>
-            <div className="bg-emerald-50 rounded-xl p-3">
-              <p className="text-[10px] font-semibold text-emerald-500 uppercase mb-1">Rendimiento</p>
-              <p className={`text-lg font-extrabold ${rendPct >= 80 ? 'text-emerald-600' : rendPct >= 65 ? 'text-amber-500' : 'text-red-500'}`}>{rendPct}%</p>
-            </div>
-          </div>
-        )}
-
-        {/* Cuarto destino: el output va al CF (mig 057+ comportamiento híbrido) */}
-        <FormSelect
-          label="Cuarto destino *"
-          options={(data.cuartosFrios || []).map(cf => ({ value: String(cf.id), label: `${s(cf.nombre)} (${s(cf.id)})` }))}
-          value={tForm.cuarto_destino}
-          onChange={e => setTForm(f => ({...f, cuarto_destino: e.target.value}))}
-          error={tErrors.cuarto_destino}
-        />
-
-        <FormInput label="Notas (opcional)" value={tForm.notas} onChange={e => setTForm(f => ({...f, notas: e.target.value}))} placeholder="Ej: lote de la mañana, máquina picadora 2…" />
+    {/* ═══ MODAL: Revertir preparación (OP-01D) ═══ */}
+    <Modal open={!!prepRev} onClose={() => setPrepRev(null)} title={"Revertir preparación " + s(prepRev?.folio)}>
+      <div className="space-y-3">
+        <p className="text-sm text-slate-600">Salen {n(prepRev?.cantidad).toLocaleString()} × {s(prepRev?.sku)} del cuarto <span className="font-semibold">{s(prepRev?.cuarto_id)}</span>; regresan {n(prepRev?.input_kg).toLocaleString()} barras y {n(prepRev?.empaque_cantidad).toLocaleString()} empaques {s(prepRev?.empaque_sku)}. El registro original se conserva.</p>
+        <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2.5">Si esas bolsas ya no están todas en el cuarto (se vendieron), el reverso se rechaza completo.</p>
+        <FormInput label="Motivo *" value={prepMotivo} onChange={e => setPrepMotivo(e.target.value)} placeholder="Ej: se tomó la barra equivocada" />
       </div>
-      <div className="flex justify-end gap-2 mt-5">
-        <FormBtn onClick={() => setTModal(false)}>Cancelar</FormBtn>
-        <FormBtn primary onClick={saveTransformacion} loading={savingTrans}>Registrar transformación</FormBtn>
-      </div>
+      <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={() => setPrepRev(null)}>Cancelar</FormBtn><FormBtn primary onClick={confirmarReversoPreparacion} loading={revirtiendoPrep}>Revertir</FormBtn></div>
     </Modal>
 
     {/* ═══ MODAL: Editar producción ═══ */}
@@ -593,7 +374,7 @@ export function ProduccionView({ data, actions }) {
     <Modal open={editModal} onClose={()=>setEditModal(false)} title="Editar producción">
       <div className="space-y-3">
         <FormSelect label="Turno" options={["Turno 1","Turno 2","Turno 3"]} value={editForm.turno} onChange={e=>setEditForm({...editForm,turno:e.target.value})} />
-        <FormSelect label="Máquina" options={["Máquina 30","Máquina 20","Máquina 15"]} value={editForm.maquina} onChange={e=>setEditForm({...editForm,maquina:e.target.value})} />
+        <FormSelect label="Máquina" options={MAQUINAS_PRODUCCION} value={editForm.maquina} onChange={e=>setEditForm({...editForm,maquina:e.target.value})} />
         <div>
           <label className="block text-xs font-bold text-slate-500 uppercase mb-1">SKU (no editable)</label>
           <div className="px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 text-slate-600 font-mono">{editForm.sku}</div>

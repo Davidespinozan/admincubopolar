@@ -50,7 +50,7 @@ describe('matriz de navegación por rol', () => {
     expect(itemsModulos(navParaRol('Ventas'))).toEqual([MODULO_VENTAS]);
     expect(MODULO_VENTAS).toEqual({ id: 'ventas', label: 'Ventas', icon: 'ShoppingCart' });
     expect(navParaRol('Ventas').inicio).toBe('ventas');               // = filtro Pendientes
-    expect([...idsModulos(navParaRol('Producción'))]).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-trans']);
+    expect([...idsModulos(navParaRol('Producción'))]).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-preparar']);
     expect(navParaRol('Producción').inicio).toBe('prod-producir');   // = pestaña "producir", la de siempre
     expect(navParaRol('Producción').chrome.firmas).toBe(true);
     expect([...idsModulos(navParaRol('Almacén Bolsas'))]).toEqual([MODULO_BOLSAS.id]);
@@ -71,7 +71,7 @@ describe('matriz de navegación por rol', () => {
   });
   it('Producción: pestaña ↔ módulo biyectiva (sin cambio); Ventas ya no usa pestañas como módulos', () => {
     for (const m of MODULOS_PRODUCCION) expect(moduloDesdeTab('Producción', tabDesdeModulo(m.id))).toBe(m.id);
-    expect(MODULOS_PRODUCCION.map(m => m.tab)).toEqual(['producir', 'cuartos', 'mermas', 'trans']);
+    expect(MODULOS_PRODUCCION.map(m => m.tab)).toEqual(['producir', 'cuartos', 'mermas', 'preparar']);
     expect(tabDesdeModulo('dashboard')).toBeNull();
     expect(tabDesdeModulo('ventas-hoy')).toBeNull();
     expect(moduloDesdeTab('Ventas', 'hoy')).toBeNull();
@@ -97,16 +97,20 @@ describe('matriz de navegación por rol', () => {
   it('B3.6: los demás roles no tienen vistas ni alias extra (mismo ruteo de siempre)', () => {
     for (const rol of ['Admin', 'Facturación', 'Sin asignar', 'Producción', 'Almacén Bolsas', 'Chofer']) {
       const nav = navParaRol(rol);
-      expect([...idsVistas(nav)], rol).toEqual([...idsModulos(nav)]);
+      // OP-01D: Producción conserva el hash heredado '#/prod-trans' como alias de "Preparar barra".
+      const extra = rol === 'Producción' ? ['prod-trans'] : [];
+      expect([...idsVistas(nav)], rol).toEqual([...idsModulos(nav), ...extra]);
       for (const id of idsModulos(nav)) { expect(normalizarVista(nav, id)).toBe(id); expect(moduloDeVista(nav, id)).toBe(id); }
       expect(normalizarVista(nav, 'ventas-hoy'), rol).toBeNull();
     }
+    expect(normalizarVista(navParaRol('Producción'), 'prod-trans')).toBe('prod-preparar');
+    expect(normalizarVista(navParaRol('Admin'), 'prod-trans')).toBeNull();
   });
   it('helpers: área de un módulo, items planos, áreas expandidas, deep link por rol', () => {
     expect(areaDeModulo(navParaRol('Admin'), 'cobros').id).toBe('finanzas');
     expect(areaDeModulo(navParaRol('Ventas'), moduloDeVista(navParaRol('Ventas'), 'ventas-hoy')).id).toBe('ventas');
     expect(areaDeModulo(navParaRol('Ventas'), 'cobros')).toBeNull();
-    expect(itemsModulos(navParaRol('Producción')).map(i => i.id)).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-trans']);
+    expect(itemsModulos(navParaRol('Producción')).map(i => i.id)).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-preparar']);
     expect(areasExpandidasInicial(navParaRol('Admin'))).toEqual({ operacion: true, comercial: true, finanzas: false, equipo: false });
     expect(areasExpandidasInicial(navParaRol('Ventas'))).toEqual({ ventas: true });
     // Un hash de Admin no abre nada en el menú de Ventas (cae al inicio del rol).
@@ -171,8 +175,8 @@ describe('B3: navegación inferior móvil derivada del mismo modelo', async () =
     expect(bottomNavParaRol(navParaRol('Ventas'))).toBeNull();
     const p = bottomNavParaRol(navParaRol('Producción'));
     expect(p.mas).toBe(false);
-    expect(p.items.map(i => i.id)).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-trans']);
-    expect(p.items.map(i => i.label)).toEqual(['Producción', 'Congeladores', 'Mermas', 'Transf.']);
+    expect(p.items.map(i => i.id)).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-preparar']);
+    expect(p.items.map(i => i.label)).toEqual(['Producción', 'Congeladores', 'Mermas', 'Preparar']);
     expect(p.items.every(i => i.icon)).toBe(true);
   });
   it('un solo módulo (Almacén Bolsas) y modo enfoque (Chofer): sin barra inferior', () => {

@@ -33,6 +33,7 @@ import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
 import { traducirError } from '../utils/errorMessages';
 import { TABLAS_CORE_RT, TABLAS_SLICE_RT } from './realtimeLogic';
 import { complementoPendienteOrden } from './complementoLogic';
+import { buildPreparacionArgs, mensajeErrorPreparacion } from './preparacionBarraLogic';
 import { normalizarReporteFinanciero } from './finanzasLogic';
 import { fechaElegida, camposFechaCosto, buildPagarCxPArgs } from './fechaNegocioLogic';
 import { buildEditarReciboArgs } from './nominaLogic';
@@ -1505,6 +1506,61 @@ export function useSupaStore(userId, userName, userRol) {
         } catch (e) {
           console.error('[revertirProduccion] excepción:', e);
           t()?.error('Error inesperado al revertir producción');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // OP-01D (mig 115): "Preparar desde barra". UNA operación atómica en el
+      // servidor: N barras del cuarto → 2N bolsas de picada/triturada en el
+      // mismo cuarto y −2N del empaque configurado en la salida. Vender después
+      // esas bolsas no vuelve a consumir barra ni empaque. p.operacionId
+      // identifica el intento lógico (reintento = mismo UUID → replay).
+      prepararDesdeBarra: async (p = {}) => {
+        const guard = requireRol(['Admin', 'Producción']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        const built = buildPreparacionArgs(p);
+        if (built.error) return { error: built.error };
+        try {
+          const { data, error } = await supabase.rpc('registrar_preparacion_barra', built.args);
+          if (error) {
+            console.warn('[prepararDesdeBarra] rpc:', error.message);
+            return { error: mensajeErrorPreparacion(error) };
+          }
+          rf();
+          return { data };
+        } catch (e) {
+          console.error('[prepararDesdeBarra] excepción:', e);
+          return { error: mensajeErrorPreparacion(e) };
+        }
+      },
+
+      // OP-01D (mig 115): revertir una preparación equivocada (solo Admin):
+      // regresa las barras y el empaque y quita las bolsas preparadas, si
+      // siguen en el cuarto. Una sola vez por preparación.
+      revertirPreparacion: async (id, motivo, opciones = {}) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        try {
+          if (!id) return { error: 'Preparación requerida' };
+          const motivoTxt = s(motivo).trim();
+          if (!motivoTxt) return { error: 'Motivo requerido' };
+          const { data, error } = await supabase.rpc('revertir_preparacion_barra', {
+            p_operacion_id: opciones.operacionId || nuevoOperacionId(),
+            p_preparacion_id: Number(id),
+            p_motivo: motivoTxt,
+          });
+          if (error) {
+            const msg = /Stock insuficiente/i.test(error.message || '')
+              ? 'Ya no están todas las bolsas de esa preparación en el cuarto: no se puede revertir.'
+              : (error.message || 'No se pudo revertir la preparación');
+            t()?.error(msg);
+            return { error: msg };
+          }
+          rf();
+          return { data };
+        } catch (e) {
+          console.error('[revertirPreparacion] excepción:', e);
+          t()?.error('Error inesperado al revertir la preparación');
           return { error: e?.message || 'Error inesperado' };
         }
       },

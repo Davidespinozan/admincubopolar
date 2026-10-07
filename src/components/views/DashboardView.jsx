@@ -6,6 +6,7 @@ import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, fmtDateTime, fmtMoney, fmtPct } from '../../utils/safe';
 import { rangoMes, lineasEstadoResultados, lineasFlujoEfectivo } from '../../data/finanzasLogic';
+import { esPreparacion } from '../../data/preparacionBarraLogic';
 
 // ── FIX P3: ALL DERIVED STATE NOW MEMOIZED ──
 // BEFORE: 4 reduce/filter calls ran on every render — even when user
@@ -96,6 +97,7 @@ export default function DashboardView({ data, user, actions, onNavigate }) {
       const dt = parseFecha(pr.fecha);
       if (!dt) continue;
       if (dt < inicioDia) continue;
+      if (esPreparacion(pr)) continue;   // OP-01D: preparar desde barra no es producción de máquina
       const sku = s(pr.sku);
       acc[sku] = (acc[sku] || 0) + n(pr.cantidad);
     }

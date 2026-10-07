@@ -78,7 +78,8 @@ export const MODULOS_PRODUCCION = [
   { id: "prod-producir", label: "Producción", icon: "Factory", tab: "producir" },
   { id: "prod-cuartos", label: "Congeladores", icon: "Warehouse", tab: "cuartos" },
   { id: "prod-mermas", label: "Mermas", icon: "AlertTriangle", tab: "mermas" },
-  { id: "prod-trans", label: "Transformación", labelMovil: "Transf.", icon: "Snowflake", tab: "trans" },
+  // OP-01D: "Preparar desde barra" reemplaza a Transformación (superseded).
+  { id: "prod-preparar", label: "Preparar barra", labelMovil: "Preparar", icon: "Snowflake", tab: "preparar" },
 ];
 export const MODULO_BOLSAS = { id: "bolsas-almacen", label: "Almacén de Bolsas", icon: "Box" };
 
@@ -109,6 +110,8 @@ export const NAV_ROLES = {
   "Producción": {
     modo: "completo", inicio: "prod-producir", chrome: { ...CHROME_CAMPO, firmas: true }, persistirAreas: false,
     areas: [{ id: "planta", label: "Planta", icon: "Factory", color: "blue", items: MODULOS_PRODUCCION }],
+    // Hash heredado de la pestaña de Transformación → la de preparar.
+    alias: { "prod-trans": "prod-preparar" },
   },
   "Almacén Bolsas": {
     modo: "completo", inicio: MODULO_BOLSAS.id, chrome: CHROME_CAMPO, persistirAreas: false,

@@ -338,7 +338,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       // B3.6: un solo módulo Ventas; el filtro interno sale del hash (ventas / ventas-hoy / ventas-todas).
       case 'ventas': case 'ventas-hoy': case 'ventas-todas':
         return <VentasStandaloneView embedded filtro={filtroVentasDesdeVista(view)} onFiltro={f => go(vistaDesdeFiltroVentas(f))} user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;
-      case 'prod-producir': case 'prod-cuartos': case 'prod-mermas': case 'prod-trans':
+      case 'prod-producir': case 'prod-cuartos': case 'prod-mermas': case 'prod-preparar':
         return <ProduccionStandaloneView embedded tab={tabDesdeModulo(view)} onTab={t => go(moduloDesdeTab('Producción', t))} user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;
       case MODULO_BOLSAS.id:
         return <BolsasView embedded user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;

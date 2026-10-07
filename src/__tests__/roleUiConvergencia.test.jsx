@@ -89,7 +89,7 @@ describe('A4: Producción — presentación nueva, negocio idéntico', () => {
   const v = sinComentarios(src('../components/ProduccionStandaloneView.jsx'));
   it('usa primitivas compartidas; sin cabecera, hojas, toast ni bloqueo propios', () => {
     expect(v).toMatch(/SegmentedTabs items=\{TABS\} value=\{tab\} onChange=\{setTab\}/);
-    expect((v.match(/<Modal open=/g) || []).length).toBe(5);
+    expect((v.match(/<Modal open=/g) || []).length).toBe(4);   // OP-01D: sin el modal de Transformación (agosto, superseded)
     expect(v).toMatch(/<BotonFirmasPendientes\s+user=\{user\}\s+data=\{data\}\s+actions=\{actions\}\s+mostrarBannerUrgente=\{true\}/);
     expect(v).not.toMatch(/from-blue-600 to-blue-800|rounded-t-\[30px\]|fixed inset-0|setToast|useBodyScrollLock|addEventListener\('keydown'/);
   });
@@ -97,10 +97,10 @@ describe('A4: Producción — presentación nueva, negocio idéntico', () => {
     expect(v).toMatch(/await actions\.producirYCongelar\(\{ \.\.\.datosProd, operacionId: op\.id \}\)/);
     expect(v).toMatch(/await actions\.registrarMermaCuarto\(\{ \.\.\.datos, operacionId: op\.id \}\)/);
     expect(v).toMatch(/await actions\.registrarMermaCuarto\(\{ \.\.\.datosMerma, operacionId: opMerma\.id \}\)/);
-    expect(v).toMatch(/await actions\.addTransformacion\(\{ \.\.\.datos, operacionId: op\.id \}\)/);
+    expect(v).toMatch(/await actions\.prepararDesdeBarra\(\{ \.\.\.datos, operacionId: op\.id \}\)/);
     expect(v).toMatch(/await actions\.traspasoEntreUbicaciones\(\{ \.\.\.tForm, operacionId: op\.id \}\)/);
     expect(v).toMatch(/await actions\.sacarDeCuartoFrio\(sacarModal\.cfId, sacarForm\.sku, sacarForm\.cantidad, mot\.motivo, \{ operacionId: op\.id \}\)/);
-    expect(new Set(v.match(/actions\.\w+/g))).toEqual(new Set(['actions.producirYCongelar', 'actions.registrarMermaCuarto', 'actions.addTransformacion', 'actions.traspasoEntreUbicaciones', 'actions.sacarDeCuartoFrio']));
+    expect(new Set(v.match(/actions\.\w+/g))).toEqual(new Set(['actions.producirYCongelar', 'actions.registrarMermaCuarto', 'actions.prepararDesdeBarra', 'actions.traspasoEntreUbicaciones', 'actions.sacarDeCuartoFrio']));
     expect(v).toMatch(/supabase\.storage\s*\.from\('mermas'\)\s*\.upload\(filePath, fotoMermaFile/);
     expect(v).toMatch(/await supabase\.storage\.from\('mermas'\)\.remove\(\[filePath\]\);/);
   });
@@ -114,13 +114,13 @@ describe('A4: Producción — presentación nueva, negocio idéntico', () => {
     expect(v).toMatch(/disabled=\{haciendoTraspaso \|\| !tForm\.cantidad \|\| n\(tForm\.cantidad\) <= 0 \|\| tForm\.origen === tForm\.destino\}/);
     expect(v).toMatch(/disabled=\{haciendoSalida \|\| !sacarForm\.cantidad \|\| n\(sacarForm\.cantidad\) <= 0 \|\| !s\(sacarForm\.motivo\)\}/);
     expect(v).toMatch(/disabled=\{guardandoMerma \|\| !mForm\.cantidad \|\| n\(mForm\.cantidad\) <= 0 \|\| !fotoMermaFile\}/);
-    expect(v).toMatch(/transOutputKg > transInputKg \|\| \(transStockInput !== null && transInputKg > transStockInput\)\}/);
+    expect(v).toMatch(/if \(!bolsaSku && !seProduceSinEmpaque\(form\.sku\)\) \{/);   // OP-01D: sin empaque solo la barra; el resto sigue bloqueado
     expect(v).toMatch(/useState\(\{ turno: "Turno 1", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1", conMerma: false, mermaCantidad: "", mermaCausa: "Bolsa rota" \}\)/);
     expect(v).toMatch(/const MERMA_CAUSAS = \["Bolsa rota", "Mal sellado", "Hielo derretido", "Falla de equipo", "Desmolde fallido", "Contaminación", "Otro"\];/);
-    expect(v).toMatch(/\["Máquina 30", "Máquina 20", "Máquina 15"\]/);
+    expect(v).toMatch(/MAQUINAS_PRODUCCION\.map\(m => \(/);   // OP-01D: lista compartida (incluye Máquina Barra)
     expect(v).toMatch(/\["Turno 1", "Turno 2", "Turno 3"\]/);
     expect(v).toMatch(/useState\("producir"\)/);
-    expect(v).toMatch(/\{ k: "producir"[^}]*\}, \{ k: "cuartos"[^}]*\}, \{ k: "mermas"[^}]*\}, \{ k: "trans"[^}]*\}/);
+    expect(v).toMatch(/\{ k: "producir"[^}]*\}, \{ k: "cuartos"[^}]*\}, \{ k: "mermas"[^}]*\}, \{ k: "preparar"[^}]*\}/);
     expect(v).toMatch(/onClose=\{cerrarProd\}/);
     expect(v).toMatch(/const cerrarProd = \(\) => \{ setModal\(false\); clearFotoMermaProd\(\); \};/);
     expect((v.match(/capture="environment"/g) || []).length).toBe(2);
@@ -248,10 +248,10 @@ describe('B3.2: cada módulo de Producción abre con SU resumen (solo presentaci
   const v = sinComentarios(src('../components/ProduccionStandaloneView.jsx'));
   const bloque = (ini, fin) => { const a = v.indexOf(ini), b = v.indexOf(fin); expect(a, ini).toBeGreaterThan(-1); expect(b, fin).toBeGreaterThan(a); return v.slice(a, b); };
   const prod = bloque('{tab === "producir" && (<>', '{tab === "cuartos" && (<>');
-  const cuartos = bloque('{tab === "cuartos" && (<>', '{tab === "trans" && (<>');
-  const trans = bloque('{tab === "trans" && (<>', '{tab === "mermas" && (<>');
+  const cuartos = bloque('{tab === "cuartos" && (<>', '{tab === "preparar" && (<>');
+  const prep = bloque('{tab === "preparar" && (<>', '{tab === "mermas" && (<>');
   const mermas = bloque('{tab === "mermas" && (<>', '<div className="h-8" />');
-  const ACCIONES = ['actions.producirYCongelar', 'actions.registrarMermaCuarto', 'actions.addTransformacion', 'actions.traspasoEntreUbicaciones', 'actions.sacarDeCuartoFrio'];
+  const ACCIONES = ['actions.producirYCongelar', 'actions.registrarMermaCuarto', 'actions.prepararDesdeBarra', 'actions.traspasoEntreUbicaciones', 'actions.sacarDeCuartoFrio'];
 
   it('Producción conserva su resumen general (Producido hoy · En congeladores · Merma hoy) con la misma derivación', () => {
     expect(v).toMatch(/const kpis = \[\s*\{ label: "Producido hoy", value: totalHoy\.toLocaleString\(\) \},\s*\{ label: "En congeladores", value: totalEnCuartos\.toLocaleString\(\) \},\s*\{ label: "Merma hoy", value: mermaHoy \},\s*\];/);
@@ -278,16 +278,18 @@ describe('B3.2: cada módulo de Producción abre con SU resumen (solo presentaci
     expect(mermas).toMatch(/label="Última merma de hoy" compact/);
     expect(mermas).not.toMatch(/kpis\.map|Producido hoy|En congeladores|Tarimas|resumenCuartos\.|resumenTrans\.|fmtPct|%|\$[0-9]/);   // sin monto, porcentaje ni tendencia
   });
-  it('Transformación: transformaciones de hoy, kg de entrada y salida guardados, última del historial; sin rendimiento agregado', () => {
-    expect(trans).toMatch(/data-testid="resumen-transformacion"/);
-    expect(trans).toMatch(/label="Transformaciones hoy" value=\{resumenTrans\.transformacionesHoy\}/);
-    expect(trans).toMatch(/label="Entrada hoy" value=\{kg\(resumenTrans\.entradaKg\)\}/);
-    expect(trans).toMatch(/label="Salida hoy" value=\{kg\(resumenTrans\.salidaKg\)\}/);
-    expect(trans).toMatch(/data-testid="ultima-transformacion"/);
-    expect(trans).not.toMatch(/kpis\.map|Producido hoy|En congeladores|Merma hoy|resumenCuartos\.|resumenMer\.|resumenTrans\.rendimiento/);
+  it('Preparar desde barra (OP-01D): preparaciones, barras y bolsas de hoy; vista previa antes de confirmar; sin datos de otros módulos', () => {
+    expect(prep).toMatch(/data-testid="resumen-preparacion"/);
+    expect(prep).toMatch(/label="Preparaciones hoy" value=\{resumenPrep\.preparaciones\}/);
+    expect(prep).toMatch(/label="Barras usadas hoy"/);
+    expect(prep).toMatch(/label="Bolsas preparadas hoy"/);
+    expect(prep).toMatch(/data-testid="vista-previa-preparacion"/);
+    expect(prep).toMatch(/disabled=\{guardandoPrep \|\| !!vistaPrep\.bloqueo\}/);
+    expect(prep).not.toMatch(/kpis\.map|Producido hoy|En congeladores|Merma hoy|resumenCuartos\.|resumenMer\./);
+    expect(v).not.toMatch(/Transformación|transForm|addTransformacion/);   // la de agosto ya no se ofrece
   });
   it('orden por módulo: resumen → acción principal → contenido', () => {
-    for (const [nombre, b, testid] of [['producir', prod, 'resumen-produccion'], ['cuartos', cuartos, 'resumen-congeladores'], ['trans', trans, 'resumen-transformacion'], ['mermas', mermas, 'resumen-mermas']]) {
+    for (const [nombre, b, testid] of [['producir', prod, 'resumen-produccion'], ['cuartos', cuartos, 'resumen-congeladores'], ['preparar', prep, 'resumen-preparacion'], ['mermas', mermas, 'resumen-mermas']]) {
       expect(b.indexOf(`data-testid="${testid}"`), nombre).toBeLessThan(b.indexOf('<FormBtn'));
     }
   });
@@ -297,7 +299,7 @@ describe('B3.2: cada módulo de Producción abre con SU resumen (solo presentaci
     expect(v).not.toMatch(/supabase\.rpc|supabase\.from\(|fetch\(|backendPost|backendGet/);
     expect(v).toMatch(/resumenCongeladores\(data\.cuartosFrios, data\.productos\)/);
     expect(v).toMatch(/resumenMermas\(data\.mermas, diaNegocio\(\)\)/);
-    expect(v).toMatch(/resumenTransformacion\(data\.produccion, diaNegocio\(\)\)/);
+    expect(v).toMatch(/vistaPreviaPreparacion\(\{/);
     const logic = src('../data/produccionResumenLogic.js');
     expect(logic).not.toMatch(/supabase|rpc|fetch\(|backend|useState|useEffect/);
     expect(logic.match(/^import .*$/gm)).toEqual([
