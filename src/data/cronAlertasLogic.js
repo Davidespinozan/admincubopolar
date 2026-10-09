@@ -5,9 +5,10 @@
 // eso estas funciones trabajan en snake_case (sin toCamel). Reciben la
 // fecha "hoy" como string 'YYYY-MM-DD' para ser deterministas en tests.
 import { ESTADOS_TERMINALES_RUTA } from './rutasLogic';
+import { ZONA_NEGOCIO } from '../utils/fechas';
 
 /**
- * Fecha de hoy en zona horaria de la planta (CDMX), como 'YYYY-MM-DD'.
+ * Fecha de hoy en la zona horaria de la planta (Durango, zona Centro), como 'YYYY-MM-DD'.
  * Los crons de Netlify corren en UTC; sin esto, un cron de las 7:00
  * CDMX (13:00 UTC) compararía contra la fecha UTC y las cuentas que
  * vencen "hoy" se marcarían vencidas un día antes.
@@ -18,7 +19,7 @@ import { ESTADOS_TERMINALES_RUTA } from './rutasLogic';
 export function fechaHoyMx(date = new Date()) {
   // en-CA formatea como YYYY-MM-DD directamente.
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Mexico_City',
+    timeZone: ZONA_NEGOCIO,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

@@ -1,4 +1,4 @@
--- 096_dia_negocio_caja_test.sql — día de negocio canónico (America/Mazatlan)
+-- 096_dia_negocio_caja_test.sql — día de negocio canónico (zona del negocio: America/Mazatlan hasta 121; America/Monterrey desde 122)
 -- y cierre de caja por contrato: una caja por ruta, fecha = rutas.fecha_fin
 -- derivada en el servidor, esperado/snapshot/actor del servidor, idempotencia
 -- por operación. La parte de contención (097) se detecta por el privilegio de
@@ -79,12 +79,17 @@ GRANT ALL ON t96_ids TO anon, authenticated, service_role;
 CREATE OR REPLACE FUNCTION t96_j(p_k TEXT) RETURNS JSONB LANGUAGE sql AS $$ SELECT v::jsonb FROM t96_ids WHERE k = p_k $$;
 GRANT EXECUTE ON FUNCTION t96_j(TEXT) TO PUBLIC;
 
-\echo '── 096: día de negocio canónico (America/Mazatlan)'
-SELECT t96_assert(fin_zona_negocio() = 'America/Mazatlan' AND fin_hoy() = fin_dia_negocio(now()) AND fin_hoy() = (now() AT TIME ZONE 'America/Mazatlan')::date, '096-01 fin_hoy = día de calendario en America/Mazatlan');
--- 06:30 UTC del 30: en Ciudad de México ya es el 30 (00:30); en Mazatlán aún es el 29 (23:30).
-SELECT t96_assert(fin_dia_negocio('2026-09-30 06:30:00+00') = '2026-09-29' AND ('2026-09-30 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mexico_City')::date = '2026-09-30',
-  '096-02 instante donde CDMX y Mazatlán son días distintos: el día de negocio sigue a Mazatlán (29)');
-SELECT t96_assert(fin_dia_negocio('2026-09-30 07:00:00+00') = '2026-09-30' AND fin_dia_negocio('2026-09-30 06:59:59+00') = '2026-09-29', '096-03 el día de negocio cambia a medianoche de Mazatlán (07:00 UTC)');
+\echo '── 096: día de negocio canónico (zona del negocio)'
+-- 122 cambia la zona a America/Monterrey (Durango); la suite corre antes y después.
+SELECT t96_assert(fin_zona_negocio() IN ('America/Mazatlan', 'America/Monterrey') AND fin_hoy() = fin_dia_negocio(now()) AND fin_hoy() = (now() AT TIME ZONE fin_zona_negocio())::date, '096-01 fin_hoy = día de calendario en la zona del negocio');
+-- 23:30 del 29 en la zona del negocio: en UTC (y en Madrid) ya es el 30. La suite corre antes y después de 122
+-- (Mazatlán → Durango), así que el instante se deriva de fin_zona_negocio().
+SELECT t96_assert(fin_dia_negocio(('2026-09-29 23:30'::timestamp AT TIME ZONE fin_zona_negocio())) = '2026-09-29'
+                  AND (('2026-09-29 23:30'::timestamp AT TIME ZONE fin_zona_negocio()) AT TIME ZONE 'UTC')::date = '2026-09-30',
+  '096-02 instante donde UTC y la zona del negocio son días distintos: el día de negocio sigue a la zona del negocio (29)');
+SELECT t96_assert(fin_dia_negocio(('2026-09-30 00:00'::timestamp AT TIME ZONE fin_zona_negocio())) = '2026-09-30'
+                  AND fin_dia_negocio(('2026-09-30 00:00'::timestamp AT TIME ZONE fin_zona_negocio()) - interval '1 second') = '2026-09-29',
+  '096-03 el día de negocio cambia a medianoche de la zona del negocio');
 SELECT t96_assert((SELECT bool_and(column_default ~ 'fin_hoy\(\)') AND count(*) = 11 FROM information_schema.columns WHERE table_schema = 'public'
   AND (table_name, column_name) IN (('pagos','fecha'), ('leads','fecha'), ('movimientos_contables','fecha'), ('cuentas_por_cobrar','fecha_venta'), ('costos_historial','fecha'),
        ('produccion','fecha'), ('mermas','fecha'), ('cuentas_por_pagar','fecha_emision'), ('pagos_proveedores','fecha'), ('ordenes','fecha'), ('rutas','fecha'))), '096-04 las 11 fechas de negocio usan fin_hoy() como default (ya no CURRENT_DATE UTC)');
@@ -100,20 +105,20 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t96_actor(3);
 INSERT INTO t96_ids VALUES ('pr', registrar_produccion('96000000-0000-0000-0000-00000000a001', 'Turno 1', 'Máquina 96', 'P96-H', 5, 'CF-96')::text);
 INSERT INTO t96_ids VALUES ('tr', registrar_transformacion('96000000-0000-0000-0000-00000000a002', 'P96-MP', 4, 'P96-H', 3, 'CF-96')::text);
 COMMIT;
-SELECT t96_assert((SELECT fecha = fin_hoy() AND fecha = fin_dia_negocio(created_at) FROM rutas WHERE nombre = 'T96 nueva'), '096-10 ruta nueva (addRuta sin fecha): fecha = día de negocio en Mazatlán de su creación');
-SELECT t96_assert((SELECT fecha = fin_hoy() AND fecha = fin_dia_negocio(created_at) FROM produccion WHERE id = (t96_j('pr') ->> 'id')::bigint), '096-11 producción: fecha = día de negocio en Mazatlán de su creación');
-SELECT t96_assert((SELECT fecha = fin_hoy() AND fecha = fin_dia_negocio(created_at) FROM produccion WHERE id = (t96_j('tr') ->> 'id')::bigint), '096-12 transformación: fecha = día de negocio en Mazatlán de su creación');
+SELECT t96_assert((SELECT fecha = fin_hoy() AND fecha = fin_dia_negocio(created_at) FROM rutas WHERE nombre = 'T96 nueva'), '096-10 ruta nueva (addRuta sin fecha): fecha = día de negocio de su creación');
+SELECT t96_assert((SELECT fecha = fin_hoy() AND fecha = fin_dia_negocio(created_at) FROM produccion WHERE id = (t96_j('pr') ->> 'id')::bigint), '096-11 producción: fecha = día de negocio de su creación');
+SELECT t96_assert((SELECT fecha = fin_hoy() AND fecha = fin_dia_negocio(created_at) FROM produccion WHERE id = (t96_j('tr') ->> 'id')::bigint), '096-12 transformación: fecha = día de negocio de su creación');
 
 \echo '── 096: reporte 093 en el día de negocio'
 BEGIN;
 SET LOCAL session_replication_role = replica;
-INSERT INTO ordenes (id, folio, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, fecha, delivered_at) VALUES (9640, 'OV-9640', 'Cliente 96', 'x', 123, 'Entregada', 'Efectivo', 'Contado', '2031-03-10', '2031-03-11 06:30:00+00');
-INSERT INTO pagos (orden_id, monto, metodo_pago, fecha, referencia, saldo_antes, saldo_despues, created_at) VALUES (9640, 45, 'Efectivo', '2031-03-10', 'T96-R', 0, 0, '2031-03-11 06:30:00+00');
+INSERT INTO ordenes (id, folio, cliente_nombre, productos, total, estatus, metodo_pago, tipo_cobro, fecha, delivered_at) VALUES (9640, 'OV-9640', 'Cliente 96', 'x', 123, 'Entregada', 'Efectivo', 'Contado', '2031-03-10', ('2031-03-10 23:30'::timestamp AT TIME ZONE fin_zona_negocio()));
+INSERT INTO pagos (orden_id, monto, metodo_pago, fecha, referencia, saldo_antes, saldo_despues, created_at) VALUES (9640, 45, 'Efectivo', '2031-03-10', 'T96-R', 0, 0, ('2031-03-10 23:30'::timestamp AT TIME ZONE fin_zona_negocio()));
 COMMIT;
 SELECT t96_assert((reporte_financiero('2031-03-10', '2031-03-10') -> 'resultados' ->> 'ventas_entregadas')::numeric = 123
-  AND (reporte_financiero('2031-03-11', '2031-03-11') -> 'resultados' ->> 'ventas_entregadas')::numeric = 0, '096-15 entrega a las 23:30 de Mazatlán (00:30 CDMX del día siguiente): ingreso del día 10');
+  AND (reporte_financiero('2031-03-11', '2031-03-11') -> 'resultados' ->> 'ventas_entregadas')::numeric = 0, '096-15 entrega a las 23:30 de la zona del negocio (ya día 11 en UTC): ingreso del día 10');
 SELECT t96_assert((reporte_financiero('2031-03-10', '2031-03-10') -> 'flujo' ->> 'entradas_pagos')::numeric = 45
-  AND (reporte_financiero('2031-03-11', '2031-03-11') -> 'flujo' ->> 'entradas_pagos')::numeric = 0, '096-16 pago a las 23:30 de Mazatlán: entrada de efectivo del día 10');
+  AND (reporte_financiero('2031-03-11', '2031-03-11') -> 'flujo' ->> 'entradas_pagos')::numeric = 0, '096-16 pago a las 23:30 de la zona del negocio: entrada de efectivo del día 10');
 
 \echo '── 096: caja por contrato'
 SELECT t96_assert((SELECT count(*) = 1 FROM pg_constraint WHERE conname = 'cierres_diarios_ruta_id_key')

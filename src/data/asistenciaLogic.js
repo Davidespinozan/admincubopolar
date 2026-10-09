@@ -8,8 +8,10 @@
 //   - Sin cola offline: sin conexión no se marca (la hora es la del servidor).
 
 import { nuevoOperacionId } from './stockContratosLogic';
+import { ZONA_NEGOCIO } from '../utils/fechas';
 
-export const ZONA_NEGOCIO = 'America/Mazatlan';
+// Una sola fuente de la zona (122: Durango, America/Monterrey).
+export { ZONA_NEGOCIO };
 export const ROL_EMPLEADO = 'Empleado';
 
 /** Opciones de la lectura única de ubicación (sin caché: posición fresca). */
@@ -175,7 +177,7 @@ export function datetimeLocalNegocio(ts) {
   return f === '—' ? '' : f.replace(' ', 'T');
 }
 
-/** Desfase de la zona del negocio en un instante ("-07:00"). */
+/** Desfase de la zona del negocio en un instante ("-06:00"). */
 export function desfaseNegocio(fecha = new Date()) {
   try {
     const parte = new Intl.DateTimeFormat('en-US', { timeZone: ZONA_NEGOCIO, timeZoneName: 'longOffset' })
@@ -184,7 +186,7 @@ export function desfaseNegocio(fecha = new Date()) {
     if (m) return `${m[1]}:${m[2] || '00'}`;
     if (parte === 'GMT') return '+00:00';
   } catch { /* Intl sin longOffset */ }
-  return '-07:00'; // Mazatlán no tiene horario de verano desde 2022.
+  return '-06:00'; // Durango (zona Centro) no tiene horario de verano desde 2022.
 }
 
 /** "2026-10-07T07:05" (hora local del negocio) → ISO con desfase, para el servidor. */

@@ -10,7 +10,7 @@ export function ConciliacionView({ data, actions }) {
   const [detalleCierre, setDetalleCierre] = useState(null);
 
   // Filtros histórico
-  // 096: "hoy" es el día de negocio (America/Mazatlan), no el del navegador.
+  // 096: "hoy" es el día de negocio (zona del negocio: Durango), no el del navegador.
   const hoyStr = useMemo(() => diaNegocio(), []);
   const hace30 = useMemo(() => {
     const [y, m, d] = hoyStr.split('-').map(Number);

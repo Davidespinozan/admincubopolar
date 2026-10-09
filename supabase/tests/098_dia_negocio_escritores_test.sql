@@ -170,13 +170,15 @@ SELECT t98_assert((SELECT fecha = fin_hoy() FROM leads WHERE nombre = 'T98 lead'
   AND (SELECT fecha_emision = '2026-08-15' FROM cuentas_por_pagar WHERE concepto = 'T98 con emisión'), '098-33 lead y CxP sin fecha: día del servidor; emisión elegida: se conserva');
 
 \echo '── 098: instante frontera desde cuatro zonas de cliente'
--- 2033-03-11 06:30 UTC = 23:30 del día 10 en Mazatlán; día 11 en UTC, CDMX y Madrid.
+-- 23:30 del día 10 en la zona del negocio (Mazatlán hasta 121, Durango desde 122): ya día 11 en UTC y Madrid.
+-- El instante se deriva de fin_zona_negocio() porque la suite corre antes y después de 122.
 BEGIN;
 CREATE OR REPLACE FUNCTION public.fin_hoy() RETURNS DATE LANGUAGE sql STABLE SET search_path = public, pg_temp
-  AS $f$ SELECT fin_dia_negocio('2033-03-11 06:30:00+00'::timestamptz) $f$;
-SELECT t98_assert(fin_hoy() = '2033-03-10' AND ('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mexico_City')::date = '2033-03-11'
-  AND ('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'Europe/Madrid')::date = '2033-03-11' AND ('2033-03-11 06:30:00+00'::timestamptz AT TIME ZONE 'UTC')::date = '2033-03-11',
-  '098-40 instante frontera: Mazatlán día 10; UTC, CDMX y Madrid día 11');
+  AS $f$ SELECT fin_dia_negocio(('2033-03-10 23:30'::timestamp AT TIME ZONE fin_zona_negocio())) $f$;
+SELECT t98_assert(fin_hoy() = '2033-03-10'
+  AND (('2033-03-10 23:30'::timestamp AT TIME ZONE fin_zona_negocio()) AT TIME ZONE 'Europe/Madrid')::date = '2033-03-11'
+  AND (('2033-03-10 23:30'::timestamp AT TIME ZONE fin_zona_negocio()) AT TIME ZONE 'UTC')::date = '2033-03-11',
+  '098-40 instante frontera: zona del negocio día 10; UTC y Madrid día 11');
 SET LOCAL TimeZone = 'UTC'; SET LOCAL ROLE authenticated; SELECT t98_actor(1);
 SELECT pagar_cuenta_por_pagar('98000000-0000-0000-0000-00000000f001', 9811, 100, 'Transferencia', 'F-UTC');
 SELECT CASE WHEN t98_canon() THEN NULL ELSE pagar_nomina(9811) END;

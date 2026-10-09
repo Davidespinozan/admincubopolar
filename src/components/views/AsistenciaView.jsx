@@ -160,7 +160,7 @@ function DetalleModal({ fila, onClose, actions, onCorregido }) {
           )}
           {form && (
             <div className="space-y-3 rounded-[18px] border border-slate-200 bg-slate-50 p-3">
-              <p className="font-semibold text-slate-800">Corregir {form.campo} (hora de Mazatlán)</p>
+              <p className="font-semibold text-slate-800">Corregir {form.campo} (hora de Durango)</p>
               <FormInput label="Fecha y hora" type="datetime-local" value={form.local} onChange={e => setForm({ ...form, local: e.target.value })} />
               <FormTextarea label="Motivo (obligatorio)" value={form.motivo} onChange={e => setForm({ ...form, motivo: e.target.value })} rows={2} />
               {error && <p className="text-red-700">{error}</p>}

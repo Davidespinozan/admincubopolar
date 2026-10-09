@@ -10,16 +10,17 @@ import { Card, SegmentedTabs, Chips, Guia, KpiTile } from '../ui/Components';
 import { EmptyState, ViewSkeleton } from '../ui/Skeleton';
 import UsuariosPanel from '../UsuariosPanel';
 import { describirCambio, esDueno, debeCambiarPassword } from '../../data/usuariosLogic';
+import { ZONA_NEGOCIO } from '../../utils/fechas';
 import { diaNegocio } from '../../utils/fechas';
 
 const fecha = (iso) => {
   if (!iso) return '';
   try {
-    return new Date(iso).toLocaleString('es-MX', { timeZone: 'America/Mazatlan', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return new Date(iso).toLocaleString('es-MX', { timeZone: ZONA_NEGOCIO, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
   } catch { return ''; }
 };
 const diaDe = (iso) => {
-  try { return new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Mazatlan' }); } catch { return ''; }
+  try { return new Date(iso).toLocaleDateString('en-CA', { timeZone: ZONA_NEGOCIO }); } catch { return ''; }
 };
 
 export function DuenoView({ data, actions, user }) {

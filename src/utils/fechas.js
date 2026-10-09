@@ -1,15 +1,16 @@
 // fechas.js — 096: día de negocio canónico de CuboPolar.
 //
-// Zona del negocio: America/Mazatlan (Culiacán, Sinaloa). Espejo del
+// Zona del negocio: America/Monterrey (Durango, Dgo.; UTC-6, sin horario de
+// verano). 122: antes America/Mazatlan por error de 096. Espejo del
 // servidor: fin_zona_negocio() / fin_hoy().
 //
 //   - Una FECHA de negocio ('YYYY-MM-DD', columnas DATE) es un día de
 //     calendario: nunca pasa por new Date(), porque JavaScript la leería como
 //     medianoche UTC y en México se mostraría el día anterior.
-//   - Un INSTANTE (timestamptz) se asigna al día de negocio en Mazatlán, no a
+//   - Un INSTANTE (timestamptz) se asigna al día de negocio en Durango, no a
 //     la zona del navegador.
 
-export const ZONA_NEGOCIO = 'America/Mazatlan';
+export const ZONA_NEGOCIO = 'America/Monterrey';
 
 const RE_FECHA = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -34,7 +35,7 @@ const fmtNegocio = () => {
 };
 
 /**
- * Día de negocio ('YYYY-MM-DD') de un instante, en America/Mazatlan.
+ * Día de negocio ('YYYY-MM-DD') de un instante, en la zona del negocio (Durango).
  * Sin argumento: el día de negocio de ahora. Una fecha 'YYYY-MM-DD' se
  * devuelve tal cual (ya es un día de negocio).
  */

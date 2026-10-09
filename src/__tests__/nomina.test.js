@@ -13,8 +13,8 @@ const TZ = globalThis.process?.env?.TZ || 'local';
 describe(`semana de nómina (TZ=${TZ})`, () => {
   afterEach(() => { vi.useRealTimers(); });
 
-  it('instante frontera: viernes 23:30 en Mazatlán (sábado en UTC/CDMX/Madrid) muestra la misma semana', () => {
-    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-03T06:30:00Z'));
+  it('instante frontera: viernes 23:30 en Durango (sábado en UTC/Madrid) muestra la misma semana', () => {
+    vi.useFakeTimers(); vi.setSystemTime(new Date('2026-10-03T05:30:00Z'));
     expect(diaNegocio()).toBe('2026-10-02');
     expect(periodoNominaDe(diaNegocio())).toEqual({ fechaInicio: '2026-09-26', fechaFin: '2026-10-02', fechaPago: '2026-10-02' });
   });

@@ -4,7 +4,7 @@
 Toda autoridad sale del actor canónico: la fila de `usuarios` con `auth_id = auth.uid()` y
 `estatus = 'Activo'`. La API (un JWT, aunque sea de Admin) solo cambia dinero, inventario e
 historia a través de contratos del servidor; las tablas canónicas no aceptan escritura REST.
-El día de negocio lo decide el servidor en America/Mazatlan.
+El día de negocio lo decide el servidor en America/Monterrey (Durango, Dgo.; UTC-6).
 
 ## Source of truth
 - Identidad: `usuarios` (`auth_id` único, `estatus`, `rol`) ↔ `auth.users`. Roles: Admin, Ventas,
@@ -18,7 +18,7 @@ El día de negocio lo decide el servidor en America/Mazatlan.
   del actor (también deja pasar a `service_role` y a SQL sin JWT).
 - Idempotencia: `stock_operaciones` (UUID de operación + clave + resultado) con `stock_op_replay`;
   algunas tablas guardan su propio `operacion_id` (producción, cierres, pagos a proveedor, devoluciones).
-- Fecha: `fin_zona_negocio()` = America/Mazatlan, `fin_dia_negocio(instante)`, `fin_hoy()`; las
+- Fecha: `fin_zona_negocio()` = America/Monterrey (122; 096 decía Mazatlán por error), `fin_dia_negocio(instante)`, `fin_hoy()`; las
   columnas DATE de negocio tienen `fin_hoy()` por defecto.
 - Estado declarado de producción: `docs/STATUS.md`. Repositorio, deploy y base de datos son tres cosas distintas.
 
@@ -59,7 +59,7 @@ No es una lista de funciones: es el patrón que toda mutación de negocio sigue.
 - **Bitácora de cambios sensibles (120):** `bitacora_cambios` registra toda escritura REST directa en 14 tablas
   (antes/después, actor fijado por el servidor), solo se inserta desde un disparador (`pg_trigger_depth() > 0`),
   no tiene UPDATE/DELETE por API y solo la lee el Dueño. Los contratos dejan `auditoria`.
-- **Día de negocio America/Mazatlan decidido por el servidor (096, 098).** Un DATE guardado no se
+- **Día de negocio en la zona del negocio decidido por el servidor (096, 098; zona = Durango desde 122).** Un DATE guardado no se
   convierte; el navegador usa `diaNegocio()` solo para mostrar y filtrar. Por qué: la zona del
   navegador cambiaba la fecha contable.
 

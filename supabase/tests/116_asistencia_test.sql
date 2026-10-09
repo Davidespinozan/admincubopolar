@@ -1,7 +1,7 @@
 -- 116_asistencia_test.sql — WF-0 (rol Empleado, vínculo persona ↔ acceso) y
 -- PD-01 (reloj checador geolocalizado). Los turnos de los casos en vivo se
 -- arman relativos a la hora del servidor; los bordes de horario (tolerancia
--- exacta, turno nocturno, zona horaria de Mazatlán) se prueban con instantes
+-- exacta, turno nocturno, zona horaria del negocio) se prueban con instantes
 -- fijos sobre las funciones internas. La carrera con dos conexiones corre en
 -- el runner local.
 
@@ -62,9 +62,9 @@ CREATE OR REPLACE FUNCTION t116_op(p_k TEXT) RETURNS UUID LANGUAGE sql AS $$ SEL
 -- Resultado del último contrato de la transacción (se lee tras RESET ROLE).
 CREATE OR REPLACE FUNCTION t116_r() RETURNS JSONB LANGUAGE sql AS $$ SELECT current_setting('t116.r')::jsonb $$;
 CREATE OR REPLACE FUNCTION t116_guardar(p_r JSONB) RETURNS VOID LANGUAGE sql AS $$ SELECT set_config('t116.r', p_r::text, true); $$;
--- Hora local de Mazatlán truncada al minuto, desplazada p_min minutos.
+-- Hora local del negocio (fin_zona_negocio(): Mazatlán hasta 121, Durango desde 122) truncada al minuto, desplazada p_min minutos.
 CREATE OR REPLACE FUNCTION t116_hora(p_min INTEGER) RETURNS TIME LANGUAGE sql AS $$
-  SELECT (date_trunc('minute', now() AT TIME ZONE 'America/Mazatlan') + make_interval(mins => p_min))::time $$;
+  SELECT (date_trunc('minute', now() AT TIME ZONE fin_zona_negocio()) + make_interval(mins => p_min))::time $$;
 GRANT EXECUTE ON FUNCTION t116_assert(BOOLEAN, TEXT), t116_err(TEXT, TEXT, TEXT, TEXT), t116_auth(INTEGER), t116_op(TEXT), t116_r(), t116_guardar(JSONB), t116_hora(INTEGER) TO PUBLIC;
 
 -- Planta (Mazatlán) y puntos de prueba: dentro = el mismo punto; fuera = +0.01° de latitud (~1.1 km).
@@ -336,25 +336,25 @@ SELECT t116_err($$DELETE FROM asistencia_correcciones$$, '116-09l historial inmu
 COMMIT;
 
 \echo '── CASO 10: turno nocturno y bordes de zona horaria (instantes fijos)'
--- 2026-10-09 es viernes; Mazatlán = UTC-7 todo el año.
-SELECT t116_assert((SELECT count(*) FROM asistencia_turno_aplicable(11654, '2026-10-09 20:59 America/Mazatlan')) = 0,
+-- 2026-10-09 es viernes; los instantes se expresan en la zona del negocio (sin horario de verano).
+SELECT t116_assert((SELECT count(*) FROM asistencia_turno_aplicable(11654, ('2026-10-09 20:59'::timestamp AT TIME ZONE fin_zona_negocio()))) = 0,
   '116-10a nocturno: 61 min antes de las 22:00 todavía no abre');
-SELECT t116_assert((SELECT fecha_laboral = '2026-10-09' FROM asistencia_turno_aplicable(11654, '2026-10-09 21:00 America/Mazatlan')),
+SELECT t116_assert((SELECT fecha_laboral = '2026-10-09' FROM asistencia_turno_aplicable(11654, ('2026-10-09 21:00'::timestamp AT TIME ZONE fin_zona_negocio()))),
   '116-10b nocturno: abre 60 min antes');
-SELECT t116_assert((SELECT fecha_laboral = '2026-10-09' AND salida_programada = '2026-10-10 06:00 America/Mazatlan'::timestamptz
-                      FROM asistencia_turno_aplicable(11654, '2026-10-10 03:00 America/Mazatlan')),
+SELECT t116_assert((SELECT fecha_laboral = '2026-10-09' AND salida_programada = ('2026-10-10 06:00'::timestamp AT TIME ZONE fin_zona_negocio())
+                      FROM asistencia_turno_aplicable(11654, ('2026-10-10 03:00'::timestamp AT TIME ZONE fin_zona_negocio()))),
   '116-10c nocturno: a las 03:00 del sábado el día laboral sigue siendo el viernes');
-SELECT t116_assert((SELECT count(*) FROM asistencia_turno_aplicable(11654, '2026-10-10 06:00 America/Mazatlan')) = 0,
+SELECT t116_assert((SELECT count(*) FROM asistencia_turno_aplicable(11654, ('2026-10-10 06:00'::timestamp AT TIME ZONE fin_zona_negocio()))) = 0,
   '116-10d nocturno: a la hora de salida ya no se puede marcar entrada');
-SELECT t116_assert((SELECT count(*) FROM asistencia_turno_aplicable(11654, '2026-10-08 23:00 America/Mazatlan')) = 0,
+SELECT t116_assert((SELECT count(*) FROM asistencia_turno_aplicable(11654, ('2026-10-08 23:00'::timestamp AT TIME ZONE fin_zona_negocio()))) = 0,
   '116-10e nocturno: el jueves no hay turno');
-SELECT t116_assert((SELECT fecha_laboral = '2026-10-08' AND entrada_programada = '2026-10-09 01:00Z'::timestamptz
-                      FROM asistencia_turno_aplicable(11655, '2026-10-09 05:00Z')),
-  '116-10f jueves 22:00 en Mazatlán = viernes 05:00 UTC: el día laboral es el jueves local');
-SELECT t116_assert((SELECT count(*) FROM asistencia_turno_aplicable(11655, '2026-10-08 13:30Z')) = 0,
+SELECT t116_assert((SELECT fecha_laboral = '2026-10-08' AND entrada_programada = ('2026-10-08 18:00'::timestamp AT TIME ZONE fin_zona_negocio())
+                      FROM asistencia_turno_aplicable(11655, ('2026-10-08 22:00'::timestamp AT TIME ZONE fin_zona_negocio()))),
+  '116-10f jueves 22:00 local (ya viernes en UTC): el día laboral es el jueves local');
+SELECT t116_assert((SELECT count(*) FROM asistencia_turno_aplicable(11655, ('2026-10-08 06:30'::timestamp AT TIME ZONE fin_zona_negocio()))) = 0,
   '116-10g jueves 06:30 local: el turno de las 18:00 aún no abre');
 BEGIN; SET LOCAL timezone = 'Europe/Madrid';
-SELECT t116_assert((SELECT fecha_laboral = '2026-10-08' FROM asistencia_turno_aplicable(11655, '2026-10-09 05:00Z')),
+SELECT t116_assert((SELECT fecha_laboral = '2026-10-08' FROM asistencia_turno_aplicable(11655, ('2026-10-08 22:00'::timestamp AT TIME ZONE fin_zona_negocio()))),
   '116-10h el resultado no depende de la zona de la sesión');
 COMMIT;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t116_auth(1);

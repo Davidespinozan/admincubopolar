@@ -20,7 +20,7 @@ const WORK = process.env.WORK || '/tmp/cp-localdb';
 const BIN = process.env.PG_BIN || path.join(WORK, 'node_modules/@embedded-postgres/darwin-arm64/native/bin');
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '../../..');
 const DATA = path.join(WORK, 'pgdata');
-const PORT = 5499;
+const PORT = Number(process.env.PG_PORT) || 5499; // PG_PORT: otro puerto cuando dos gates corren a la vez
 const DB = 'cubopolar_test';
 const USER = 'tester';
 
@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -4216,8 +4216,8 @@ async function conc116() {
     INSERT INTO empleados (id, nombre, puesto, depto, salario_diario, fecha_ingreso, estatus, usuario_id) VALUES (11661, 'Empleado C116', 'P', 'D', 1, '2026-01-01', 'Activo', 11661);
     INSERT INTO centros_trabajo (nombre, latitud, longitud, radio_m, precision_max_m) VALUES ('Planta C116', 23.2494, -106.4111, 100, 50);
     INSERT INTO turnos (empleado_id, centro_id, dias, hora_entrada, hora_salida, tolerancia_min, vigente_desde)
-      SELECT 11661, id, ARRAY[1,2,3,4,5,6,7]::smallint[], (date_trunc('minute', now() AT TIME ZONE 'America/Mazatlan') - interval '5 minutes')::time,
-             (date_trunc('minute', now() AT TIME ZONE 'America/Mazatlan') + interval '475 minutes')::time, 10, CURRENT_DATE - 3
+      SELECT 11661, id, ARRAY[1,2,3,4,5,6,7]::smallint[], (date_trunc('minute', now() AT TIME ZONE fin_zona_negocio()) - interval '5 minutes')::time,
+             (date_trunc('minute', now() AT TIME ZONE fin_zona_negocio()) + interval '475 minutes')::time, 10, CURRENT_DATE - 3
         FROM centros_trabajo WHERE nombre = 'Planta C116'; COMMIT;`);
   const a = await connect(); const b = await connect();
   const actor = async (cl) => { await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
@@ -4558,6 +4558,57 @@ for (const [etq, f] of [...SUITES_120, ['111', '111_operaciones_cfdi_test.sql']]
   console.log(`  ${etq} tras 121: PASS`);
 }
 console.log('  GER-1 (usuarios solo por contrato) tras 121: PASS');
+
+// ═══ 122 — zona del negocio: America/Monterrey (Durango) ═══
+{
+  // Paridad con producción (md5 de fin_zona_negocio() leído en solo lectura el 2026-10-09).
+  const PROD122 = { fin_zona_negocio: '7688ea0bc1e52c60bc1ffc322cfd5cb5' };
+  const loc = (await c.query(`SELECT md5(pg_get_functiondef('public.fin_zona_negocio()'::regprocedure)) AS m, fin_zona_negocio() AS z`)).rows[0];
+  const okP = loc.m === PROD122.fin_zona_negocio && loc.z === 'America/Mazatlan';
+  console.log(`  ZONA_PARITY_CHECK[pre-122 == producción (America/Mazatlan)]: ${okP ? 'PASS' : 'FAIL ' + JSON.stringify(loc)}`);
+  if (!okP) process.exit(1);
+  // Reproduce el hallazgo ANTES de 122: un turno de 08:00 se evalúa a las 15:00 UTC (09:00 de Durango).
+  const h = (await c.query(`SELECT (('2033-03-11'::date + '08:00'::time)::timestamp AT TIME ZONE fin_zona_negocio()) = '2033-03-11 15:00:00+00'::timestamptz AS mal`)).rows[0].mal;
+  console.log(`  RESIDUAL_ZONA[pre-122: 08:00 de turno = 09:00 de Durango]: ${h ? 'REPRODUCIDO' : 'NO REPRODUCIDO'}`);
+  if (!h) process.exit(1);
+}
+const SUITES_122 = [...SUITES_120, ['120', '120_ger1_dueno_accesos_test.sql'], ['121', '121_ger1_contencion_usuarios_test.sql']];
+for (const k of [1, 2]) {
+  console.log(`── aplicar 122 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '122_zona_negocio_durango.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 122 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 122)'); process.exit(1); }
+{
+  // Solo cambió el cuerpo de fin_zona_negocio(): ACL, volatilidad y search_path iguales.
+  const f = (await c.query(`SELECT provolatile, prosecdef, array_to_string(proconfig, ';') AS cfg, COALESCE(proacl::text, 'NULL') AS acl, fin_zona_negocio() AS z
+      FROM pg_proc WHERE proname = 'fin_zona_negocio' AND pronamespace = 'public'::regnamespace`)).rows[0];
+  const ok = f.z === 'America/Monterrey' && f.provolatile === 'i' && !f.prosecdef && f.cfg === 'search_path=public, pg_temp';
+  console.log(`  ZONA_122[fin_zona_negocio() = America/Monterrey, IMMUTABLE, search_path fijo, acl=${f.acl}]: ${ok ? 'PASS' : 'FAIL ' + JSON.stringify(f)}`);
+  if (!ok) process.exit(1);
+  // Frontend ↔ DB: la constante del cliente es la misma zona.
+  const js = fs.readFileSync(path.join(ROOT, 'src/utils/fechas.js'), 'utf8');
+  const m = /export const ZONA_NEGOCIO = '([^']+)'/.exec(js);
+  const okF = m && m[1] === f.z
+    && !/America\/Mazatlan/.test(fs.readFileSync(path.join(ROOT, 'src/data/asistenciaLogic.js'), 'utf8'))
+    && !/America\/Mazatlan/.test(fs.readFileSync(path.join(ROOT, 'src/data/saludoLogic.js'), 'utf8'));
+  console.log(`  ZONA_FRONTEND_CHECK[src/utils/fechas.js ZONA_NEGOCIO == fin_zona_negocio()]: ${okF ? 'PASS' : 'FAIL ' + (m && m[1])}`);
+  if (!okF) process.exit(1);
+}
+console.log('── PRUEBAS 122');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/122_zona_negocio_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (122)'); process.exit(1); }
+}
+await reruns090('122', ['072']);
+for (const [etq, f] of [...SUITES_122, ['111', '111_operaciones_cfdi_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 122)`); process.exit(1); }
+  console.log(`  ${etq} tras 122: PASS`);
+}
+// Concurrencia de asistencia (116) con la zona nueva: mismas carreras, sin cambio de resultado.
+await conc116();
+console.log('  Zona del negocio = Durango (America/Monterrey) tras 122: PASS');
 
 // ═══ OP-03 — ensayo operativo de punta a punta (Día 0; producción, barra, mostrador, ruta, mermas, reverso) ═══
 // Va al final (tras 116): deja sus funciones auxiliares op3_*, que 090-04 marcaría en una re-corrida posterior.

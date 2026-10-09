@@ -370,10 +370,10 @@ COMMIT;
 BEGIN; SET LOCAL timezone = 'Asia/Tokyo'; SET LOCAL ROLE authenticated; SELECT t118_auth(1);
 SELECT t118_guardar(calendario(fin_hoy(), fin_hoy()));
 RESET ROLE;
-SELECT t118_assert((t118_r() ->> 'hoy')::date = (now() AT TIME ZONE 'America/Mazatlan')::date, '118-27a "hoy" es Mazatlán aunque la sesión esté en Tokio');
-SELECT t118_assert((SELECT bool_and(completada_fecha = (completada_at AT TIME ZONE 'America/Mazatlan')::date) FROM actividad_ocurrencias o
+SELECT t118_assert((t118_r() ->> 'hoy')::date = (now() AT TIME ZONE fin_zona_negocio())::date, '118-27a "hoy" es el de la zona del negocio aunque la sesión esté en Tokio');
+SELECT t118_assert((SELECT bool_and(completada_fecha = (completada_at AT TIME ZONE fin_zona_negocio())::date) FROM actividad_ocurrencias o
                      JOIN actividades a ON a.id = o.actividad_id WHERE a.titulo LIKE 'T118%' AND completada_at IS NOT NULL),
-  '118-27b la fecha de terminación es la de negocio (Mazatlán)');
+  '118-27b la fecha de terminación es la de negocio');
 SELECT t118_assert(actividad_clasificacion('2026-10-01', '2026-10-05', '2026-09-30') = 'anticipada' AND actividad_clasificacion('2026-10-01', '2026-10-05', '2026-10-01') = 'en_ventana'
                AND actividad_clasificacion('2026-10-01', '2026-10-05', '2026-10-05') = 'en_ventana' AND actividad_clasificacion('2026-10-01', '2026-10-05', '2026-10-06') = 'tardia',
   '118-27c bordes de la clasificación (inicio y fin inclusive)');

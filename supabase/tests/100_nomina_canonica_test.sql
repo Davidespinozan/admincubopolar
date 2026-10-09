@@ -109,19 +109,21 @@ COMMIT;
 SELECT t100_assert((t100_j('hoy') ->> 'fecha_inicio')::date = nomina_inicio_semana(fin_hoy()) AND (t100_j('hoy') ->> 'fecha_fin')::date = nomina_inicio_semana(fin_hoy()) + 6
   AND (t100_j('hoy') ->> 'fecha_pago') = (t100_j('hoy') ->> 'fecha_fin') AND (t100_j('hoy') ->> 'estatus') = 'Borrador'
   AND extract(isodow FROM (t100_j('hoy') ->> 'fecha_inicio')::date) = 6 AND (t100_j('hoy') ->> 'periodo') LIKE 'Sáb % – Vie %',
-  '100-12 sin fecha: el servidor deriva la semana sábado→viernes de fin_hoy() (Mazatlán), pago el viernes');
+  '100-12 sin fecha: el servidor deriva la semana sábado→viernes de fin_hoy() (zona del negocio), pago el viernes');
 SELECT t100_assert((t100_j('hoy_r') ->> 'replay') = 'true' AND t100_pid('hoy_r') = t100_pid('hoy') AND (t100_j('hoy_dia') ->> 'replay') = 'true' AND t100_pid('hoy_dia') = t100_pid('hoy')
   AND (SELECT count(*) = 1 FROM nomina_periodos WHERE fecha_inicio = (t100_j('hoy') ->> 'fecha_inicio')::date)
   AND (SELECT count(*) = 1 FROM auditoria WHERE usuario = 'Admin T100' AND accion = 'Crear' AND detalle = 'Periodo ' || (t100_j('hoy') ->> 'periodo')),
   '100-13 idempotente: repetir o elegir otro día de la misma semana devuelve el mismo periodo (una auditoría)');
 
 \echo '── 100: instante frontera desde cuatro zonas'
--- 2026-10-03 06:30 UTC = viernes 02/10 23:30 en Mazatlán; ya sábado 03/10 en UTC, CDMX y Madrid.
+-- Viernes 02/10 23:30 en la zona del negocio (Mazatlán hasta 121, Durango desde 122); ya sábado 03/10 en UTC y Madrid.
+-- El instante se deriva de fin_zona_negocio() porque la suite corre antes y después de 122.
 BEGIN;
 CREATE OR REPLACE FUNCTION public.fin_hoy() RETURNS DATE LANGUAGE sql STABLE SET search_path = public, pg_temp
-  AS $f$ SELECT fin_dia_negocio('2026-10-03 06:30:00+00'::timestamptz) $f$;
-SELECT t100_assert(fin_hoy() = '2026-10-02' AND ('2026-10-03 06:30:00+00'::timestamptz AT TIME ZONE 'America/Mexico_City')::date = '2026-10-03'
-  AND ('2026-10-03 06:30:00+00'::timestamptz AT TIME ZONE 'Europe/Madrid')::date = '2026-10-03', '100-15 instante frontera: viernes en Mazatlán, sábado (otra semana de nómina) en UTC/CDMX/Madrid');
+  AS $f$ SELECT fin_dia_negocio(('2026-10-02 23:30'::timestamp AT TIME ZONE fin_zona_negocio())) $f$;
+SELECT t100_assert(fin_hoy() = '2026-10-02'
+  AND (('2026-10-02 23:30'::timestamp AT TIME ZONE fin_zona_negocio()) AT TIME ZONE 'UTC')::date = '2026-10-03'
+  AND (('2026-10-02 23:30'::timestamp AT TIME ZONE fin_zona_negocio()) AT TIME ZONE 'Europe/Madrid')::date = '2026-10-03', '100-15 instante frontera: viernes en la zona del negocio, sábado (otra semana de nómina) en UTC/Madrid');
 SET LOCAL TimeZone = 'UTC'; SET LOCAL ROLE authenticated; SELECT t100_actor(1);
 INSERT INTO t100_ids VALUES ('f_utc', crear_periodo_nomina(NULL)::text);
 RESET ROLE; SET LOCAL TimeZone = 'America/Mazatlan'; SET LOCAL ROLE authenticated; SELECT t100_actor(1);
@@ -134,7 +136,7 @@ RESET ROLE;
 SELECT t100_assert((SELECT count(DISTINCT v::jsonb ->> 'periodo_id') = 1 AND bool_and(v::jsonb ->> 'fecha_inicio' = '2026-09-26' AND v::jsonb ->> 'fecha_pago' = '2026-10-02')
                       FROM t100_ids WHERE k IN ('f_utc', 'f_mzt', 'f_cdmx', 'f_mad'))
   AND (SELECT count(*) = 1 FROM nomina_periodos WHERE fecha_inicio = '2026-09-26'),
-  '100-16 UTC, Mazatlán, CDMX y Madrid resuelven el mismo periodo (sáb 26/09 → vie 02/10), uno solo');
+  '100-16 UTC, Mazatlán, CDMX y Madrid (zonas de sesión) resuelven el mismo periodo (sáb 26/09 → vie 02/10), uno solo');
 ROLLBACK;
 SELECT t100_assert(fin_hoy() = fin_dia_negocio(now()), '100-17 fin_hoy() restaurado');
 

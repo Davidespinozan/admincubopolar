@@ -1,7 +1,9 @@
 // saludoLogic.js — bienvenida por rol (mobile-first, 2026-10-09).
-// Pura: hora local del negocio (America/Mazatlan) → saludo; nombre → primer nombre.
+// Pura: hora local del negocio (Durango, ver utils/fechas) → saludo; nombre → primer nombre.
 
-export const ZONA_SALUDO = 'America/Mazatlan';
+import { ZONA_NEGOCIO } from '../utils/fechas';
+
+export const ZONA_SALUDO = ZONA_NEGOCIO;
 
 /** Hora (0–23) en la zona del negocio, sin depender de la del navegador. */
 export function horaNegocio(instante = new Date()) {

@@ -22,10 +22,11 @@ describe('bienvenida por rol', () => {
     expect(saludoPorHora(19)).toBe('Buenas noches');
     expect(saludoPorHora(2)).toBe('Buenas noches');
   });
-  it('la hora es la de Mazatlán (UTC-7), no la del navegador', () => {
-    expect(horaNegocio(new Date('2026-10-09T19:30:00Z'))).toBe(12);
-    expect(horaNegocio(new Date('2026-10-09T06:59:00Z'))).toBe(23);
-    expect(textoSaludo('Santiago Mier', new Date('2026-10-09T19:30:00Z'))).toBe('Buenas tardes, Santiago');
+  it('la hora es la de Durango (UTC-6), no la del navegador', () => {
+    expect(horaNegocio(new Date('2026-10-09T18:30:00Z'))).toBe(12);
+    expect(horaNegocio(new Date('2026-10-09T05:59:00Z'))).toBe(23);
+    expect(horaNegocio(new Date('2026-10-09T06:00:00Z'))).toBe(0);
+    expect(textoSaludo('Santiago Mier', new Date('2026-10-09T18:30:00Z'))).toBe('Buenas tardes, Santiago');
   });
   it('primer nombre solo si parece nombre de persona', () => {
     expect(primerNombre('santiago mier')).toBe('Santiago');

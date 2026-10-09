@@ -109,7 +109,7 @@ export default function LoginScreen({ onLogin }) {
             {loading ? <><BtnSpinner /> Verificando…</> : "Iniciar sesión"}
           </button>
         </form>
-        <p className="mt-8 text-center text-[12px] text-slate-500">Sistema operativo de Cubo Polar · Mazatlán</p>
+        <p className="mt-8 text-center text-[12px] text-slate-500">Sistema operativo de Cubo Polar · Durango</p>
       </div>
     </div>
   );

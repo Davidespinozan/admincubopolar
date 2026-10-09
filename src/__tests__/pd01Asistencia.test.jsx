@@ -48,9 +48,9 @@ describe('PD-01: mensajes para el empleado', () => {
     expect(mensajeErrorGeo('no_soportado')).toMatch(/no permite/);
   });
   it('entrada a tiempo / con retardo', () => {
-    expect(mensajeRegistro('entrada', { ok: true, asistencia: { entrada_at: '2026-10-07T14:03:00Z', entrada_estado: 'a_tiempo' } }))
-      .toEqual({ tono: 'ok', texto: 'Entrada registrada a las 07:03. ¡A tiempo!' });
-    expect(mensajeRegistro('entrada', { ok: true, asistencia: { entrada_at: '2026-10-07T14:31:00Z', entrada_estado: 'retardo', minutos_retardo: 31 } }))
+    expect(mensajeRegistro('entrada', { ok: true, asistencia: { entrada_at: '2026-10-07T13:03:00Z', entrada_estado: 'a_tiempo' } }))
+      .toEqual({ tono: 'ok', texto: 'Entrada registrada a las 07:03. ¡A tiempo!' });   // 13:03 UTC = 07:03 en Durango
+    expect(mensajeRegistro('entrada', { ok: true, asistencia: { entrada_at: '2026-10-07T13:31:00Z', entrada_estado: 'retardo', minutos_retardo: 31 } }))
       .toEqual({ tono: 'aviso', texto: 'Entrada registrada a las 07:31 con retardo de 31 min.' });
   });
   it('salida fuera del centro: aceptada y señalada (con distancia)', () => {
@@ -100,20 +100,20 @@ describe('PD-01: pantalla "Mi asistencia" (estado → botón contextual)', () =>
   });
 });
 
-describe('PD-01: hora del negocio (America/Mazatlan, UTC-7) sin depender de la zona del navegador', () => {
+describe('PD-01: hora del negocio (America/Monterrey, Durango, UTC-6) sin depender de la zona del navegador', () => {
   it('hora y fecha locales', () => {
-    expect(horaNegocio('2026-10-08T05:30:00Z')).toBe('22:30');          // jueves 22:30 en Mazatlán = viernes 05:30 UTC
-    expect(fechaHoraNegocio('2026-10-08T05:30:00Z')).toBe('2026-10-07 22:30');
-    expect(fechaHoraNegocio('2026-10-08T07:00:00Z')).toBe('2026-10-08 00:00');
+    expect(horaNegocio('2026-10-08T04:30:00Z')).toBe('22:30');          // jueves 22:30 en Durango = viernes 04:30 UTC
+    expect(fechaHoraNegocio('2026-10-08T04:30:00Z')).toBe('2026-10-07 22:30');
+    expect(fechaHoraNegocio('2026-10-08T06:00:00Z')).toBe('2026-10-08 00:00');
     expect(horaNegocio(null)).toBe('—');
-    expect(datetimeLocalNegocio('2026-10-08T05:30:00Z')).toBe('2026-10-07T22:30');
+    expect(datetimeLocalNegocio('2026-10-08T04:30:00Z')).toBe('2026-10-07T22:30');
   });
-  it('datetime-local de Admin → ISO con el desfase de Mazatlán (ida y vuelta exacta)', () => {
-    expect(desfaseNegocio(new Date('2026-10-07T12:00:00Z'))).toBe('-07:00');
-    expect(desfaseNegocio(new Date('2026-06-15T12:00:00Z'))).toBe('-07:00');   // sin horario de verano
+  it('datetime-local de Admin → ISO con el desfase de Durango (ida y vuelta exacta)', () => {
+    expect(desfaseNegocio(new Date('2026-10-07T12:00:00Z'))).toBe('-06:00');
+    expect(desfaseNegocio(new Date('2026-06-15T12:00:00Z'))).toBe('-06:00');   // sin horario de verano
     const iso = isoDesdeLocalNegocio('2026-10-07T22:30');
-    expect(iso).toBe('2026-10-07T22:30:00-07:00');
-    expect(new Date(iso).toISOString()).toBe('2026-10-08T05:30:00.000Z');
+    expect(iso).toBe('2026-10-07T22:30:00-06:00');
+    expect(new Date(iso).toISOString()).toBe('2026-10-08T04:30:00.000Z');
     expect(datetimeLocalNegocio(iso)).toBe('2026-10-07T22:30');
     expect(isoDesdeLocalNegocio('ayer')).toBeNull();
   });
@@ -132,7 +132,7 @@ describe('PD-01: Admin — corrección, centro y turnos', () => {
     expect(buildCorreccionArgs({ asistenciaId: 9, campo: 'otro', local: '2026-10-07T07:00', motivo: 'Motivo válido' }).error).toBeTruthy();
     expect(buildCorreccionArgs({ campo: 'entrada', local: '2026-10-07T07:00', motivo: 'Motivo válido' }).error).toBeTruthy();
     expect(buildCorreccionArgs({ operacionId: OP, asistenciaId: '9', campo: 'salida', local: '2026-10-07T15:05', motivo: '  Olvidó marcar  ' }))
-      .toEqual({ args: { p_operacion_id: OP, p_asistencia_id: 9, p_campo: 'salida', p_valor: '2026-10-07T15:05:00-07:00', p_motivo: 'Olvidó marcar' } });
+      .toEqual({ args: { p_operacion_id: OP, p_asistencia_id: 9, p_campo: 'salida', p_valor: '2026-10-07T15:05:00-06:00', p_motivo: 'Olvidó marcar' } });
   });
   it('centro de trabajo: rangos de radio y precisión; sin inventar coordenadas', () => {
     expect(buildCentroArgs({ nombre: 'Planta', latitud: '', longitud: '-106.4', radio_m: 100, precision_max_m: 50 }).error).toMatch(/Latitud/);

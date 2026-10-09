@@ -40,7 +40,7 @@ en el pago. Todo cobro, saldo y cierre se escribe por contrato, una sola vez por
   tope en lo cobrado; nota de crédito solo en venta a crédito; reposición bloqueada; orden
   Facturada deja `requiere_nota_credito`. Por qué: no existe saldo a favor del cliente ni CFDI de egreso.
 - **Merma sin gasto adicional (106).** Por qué: el empaque ya se reconoció al producir.
-- **Día de negocio America/Mazatlan del servidor en todo asiento de "hoy" (096, 098).**
+- **Día de negocio del servidor (zona del negocio: Durango, America/Monterrey desde 122) en todo asiento de "hoy" (096, 098).**
 - **Sin reparación histórica:** las filas legadas se reportan aparte (`ventas_legado`,
   `entradas_legado`); OV-0086 no se toca.
 

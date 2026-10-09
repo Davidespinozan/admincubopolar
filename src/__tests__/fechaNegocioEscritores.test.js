@@ -12,13 +12,13 @@ import { buildOrdenPayload } from '../data/ordenLogic';
 const src = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 const TZ = globalThis.process?.env?.TZ || 'local';
 
-// 2026-09-30 06:30 UTC: 23:30 del 29 en Mazatlán; día 30 en UTC, CDMX y Madrid.
-const FRONTERA = new Date('2026-09-30T06:30:00Z');
+// 2026-09-30 05:30 UTC: 23:30 del 29 en Durango (y CDMX); día 30 en UTC y Madrid; 22:30 del 29 en Mazatlán.
+const FRONTERA = new Date('2026-09-30T05:30:00Z');
 
 describe(`instante frontera (TZ=${TZ})`, () => {
   afterEach(() => { vi.useRealTimers(); });
 
-  it('el día de negocio de "ahora" es el de Mazatlán (29) en cualquier zona del navegador', () => {
+  it('el día de negocio de "ahora" es el de Durango (29) en cualquier zona del navegador', () => {
     vi.useFakeTimers(); vi.setSystemTime(FRONTERA);
     expect(diaNegocio()).toBe('2026-09-29');
     expect(sumarDias(diaNegocio(), -30)).toBe('2026-08-30');

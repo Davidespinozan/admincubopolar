@@ -1,0 +1,21 @@
+-- 122_zona_negocio_durango.sql — zona horaria del negocio: America/Monterrey
+-- (Durango, Dgo.; UTC-6 todo el año desde 2022).
+--
+-- 096 fijó fin_zona_negocio() = 'America/Mazatlan' suponiendo que la planta
+-- estaba en Culiacán, Sinaloa. La planta está en Durango (El Alacrán 103,
+-- Campo Alegre, C.P. 34186), una hora adelante de Mazatlán. Con la zona
+-- anterior, un turno capturado como 08:00 se evaluaba a las 09:00 de Durango
+-- y el día de negocio cambiaba a la 01:00 en vez de a medianoche.
+--
+-- Qué cambia: SOLO el valor que devuelve fin_zona_negocio() (misma firma,
+-- misma volatilidad IMMUTABLE, mismo ACL). Todo lo demás la lee en cada
+-- llamada: fin_dia_negocio(), fin_hoy(), los defaults de las 11 columnas DATE
+-- de negocio (096), reporte_financiero (096), nómina (100), asistencia (116:
+-- día laboral, entrada/salida programadas, retardo) y calendario (118).
+-- Un DATE ya guardado no se convierte (regla de 096). Verificado en producción
+-- en solo lectura antes de aplicar (2026-10-09): 0 filas con instante en la
+-- hora en que Mazatlán y la zona Centro difieren; 0 asistencias; 0 turnos.
+--
+-- Reversión: la misma sentencia con 'America/Mazatlan'. Idempotente.
+CREATE OR REPLACE FUNCTION public.fin_zona_negocio() RETURNS TEXT
+LANGUAGE sql IMMUTABLE SET search_path = public, pg_temp AS $$ SELECT 'America/Monterrey'::text $$;

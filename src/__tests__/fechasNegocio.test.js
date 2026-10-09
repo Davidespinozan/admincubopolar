@@ -1,4 +1,4 @@
-// fechasNegocio.test.js — 096: día de negocio (America/Mazatlan) y fechas de
+// fechasNegocio.test.js — 096/122: día de negocio (America/Monterrey, Durango) y fechas de
 // calendario. Estas pruebas deben pasar con el navegador en cualquier zona;
 // el gate las corre con TZ=UTC, TZ=America/Mazatlan y TZ=America/Mexico_City.
 import { describe, it, expect } from 'vitest';
@@ -26,17 +26,20 @@ describe(`fechas de calendario (TZ=${globalThis.process?.env?.TZ || 'local'})`, 
   });
 });
 
-describe('día de negocio en America/Mazatlan', () => {
+describe('día de negocio en America/Monterrey (Durango, UTC-6)', () => {
   it('zona canónica', () => {
-    expect(ZONA_NEGOCIO).toBe('America/Mazatlan');
+    expect(ZONA_NEGOCIO).toBe('America/Monterrey');
   });
-  it('23:30 en Mazatlán (00:30 del día siguiente en CDMX) pertenece al día 29', () => {
-    expect(diaNegocio(new Date('2026-09-30T06:30:00Z'))).toBe('2026-09-29');
-    expect(diaNegocio('2026-09-30T06:30:00Z')).toBe('2026-09-29');
+  it('23:30 en Durango (00:30 del día siguiente en Madrid y UTC) pertenece al día 29', () => {
+    expect(diaNegocio(new Date('2026-09-30T05:30:00Z'))).toBe('2026-09-29');
+    expect(diaNegocio('2026-09-30T05:30:00Z')).toBe('2026-09-29');
   });
-  it('a medianoche de Mazatlán (07:00 UTC) empieza el día siguiente', () => {
-    expect(diaNegocio(new Date('2026-09-30T06:59:59Z'))).toBe('2026-09-29');
-    expect(diaNegocio(new Date('2026-09-30T07:00:00Z'))).toBe('2026-09-30');
+  it('a medianoche de Durango (06:00 UTC) empieza el día siguiente', () => {
+    expect(diaNegocio(new Date('2026-09-30T05:59:59Z'))).toBe('2026-09-29');
+    expect(diaNegocio(new Date('2026-09-30T06:00:00Z'))).toBe('2026-09-30');
+  });
+  it('00:30 en Durango ya es el día 30 aunque en Mazatlán sean las 23:30 del 29', () => {
+    expect(diaNegocio(new Date('2026-09-30T06:30:00Z'))).toBe('2026-09-30');
   });
   it('una fecha DATE ya es día de negocio (sin conversión)', () => {
     expect(diaNegocio('2026-09-29')).toBe('2026-09-29');

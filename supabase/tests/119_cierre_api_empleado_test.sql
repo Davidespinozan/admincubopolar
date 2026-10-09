@@ -165,8 +165,8 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t119_auth(1);
 SELECT vincular_empleado_usuario(11951, 11957);
 SELECT t119_guardar(guardar_centro_trabajo(NULL, 'Planta T119', 23.2494, -106.4111, 100, 50, true));
 SELECT guardar_turno(NULL, 11951, (t119_r() ->> 'id')::bigint, ARRAY[1,2,3,4,5,6,7]::smallint[],
-  (date_trunc('minute', now() AT TIME ZONE 'America/Mazatlan') - interval '5 minutes')::time,
-  (date_trunc('minute', now() AT TIME ZONE 'America/Mazatlan') + interval '475 minutes')::time, 10, CURRENT_DATE - 3, NULL, true);
+  (date_trunc('minute', now() AT TIME ZONE fin_zona_negocio()) - interval '5 minutes')::time,
+  (date_trunc('minute', now() AT TIME ZONE fin_zona_negocio()) + interval '475 minutes')::time, 10, CURRENT_DATE - 3, NULL, true);
 COMMIT;
 SELECT t119_assert((SELECT count(*) FROM auditoria WHERE usuario = 'Admin 119' AND modulo IN ('Empleados', 'Asistencia')) = 3,
   '119-09 los contratos de asistencia siguen escribiendo su auditoría (3)');

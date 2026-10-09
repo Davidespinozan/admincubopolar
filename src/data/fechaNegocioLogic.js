@@ -4,7 +4,7 @@
 //
 // Regla: si la fecha significa "el día de negocio en que ocurre esta
 // operación", el navegador NO la manda — la pone el servidor con fin_hoy()
-// (America/Mazatlan), sea por el contrato o por el default de la columna.
+// (zona del negocio: Durango, America/Monterrey desde 122), sea por el contrato o por el default de la columna.
 // Si el usuario eligió la fecha (costo fijo, gasto, emisión de una CxP,
 // asiento manual), se conserva y se valida como DATE.
 import { centavos } from '../utils/safe';

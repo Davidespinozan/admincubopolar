@@ -2,7 +2,7 @@
 // src/__tests__/nomina.test.js.
 //
 // La semana de nómina es SÁBADO → VIERNES con pago el VIERNES, en días de
-// negocio de America/Mazatlan. El servidor es la autoridad: crea el periodo
+// negocio (Durango, America/Monterrey). El servidor es la autoridad: crea el periodo
 // (crear_periodo_nomina), toma el snapshot del salario (generar_recibos_nomina)
 // y recalcula los recibos (editar_recibo_nomina). Aquí solo hay espejo para
 // mostrar la semana actual y vista previa mientras se captura.
