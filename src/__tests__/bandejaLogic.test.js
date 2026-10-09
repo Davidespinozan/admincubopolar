@@ -112,12 +112,21 @@ describe('alertas de stock', () => {
 });
 
 describe('pendientes comerciales y fiscales', () => {
-  it('ventas Creadas sin ruta → media, enruta a rutas', () => {
+  it('ventas Creadas sin entregar → media, a Ventas (pueden ser de mostrador)', () => {
     const t = buscar(construirBandeja({
-      ordenes: [{ estatus: 'Creada' }, { estatus: 'Entregada' }, { estatus: 'Asignada' }],
+      ordenes: [{ estatus: 'Creada' }, { estatus: 'Entregada' }, { estatus: 'Asignada', ruta_id: 3 }],
     }, HOY), 'ordenes-sin-ruta');
     expect(t.count).toBe(1);
     expect(t.prioridad).toBe('media');
+    expect(t.modulo).toBe('ordenes');
+  });
+
+  it('ventas enviadas a ruta sin ruta (Asignada sin ruta_id) → alta, a Rutas', () => {
+    const t = buscar(construirBandeja({
+      ordenes: [{ estatus: 'Asignada' }, { estatus: 'Asignada', ruta_id: 3 }, { estatus: 'Asignada', rutaId: 4 }, { estatus: 'Creada' }],
+    }, HOY), 'ordenes-esperan-ruta');
+    expect(t.count).toBe(1);
+    expect(t.prioridad).toBe('alta');
     expect(t.modulo).toBe('rutas');
   });
 

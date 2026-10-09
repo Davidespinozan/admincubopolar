@@ -14,9 +14,8 @@ export function BandejaView({ data, user, onNavigate }) {
 
   return (
     <div className="max-w-3xl">
-      <div className="mb-5">
-        <h2 className="text-xl font-extrabold text-slate-900">Mi bandeja</h2>
-        <p className="text-sm text-slate-500 mt-0.5">
+      <div className="mb-4">
+        <p className="text-sm text-slate-500">
           {tareas.length === 0
             ? `Todo al día, ${s(user?.nombre) || 'Admin'} — no tienes pendientes.`
             : `${tareas.length === 1 ? '1 pendiente' : `${tareas.length} pendientes`}${urgentes.length > 0 ? ` · ${urgentes.length === 1 ? '1 urgente' : `${urgentes.length} urgentes`}` : ''}. Toca uno para ir a resolverlo.`}

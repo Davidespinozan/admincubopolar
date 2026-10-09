@@ -35,6 +35,8 @@ import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
 import { traducirError } from '../utils/errorMessages';
 import { TABLAS_CORE_RT, TABLAS_SLICE_RT } from './realtimeLogic';
 import { complementoPendienteOrden } from './complementoLogic';
+import { ordenesEsperanRuta } from './bandejaLogic';
+import { alertaEsperanRuta } from './avisosLogic';
 import { buildPreparacionArgs, mensajeErrorPreparacion } from './preparacionBarraLogic';
 import { normalizarReporteFinanciero } from './finanzasLogic';
 import { fechaElegida, camposFechaCosto, buildPagarCxPArgs } from './fechaNegocioLogic';
@@ -495,6 +497,10 @@ export function useSupaStore(userId, userName, userRol) {
           });
         }
       }
+
+      // ── Ventas que Ventas mandó a reparto y esperan ruta (Admin las asigna) ──
+      const alertaRuta = alertaEsperanRuta(ordenesEsperanRuta(ord || []));
+      if (alertaRuta) alertas.push({ ...alertaRuta, created_at: new Date().toISOString() });
 
       // ── Alertas de CxC próximas a vencer ──
       const hoyStr = diaNegocio();

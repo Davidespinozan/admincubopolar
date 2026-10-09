@@ -38,6 +38,11 @@ const money = (v: unknown): string =>
 
 const plural = (n: number, sing: string, plur: string): string => `${n} ${n === 1 ? sing : plur}`;
 
+// Órdenes que Ventas mandó a reparto y aún no tienen ruta (Asignada sin ruta).
+export function ordenesEsperanRuta(ordenes: Fila[]): Fila[] {
+  return ordenes.filter(o => String(o.estatus || '') === 'Asignada' && !(o.ruta_id ?? o.rutaId));
+}
+
 /**
  * Construye la lista de tareas pendientes, ordenada: prioridad alta
  * primero, y dentro de cada prioridad en el orden de detección
@@ -123,7 +128,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
   // ── 5. Stock crítico (alertas de umbral, sin las de CxC/complemento) ──
   const alertasStock = (d.alertas || []).filter(a => {
     const id = String(a.id || '');
-    return !id.startsWith('cxc-') && !id.startsWith('comp-');
+    return !id.startsWith('cxc-') && !id.startsWith('comp-') && !id.startsWith('ruta-');
   });
   const stockCritico = alertasStock.filter(a => a.tipo === 'critica');
   if (stockCritico.length > 0) {
@@ -153,15 +158,31 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     });
   }
 
+  // Ventas pidió reparto ("Enviar a ruta" deja la orden Asignada SIN ruta):
+  // solo Admin la puede subir a una ruta, así que es urgente para él.
+  const esperanRuta = ordenesEsperanRuta(d.ordenes || []);
+  if (esperanRuta.length > 0) {
+    tareas.push({
+      id: 'ordenes-esperan-ruta',
+      prioridad: 'alta',
+      icono: 'Truck',
+      titulo: plural(esperanRuta.length, 'venta espera ruta', 'ventas esperan ruta'),
+      detalle: 'Ventas las mandó a reparto: asígnalas a una ruta para que el chofer las entregue.',
+      modulo: 'rutas',
+      count: esperanRuta.length,
+    });
+  }
+
+  // Creadas: aún no se cobran/entregan en mostrador ni se mandan a reparto.
   const sinRuta = (d.ordenes || []).filter(o => String(o.estatus || '') === 'Creada');
   if (sinRuta.length > 0) {
     tareas.push({
       id: 'ordenes-sin-ruta',
       prioridad: 'media',
       icono: 'Box',
-      titulo: plural(sinRuta.length, 'venta sin asignar a ruta', 'ventas sin asignar a ruta'),
-      detalle: 'Asígnalas a una ruta para que salgan a reparto.',
-      modulo: 'rutas',
+      titulo: plural(sinRuta.length, 'venta sin entregar', 'ventas sin entregar'),
+      detalle: 'Cóbrala y entrégala en mostrador o mándala a una ruta.',
+      modulo: 'ordenes',
       count: sinRuta.length,
     });
   }

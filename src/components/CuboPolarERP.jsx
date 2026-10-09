@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense, Component } from 'react';
 import { diaNegocio } from '../utils/fechas';
+import { alertasVisibles, claveAlerta, destinoAlerta, tituloAlerta, leerOcultas, guardarOcultas } from '../data/avisosLogic';
 import { Icons } from './ui/Icons';
 import Modal, { useConfirm, FormInput, FormSelect, FormTextarea, FormBtn } from './ui/Modal';
 import { useToast } from './ui/Toast';
@@ -262,13 +263,23 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
     () => contarUrgentes(construirBandeja(data, diaNegocio())),
     [data]
   );
+  // Alertas = condiciones en vivo (no se "leen"); se pueden ocultar por hoy.
+  const [alertasOcultas, setAlertasOcultas] = useState(() => leerOcultas(diaNegocio()));
   const alertasActivas = useMemo(() => {
-    return (data.alertas || []).filter(a => {
+    const vivas = (data.alertas || []).filter(a => {
       const msg = (a?.msg || a?.mensaje || a?.detalle || a?.titulo || '').toString().trim();
       const est = (a?.estatus || '').toString().toLowerCase();
       return !!msg && est !== 'resuelta' && est !== 'cerrada';
     });
-  }, [data.alertas]);
+    return alertasVisibles(vivas, alertasOcultas);
+  }, [data.alertas, alertasOcultas]);
+  const ocultarAlertaHoy = useCallback((a) => {
+    setAlertasOcultas(prev => {
+      const sig = [...prev, claveAlerta(a)];
+      guardarOcultas(diaNegocio(), sig);
+      return sig;
+    });
+  }, []);
 
   useEffect(() => {
     if (!avisosOpen && !mobileDrawerOpen) return undefined;
@@ -484,28 +495,45 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
               <>
                 <div className="fixed inset-0 z-[60] bg-ink/20 animate-fadeIn" onClick={() => setAvisosOpen(false)} aria-hidden="true" />
                 <div className="absolute right-0 top-12 z-[70] max-h-[75vh] w-[calc(100vw-16px)] overflow-y-auto rounded-card border border-line bg-white shadow-pop animate-pop-in sm:w-96" role="dialog" aria-modal="false" aria-label="Avisos" data-testid="panel-avisos">
-                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
-                    <p className="text-sm font-bold text-slate-900">Avisos</p>
-                    {nav.chrome.notificaciones && notifNoLeidas.length > 0 && <button onClick={() => actions.marcarTodasLeidas()} className="text-xs font-semibold text-blue-600">Marcar leídas</button>}
+                  <div className="sticky top-0 z-10 border-b border-line bg-white px-4 py-3">
+                    <p className="text-[15px] font-bold text-ink">Avisos</p>
                   </div>
-                  {nav.chrome.alertas && alertasActivas.length > 0 && (
-                    <div className="border-b border-slate-100 p-3">
-                      <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Alertas</p>
-                      <div className="space-y-2">
-                        {alertasActivas.map((a, i) => (
-                          <div key={i} className="flex gap-3 rounded-[16px] bg-amber-50 px-3 py-2.5 text-amber-900">
-                            <span className="mt-0.5 flex-shrink-0"><Icons.AlertTriangle /></span>
-                            <div className="min-w-0">
-                              <p className="text-sm font-semibold">{a.titulo || 'Alerta'}</p>
-                              <p className="text-xs leading-5 opacity-80">{a.msg || a.mensaje || a.detalle}</p>
-                            </div>
-                          </div>
-                        ))}
+                  {nav.chrome.alertas && (
+                    <section className="border-b border-line p-3" data-testid="avisos-alertas">
+                      <div className="mb-2 px-1">
+                        <p className="erp-kicker text-slate-500">Por resolver{alertasActivas.length > 0 ? ` · ${alertasActivas.length}` : ''}</p>
+                        <p className="text-[12px] text-slate-400">Se quitan solas cuando se resuelven. Toca una para ir a resolverla.</p>
                       </div>
-                    </div>
+                      {alertasActivas.length === 0 ? (
+                        <p className="px-1 py-2 text-[13px] text-slate-500">Nada por resolver.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {alertasActivas.map(a => (
+                            <div key={claveAlerta(a)} className={`flex items-stretch overflow-hidden rounded-field ${a.tipo === 'critica' ? 'bg-red-50 text-red-900' : 'bg-amber-50 text-amber-900'}`}>
+                              <button type="button" onClick={() => { go(destinoAlerta(a)); setAvisosOpen(false); }}
+                                className="flex min-w-0 flex-1 items-start gap-3 px-3 py-2.5 text-left">
+                                <span className="mt-0.5 flex-shrink-0"><Icons.AlertTriangle /></span>
+                                <span className="min-w-0">
+                                  <span className="block text-sm font-semibold">{tituloAlerta(a)}</span>
+                                  <span className="block text-xs leading-5 opacity-80">{a.msg || a.mensaje || a.detalle}</span>
+                                </span>
+                              </button>
+                              <button type="button" onClick={() => ocultarAlertaHoy(a)} title="Ocultar hoy" aria-label="Ocultar hoy"
+                                className="flex w-11 flex-shrink-0 items-center justify-center opacity-60 transition-opacity hover:opacity-100">
+                                <Icons.X />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </section>
                   )}
                   {nav.chrome.notificaciones && (
-                    <>
+                    <section data-testid="avisos-notificaciones">
+                      <div className="flex items-center justify-between px-4 pb-1 pt-3">
+                        <p className="erp-kicker text-slate-500">Notificaciones{notifNoLeidas.length > 0 ? ` · ${notifNoLeidas.length} sin leer` : ''}</p>
+                        {notifNoLeidas.length > 0 && <button onClick={() => actions.marcarTodasLeidas()} className="min-h-[36px] rounded-full px-2 text-xs font-semibold text-accent hover:bg-accent-soft">Marcar leídas</button>}
+                      </div>
                       <AvisosPush />
                       {notifRecientes.length === 0 ? (
                         <div className="p-5 text-center text-sm text-slate-400">Sin notificaciones</div>
@@ -529,7 +557,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
                           ))}
                         </div>
                       )}
-                    </>
+                    </section>
                   )}
                 </div>
               </>

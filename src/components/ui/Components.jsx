@@ -147,11 +147,12 @@ export const DataTable = ({
 // ─── PAGE HEADER ───
 // Móvil: el título vive en la barra superior del shell; aquí solo las acciones.
 // sm+: título, subtítulo y acciones en una fila.
+// El título vive SOLO en la barra superior del shell (móvil y escritorio): la
+// vista no lo repite. PageHeader trae las acciones y, en sm+, la descripción.
 export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon, extraButtons }) => (
-  <div className={`mb-3 flex-col gap-3 sm:mb-6 sm:flex sm:flex-row sm:items-center sm:justify-between ${action || extraButtons ? 'flex' : 'hidden'}`} data-testid="page-header">
+  <div className={`mb-3 flex-col gap-3 sm:mb-5 sm:flex-row sm:items-center sm:justify-between ${action || extraButtons ? 'flex' : subtitle ? 'hidden sm:flex' : 'hidden'}`} data-testid="page-header" aria-label={title}>
     <div className="hidden min-w-0 sm:block">
-      <h1 className="font-display text-[1.5rem] font-bold text-ink">{title}</h1>
-      {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+      {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
     </div>
     <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:flex-shrink-0">
       {extraButtons}

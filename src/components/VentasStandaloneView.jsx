@@ -9,6 +9,7 @@ import VentaDirectaOrigen, { useVentaDirecta } from './VentaDirectaOrigen';
 import { EmptyState } from './ui/Skeleton';
 import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
+import DetalleVentaModal from './DetalleVentaModal';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton } from './ui/Components';
 import { Icons } from './ui/Icons';
@@ -42,6 +43,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
   const [shortUrl, setShortUrl] = useState(null);
   const [generandoLink, setGenerandoLink] = useState(false);
   const [enviandoRuta, setEnviandoRuta] = useState(null); // OL-01A: id de la orden en envío a ruta
+  const [detalleId, setDetalleId] = useState(null);
 
   const showToast = (msg, tipo = "success") => { (toast?.[tipo] || toast?.info)?.(msg); };
 
@@ -153,7 +155,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
   // entrega; Asignada con ruta → sin cobro del vendedor (la cobra el chofer).
   const tarjetaOrden = (o) => { const acc = accionesCobroVentas(o); const pagado = linkPagadoCompleto(o, data.pagos); return (
     <Card key={o.id} padding="p-4">
-      <div className="flex items-start justify-between gap-3">
+      <button type="button" onClick={() => setDetalleId(o.id)} className="flex w-full items-start justify-between gap-3 text-left" aria-label={`Ver detalle de ${s(o.folio)}`}>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-mono text-xs font-bold text-blue-700">{s(o.folio)}</span>
@@ -166,7 +168,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
           <p className="font-display text-base font-bold tracking-[-0.03em] text-slate-900">{fmtMoney(o.total)}</p>
           <StatusBadge status={s(o.estatus)} />
         </div>
-      </div>
+      </button>
       {acc.cobrar && acc.enviarARuta && (
         <div className="mt-3 grid grid-cols-2 gap-2">
           {pagado
@@ -370,6 +372,18 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
           )}
         </>)}
       </Modal>
+
+      {/* Detalle de la venta: solo lectura + las mismas acciones de la tarjeta. */}
+      {(() => {
+        const o = detalleId != null ? (data?.ordenes || []).find(x => String(x.id) === String(detalleId)) : null;
+        if (!o) return null;
+        const acc = accionesCobroVentas(o); const pagado = linkPagadoCompleto(o, data.pagos);
+        const ir = (fn) => () => { setDetalleId(null); fn(); };
+        const acciones = [];
+        if (acc.cobrar || acc.cobrarEntrega) acciones.push({ id: 'cobrar', icono: <Icons.DollarSign />, label: pagado ? 'Entregar pedido pagado' : (acc.cobrarEntrega ? 'Cobrar entrega' : 'Cobrar y entregar'), onClick: ir(() => cobrar(o, pagado ? { entregaPagada: true } : undefined)) });
+        if (acc.enviarARuta) acciones.push({ id: 'ruta', icono: <Icons.Truck />, label: 'Enviar a ruta', nota: 'Administración la asigna a una ruta y la entrega el chofer.', onClick: ir(() => enviarARuta(o)) });
+        return <DetalleVentaModal orden={o} data={data} onClose={() => setDetalleId(null)} acciones={acciones} />;
+      })()}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, Fo
 import NuevaVentaModal from '../NuevaVentaModal';
 import EditarVentaModal from '../EditarVentaModal';
 import DevolucionModal from '../DevolucionModal';
+import DetalleVentaModal from '../DetalleVentaModal';
 import VentaDirectaOrigen, { useVentaDirecta } from '../VentaDirectaOrigen';
 import { esElegibleVentaDirecta, modoVentaDirecta, linkPagadoCompleto, METODO_LINK } from '../../data/ventaDirectaLogic';
 
@@ -14,6 +15,7 @@ export function OrdenesView({ data, actions, user }) {
   const [motivoCancelar, setMotivoCancelar] = useState('');
   const [cancelando, setCancelando] = useState(false);
   const [devolverOrden, setDevolverOrden] = useState(null);
+  const [detalle, setDetalle] = useState(null);
   const [search, setSearch] = useState("");
   const [filterEst, setFilterEst] = useState("activas"); // activas | todas | <estatus>
   const [page, setPage] = useState(0);
@@ -141,6 +143,47 @@ export function OrdenesView({ data, actions, user }) {
 
   const openModal = () => setModal(true);
 
+  // Acciones de la hoja de detalle: mismos manejadores y permisos que los
+  // íconos de la tabla (ordenesEstado). Cerrar el detalle y abrir la acción.
+  const accionesDetalle = (row) => {
+    if (!row) return [];
+    const est = ordenesEstado[String(row.id)] || {};
+    const v = s(row.estatus);
+    const pagado = linkPagadoCompleto(row, data.pagos);
+    const ir = (fn) => () => { setDetalle(null); fn(); };
+    const lista = [];
+    if (v === 'Creada') {
+      lista.push({ id: 'cobrar', icono: <Icons.DollarSign />, label: pagado ? 'Entregar pedido pagado' : 'Cobrar y entregar', nota: 'Venta de mostrador: sale del cuarto ahora.', onClick: ir(() => cobrarOrden(row, pagado ? 'pagado' : undefined)) });
+      lista.push({ id: 'ruta', icono: <Icons.Truck />, label: 'Mandar a reparto', nota: 'Queda esperando que la asignes a una ruta.', onClick: ir(() => actions.updateOrdenEstatus(row.id, 'Asignada')) });
+    }
+    if (v === 'Asignada' && !(row.rutaId || row.ruta_id)) {
+      lista.push({ id: 'cobrar', icono: <Icons.DollarSign />, label: pagado ? 'Entregar pedido pagado' : 'Cobrar entrega', onClick: ir(() => cobrarOrden(row, pagado ? 'pagado' : 'entrega')) });
+    }
+    if (v === 'Entregada') lista.push({ id: 'facturar', icono: <Icons.FileText />, label: 'Facturar', onClick: ir(() => actions.timbrar(row.folio)) });
+    lista.push({ id: 'editar', icono: <Icons.Edit />, label: 'Editar venta', deshabilitada: !est.puedeEditar,
+      nota: est.puedeEditar ? null : `Solo se edita en estatus Creada (actual: ${v}).`, onClick: ir(() => setEditarOrden(row)) });
+    if (v === 'Entregada' || v === 'Facturada') {
+      const ya = !!(row.tieneDevolucion || row.tiene_devolucion);
+      lista.push({ id: 'devolucion', icono: <Icons.Undo />, label: 'Registrar devolución', deshabilitada: ya, nota: ya ? 'Ya tiene una devolución registrada.' : null, onClick: ir(() => setDevolverOrden(row)) });
+    }
+    lista.push({ id: 'cancelar', icono: <Icons.Ban />, label: 'Cancelar venta', tono: 'aviso', deshabilitada: !est.puedeCancelar,
+      nota: est.puedeCancelar ? 'Pide un motivo; queda en la historia.' : (est.razonNoCancela || `No se puede cancelar en estatus ${v}.`),
+      onClick: ir(() => { setCancelarOrden(row); setMotivoCancelar(''); }) });
+    lista.push({ id: 'eliminar', icono: <Icons.Trash />, label: 'Eliminar', tono: 'peligro', deshabilitada: !est.puedeEliminar,
+      nota: est.puedeEliminar ? 'Solo ventas Creadas sin pagos ni ruta.' : (est.razonNoElimina ? `${est.razonNoElimina}. Usa Cancelar.` : 'No se puede eliminar.'),
+      onClick: ir(() => askConfirm(
+        'Eliminar permanentemente',
+        `¿Eliminar la orden ${s(row.folio)} permanentemente? Esta acción no se puede deshacer.`,
+        async () => {
+          const result = await actions.deleteOrden(row.id);
+          if (result?.error) { toast?.error(result.error); return; }
+          toast?.success('Orden eliminada');
+        },
+        true
+      )) });
+    return lista;
+  };
+
   return (<div>
     <PageHeader title="Ventas" subtitle="Crear venta, cobrar y asignar entregas" action={openModal} actionLabel="Nueva orden" extraButtons={exportBtns} />
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
@@ -216,7 +259,7 @@ export function OrdenesView({ data, actions, user }) {
                 title="Cancelar"
                 className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-amber-600 hover:bg-amber-50 transition-colors"
               >
-                <span className="text-base leading-none">⊘</span>
+                <Icons.Ban />
               </button>
             ) : (
               <button
@@ -225,7 +268,7 @@ export function OrdenesView({ data, actions, user }) {
                 title={est.razonNoCancela || `No se puede cancelar (estatus ${s(row.estatus)})`}
                 className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
               >
-                <span className="text-base leading-none opacity-50">⊘</span>
+                <span className="opacity-50"><Icons.Ban /></span>
               </button>
             )}
             {(s(row.estatus) === 'Entregada' || s(row.estatus) === 'Facturada') && (
@@ -280,6 +323,7 @@ export function OrdenesView({ data, actions, user }) {
           </div>;
         }},
       ]} data={paginated}
+      onRowClick={row => setDetalle(row)}
       cardSubtitle={r => {
         const est = r.estatus;
         const prodsLegibles = (() => {
@@ -308,6 +352,7 @@ export function OrdenesView({ data, actions, user }) {
     </div>
 
     {ConfirmEl}
+    {detalle && <DetalleVentaModal orden={(data.ordenes || []).find(o => String(o.id) === String(detalle.id)) || detalle} data={data} onClose={() => setDetalle(null)} acciones={accionesDetalle((data.ordenes || []).find(o => String(o.id) === String(detalle.id)) || detalle)} />}
 
     <EditarVentaModal
       open={!!editarOrden}
