@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -4441,6 +4441,124 @@ for (const [etq, f] of [...SUITES_119, ['111', '111_operaciones_cfdi_test.sql']]
 console.log('  WF-0.2 (superficie de API del Empleado cerrada) tras 119: PASS');
 
 
+
+// ═══ 120 — GER-1: Dueño, accesos adicionales, contraseña temporal, usuarios por contrato y bitácora ═══
+{
+  // Paridad con producción (md5 leídos en solo lectura el 2026-10-09).
+  const PROD120 = { completar_venta_directa: '5825f5e3072a1d5a98961752a5eb5cc6', erp_actor: '51a6dd4f6ee6486a34f81e3eec54eb8a',
+    fin_actor_permitido: '433e14f96b91b547b799cb95b1fbdb82', fin_orden_operable: 'cfaca67e1b51b0ecce6ea3bc0b7c50d8' };
+  const loc = Object.fromEntries((await c.query(`SELECT p.proname, md5(pg_get_functiondef(p.oid)) AS m FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = ANY($1)`, [Object.keys(PROD120)])).rows.map(r => [r.proname, r.m]));
+  const okP = Object.entries(PROD120).every(([k, v]) => loc[k] === v)
+    && (await c.query(`SELECT count(*)::int AS n FROM pg_policies WHERE tablename = 'usuarios' AND policyname = 'admin_all'`)).rows[0].n === 1;
+  console.log(`  GER1_PARITY_CHECK[pre-120 == producción]: ${okP ? 'PASS' : 'FAIL ' + JSON.stringify(loc)}`);
+  if (!okP) process.exit(1);
+  // Reproduce el hallazgo H1 de GER-0 ANTES de 120: Admin se cambia el rol por REST (todo se deshace).
+  const SUB = '12070000-0000-0000-0000-000000000001';
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) VALUES ('${SUB}', 'r@t120r');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES (12071, 'Admin R120', 'r@t120r', 'Admin', 'Activo', '${SUB}'),
+      (12072, 'Dueño R120', 'd@t120r', 'Admin', 'Activo', NULL);
+    SET LOCAL session_replication_role = origin; SET LOCAL ROLE authenticated;
+    SELECT set_config('request.jwt.claims', '{"role":"authenticated","sub":"${SUB}"}', true);`);
+  const n1 = (await c.query(`UPDATE usuarios SET estatus = 'Inactivo' WHERE id = 12072`)).rowCount;
+  await c.query('ROLLBACK');
+  console.log(`  RESIDUAL_GER0_H1[pre-120: Admin desactiva a otro Admin por REST]: ${n1 === 1 ? 'REPRODUCIDO' : 'NO REPRODUCIDO'}`);
+  if (n1 !== 1) process.exit(1);
+}
+const SUITES_120 = [...SUITES_119, ['119', '119_cierre_api_empleado_test.sql']];
+async function conc120() {
+  console.log('── 120 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const D = '12080000-0000-0000-0000-000000000001', A = '12080000-0000-0000-0000-000000000002';
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM bitacora_cambios WHERE registro_id IN ('12081', '12082', '12083');
+    DELETE FROM usuarios WHERE id BETWEEN 12081 AND 12083; DELETE FROM auth.users WHERE id::text LIKE '12080000-%'; COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) VALUES ('${D}', 'd@t120c'), ('${A}', 'a@t120c');
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id, es_dueno) VALUES
+      (12081, 'Dueño C120', 'd@t120c', 'Admin', 'Activo', '${D}', false), (12082, 'Admin C120', 'a@t120c', 'Admin', 'Activo', '${A}', false),
+      (12083, 'Ventas C120', 'v@t120c', 'Ventas', 'Activo', NULL, false); COMMIT;`);
+  // El dueño de producción (si lo hay en la base local) no existe aquí: se marca uno solo para la prueba.
+  await c.query(`UPDATE usuarios SET es_dueno = true WHERE id = 12081`);
+  const actor = async (cl, sub) => { await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]); };
+  const a = await connect(); const b = await connect();
+  // El Admin cambia el rol de Ventas mientras el Dueño le asigna un acceso: se serializan (FOR UPDATE).
+  await actor(a, A); await actor(b, D);
+  const ra = (await a.query(`SELECT guardar_usuario(12083, 'Ventas C120', 'Almacén Bolsas', 'Activo') AS r`)).rows[0].r;
+  let done = false;
+  const prB = b.query(`SELECT guardar_usuario(12083, 'Ventas C120', 'Almacén Bolsas', 'Activo', ARRAY['Ventas']) AS r`)
+    .then(r => r.rows[0].r, e => ({ error: e.message })).finally(() => { done = true; });
+  await sleep(500);
+  const bloqueado = !done;
+  await a.query('COMMIT');
+  const rb = await prB;
+  await b.query(rb.error ? 'ROLLBACK' : 'COMMIT');
+  const fin = (await c.query(`SELECT rol, accesos_extra FROM usuarios WHERE id = 12083`)).rows[0];
+  const bit = (await c.query(`SELECT count(*)::int AS n FROM bitacora_cambios WHERE registro_id = '12083' AND detalle = 'guardar_usuario'`)).rows[0].n;
+  ok(ra.ok && bloqueado && rb.ok && fin.rol === 'Almacén Bolsas' && JSON.stringify(fin.accesos_extra) === JSON.stringify(['Ventas']) && bit === 2,
+    `C120a cambios simultáneos del mismo usuario: el segundo espera y se aplica sobre el primero; 2 filas de bitácora (${JSON.stringify({ rb: rb.error || 'ok', fin, bit })})`);
+  // Dos dueños a la vez: el índice único deja uno.
+  await a.query('BEGIN'); await b.query('BEGIN');
+  await a.query(`UPDATE usuarios SET es_dueno = false WHERE id = 12081`);
+  await a.query(`UPDATE usuarios SET es_dueno = true WHERE id = 12082`);
+  let done2 = false;
+  const prB2 = b.query(`UPDATE usuarios SET es_dueno = true WHERE id = 12081`).then(() => 'ok', e => e.code).finally(() => { done2 = true; });
+  await sleep(300);
+  const espera = !done2;
+  await a.query('COMMIT');
+  const rb2 = await prB2;
+  await b.query(rb2 === 'ok' ? 'COMMIT' : 'ROLLBACK');
+  const duenos = (await c.query(`SELECT count(*)::int AS n FROM usuarios WHERE es_dueno`)).rows[0].n;
+  ok(duenos === 1, `C120b nunca hay dos dueños (espera=${espera}, segundo=${rb2}, dueños=${duenos})`);
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (120 concurrencia)'); process.exit(1); }
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 120 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '120_ger1_dueno_accesos.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 120 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 120)'); process.exit(1); }
+console.log('── PRUEBAS 120');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/120_ger1_dueno_accesos_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (120)'); process.exit(1); }
+}
+await conc120();
+await reruns090('120', ['072']);
+for (const [etq, f] of [...SUITES_120, ['111', '111_operaciones_cfdi_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 120)`); process.exit(1); }
+  console.log(`  ${etq} tras 120: PASS`);
+}
+console.log('  GER-1 aditiva (dueño, accesos, contraseña temporal, bitácora) tras 120: PASS');
+
+// ═══ 121 — GER-1: contención (sin escritura REST en usuarios) ═══
+for (const k of [1, 2]) {
+  console.log(`── aplicar 121 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '121_ger1_contencion_usuarios.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 121 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 121)'); process.exit(1); }
+console.log('── PRUEBAS 121');
+for (const f of ['121_ger1_contencion_usuarios_test.sql', '120_ger1_dueno_accesos_test.sql']) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${f} tras 121)`); process.exit(1); }
+}
+await reruns090('121', ['072']);
+for (const [etq, f] of [...SUITES_120, ['111', '111_operaciones_cfdi_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 121)`); process.exit(1); }
+  console.log(`  ${etq} tras 121: PASS`);
+}
+console.log('  GER-1 (usuarios solo por contrato) tras 121: PASS');
+
 // ═══ OP-03 — ensayo operativo de punta a punta (Día 0; producción, barra, mostrador, ruta, mermas, reverso) ═══
 // Va al final (tras 116): deja sus funciones auxiliares op3_*, que 090-04 marcaría en una re-corrida posterior.
 console.log('── ENSAYO OPERATIVO OP-03');
@@ -4519,7 +4637,10 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   'actividad_visible', 'actividad_ocurrencia_json', 'calendario', 'completar_ocurrencia', 'guardar_actividad', 'editar_ocurrencia',
   'desactivar_actividad',
   // 119 (WF-0.2)
-  'erp_exigir_no_empleado'];
+  'erp_exigir_no_empleado',
+  // 120 (GER-1)
+  'erp_roles_activos', 'erp_tiene_rol', 'erp_es_dueno', 'guardar_usuario', 'fijar_password_temporal', 'confirmar_cambio_password',
+  'bitacora_actor'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

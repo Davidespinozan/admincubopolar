@@ -42,6 +42,7 @@ import { normalizarReporteFinanciero } from './finanzasLogic';
 import { fechaElegida, camposFechaCosto, buildPagarCxPArgs } from './fechaNegocioLogic';
 import { buildEditarReciboArgs } from './nominaLogic';
 import { diaNegocio } from '../utils/fechas';
+import { buildGuardarUsuarioArgs, mensajeErrorUsuario } from './usuariosLogic';
 
 // ═══════════════════════════════════════════════════════════════
 // useSupaStore — fuente única de verdad para toda la app
@@ -3271,29 +3272,49 @@ export function useSupaStore(userId, userName, userRol) {
       // sin realtime (usuarios).
       recargarDatos: () => rf(),
 
-      // ── USUARIOS ──
-      addUsuario: async (u) => {
-        const { data: row, error } = await supabase.from('usuarios').insert({
-          nombre: u.nombre, email: u.email, rol: u.rol, auth_id: u.auth_id, estatus: u.estatus || 'Activo',
-        }).select().single();
-        if (error) { t()?.error(`Error al crear usuario: ${error.message}`); return error; }
-        log('Crear', 'Usuarios', `${u.nombre} (${u.rol})`);
+      // ── USUARIOS (GER-1, mig 120/121) ──
+      // Sin escritura REST: el alta va por Netlify (admin-create-user), los
+      // cambios por guardar_usuario y la baja es estatus Inactivo. El servidor
+      // decide quién puede qué (Dueño / Admin); aquí solo se traduce el error.
+      guardarUsuario: async (u, { incluirAccesos = false } = {}) => {
+        const { data, error } = await supabase.rpc('guardar_usuario', buildGuardarUsuarioArgs(u, { incluirAccesos }));
+        if (error) { const msg = mensajeErrorUsuario(error); t()?.error(msg); return { error: msg }; }
         rf();
-        return row;
+        return { data };
       },
 
-      updateUsuario: async (id, u) => {
-        const { error } = await supabase.from('usuarios').update(u).eq('id', id);
-        if (error) { t()?.error('Error al actualizar usuario'); return error; }
-        log('Editar', 'Usuarios', `ID ${id}`);
-        rf();
+      restablecerPassword: async (usuarioId, password) => {
+        try {
+          const data = await backendPost('admin-reset-password', { usuarioId: Number(usuarioId), password });
+          rf();
+          return { data };
+        } catch (e) {
+          const msg = mensajeErrorUsuario(e);
+          t()?.error(msg);
+          return { error: msg };
+        }
       },
 
-      deleteUsuario: async (id) => {
-        const { error } = await supabase.from('usuarios').delete().eq('id', id);
-        if (error) { t()?.error('Error al eliminar usuario'); return error; }
-        log('Eliminar', 'Usuarios', `ID ${id}`);
-        rf();
+      // La contraseña propia: verifica la actual, la cambia en Auth y libera la
+      // cuenta si era temporal (confirmar_cambio_password compara la huella).
+      cambiarMiPassword: async ({ actual, nueva }) => {
+        const { data: sesion } = await supabase.auth.getUser();
+        const email = sesion?.user?.email;
+        if (!email) return { error: 'Tu sesión expiró. Vuelve a iniciar sesión.' };
+        const { error: errActual } = await supabase.auth.signInWithPassword({ email, password: actual });
+        if (errActual) return { error: mensajeErrorUsuario(errActual) };
+        const { error: errNueva } = await supabase.auth.updateUser({ password: nueva });
+        if (errNueva) return { error: mensajeErrorUsuario(errNueva) };
+        const { error: errConf } = await supabase.rpc('confirmar_cambio_password');
+        if (errConf) return { error: mensajeErrorUsuario(errConf) };
+        return { data: { ok: true } };
+      },
+
+      // Bitácora de cambios sensibles (solo el Dueño la lee; RLS).
+      cargarBitacora: async (limite = 200) => {
+        const { data, error } = await supabase.from('bitacora_cambios').select('*').order('id', { ascending: false }).limit(limite);
+        if (error) return { error: mensajeErrorUsuario(error) };
+        return { data: data || [] };
       },
 
       // ── ALMACÉN BOLSAS ──

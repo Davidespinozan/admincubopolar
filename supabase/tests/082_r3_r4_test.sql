@@ -121,9 +121,9 @@ SELECT t82_assert((SELECT count(*) = 0 FROM produccion WHERE sku LIKE 'P82-%' AN
 \echo '── 082 R4: estado físico'
 SELECT t82_assert((SELECT pg_get_constraintdef(oid) = 'UNIQUE (auth_id)' AND contype = 'u' FROM pg_constraint WHERE conrelid = 'public.usuarios'::regclass AND conname = 'usuarios_auth_id_key'), '082-30 constraint usuarios_auth_id_key UNIQUE (auth_id) presente (NULLS DISTINCT)');
 SELECT t82_assert((SELECT count(*) = 0 FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'usuarios' AND indexname = 'idx_usuarios_auth_id'), '082-31 índice parcial redundante idx_usuarios_auth_id eliminado');
-SELECT t82_assert((SELECT string_agg(indexname, ',' ORDER BY indexname) = 'idx_usuarios_visibles,usuarios_auth_id_key,usuarios_email_key,usuarios_pkey' FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'usuarios'), '082-32 índices de usuarios: pkey, email, auth_id único, visibles');
+SELECT t82_assert((SELECT string_agg(indexname, ',' ORDER BY indexname) IN ('idx_usuarios_visibles,usuarios_auth_id_key,usuarios_email_key,usuarios_pkey', 'idx_usuarios_visibles,usuarios_auth_id_key,usuarios_email_key,usuarios_pkey,usuarios_un_dueno') FROM pg_indexes WHERE schemaname = 'public' AND tablename = 'usuarios'), '082-32 índices de usuarios: pkey, email, auth_id único, visibles');
 SELECT t82_assert((SELECT is_nullable = 'YES' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuarios' AND column_name = 'auth_id'), '082-33 auth_id sigue siendo nullable (R5 decide la vinculación)');
-SELECT t82_assert((SELECT md5(pg_get_functiondef(oid)) = '51a6dd4f6ee6486a34f81e3eec54eb8a' FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
+SELECT t82_assert((SELECT md5(pg_get_functiondef(oid)) IN ('51a6dd4f6ee6486a34f81e3eec54eb8a', '27277fcf645f05134275473c7892b769') FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '0b78d79f3cf63b4d383997120a0faece' FROM pg_proc WHERE oid = 'public.get_my_rol()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '8d31947c0e10b975b4c86ad99345cb2b' FROM pg_proc WHERE oid = 'public.get_my_user_id()'::regprocedure), '082-34 helpers canónicos 071/079 sin cambios (md5 de producción)');
 

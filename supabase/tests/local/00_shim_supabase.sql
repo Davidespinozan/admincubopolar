@@ -10,6 +10,8 @@ END $$;
 GRANT anon, authenticated, service_role TO CURRENT_USER;
 CREATE SCHEMA IF NOT EXISTS auth;
 CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY, email text, created_at timestamptz DEFAULT now());
+-- GER-1 (120): producción tiene encrypted_password (hash de Auth); 120 compara su huella.
+ALTER TABLE auth.users ADD COLUMN IF NOT EXISTS encrypted_password text;
 CREATE OR REPLACE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql STABLE AS $$
   SELECT COALESCE(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb)
 $$;

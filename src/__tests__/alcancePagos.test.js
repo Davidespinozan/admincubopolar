@@ -83,8 +83,9 @@ describe('detección de link pagado con los pagos del alcance del vendedor', () 
 describe('App.jsx: solo cambia el alcance de pagos de Ventas', () => {
   const app = src('../App.jsx');
   const scoped = app.slice(app.indexOf('const scopedData = useMemo'), app.indexOf('}, [data, user?.rol, usuarioActualId'));
-  const chofer = scoped.slice(scoped.indexOf("if (user?.rol === 'Chofer')"), scoped.indexOf("if (user?.rol === 'Ventas')"));
-  const ventas = scoped.slice(scoped.indexOf("if (user?.rol === 'Ventas')"));
+  // GER-1 (120): el alcance de Ventas vale para el rol Ventas y para el acceso adicional (actuaComoVentas).
+  const chofer = scoped.slice(scoped.indexOf("if (user?.rol === 'Chofer')"), scoped.indexOf("if (actuaComoVentas)"));
+  const ventas = scoped.slice(scoped.indexOf("if (actuaComoVentas)"));
   it('L: Ventas usa el helper con sus órdenes propias y la regla existente', () => {
     expect(ventas).toMatch(/const pagosPropios = pagosVisiblesVendedor\(data\.pagos, ordenesPropias, p => matchOwner\(p, usuarioActualId, authUserId, usuarioActual\?\.nombre\)\)/);
     expect(ventas).toMatch(/const ordenesPropias = \(data\.ordenes \|\| \[\]\)\.filter\(o => matchOwner\(o, usuarioActualId, authUserId, usuarioActual\?\.nombre\)\)/);   // órdenes: sin cambio
@@ -108,7 +109,7 @@ describe('realtime: el camino existente lleva el pago nuevo al alcance del vende
     const store = src('../data/supaStore.js');
     expect(store).toMatch(/\.\.\.TABLAS_SLICE_RT\.map\(table =>\s*supabase\.channel\(`rt_\$\{table\}`\)\s*\.on\('postgres_changes', \{ event: '\*', schema: 'public', table \}, \(\) => disparar\(table, \(\) => fetchSlice\(table\), 300\)\)/);
     expect(store).toMatch(/case 'pagos': \{\s*const pag = await safeRows\(supabase\.from\('pagos'\)\.select\('\*'\)\.order\('id', \{ ascending: false \}\)\.limit\(200\)\);/);
-    expect(src('../App.jsx')).toMatch(/\}, \[data, user\?\.rol, usuarioActualId, authUserId, usuarioActual\?\.nombre, adminViewAs\]\)/);
+    expect(src('../App.jsx')).toMatch(/\}, \[data, user\?\.rol, usuarioActualId, authUserId, usuarioActual\?\.nombre, adminViewAs, actuaComoVentas\]\)/);
     expect(store).not.toMatch(/setInterval\([^)]*pagos/);
   });
 });

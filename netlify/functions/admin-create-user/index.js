@@ -18,6 +18,8 @@
 //      tocar Auth.
 //   4. supabase.auth.admin.createUser con email_confirm=true.
 //   5. INSERT en `usuarios` con auth_id (service_role).
+//   5b. GER-1 (120): fijar_password_temporal → cambio obligatorio al entrar.
+//       El rol Admin solo lo crea el Dueño (usuarios.es_dueno).
 //   6. Si el INSERT falla → auth.admin.deleteUser(authId). Si el rollback
 //      también falla → 500 con code AUTH_ORPHAN y el auth_id para
 //      intervención manual (queda en logs/Sentry).
@@ -40,6 +42,7 @@ import {
   validateAdminCreateUser,
   mapAuthErrorToUserMessage,
 } from '../../../src/data/adminUserLogic.js';
+import { puedeCrearRol } from '../../../src/data/usuariosLogic.js';
 
 export const createHandler = ({
   getProfile = getAuthenticatedProfile,
@@ -64,6 +67,10 @@ export const createHandler = ({
   if (validation.error) return badRequest(validation.error);
 
   const { email, password, nombre, rol } = validation;
+  // GER-1 (120): el rol Admin solo lo asigna el Dueño.
+  if (!puedeCrearRol(authResult.profile, rol)) {
+    return forbidden('Solo el Dueño puede crear un usuario Admin');
+  }
   const supabase = getSupabase();
 
   // Pre-check en tabla usuarios (email ya viene trim+lowercase). Evita
@@ -105,7 +112,22 @@ export const createHandler = ({
     .single();
 
   if (!insertError && usuario) {
-    return ok({ user: { id: authId, email }, usuario });
+    // GER-1 (120): la contraseña que eligió Administración es TEMPORAL. El
+    // servidor guarda su huella y la cuenta no tiene autoridad hasta que su
+    // dueño la cambia. Si este paso falla la cuenta queda creada y usable:
+    // se avisa para restablecerla (no se revierte un alta válida).
+    let temporal = true;
+    try {
+      const { error: tempError } = await supabase.rpc('fijar_password_temporal', {
+        p_usuario_id: usuario.id,
+        p_por: authResult.profile?.nombre || null,
+      });
+      if (tempError) throw tempError;
+    } catch (error) {
+      temporal = false;
+      console.error('[admin-create-user] no se pudo fijar la contraseña temporal', { usuarioId: usuario.id, error: error?.message });
+    }
+    return ok({ user: { id: authId, email }, usuario, temporal });
   }
 
   // Rollback: no dejar auth.users huérfano.

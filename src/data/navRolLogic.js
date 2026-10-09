@@ -28,9 +28,14 @@ export const MODULO_MI_ASISTENCIA = { id: "mi-asistencia", label: "Mi asistencia
 // (lo asignado a la persona; módulo del Empleado y vista para los demás roles).
 export const MODULO_CALENDARIO = { id: "calendario", label: "Calendario", icon: "Calendar" };
 export const MODULO_MIS_ACTIVIDADES = { id: "mis-actividades", label: "Mis actividades", icon: "Calendar" };
+// GER-1 (mig 120): "Mi cuenta" (cambiar la contraseña propia) es una vista de
+// TODOS los roles; "Panel del dueño" es el módulo del Dueño (Admin + es_dueno).
+export const MODULO_MI_CUENTA = { id: "mi-cuenta", label: "Mi cuenta", icon: "Lock" };
+export const MODULO_DUENO = { id: "dueno", label: "Panel del dueño", icon: "Shield" };
 const VISTA_MI_ASISTENCIA = {
   [MODULO_MI_ASISTENCIA.id]: MODULO_MI_ASISTENCIA.id,
   [MODULO_MIS_ACTIVIDADES.id]: MODULO_MIS_ACTIVIDADES.id,
+  [MODULO_MI_CUENTA.id]: MODULO_MI_CUENTA.id,
 };
 const SOLO_ADMIN = new Set([MODULO_ASISTENCIA.id, MODULO_CALENDARIO.id]);
 
@@ -146,6 +151,7 @@ export const NAV_ROLES = {
   Empleado: {
     modo: "completo", inicio: MODULO_MI_ASISTENCIA.id, chrome: CHROME_EMPLEADO, persistirAreas: false,
     areas: [{ id: "personal", label: "Personal", icon: "Clock", color: "purple", items: [MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES] }],
+    vistas: { [MODULO_MI_CUENTA.id]: MODULO_MI_CUENTA.id },
   },
 };
 
@@ -153,6 +159,37 @@ export const NAV_ROLES = {
  *  'Empleado' tiene su propia entrada: nunca cae al respaldo de back office. */
 export function navParaRol(rol) {
   return NAV_ROLES[rol] || NAV_ROLES["Sin asignar"];
+}
+
+/**
+ * GER-1: navegación de una PERSONA. Parte de la de su rol principal y:
+ *   · Dueño (Admin + es_dueno): suma el área "Dueño" con su panel;
+ *   · accesos adicionales (Ventas / Almacén Bolsas): suma las áreas, vistas y
+ *     alias de esos roles (María: Almacén de Bolsas + Ventas en el mismo menú).
+ * Admin ya tiene todo; el modo enfoque (Chofer) no admite accesos en pantalla.
+ * La autoridad real está en la base (fin_actor_permitido con todos los roles).
+ */
+export function navParaUsuario(usuario) {
+  const rol = usuario?.rol;
+  const base = navParaRol(rol);
+  const dueno = !!(usuario && (usuario.esDueno ?? usuario.es_dueno));
+  const extras = Array.isArray(usuario?.accesosExtra ?? usuario?.accesos_extra) ? (usuario.accesosExtra ?? usuario.accesos_extra) : [];
+  if (rol === "Admin") {
+    if (!dueno) return base;
+    return { ...base, areas: [{ id: "dueno", label: "Dueño", icon: "Shield", color: "purple", items: [MODULO_DUENO] }, ...base.areas] };
+  }
+  if (base.modo !== "completo") return base;
+  let nav = base;
+  const ya = idsModulos(base);
+  for (const acceso of extras) {
+    const otro = acceso !== rol && acceso !== "Admin" ? NAV_ROLES[acceso] : null;
+    if (!otro || otro.modo !== "completo") continue;
+    const areas = otro.areas.map(a => ({ ...a, items: a.items.filter(i => !ya.has(i.id)) })).filter(a => a.items.length > 0);
+    for (const a of areas) for (const i of a.items) ya.add(i.id);
+    nav = { ...nav, areas: [...nav.areas, ...areas], vistas: { ...(otro.vistas || {}), ...(nav.vistas || {}) }, alias: { ...(otro.alias || {}), ...(nav.alias || {}) },
+      chrome: { ...nav.chrome, firmas: nav.chrome.firmas || !!otro.chrome?.firmas } };
+  }
+  return nav;
 }
 
 export function idsModulos(nav) {

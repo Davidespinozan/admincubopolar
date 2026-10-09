@@ -134,8 +134,12 @@ SELECT t90_assert((
       ('notificaciones','INSERT'), ('notificaciones','UPDATE'),
       ('ordenes','UPDATE'), ('ordenes','DELETE'), ('precios_esp','INSERT'), ('precios_esp','UPDATE'), ('precios_esp','DELETE'),
       ('produccion','UPDATE'), ('productos','INSERT'), ('productos','UPDATE'), ('productos','DELETE'),
-      ('rutas','INSERT'), ('rutas','UPDATE'), ('rutas','DELETE'), ('usuarios','INSERT'), ('usuarios','UPDATE'), ('usuarios','DELETE')) m(t, op)
+      ('rutas','INSERT'), ('rutas','UPDATE'), ('rutas','DELETE')) m(t, op)
     WHERE to_regclass('public.' || t) IS NOT NULL
+    UNION ALL  -- 121 (GER-1) retira la escritura REST de usuarios (guardar_usuario / admin-create-user)
+    SELECT x FROM (VALUES ('usuarios:INSERT'), ('usuarios:UPDATE'), ('usuarios:DELETE')) v(x) WHERE has_table_privilege('authenticated', 'usuarios', 'INSERT')
+    UNION ALL  -- 120 (GER-1): la bitácora solo se inserta desde un disparador (policy pg_trigger_depth() > 0); sin UPDATE ni DELETE
+    SELECT 'bitacora_cambios:INSERT' WHERE to_regclass('public.bitacora_cambios') IS NOT NULL
     UNION ALL
     SELECT 'cuentas_por_cobrar:' || op FROM (VALUES ('UPDATE'), ('DELETE')) v(op)
      WHERE has_table_privilege('authenticated', 'cuentas_por_cobrar', 'UPDATE')
@@ -158,7 +162,8 @@ SELECT t90_assert(NOT EXISTS (SELECT 1 FROM pg_class c WHERE c.relnamespace = 'p
        OR (has_sequence_privilege('authenticated', c.oid, 'USAGE') AND c.oid NOT IN (
          SELECT pg_get_serial_sequence('public.' || quote_ident(t), 'id')::regclass FROM unnest(ARRAY['auditoria','camiones','chofer_ubicaciones','cierres_diarios','clientes','comodatos','costos_fijos','costos_historial',
            'cuartos_frios','cuentas_por_pagar','devoluciones','empleados','error_log','inventario_mov','leads','movimientos_contables','nomina_periodos','nomina_recibos',
-           'notificaciones','pagos_proveedores','precios_esp','productos','rutas','usuarios']) t WHERE pg_get_serial_sequence('public.' || quote_ident(t), 'id') IS NOT NULL)))), '090-08 secuencias: authenticated solo USAGE en el id de las tablas donde el frontend inserta');
+           'notificaciones','pagos_proveedores','precios_esp','productos','rutas','usuarios',
+           'bitacora_cambios' /* 120: la inserta el disparador como authenticated */]) t WHERE to_regclass('public.' || t) IS NOT NULL AND pg_get_serial_sequence('public.' || quote_ident(t), 'id') IS NOT NULL)))), '090-08 secuencias: authenticated solo USAGE en el id de las tablas donde el frontend inserta');
 SELECT t90_assert(NOT has_sequence_privilege('authenticated', 'folio_r_seq', 'USAGE') AND NOT has_sequence_privilege('authenticated', 'folio_op_seq', 'USAGE') AND NOT has_sequence_privilege('authenticated', 'folio_ov_seq', 'USAGE'), '090-09 secuencias de folio sin acceso directo de la API');
 SELECT t90_assert((SELECT bool_and(prosecdef AND array_to_string(proconfig, ';') = 'search_path=public, pg_temp') FROM pg_proc
   WHERE oid IN ('public.nextval(text)'::regprocedure, 'public.b4_ruta_con_historia(bigint)'::regprocedure, 'public.anular_cxc_orden(bigint)'::regprocedure, 'public.ajustar_cxc_devolucion(bigint,numeric)'::regprocedure, 'public.erp_actor_etiqueta()'::regprocedure))

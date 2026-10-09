@@ -11,9 +11,10 @@ import AvisosPush from './ui/AvisosPush';
 import { logErrorToDb } from '../utils/errorLog';
 import { traducirError } from '../utils/errorMessages';
 import { textoSaludo, subtituloRol } from '../data/saludoLogic';
+import { etiquetaRol } from '../data/usuariosLogic';
 import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
-import { navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
+import { navParaRol, navParaUsuario, MODULO_MI_CUENTA, MODULO_DUENO, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
   MODULO_ASISTENCIA, MODULO_MI_ASISTENCIA, MODULO_CALENDARIO, MODULO_MIS_ACTIVIDADES, idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas } from '../data/navRolLogic';
 import { BottomNav, PageHeader, Card, ListRow, IconButton, StatusBadge, Chips } from './ui/Components';
 import { ViewSkeleton, EmptyState } from './ui/Skeleton';
@@ -44,6 +45,9 @@ const BandejaView         = lazy(() => import('./views/BandejaView.jsx').then(m 
 const AsistenciaView      = lazy(() => import('./views/AsistenciaView.jsx').then(m => ({ default: m.AsistenciaView })));
 const MiAsistenciaView    = lazy(() => import('./MiAsistenciaView'));
 const CalendarioView      = lazy(() => import('./views/CalendarioView.jsx').then(m => ({ default: m.CalendarioView })));
+// GER-1 (mig 120): panel del dueño y "Mi cuenta" (contraseña propia).
+const DuenoView           = lazy(() => import('./views/DuenoView.jsx').then(m => ({ default: m.DuenoView })));
+const MiCuentaView        = lazy(() => import('./CambiarPassword.jsx').then(m => ({ default: m.MiCuentaView })));
 // Fase B: las vistas por rol son contenido del shell compartido (lazy, como antes en App.jsx).
 const ChoferView                = lazy(() => import('./ChoferView'));
 const BolsasView                = lazy(() => import('./BolsasView'));
@@ -169,7 +173,11 @@ class ChunkErrorBoundary extends Component {
 export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions, onLogout, onViewAs, offsetSuperior = 0 }) {
   const topFijo = { top: offsetSuperior ? `${offsetSuperior}px` : 0 };
   const rol = rolVista || user?.rol;
-  const nav = useMemo(() => navParaRol(rol), [rol]);
+  // GER-1: el menú es de la PERSONA (rol principal + accesos adicionales + panel
+  // del dueño). En "Ver como" (rolVista distinto del rol propio) se muestra el
+  // menú puro de ese rol. App siempre manda rolVista (el propio o el elegido).
+  const viendoComo = !!rolVista && rolVista !== user?.rol;
+  const nav = useMemo(() => (viendoComo ? navParaRol(rolVista) : navParaUsuario(user)), [viendoComo, rolVista, user]);
   const IDS_MODULOS = useMemo(() => idsModulos(nav), [nav]);
   const ALL_ITEMS = useMemo(() => itemsModulos(nav), [nav]);
   // B3: navegación inferior en móvil, derivada del mismo modelo que el sidebar.
@@ -250,6 +258,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   const miEspacio = useMemo(() => [
     nav.chrome.miAsistencia && MODULO_MI_ASISTENCIA,
     nav.chrome.misActividades && MODULO_MIS_ACTIVIDADES,
+    MODULO_MI_CUENTA,
   ].filter(Boolean), [nav]);
   const [avisosOpen, setAvisosOpen] = useState(false);
   const notifNoLeidas = useMemo(() => (data.notificaciones || []).filter(n => !n.leida), [data.notificaciones]);
@@ -326,6 +335,8 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       case MODULO_MI_ASISTENCIA.id: return <MiAsistenciaView actions={actions} />;
       case MODULO_CALENDARIO.id: return <CalendarioView {...vp} />;
       case MODULO_MIS_ACTIVIDADES.id: return <CalendarioView {...vp} personal />;
+      case MODULO_MI_CUENTA.id: return <MiCuentaView user={user} actions={actions} />;
+      case MODULO_DUENO.id: return <DuenoView {...vp} />;
       // Fase B: vistas por rol como contenido del shell (misma lógica, misma autorización).
       // B3.6: un solo módulo Ventas; el filtro interno sale del hash (ventas / ventas-hoy / ventas-todas).
       case 'ventas': case 'ventas-hoy': case 'ventas-todas':
@@ -341,7 +352,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   const go = useCallback((id) => { const v = normalizarVista(nav, id); if (v) setView(v); setMobileDrawerOpen(false); }, [nav]);
   // B3.6: el módulo del menú dueño de la vista (filtro interno → su módulo).
   const modulo = moduloDeVista(nav, view) || view;
-  const current = ALL_ITEMS.find(n => n.id === modulo) || [MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES].find(n => n.id === modulo);
+  const current = ALL_ITEMS.find(n => n.id === modulo) || [MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES, MODULO_MI_CUENTA].find(n => n.id === modulo);
 
   // Modo enfoque (Chofer): sin sidebar ni cabecera del shell; la vista trae
   // su propio chrome mínimo y la identidad del producto (RoleHeader).
@@ -354,7 +365,9 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
               ? <div className="mx-auto max-w-lg px-4 py-4"><MiAsistenciaView actions={actions} onVolver={() => go(MODULO_CHOFER.id)} /></div>
               : view === MODULO_MIS_ACTIVIDADES.id
               ? <div className="mx-auto max-w-2xl px-4 py-4"><CalendarioView {...vp} personal onVolver={() => go(MODULO_CHOFER.id)} /></div>
-              : <ChoferView user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} onMiAsistencia={() => go(MODULO_MI_ASISTENCIA.id)} onMisActividades={() => go(MODULO_MIS_ACTIVIDADES.id)} />}
+              : view === MODULO_MI_CUENTA.id
+              ? <div className="mx-auto max-w-lg px-4 py-4"><MiCuentaView user={user} actions={actions} onVolver={() => go(MODULO_CHOFER.id)} /></div>
+              : <ChoferView user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} onMiAsistencia={() => go(MODULO_MI_ASISTENCIA.id)} onMisActividades={() => go(MODULO_MIS_ACTIVIDADES.id)} onMiCuenta={() => go(MODULO_MI_CUENTA.id)} />}
           </Suspense>
         </ChunkErrorBoundary>
       </div>
@@ -454,7 +467,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
         <div className="flex h-[76px] flex-shrink-0 items-center justify-between border-t border-white/10 px-5">
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-cyan-200 text-sm font-bold text-slate-950">{user?.nombre?.[0] || "A"}</div>
-            <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{user?.nombre || "Admin"}</p><p className="truncate text-xs text-slate-400" data-testid="role-badge">{user?.rol}</p></div>
+            <div className="min-w-0"><p className="truncate text-sm font-semibold text-white">{user?.nombre || "Admin"}</p><p className="truncate text-xs text-slate-400" data-testid="role-badge">{etiquetaRol(user)}</p></div>
           </div>
           {onLogout && <button onClick={onLogout} className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-white/10 hover:text-white" title="Cerrar sesión" aria-label="Cerrar sesión"><Icons.X /></button>}
         </div>
@@ -654,7 +667,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-bold text-white truncate">{user.nombre || 'Usuario'}</p>
-                    <p className="text-xs text-slate-400 truncate">{user.rol || ''}</p>
+                    <p className="text-xs text-slate-400 truncate">{etiquetaRol(user)}</p>
                   </div>
                 </div>
               )}

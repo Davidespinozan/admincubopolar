@@ -64,7 +64,9 @@ BEGIN
   RAISE NOTICE 'OK: % [%]', p_msg, v_state;
 END $$;
 CREATE OR REPLACE FUNCTION t79_rows(p_sql TEXT) RETURNS BIGINT LANGUAGE plpgsql AS $$
-DECLARE n BIGINT; BEGIN EXECUTE p_sql; GET DIAGNOSTICS n = ROW_COUNT; RETURN n; END $$;
+DECLARE n BIGINT; BEGIN EXECUTE p_sql; GET DIAGNOSTICS n = ROW_COUNT; RETURN n;
+-- GER-1 (121): sin DML REST en usuarios, el intento ya no es "0 filas" sino permiso denegado (más estricto): cuenta como 0.
+EXCEPTION WHEN insufficient_privilege THEN IF p_sql ~* '(UPDATE|INSERT INTO|DELETE FROM)\s+usuarios' THEN RETURN 0; END IF; RAISE; END $$;
 CREATE OR REPLACE FUNCTION t_p087() RETURNS BOOLEAN LANGUAGE sql STABLE AS $$ SELECT to_regprocedure('public.finalizar_inventario_ruta(uuid,bigint,jsonb)') IS NOT NULL $$;
 GRANT EXECUTE ON FUNCTION t_p087() TO anon, authenticated, service_role;
 CREATE OR REPLACE FUNCTION t79_count(p_sql TEXT) RETURNS BIGINT LANGUAGE plpgsql AS $$
@@ -135,10 +137,15 @@ SELECT t79_assert((SELECT pg_get_function_result('public.get_my_rol()'::regproce
 -- ventas_update reescrita con erp_rol_activo, y en 089 ventas_insert y write_roles).
 SELECT t79_assert((SELECT count(*) = 47 - (SELECT count(*) FROM (VALUES ('movimientos_contables','egreso_operativo_insert'),('rutas','almacen_update'),('rutas','almacen_write'),('ordenes','ventas_insert'),('orden_lineas','write_roles')) x(t, p)
       WHERE NOT EXISTS (SELECT 1 FROM pg_policies q WHERE q.schemaname = 'public' AND q.tablename = x.t AND q.policyname = x.p))
-    - CASE WHEN EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'ordenes' AND policyname = 'ventas_update' AND qual ~ 'erp_rol_activo') THEN 1 ELSE 0 END
+    - CASE WHEN EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'ordenes' AND policyname = 'ventas_update' AND qual ~ 'erp_rol_activo|erp_tiene_rol') THEN 1 ELSE 0 END
+    -- GER-1: 120 reescribe leads.ventas_all con erp_tiene_rol (−1) y agrega usuarios.admin_read (+1); 121 quita usuarios.admin_all (−1).
+    - CASE WHEN EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'leads' AND policyname = 'ventas_all' AND qual ~ 'erp_tiene_rol') THEN 1 ELSE 0 END
+    + CASE WHEN EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'usuarios' AND policyname = 'admin_read') THEN 1 ELSE 0 END
+    - CASE WHEN EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'usuarios' AND policyname = 'admin_read')
+            AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'usuarios' AND policyname = 'admin_all') THEN 1 ELSE 0 END
   FROM pg_policies WHERE schemaname = 'public' AND (coalesce(qual, '') || coalesce(with_check, '')) ~ 'get_my_rol\(\)')
   AND (SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND (coalesce(qual, '') || coalesce(with_check, '')) ~ 'get_my_user_id\(\)'), '079-04 dependencias intactas: 47 policies con get_my_rol, 2 con get_my_user_id (ninguna reescrita)');
-SELECT t79_assert((SELECT md5(pg_get_functiondef(oid)) = '51a6dd4f6ee6486a34f81e3eec54eb8a' FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
+SELECT t79_assert((SELECT md5(pg_get_functiondef(oid)) IN ('51a6dd4f6ee6486a34f81e3eec54eb8a', '27277fcf645f05134275473c7892b769') FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '769d64e0c31d5f74cdd765c44b80f259' FROM pg_proc WHERE oid = 'public.erp_rol_activo()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '02c3f3c9f97eebb1cc4ed11d61051943' FROM pg_proc WHERE oid = 'public.erp_usuario_id()'::regprocedure), '079-05 helpers canónicos 071 sin cambios (md5 de producción)');
 
@@ -146,7 +153,7 @@ SELECT t79_assert((SELECT md5(pg_get_functiondef(oid)) = '51a6dd4f6ee6486a34f81e
 BEGIN; SET LOCAL ROLE authenticated; SELECT t79_actor('authenticated', 'admin79@t', '79000000-0000-0000-0000-000000000001');
 SELECT t79_identidad('079-10 Admin activo', 'Admin', 7901);
 SELECT t79_assert(t79_count($q$SELECT 1 FROM usuarios WHERE id BETWEEN 7901 AND 7919$q$) = 10, '079-11 Admin: ve todos los usuarios (usuarios.admin_all)');
-SELECT t79_assert(t79_rows($q$UPDATE usuarios SET nombre = 'Ventas 79 ed' WHERE id = 7902$q$) = 1, '079-12 Admin: edita usuarios');
+SELECT t79_assert(t79_rows($q$UPDATE usuarios SET nombre = 'Ventas 79 ed' WHERE id = 7902$q$) = CASE WHEN has_table_privilege('authenticated', 'public.usuarios', 'UPDATE') THEN 1 ELSE 0 END, '079-12 Admin: edita usuarios por REST (hasta 121; después por guardar_usuario)');
 INSERT INTO productos (sku, nombre, tipo, precio, stock) VALUES ('P79-ADMIN', 'Alta 79', 'Producto Terminado', 5, 0);
 SELECT t79_assert(t79_rows($q$UPDATE productos SET precio = 6 WHERE sku = 'P79-ADMIN'$q$) = 1 AND t79_rows($q$DELETE FROM productos WHERE sku = 'P79-ADMIN'$q$) = 1, '079-13 Admin: alta, edición y baja de producto (productos.admin_all)');
 SELECT t79_assert(t79_rows($q$UPDATE rutas SET carga_autorizada = '{"P79-HIELO": 3}' WHERE id = 7901$q$) = 1, '079-14 Admin: gestiona rutas (rutas.admin_all)');

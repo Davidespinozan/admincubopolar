@@ -31,7 +31,12 @@ END $$;
 CREATE OR REPLACE FUNCTION t83_assert(p_cond BOOLEAN, p_msg TEXT) RETURNS VOID LANGUAGE plpgsql AS $$
 BEGIN IF NOT COALESCE(p_cond, false) THEN RAISE EXCEPTION 'FAIL: %', p_msg; END IF; RAISE NOTICE 'OK: %', p_msg; END $$;
 CREATE OR REPLACE FUNCTION t83_rows(p_sql TEXT) RETURNS BIGINT LANGUAGE plpgsql AS $$
-DECLARE n BIGINT; BEGIN EXECUTE p_sql; GET DIAGNOSTICS n = ROW_COUNT; RETURN n; END $$;
+DECLARE n BIGINT; BEGIN EXECUTE p_sql; GET DIAGNOSTICS n = ROW_COUNT; RETURN n;
+-- GER-1 (121): sin DML REST en usuarios, el intento ya no es "0 filas" sino permiso denegado (más estricto): cuenta como 0.
+EXCEPTION WHEN insufficient_privilege THEN IF p_sql ~* '(UPDATE|INSERT INTO|DELETE FROM)\s+usuarios' THEN RETURN 0; END IF; RAISE; END $$;
+CREATE OR REPLACE FUNCTION t83_vincular_confianza() RETURNS BIGINT LANGUAGE plpgsql SECURITY DEFINER AS $$
+DECLARE n BIGINT; BEGIN UPDATE usuarios SET auth_id = '83000000-0000-0000-0000-000000000009' WHERE id = 8304; GET DIAGNOSTICS n = ROW_COUNT; RETURN n; END $$;
+GRANT EXECUTE ON FUNCTION t83_vincular_confianza() TO PUBLIC;
 -- ids visibles de usuarios 83xx para el actor actual
 CREATE OR REPLACE FUNCTION t83_visibles() RETURNS TEXT LANGUAGE plpgsql AS $$
 DECLARE v TEXT; BEGIN SELECT COALESCE(string_agg(id::text, ',' ORDER BY id), '') INTO v FROM usuarios WHERE id BETWEEN 8301 AND 8329; RETURN v; END $$;
@@ -48,11 +53,12 @@ INSERT INTO t83_ids VALUES ('h0', t83_huella());
 
 \echo '── 083: estado físico'
 SELECT t83_assert((SELECT qual = '((auth_id IS NOT NULL) AND (auth_id = auth.uid()))' AND with_check IS NULL AND cmd = 'SELECT' AND roles::text = '{authenticated}' FROM pg_policies WHERE schemaname = 'public' AND tablename = 'usuarios' AND policyname = 'self_read'), '083-01 self_read: auth_id = auth.uid(), sin email');
-SELECT t83_assert((SELECT string_agg(policyname, ',' ORDER BY policyname) = 'admin_all,self_read' FROM pg_policies WHERE schemaname = 'public' AND tablename = 'usuarios'), '083-02 policies de usuarios: admin_all + self_read (sin otras)');
+-- GER-1: 120 separa la lectura de Admin (admin_read) y 121 quita admin_all (usuarios solo por contrato).
+SELECT t83_assert((SELECT string_agg(policyname, ',' ORDER BY policyname) IN ('admin_all,self_read', 'admin_all,admin_read,self_read', 'admin_read,self_read') FROM pg_policies WHERE schemaname = 'public' AND tablename = 'usuarios'), '083-02 policies de usuarios: self_read + la de Admin de la fase (admin_all hasta 121; admin_read desde 120)');
 SELECT t83_assert((SELECT count(*) = 0 FROM pg_policies WHERE (coalesce(qual, '') || coalesce(with_check, '')) ~* 'email')
   AND (SELECT count(*) = 0 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND pg_get_functiondef(p.oid) ~ 'auth\.jwt\(\)'), '083-03 ninguna policy ni función de public usa email o auth.jwt() para autorizar');
 SELECT t83_assert((SELECT pg_get_constraintdef(oid) = 'UNIQUE (auth_id)' FROM pg_constraint WHERE conrelid = 'public.usuarios'::regclass AND conname = 'usuarios_auth_id_key'), '083-04 constraint 082 intacta');
-SELECT t83_assert((SELECT md5(pg_get_functiondef(oid)) = '51a6dd4f6ee6486a34f81e3eec54eb8a' FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
+SELECT t83_assert((SELECT md5(pg_get_functiondef(oid)) IN ('51a6dd4f6ee6486a34f81e3eec54eb8a', '27277fcf645f05134275473c7892b769') FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '0b78d79f3cf63b4d383997120a0faece' FROM pg_proc WHERE oid = 'public.get_my_rol()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '8d31947c0e10b975b4c86ad99345cb2b' FROM pg_proc WHERE oid = 'public.get_my_user_id()'::regprocedure), '083-05 helpers 071/079 intactos (md5 de producción)');
 
@@ -101,7 +107,10 @@ SELECT t83_assert(t83_huella() = (SELECT v FROM t83_ids WHERE k = 'h0'), '083-28
 \echo '── 083: Admin y vinculación legítima'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t83_actor('authenticated', 'admin83@t', '83000000-0000-0000-0000-000000000001');
 SELECT t83_assert(t83_visibles() = '8301,8302,8303,8304,8305', '083-30 Admin: ve todos los perfiles (admin_all)');
-SELECT t83_assert(t83_rows($q$UPDATE usuarios SET auth_id = '83000000-0000-0000-0000-000000000009' WHERE id = 8304$q$) = 1, '083-31 Admin: vincula un perfil libre a un uid (alta/reparación explícita)');
+-- GER-1 (121): Admin ya no escribe usuarios por REST; la vinculación la hace el alta con service role (aquí, el ayudante de confianza).
+SELECT t83_assert(CASE WHEN has_table_privilege('authenticated', 'public.usuarios', 'UPDATE')
+                       THEN t83_rows($q$UPDATE usuarios SET auth_id = '83000000-0000-0000-0000-000000000009' WHERE id = 8304$q$)
+                       ELSE t83_vincular_confianza() END = 1, '083-31 vinculación explícita de un perfil libre a un uid (Admin por REST hasta 121; alta de confianza después)');
 SELECT t83_actor('authenticated', 'atacante83@t', '83000000-0000-0000-0000-000000000009');
 SELECT t83_assert(t83_ident() = 'Admin/8304/Admin/8304' AND t83_visibles() = '8301,8302,8303,8304,8305', '083-32 tras la vinculación por Admin, ese uid resuelve como el perfil vinculado (Admin activo → admin_all)');
 ROLLBACK;

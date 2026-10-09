@@ -86,7 +86,9 @@ CREATE OR REPLACE FUNCTION t119_permitidas() RETURNS TEXT[] LANGUAGE sql AS $$ S
   'fin_ctx_activo()', 'fin_hoy()', 'fin_zona_negocio()', 'fin_dia_negocio(timestamp with time zone)', 'fin_es_credito(text)',
   'nomina_inicio_semana(date)', 'asistencia_distancia_m(double precision,double precision,double precision,double precision)',
   'asistencia_clasificar_entrada(timestamp with time zone,integer,timestamp with time zone)', 'b4_escritura_api()',
-  'b4_asiento_de_contrato(text,text,bigint,text)']::text[] $$;
+  'b4_asiento_de_contrato(text,text,bigint,text)',
+  -- 120 (GER-1): identidad propia (roles, accesos, dueño) y cambio de su propia contraseña
+  'erp_roles_activos()', 'erp_tiene_rol(text)', 'erp_es_dueno()', 'confirmar_cambio_password()']::text[] $$;
 GRANT EXECUTE ON FUNCTION t119_permitidas() TO PUBLIC;
 
 \echo '── 119: superficie'

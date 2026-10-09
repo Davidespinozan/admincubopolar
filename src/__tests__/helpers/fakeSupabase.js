@@ -115,7 +115,7 @@ export function makeFakeSupabase(seed = {}, opts = {}) {
     return { data: null, error: null };
   };
 
-  const authCalls = { createUser: [], deleteUser: [] };
+  const authCalls = { createUser: [], deleteUser: [], updateUserById: [] };
   const auth = {
     // opts.tokens = { '<jwt>': { id, email } } — cualquier otro token es inválido
     async getUser(token) {
@@ -128,6 +128,12 @@ export function makeFakeSupabase(seed = {}, opts = {}) {
         authCalls.createUser.push(params);
         if (opts.createUserError) return { data: null, error: { message: opts.createUserError } };
         return { data: { user: { id: opts.authId || 'auth-uuid-1', email: params.email } }, error: null };
+      },
+      // GER-1: restablecer contraseña (opts.updateUserError simula el fallo de Auth)
+      async updateUserById(id, attrs) {
+        authCalls.updateUserById.push({ id, attrs });
+        if (opts.updateUserError) return { data: null, error: { message: opts.updateUserError } };
+        return { data: { user: { id } }, error: null };
       },
       async deleteUser(id) {
         authCalls.deleteUser.push(id);

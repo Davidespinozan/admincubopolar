@@ -47,7 +47,7 @@ export function mismasEntregas(a, b) {
   });
 }
 
-export default function ChoferView({ user, data, actions, onLogout, onMiAsistencia, onMisActividades }) {
+export default function ChoferView({ user, data, actions, onLogout, onMiAsistencia, onMisActividades, onMiCuenta }) {
   const [stepOverride, setStepOverride] = useState(null);
   // PD-01 / PD-02: acceso a "Mi asistencia" y "Mis actividades" desde cualquier paso.
   // Mobile-first (2026-10-09): van en una fila bajo el título (no compiten con él).
@@ -63,8 +63,15 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       <Icons.Calendar /> Actividades
     </button>
   ) : null;
-  const barraPersonal = (botonAsistencia || botonActividades) ? (
-    <div className="mb-3 flex flex-wrap gap-2" data-testid="chofer-barra-personal">{botonAsistencia}{botonActividades}</div>
+  // GER-1: "Mi cuenta" (cambiar la contraseña propia) también desde cualquier paso.
+  const botonCuenta = onMiCuenta ? (
+    <button type="button" onClick={onMiCuenta} data-testid="chofer-mi-cuenta" aria-label="Mi cuenta" title="Mi cuenta"
+      className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[13px] border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/15">
+      <Icons.Lock /> Cuenta
+    </button>
+  ) : null;
+  const barraPersonal = (botonAsistencia || botonActividades || botonCuenta) ? (
+    <div className="mb-3 flex flex-wrap gap-2" data-testid="chofer-barra-personal">{botonAsistencia}{botonActividades}{botonCuenta}</div>
   ) : null;
   const saludo = textoSaludo(user?.nombre);
 

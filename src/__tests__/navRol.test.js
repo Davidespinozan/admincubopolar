@@ -59,7 +59,8 @@ describe('matriz de navegación por rol', () => {
     expect(nav).not.toBe(NAV_ROLES['Sin asignar']);
     expect(nav.modo).toBe('completo');
     expect([...idsModulos(nav)]).toEqual([MODULO_MI_ASISTENCIA.id, MODULO_MIS_ACTIVIDADES.id]);
-    expect([...idsVistas(nav)]).toEqual([MODULO_MI_ASISTENCIA.id, MODULO_MIS_ACTIVIDADES.id]);
+    // GER-1 (120): además, la vista "Mi cuenta" (cambiar su propia contraseña).
+    expect([...idsVistas(nav)]).toEqual([MODULO_MI_ASISTENCIA.id, MODULO_MIS_ACTIVIDADES.id, 'mi-cuenta']);
     expect(nav.inicio).toBe('mi-asistencia');
     expect(Object.values(nav.chrome).some(Boolean)).toBe(false);   // sin búsqueda, alertas, notificaciones, firmas, Ver como
     for (const id of [...ADMIN_27, 'ventas', 'prod-producir', 'bolsas-almacen', 'chofer-ruta']) {
@@ -127,14 +128,15 @@ describe('matriz de navegación por rol', () => {
     expect(abre('#/ventas-todas')).toEqual(['ventas-todas', 'ventas', 'todas']);
     expect(abre('#/ventas')).toEqual(['ventas', 'ventas', 'pendientes']);
     expect(abre('#/cobros')).toEqual([null, null, null]);                          // un hash de Admin no abre nada en Ventas
-    expect([...idsVistas(v)].sort()).toEqual(['mi-asistencia', 'mis-actividades', 'ventas', 'ventas-cobrar', 'ventas-hoy', 'ventas-todas']);
+    expect([...idsVistas(v)].sort()).toEqual(['mi-asistencia', 'mi-cuenta', 'mis-actividades', 'ventas', 'ventas-cobrar', 'ventas-hoy', 'ventas-todas']);
   });
   it('B3.6: los demás roles no tienen vistas ni alias extra (mismo ruteo de siempre)', () => {
     for (const rol of ['Admin', 'Facturación', 'Sin asignar', 'Producción', 'Almacén Bolsas', 'Chofer']) {
       const nav = navParaRol(rol);
       // OP-01D: Producción conserva el hash heredado '#/prod-trans' como alias de "Preparar barra".
       // PD-01: todos suman la vista "mi-asistencia" (botón de la cabecera, sin entrada de menú).
-      const extra = ['mi-asistencia', 'mis-actividades', ...(rol === 'Producción' ? ['prod-trans'] : [])];
+      // GER-1: y la vista "mi-cuenta" (contraseña propia).
+      const extra = ['mi-asistencia', 'mis-actividades', 'mi-cuenta', ...(rol === 'Producción' ? ['prod-trans'] : [])];
       expect([...idsVistas(nav)], rol).toEqual([...idsModulos(nav), ...extra]);
       for (const id of idsModulos(nav)) { expect(normalizarVista(nav, id)).toBe(id); expect(moduloDeVista(nav, id)).toBe(id); }
       expect(normalizarVista(nav, 'ventas-hoy'), rol).toBeNull();
@@ -167,12 +169,15 @@ describe('B: shell compartido y ruteo', () => {
     // scopedData sin cambio: Admin / vista previa → data; Chofer y Ventas → su alcance; el resto → data.
     expect(app).toMatch(/if \(user\?\.rol === 'Admin' \|\| adminViewAs\) return data/);
     expect(app).toMatch(/if \(user\?\.rol === 'Chofer'\) \{/);
-    expect(app).toMatch(/if \(user\?\.rol === 'Ventas'\) \{/);
+    expect(app).toMatch(/const actuaComoVentas = tieneRol\(user, 'Ventas'\)/);   // GER-1: rol Ventas o acceso adicional
+    expect(app).toMatch(/if \(actuaComoVentas\) \{/);
     // "Ver como": sigue siendo preview con autorización de Admin (handleLogout vuelve a Admin).
     expect(app).toMatch(/if \(isAdmin && adminViewAs\) \{\s*setAdminViewAs\(null\)\s*return\s*\}/);
   });
   it('el shell deriva menú, inicio, chrome y modo de navRolLogic; AREAS ya no viven en el shell', () => {
-    expect(shell).toMatch(/const nav = useMemo\(\(\) => navParaRol\(rol\), \[rol\]\);/);
+    // GER-1: el menú es de la persona (rol + accesos + dueño); en "Ver como", el del rol elegido.
+    expect(shell).toMatch(/const viendoComo = !!rolVista && rolVista !== user\?\.rol;/);
+    expect(shell).toMatch(/const nav = useMemo\(\(\) => \(viendoComo \? navParaRol\(rolVista\) : navParaUsuario\(user\)\), \[viendoComo, rolVista, user\]\);/);
     expect(shell).not.toMatch(/\bconst AREAS = \[/);
     expect(shell).toMatch(/\{nav\.areas\.map\(area => \{/);
     // Mobile-first (2026-10-09): el drawer recorre las áreas del rol + "Mi espacio".
@@ -181,7 +186,7 @@ describe('B: shell compartido y ruteo', () => {
     expect(shell).toMatch(/nav\.chrome\.busqueda && <BusquedaGlobal/);
     expect(shell).toMatch(/nav\.chrome\.firmas && <BotonFirmasPendientes/);
     expect(shell).toMatch(/if \(nav\.modo === 'enfoque'\) \{/);
-    expect(shell).toMatch(/<ChoferView user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} onMiAsistencia=\{\(\) => go\(MODULO_MI_ASISTENCIA\.id\)\} onMisActividades=\{\(\) => go\(MODULO_MIS_ACTIVIDADES\.id\)\} \/>/);
+    expect(shell).toMatch(/<ChoferView user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} onMiAsistencia=\{\(\) => go\(MODULO_MI_ASISTENCIA\.id\)\} onMisActividades=\{\(\) => go\(MODULO_MIS_ACTIVIDADES\.id\)\} onMiCuenta=\{\(\) => go\(MODULO_MI_CUENTA\.id\)\} \/>/);
     expect(shell).toMatch(/view === MODULO_MIS_ACTIVIDADES\.id\s*\? <div className="mx-auto max-w-2xl px-4 py-4"><CalendarioView \{\.\.\.vp\} personal onVolver=\{\(\) => go\(MODULO_CHOFER\.id\)\} \/><\/div>/);
     expect(shell).toMatch(/case MODULO_CALENDARIO\.id: return <CalendarioView \{\.\.\.vp\} \/>;\s*case MODULO_MIS_ACTIVIDADES\.id: return <CalendarioView \{\.\.\.vp\} personal \/>;/);
     expect(shell).toMatch(/view === MODULO_MI_ASISTENCIA\.id\s*\? <div className="mx-auto max-w-lg px-4 py-4"><MiAsistenciaView actions=\{actions\} onVolver=\{\(\) => go\(MODULO_CHOFER\.id\)\} \/><\/div>/);
@@ -199,7 +204,7 @@ describe('B: shell compartido y ruteo', () => {
     expect(shell).toMatch(/const vistaDeHash = useCallback\(\(hash\) => normalizarVista\(nav, viewDesdeHash\(hash, IDS_VISTAS\)\), \[nav, IDS_VISTAS\]\);/);
     expect(shell).toMatch(/useState\(\(\) => vistaDeHash\(window\.location\.hash\) \|\| nav\.inicio\)/);
     // B3.6: título, área y entrada activa del menú salen del módulo dueño de la vista.
-    expect(shell).toMatch(/const modulo = moduloDeVista\(nav, view\) \|\| view;\s*const current = ALL_ITEMS\.find\(n => n\.id === modulo\) \|\| \[MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES\]\.find\(n => n\.id === modulo\);/);
+    expect(shell).toMatch(/const modulo = moduloDeVista\(nav, view\) \|\| view;\s*const current = ALL_ITEMS\.find\(n => n\.id === modulo\) \|\| \[MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES, MODULO_MI_CUENTA\]\.find\(n => n\.id === modulo\);/);
     expect(shell).toMatch(/const active = modulo === item\.id;/);
     // alias y primer sync sin paso extra en el historial
     expect(shell).toMatch(/if \(!window\.location\.hash \|\| vistaDeHash\(window\.location\.hash\) === view\) \{\s*window\.history\.replaceState/);

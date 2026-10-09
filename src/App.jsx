@@ -8,6 +8,8 @@ import { supabase } from './lib/supabase'
 import { setUserContext, Sentry } from './lib/sentry'
 import { buildUserFromSessionAndProfile } from './lib/sessionUser'
 import { pagosVisiblesVendedor } from './data/alcancePagosLogic'
+import { debeCambiarPassword, tieneRol } from './data/usuariosLogic'
+import { PantallaCambioObligatorio } from './components/CambiarPassword'
 
 // Fase B: todas las experiencias por rol viven dentro del shell compartido
 // (CuboPolarERP decide sidebar/enfoque y módulos con navRolLogic). Las vistas
@@ -41,7 +43,10 @@ function App() {
   const isManualLogoutRef = useRef(false)
   // Para detectar transiciones truthy ↔ null en el useEffect de Sentry.
   const previousUserRef = useRef(null)
-  const { data, actions, loading, error } = useSupaStore(user?.id, user?.nombre, user?.rol)
+  // GER-1 (mig 120): con contraseña temporal la cuenta no tiene autoridad en el
+  // servidor; no se cargan datos hasta que la cambia (el store queda sin usuario).
+  const bloqueadoPorPassword = debeCambiarPassword(user)
+  const { data, actions, loading, error } = useSupaStore(bloqueadoPorPassword ? undefined : user?.id, user?.nombre, user?.rol)
 
   // ── Detector de offline/online ──
   // Listener global para mostrar banner cuando se cae la red. NO implementa
@@ -206,6 +211,8 @@ function App() {
     return false
   }
 
+  // GER-1 (mig 120): el acceso adicional de Ventas ve lo mismo que un vendedor (lo suyo).
+  const actuaComoVentas = tieneRol(user, 'Ventas')
   const scopedData = useMemo(() => {
     if (!data) return data
     if (user?.rol === 'Admin' || adminViewAs) return data
@@ -229,7 +236,7 @@ function App() {
       }
     }
 
-    if (user?.rol === 'Ventas') {
+    if (actuaComoVentas) {
       const ordenesPropias = (data.ordenes || []).filter(o => matchOwner(o, usuarioActualId, authUserId, usuarioActual?.nombre))
       const clienteIds = new Set(ordenesPropias.map(o => String(o.clienteId || o.cliente_id)).filter(Boolean))
       const clientesPropios = (data.clientes || []).filter(c => {
@@ -249,7 +256,7 @@ function App() {
     }
 
     return data
-  }, [data, user?.rol, usuarioActualId, authUserId, usuarioActual?.nombre, adminViewAs])
+  }, [data, user?.rol, usuarioActualId, authUserId, usuarioActual?.nombre, adminViewAs, actuaComoVentas])
 
   // Tanda 19 A: mientras se restaura la sesión persistida, mostrar
   // splash en lugar de flash de Login. Sin esto, cada reload mostraba
@@ -267,6 +274,19 @@ function App() {
   )
 
   if (!user) return <LoginScreen onLogin={setUser} />
+
+  // GER-1: primer ingreso (o contraseña restablecida) → elegir una propia antes de todo.
+  if (bloqueadoPorPassword) {
+    const salir = async () => {
+      isManualLogoutRef.current = true
+      try { await supabase?.auth?.signOut() } catch { /* best-effort */ }
+      setUser(null)
+    }
+    return (
+      <PantallaCambioObligatorio user={user} actions={actions} onLogout={salir}
+        onListo={() => setUser(u => (u ? { ...u, debe_cambiar_password: false } : u))} />
+    )
+  }
 
   if (loading) return (
     <div className="min-h-dvh flex items-center justify-center px-4" style={{ background: 'linear-gradient(180deg, #f2f8fa 0%, #e7eff2 100%)' }}>

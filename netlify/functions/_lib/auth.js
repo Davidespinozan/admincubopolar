@@ -55,7 +55,9 @@ const getAuthenticatedProfile = async (event, deps = {}) => {
   if (authUser.id) {
     const { data } = await supabase
       .from('usuarios')
-      .select('id, nombre, email, rol, estatus, auth_id')
+      // '*' y no una lista: es_dueno / accesos_extra / debe_cambiar_password llegan
+      // con la migración 120; el perfil debe resolverse igual antes de ella (o si se revierte).
+      .select('*')
       .eq('auth_id', authUser.id)
       .maybeSingle();
     profile = data || null;
@@ -63,6 +65,8 @@ const getAuthenticatedProfile = async (event, deps = {}) => {
 
   if (!profile) return { errorResponse: unauthorized('User profile not found') };
   if (profile.estatus && profile.estatus !== 'Activo') return { errorResponse: unauthorized('User is inactive') };
+  // GER-1 (120): con la contraseña temporal no hay autoridad (igual que erp_actor en la base).
+  if (profile.debe_cambiar_password) return { errorResponse: unauthorized('Password change required') };
 
   return { authUser, profile, supabase };
 };
@@ -73,7 +77,9 @@ const canAccessOrden = async ({ profile, orden, supabase }) => {
   // Sin cliente Supabase no se puede verificar propiedad → denegar.
   if (!supabase) return false;
 
-  if (profile.rol === 'Ventas') {
+  // GER-1 (120): el acceso adicional de Ventas vale como Ventas (mismas órdenes propias).
+  const accesos = Array.isArray(profile.accesos_extra) ? profile.accesos_extra : [];
+  if (profile.rol === 'Ventas' || accesos.includes('Ventas')) {
     // Allow access if this Ventas rep owns the order, or if vendedor_id is not set (legacy orders)
     if (!orden.vendedor_id) return true;
     return String(orden.vendedor_id) === String(profile.id);
