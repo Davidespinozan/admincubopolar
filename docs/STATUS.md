@@ -1,6 +1,6 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-09 (GER-1 activo: BD hasta 121, repositorio `afad162`; Santiago es Dueño). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-09 (GER-1 activo: BD hasta 121, repositorio `afad162`; Santiago es Dueño; ZONA-1 (122) MIGRATION APPLIED TO PRODUCTION + VALIDATED, deploy del frontend PENDIENTE). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
@@ -214,6 +214,45 @@ F-05 rastreo de ruta.
 Estados previos (sin cambio): DIRECT-SALE P0 contenido (109 + D1 + 110); INVOICING LIFECYCLE BYPASS
 contenido (OL-03A y 112); OL-03B, B3.6 y OL-04 DEPLOYED / TECHNICALLY VERIFIED. Reestructura de
 contexto: Fase 2 PENDING y sin autorizar.
+
+## Zona horaria del negocio = Durango (ZONA-1, mig 122) — 2026-10-09
+**MIGRATION APPLIED TO PRODUCTION (por el dueño, SQL Editor, 2026-10-09 entre 22:05Z y 23:51Z) / VALIDATED IN PRODUCTION (solo
+lectura, 23:51Z) — COMMITTED (rama `worktree-zona-durango`, sobre `05e9f2b`); push/deploy del frontend: ver la línea base.** El
+clasificador de permisos de la sesión bloqueó `supabase db query` contra producción ("Production Deploy"); el dueño aplicó el SQL.
+- **Verificado en producción (23:51Z):** `fin_zona_negocio()` = `America/Monterrey`, md5 `776af6e18276586f82b16cc1a2de8474`
+  (antes `7688ea0b…`), IMMUTABLE, `search_path=public, pg_temp`, EXECUTE para authenticated y service_role, sin anon; `fin_hoy()` =
+  día de Durango; hora del negocio 17:51 a las 23:51Z (UTC-6). Catálogo: de mi fase cambió EXACTAMENTE `fin_zona_negocio`. El
+  mismo intervalo incluye la migración multisucursal de la otra sesión (también aplicada por el dueño: `sucursales`, 9 funciones
+  nuevas, `crear_orden`, `update_orden_atomic`, `precio_canonico`, `lineas_canonicas`; 181 funciones · 88 policies · 51 tablas ·
+  48 secuencias) y actividad del dueño en la app (órdenes, pagos, kardex 33 → 34, `error_log` 253 → 254, auditoría 775 → 796);
+  122-zona no escribe datos.
+- **Hallazgo (auditoría de solo lectura, 2026-10-09):** 096 fijó `fin_zona_negocio()` = `America/Mazatlan` suponiendo Culiacán; la
+  planta está en Durango, Dgo. (El Alacrán 103, Campo Alegre, C.P. 34186; zona Centro, UTC-6, sin horario de verano). Efecto: un turno
+  de 08:00 se evaluaba a las 09:00 de Durango (un retardo de 50 min no contaba) y el día de negocio (caja, reportes, calendario)
+  cambiaba a la 01:00. Contradicción con la decisión cerrada de 096/098 por error de hecho, no cambio de criterio.
+- **Impacto histórico:** 0 filas. Todas las columnas `created_at`, `delivered_at` y `cierre_at` de las 30 tablas con datos (22:05Z):
+  ninguna cae en la hora en que Mazatlán y la zona Centro difieren; 0 asistencias, 0 turnos, 0 ocurrencias. Nada se reinterpreta.
+- **122** (SHA-256 `06cef88222e8b6ac4f68fa01300e74ce187b247a239dcb41b8786cdc528de05e`): una sola sentencia, `CREATE OR REPLACE` de
+  `fin_zona_negocio()` → `'America/Monterrey'` (zona IANA de Durango; igual a `America/Mexico_City` desde 2022). Misma firma,
+  IMMUTABLE, ACL y search_path. md5 en producción ANTES: `7688ea0bc1e52c60bc1ffc322cfd5cb5` (= paridad del runner). Sin índices ni
+  columnas generadas que la usen. Reversión: la misma sentencia con `'America/Mazatlan'`.
+- **Cliente (commit `8990003`):** una sola fuente `ZONA_NEGOCIO` en `src/utils/fechas.js` (asistencia, saludo, crons y Dueño la
+  importan); desfase por omisión `-06:00`; textos "hora de Durango" y "Cubo Polar · Durango". Mientras el bundle nuevo NO esté
+  desplegado, el cliente actual sigue mostrando hora de Mazatlán: aplicar 122 y publicar el commit deben ir juntos (mismo día).
+- **Gate local (RESULTADO OK, 2026-10-09):** paridad pre-122 con producción; residual reproducido (08:00 → 15:00 UTC); 122 ×2; suite
+  `122_zona_negocio_test.sql` (8); 43 suites re-corridas tras 122 (071–121 y 111); concurrencia 116 con la zona nueva; ensayo OP-03;
+  SEARCH_PATH 119/119. Suites 096/098/100/116/118/119 y el runner derivan ahora sus instantes frontera de `fin_zona_negocio()` (corren
+  antes y después de 122). Vitest 1,481 en UTC / Mazatlán / CDMX / Madrid; lint, typecheck, build y `diff --check` limpios.
+  Runner: `PG_PORT` opcional (dos gates a la vez).
+- **Activación:** 1) 122 aplicada por el dueño ✔ → 2) verificación de solo lectura ✔ → 3) push del commit → 4) bundle vivo con
+  `America/Monterrey` y sin `America/Mazatlan` → 5) este STATUS a DEPLOYED / TECHNICALLY VERIFIED.
+- **Numeración:** la migración multisucursal de la otra sesión también se llamó 122 en su árbol de trabajo (sin commit); ambas se
+  aplicaron en producción. En el repositorio 122 = zona; la multisucursal debe entrar como 123 (aviso enviado a esa sesión).
+- **Turnos de asistencia:** no capturar hasta que 122 esté aplicada (se interpretarían con una hora de desfase). Centro de trabajo ya
+  registrado (id 1, 23.983809, -104.665219, radio 100 m, precisión 50 m; auditoría 762).
+- **Fuera de alcance, observado en solo lectura (2026-10-09):** `error_log` llegó a 253 (STATUS registraba 192) y hubo 3 intentos de
+  timbrado fallidos (órdenes 46 y 56) con GL-3 abierto; el dueño declaró que todos los datos actuales de producción son de prueba
+  y que se borrarán antes del lanzamiento, salvo clientes y catálogo.
 
 ## Dueño, accesos y usuarios (GER-1, mig 120/121) — 2026-10-09
 **DEPLOYED / TECHNICALLY VERIFIED — ALTA DEL EQUIPO PENDIENTE DEL DUEÑO.** Detalle y decisiones cerradas: `docs/sistema/plataforma.md`.
