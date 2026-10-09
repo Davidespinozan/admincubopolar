@@ -1,12 +1,15 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-07 (WF-0.2: superficie de API del Empleado cerrada, 119 activa; WF-0 / PD-01 / PD-02 CLOSED PROD). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-09 (UI mobile-first `f7d5e66` desplegada; BD sin cambio desde 119). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Repositorio desplegado: `089c521ef460d66ec664eb86abd73bee08b58843` (WF-0.1 + PD-02) — DEPLOYED (Netlify
+- Repositorio desplegado: `f7d5e66` (revisión mobile-first, solo UI) — DEPLOYED (Netlify `6ac938a39008ec0008871a75`,
+  2026-10-09); bundle vivo verificado (`boton-avisos`, `topbar-titulo`, `drawer-movil`, `saludo-rol`, "Mi espacio"; sin
+  `modo-prueba-banner` ni "MODO PRUEBA"); 17 digests de Netlify Functions sin cambio. Base anterior:
+  `089c521ef460d66ec664eb86abd73bee08b58843` (WF-0.1 + PD-02) — DEPLOYED (Netlify
   `6ac68d97adc0a60008b1d4d9`, ready 2026-10-07T18:21Z); bundle vivo verificado (`completar_ocurrencia`,
   `guardar_actividad`, `editar_ocurrencia`, `desactivar_actividad`, `p_solo_abiertas`, `mis-actividades`,
   `actividades-vencidas`, `dashboard-calendario`). Netlify Functions: los 17 digests idénticos al deploy anterior
@@ -79,7 +82,8 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 | CLOSURE-1 referencia de pago única (114; R-01 de la auditoría final) | 3bdf4ce | MIGRATION APPLIED ONCE + DEPLOYED / TECHNICALLY VERIFIED / OWNER ACCEPTED; R-01 CLOSED IN PRODUCTION |
 | WF-0 + PD-01 rol Empleado, vínculo empleado ↔ usuario y reloj checador geolocalizado (116) | dddedee | MIGRATION APPLIED ONCE (116 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED; sin cierre del dueño |
 | WF-0.1 aislamiento de lectura del Empleado (117) + PD-02 calendario operativo (118) | 089c521 | MIGRATIONS APPLIED ONCE (117 → 118 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED |
-| WF-0.2 cierre de la superficie de API del Empleado (119) | ver `git log` (feat(119)) | MIGRATION APPLIED ONCE (sin cambio de frontend) / TECHNICALLY VERIFIED |
+| WF-0.2 cierre de la superficie de API del Empleado (119) | 17c6b05 | MIGRATION APPLIED ONCE (sin cambio de frontend) / TECHNICALLY VERIFIED |
+| UI mobile-first: sin banner global de modo prueba (aviso solo en Facturación), cabecera con una campana "Avisos", "Mi espacio" en el menú, menú móvil oscuro con íconos, bienvenida por rol, emojis → SVG, Chofer sin encimados; corrige ciclo infinito de entregas en ChoferView | f7d5e66 | DEPLOYED / TECHNICALLY VERIFIED (solo UI; revisada con capturas WebKit iPhone 14 de los 7 roles con datos de ejemplo); QA del dueño en su iPhone PENDIENTE |
 
 **Clasificación final (2026-10-07):** **WF-0 = CLOSED PROD** · **PD-01 = CLOSED PROD / CONFIGURATION PENDING** (solo
 centro de trabajo real, geocerca, turnos reales y vínculos empleado ↔ usuario) · **PD-02 = CLOSED PROD / OWNER DATA
