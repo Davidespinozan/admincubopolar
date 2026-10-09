@@ -278,3 +278,38 @@ export function pasosConfigAsistencia({ centros = [], turnos = [], empleados = [
       nota: `${ligados.length} de ${activos.length} empleados ligados a su usuario (cada uno marca desde su teléfono).` },
   ];
 }
+
+/**
+ * Recordatorio de asistencia para la pantalla de inicio de cualquier rol
+ * (2026-10-09). Sale de mi_asistencia(): el servidor decide el estado; aquí
+ * solo se traduce a un aviso. null = nada que recordar (sin turno, fuera de
+ * horario, jornada completa o sin ficha de empleado).
+ */
+export function recordatorioAsistencia(mi) {
+  if (!mi) return null;
+  const olvido = mi.salida_olvidada;
+  if (mi.estado === 'pendiente') {
+    const turno = mi.turno_hoy;
+    return {
+      clave: 'entrada', tono: 'aviso', titulo: 'Marca tu entrada',
+      detalle: turno ? `Tu turno de hoy es ${textoTurno(turno)}.` : 'Tienes turno hoy y aún no marcas tu entrada.',
+      cta: 'Marcar entrada',
+    };
+  }
+  if (mi.estado === 'en_turno') {
+    const a = mi.asistencia;
+    return {
+      clave: 'salida', tono: 'ok', titulo: 'Estás en turno',
+      detalle: `Entrada a las ${horaNegocio(a?.entrada_at)}${a?.entrada_estado === 'retardo' ? ` (retardo de ${a.minutos_retardo} min)` : ''}. No olvides marcar tu salida.`,
+      cta: 'Marcar salida',
+    };
+  }
+  if (olvido) {
+    return {
+      clave: 'olvido', tono: 'error', titulo: 'Te faltó marcar una salida',
+      detalle: `Entrada del ${fechaHoraNegocio(olvido.entrada_at)} sin salida. Avisa a Administración para corregirla.`,
+      cta: 'Ver mi asistencia',
+    };
+  }
+  return null;
+}

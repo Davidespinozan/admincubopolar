@@ -12,6 +12,7 @@ import { logErrorToDb } from '../utils/errorLog';
 import { traducirError } from '../utils/errorMessages';
 import { textoSaludo, subtituloRol } from '../data/saludoLogic';
 import { etiquetaRol } from '../data/usuariosLogic';
+import RecordatorioAsistencia from './RecordatorioAsistencia';
 import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
 import { navParaRol, navParaUsuario, MODULO_MI_CUENTA, MODULO_DUENO, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
@@ -360,6 +361,11 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
     return (
       <div className="min-h-dvh text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''} data-modo="enfoque">
         <ChunkErrorBoundary viewName={MODULO_CHOFER.id}>
+          {/* Recordatorio de asistencia también en modo enfoque (solo en la ruta; aparece si hay algo que marcar). */}
+          {view === MODULO_CHOFER.id && !viendoComo && (
+            <RecordatorioAsistencia actions={actions} onIr={() => go(MODULO_MI_ASISTENCIA.id)}
+              envoltura="bg-blue-950 px-4 pb-2 pt-[max(env(safe-area-inset-top,0px),0.75rem)]" />
+          )}
           <Suspense fallback={<div className="p-4"><ViewSkeleton /></div>}>
             {view === MODULO_MI_ASISTENCIA.id
               ? <div className="mx-auto max-w-lg px-4 py-4"><MiAsistenciaView actions={actions} onVolver={() => go(MODULO_CHOFER.id)} /></div>
@@ -703,6 +709,10 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       {/* ═══ MAIN ═══ */}
       <main className={`px-4 pt-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px] ${bottomNav ? "pb-[calc(env(safe-area-inset-bottom,0px)+88px)]" : "pb-8"}`} data-bottom-nav={bottomNav ? 'si' : 'no'}>
         <div className="relative">
+          {/* Recordatorio de asistencia en la pantalla de inicio de TODOS los roles (si hay algo que marcar). */}
+          {view === nav.inicio && view !== MODULO_MI_ASISTENCIA.id && !viendoComo && (
+            <RecordatorioAsistencia className="mb-4" actions={actions} onIr={() => go(MODULO_MI_ASISTENCIA.id)} />
+          )}
           {/* Bienvenida en la pantalla de inicio de cada rol (el Resumen de Admin trae la suya). */}
           {view === nav.inicio && view !== 'dashboard' && (
             <div className="relative mb-4" data-testid="saludo-rol">
