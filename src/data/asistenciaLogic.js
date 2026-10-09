@@ -261,3 +261,20 @@ export function enlaceMapa(lat, lng) {
   if (lat == null || lng == null) return null;
   return `https://www.google.com/maps?q=${Number(lat)},${Number(lng)}`;
 }
+
+// Pasos de puesta en marcha del reloj checador (guía de Admin, 2026-10-09).
+// Orden real: sin centro no hay turnos; sin vínculo el empleado no puede marcar.
+export function pasosConfigAsistencia({ centros = [], turnos = [], empleados = [] } = {}) {
+  const activos = (empleados || []).filter(e => (e?.estatus || 'Activo') === 'Activo');
+  const ligados = activos.filter(e => e?.usuarioId ?? e?.usuario_id);
+  const centrosActivos = (centros || []).filter(c => c?.activo !== false);
+  const turnosActivos = (turnos || []).filter(t => t?.activo !== false);
+  return [
+    { k: 'centro', label: 'Centro de trabajo', hecho: centrosActivos.length > 0,
+      nota: centrosActivos.length > 0 ? `${centrosActivos.length} configurado(s)` : 'Ubicación y radio de la planta donde se marca la entrada.' },
+    { k: 'turnos', label: 'Turnos', hecho: turnosActivos.length > 0,
+      nota: turnosActivos.length > 0 ? `${turnosActivos.length} turno(s)` : 'Días, hora de entrada y salida y tolerancia de cada empleado.' },
+    { k: 'accesos', label: 'Accesos', hecho: activos.length > 0 && ligados.length === activos.length,
+      nota: `${ligados.length} de ${activos.length} empleados ligados a su usuario (cada uno marca desde su teléfono).` },
+  ];
+}

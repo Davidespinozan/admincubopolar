@@ -359,6 +359,44 @@ export const ChoiceButton = ({ active, tone = "blue", onClick, children, classNa
   </button>
 );
 
+// ─── GUÍA ───
+// "Cómo funciona" de una pantalla: título, texto y, opcional, pasos con estado
+// (hecho / pendiente). Un paso con `onClick` lleva a donde se completa.
+export const Guia = ({ titulo, children, pasos, className = "", testid }) => (
+  <div className={`rounded-card border border-sky-100 bg-sky-50/70 p-4 text-[13px] text-slate-700 ${className}`} data-testid={testid}>
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 flex-shrink-0 text-sky-700"><Icons.Info /></span>
+      <div className="min-w-0 flex-1">
+        {titulo && <p className="text-[14px] font-semibold text-ink">{titulo}</p>}
+        {children && <div className="mt-0.5 leading-5">{children}</div>}
+        {pasos && pasos.length > 0 && (
+          <ol className="mt-3 space-y-1.5">
+            {pasos.map((p, i) => {
+              const cuerpo = (<>
+                <span className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${p.hecho ? 'bg-emerald-600 text-white' : 'border border-slate-300 bg-white text-slate-500'}`}>
+                  {p.hecho ? <Icons.Check /> : i + 1}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className={`block font-semibold ${p.hecho ? 'text-slate-500' : 'text-ink'}`}>{p.label}</span>
+                  {p.nota && <span className="block text-[12px] text-slate-500">{p.nota}</span>}
+                </span>
+                {p.onClick && !p.hecho && <span className="flex-shrink-0 text-sky-700"><Icons.ChevronRight /></span>}
+              </>);
+              return (
+                <li key={p.label}>
+                  {p.onClick
+                    ? <button type="button" onClick={p.onClick} className="flex w-full items-center gap-2.5 rounded-field px-1 py-1 text-left transition-colors hover:bg-white/70">{cuerpo}</button>
+                    : <div className="flex items-center gap-2.5 px-1 py-1">{cuerpo}</div>}
+                </li>
+              );
+            })}
+          </ol>
+        )}
+      </div>
+    </div>
+  </div>
+);
+
 // ─── KPI TILE ───
 // Cifra de cabecera: etiqueta 11 px, cifra tabular, pista. En `grid grid-cols-2`.
 export const KpiTile = ({ label, value, hint, compact = false, tone, children, className = "" }) => (

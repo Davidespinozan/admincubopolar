@@ -3,7 +3,7 @@
 // rastreo continuo). Persona, hora, turno, geocerca y retardo los decide el
 // servidor; sin conexión no se marca (no hay cola offline: la hora es la del servidor).
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Card, SectionLabel } from './ui/Components';
+import { Card, SectionLabel, Guia } from './ui/Components';
 import {
   GEO_OPCIONES, mensajeErrorGeo, mensajeRegistro, pantallaMiAsistencia, horaNegocio, fechaHoraNegocio, textoTurno,
 } from '../data/asistenciaLogic';
@@ -133,6 +133,12 @@ export default function MiAsistenciaView({ actions, onVolver }) {
           {fase === 'ubicando' ? 'Obteniendo ubicación…' : fase === 'enviando' ? 'Registrando…' : p.boton.label}
         </button>
       )}
+
+      <Guia testid="guia-mi-asistencia" titulo={turno ? '¿Cómo funciona?' : 'Aún no tienes turno'}>
+        {turno
+          ? 'Al llegar al centro de trabajo toca “Marcar entrada”; al irte, “Marcar salida”. Administración ve tu asistencia y solo puede corregirla con un motivo que queda registrado.'
+          : 'Administración configura en Asistencia el centro de trabajo, tu turno y liga tu usuario. En cuanto lo haga, aquí aparecerá el botón para marcar tu entrada.'}
+      </Guia>
 
       <p className="px-1 text-xs text-slate-400">
         Tu ubicación se lee una sola vez, solo al tocar el botón. La entrada se marca dentro del centro de trabajo; la salida se puede marcar fuera y queda señalada.

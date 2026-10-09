@@ -4,12 +4,12 @@
 // Turnos, centro de trabajo y accesos (empleado ↔ usuario) se configuran aquí;
 // nada se inventa: sin centro ni turnos el empleado ve "configuración pendiente".
 import { useEffect } from 'react';
-import { useState, useCallback, useMemo, Modal, FormInput, FormSelect, FormBtn, PageHeader, EmptyState } from './viewsCommon';
+import { useState, useCallback, useMemo, Modal, FormInput, FormSelect, FormBtn, PageHeader, EmptyState, Guia, Chips } from './viewsCommon';
 import { nuevoOperacionId } from '../../data/stockContratosLogic';
 import { FormTextarea } from '../ui/Modal';
 import {
   estadoDia, horaNegocio, fechaHoraNegocio, datetimeLocalNegocio, textoTurno, textoDias, horaCorta, enlaceMapa,
-  DIAS_SEMANA, GEO_OPCIONES, mensajeErrorGeo,
+  DIAS_SEMANA, GEO_OPCIONES, mensajeErrorGeo, pasosConfigAsistencia,
 } from '../../data/asistenciaLogic';
 import { diaNegocio } from '../../utils/fechas';
 
@@ -31,17 +31,24 @@ function Chip({ estado }) {
 
 export function AsistenciaView({ data, actions }) {
   const [tab, setTab] = useState('dia');
+  const { cfg, cargar: recargarCfg } = useConfig(actions);
+  // La guía se actualiza al cambiar de pestaña (tras guardar centro/turnos/accesos).
+  const irA = (k) => { setTab(k); recargarCfg(); };
+  const pasos = cfg ? pasosConfigAsistencia({ centros: cfg.centros, turnos: cfg.turnos, empleados: data.empleados }) : null;
+  const listo = !!pasos && pasos.every(p => p.hecho);
   return (
     <div>
       <PageHeader title="Asistencia" subtitle="Reloj checador: entradas, salidas, turnos y centro de trabajo" />
-      <div className="-mx-3 mb-4 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
-        {TABS.map(t => (
-          <button key={t.k} type="button" onClick={() => setTab(t.k)}
-            className={`min-h-[40px] flex-shrink-0 rounded-[14px] px-4 text-sm font-semibold ${tab === t.k ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>
-            {t.l}
-          </button>
-        ))}
-      </div>
+      {pasos && (
+        <Guia className="mb-4" testid="guia-asistencia"
+          titulo={listo ? 'Reloj checador listo' : 'Pon en marcha el reloj checador'}
+          pasos={listo ? undefined : pasos.map(p => ({ ...p, onClick: () => irA(p.k) }))}>
+          {listo
+            ? 'Cada empleado marca su entrada y salida en “Mi asistencia” desde su teléfono, dentro del centro de trabajo. Aquí ves el día y corriges con motivo.'
+            : 'Los empleados marcan en “Mi asistencia” desde su teléfono. Antes, completa estos pasos aquí:'}
+        </Guia>
+      )}
+      <Chips className="mb-4" items={TABS} value={tab} onChange={irA} />
       {tab === 'dia' && <Dia actions={actions} />}
       {tab === 'turnos' && <Turnos data={data} actions={actions} />}
       {tab === 'centro' && <Centro actions={actions} />}

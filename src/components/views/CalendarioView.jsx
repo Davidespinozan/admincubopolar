@@ -4,7 +4,7 @@
 // desactivar. `personal`: "Mis actividades" (solo lo asignado a la sesión; sin
 // edición). Estado, fechas y permisos los decide el servidor (calendario()).
 import { useEffect, useRef } from 'react';
-import { useState, useCallback, useMemo, Modal, FormInput, FormSelect, FormBtn, PageHeader, EmptyState } from './viewsCommon';
+import { useState, useCallback, useMemo, Modal, FormInput, FormSelect, FormBtn, PageHeader, EmptyState, Guia } from './viewsCommon';
 import { FormTextarea } from '../ui/Modal';
 import {
   estadoActividad, textoClasificacion, textoRecurrencia, textoResponsable, fechaCorta, rangoVista, filtrarVista, celdasDeMes,
@@ -64,6 +64,17 @@ export function CalendarioView({ data, actions, personal = false, onVolver }) {
         subtitle={personal ? 'Lo que tienes asignado: pendientes, próximas y completadas' : 'Mantenimientos, pagos y obligaciones con su ventana de ejecución'}
         action={esAdmin ? () => setForm({ recurrencia: 'mensual', categoria: 'mantenimiento', visibilidad: 'asignado', asignado_puede_completar: true, responsable_tipo: 'ninguno', dia_inicio: 1, dia_fin: 5 }) : undefined}
         actionLabel={esAdmin ? 'Nueva actividad' : undefined} />
+      {personal ? (
+        <Guia className="mb-4" testid="guia-mis-actividades" titulo="¿De dónde salen estas actividades?">
+          Administración las asigna desde su Calendario (mantenimientos, limpieza, pagos, revisiones). Te aparecen aquí cuando
+          empieza su ventana; tócala y márcala como completada cuando la hagas. La hora la registra el sistema.
+        </Guia>
+      ) : esAdmin && (
+        <Guia className="mb-4" testid="guia-calendario" titulo="Cómo funciona">
+          Crea una actividad con su responsable (una persona o un rol) y su ventana. Al responsable le aparece en “Mis actividades”
+          y la marca como completada; aquí ves cuáles están pendientes, vencidas o hechas y quién las hizo.
+        </Guia>
+      )}
       <div className="-mx-3 mb-4 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" data-testid="calendario-pestanas">
         {VISTAS.filter(v => !personal || v.k !== 'mes').map(v => (
           <button key={v.k} type="button" onClick={() => setVista(v.k)}

@@ -1,5 +1,5 @@
 import { camposAltaProducto, REGLA_ENTRADA_EMPAQUE } from '../../data/empaqueLogic';
-import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtMoney, useDebounce, useToast, useConfirm, reporteInventario, PAGE_SIZE, Paginator, normalizeStr } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormSelect, FormBtn, s, n, fmtMoney, useDebounce, useToast, useConfirm, reporteInventario, PAGE_SIZE, Paginator, normalizeStr, Guia } from './viewsCommon';
 
 export function ProductosView({ data, actions }) {
   const toast = useToast();
@@ -82,6 +82,10 @@ export function ProductosView({ data, actions }) {
   return (<div>
     {ConfirmEl}
     <PageHeader title="Catálogo de Productos" subtitle="Empaque y producto terminado" action={openNew} actionLabel="Nuevo producto" extraButtons={exportBtns} />
+    <Guia className="mb-4" testid="guia-catalogo" titulo="Los costos no se capturan aquí">
+      El hielo no lleva costo capturado: cada producción toma el costo de la bolsa que usa. El costo de cada bolsa
+      (“Costo prom.”) lo calcula el sistema con sus compras recibidas en Insumos. Aquí solo defines precio, empaque y datos fiscales.
+    </Guia>
     {hasDemoProducts && (
       <div className="mb-4 flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
         <span className="text-amber-700 text-sm">Se detectaron productos de demostración (DEMO-*).</span>

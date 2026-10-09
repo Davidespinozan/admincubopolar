@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { diaNegocio } from '../../utils/fechas';
 import { rangoMes } from '../../data/finanzasLogic';
-import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, fmtDate, fmtMoney, useToast, PAGE_SIZE, Paginator, KpiTile, SegmentedTabs, Icons } from './viewsCommon';
+import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, fmtDate, fmtMoney, useToast, PAGE_SIZE, Paginator, KpiTile, SegmentedTabs, Icons, Guia } from './viewsCommon';
 
 const CATEGORIAS_COSTO = ['Nómina', 'Renta', 'Servicios', 'Gasolina', 'Mantenimiento', 'Empaque', 'Materia Prima', 'Administrativo', 'Otro'];
 const FRECUENCIAS = ['Mensual', 'Quincenal', 'Semanal', 'Único'];
@@ -167,6 +167,10 @@ export function CostosView({ data, actions }) {
   return (<div>
     {ConfirmEl}
     <PageHeader title="Costos y Gastos" subtitle="Gestión de costos fijos y variables" />
+    <Guia className="mb-4" testid="guia-costos" titulo="Qué va aquí">
+      Solo los gastos del negocio que no salen de otra operación: renta, luz, agua, mantenimiento y similares.
+      El costo del hielo no se registra aquí: lo calcula el sistema con las bolsas que usa cada producción (compras en Insumos).
+    </Guia>
 
     {/* Summary Cards */}
     <div className="grid grid-cols-2 gap-3 mb-4 lg:grid-cols-4">
