@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { Icons } from './ui/Icons';
+import { BtnSpinner } from './ui/Skeleton';
 
 export default function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [verPass, setVerPass] = useState(false);
 
   const handle = async (event) => {
     event?.preventDefault();
@@ -54,56 +57,59 @@ export default function LoginScreen({ onLogin }) {
 
   return (
     <div
-      className="min-h-dvh overflow-y-auto bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 px-4 pb-6 text-white sm:px-6 sm:pb-8"
+      className="relative min-h-dvh overflow-y-auto bg-gradient-to-b from-[#0b1f3a] via-[#0f172a] to-[#0b1220] px-4 text-white"
       style={{
-        // Safe areas de iPhone (notch / Dynamic Island, home indicator y
-        // bordes en landscape). Mobile-first 2026-10-09: sin banner global
-        // de modo prueba, el login respeta el safe-area superior él mismo.
         paddingTop: 'max(env(safe-area-inset-top, 0px), 1.5rem)',
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 1.5rem)',
-        paddingLeft: 'max(env(safe-area-inset-left, 0px), 1rem)',
-        paddingRight: 'max(env(safe-area-inset-right, 0px), 1rem)',
+        paddingLeft: 'max(env(safe-area-inset-left, 0px), 1.25rem)',
+        paddingRight: 'max(env(safe-area-inset-right, 0px), 1.25rem)',
       }}
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-cyan-300/14 blur-3xl" />
-        <div className="absolute bottom-[-6%] right-[-8%] h-[22rem] w-[22rem] rounded-full bg-amber-200/12 blur-3xl" />
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute left-1/2 top-[-18%] h-[26rem] w-[26rem] -translate-x-1/2 rounded-full bg-cyan-400/10 blur-3xl" />
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" />
       </div>
-      <div className="relative mx-auto flex min-h-[calc(100dvh-3rem)] w-full max-w-md items-center justify-center md:max-w-lg">
-        <div className="relative w-full">
-          <div className="mb-6 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-[22px] border border-white/12 bg-white/8 shadow-[0_18px_36px_rgba(3,14,19,0.36)]">
-              <img src="/icon-512.png" alt="CuboPolar" className="block h-11 w-11 object-contain" />
-            </div>
-            <p className="erp-kicker text-cyan-200/70">CuboPolar ERP</p>
-            <h1 className="font-display mt-3 text-3xl font-bold tracking-[-0.04em] text-white">Acceso al sistema</h1>
-            <p className="mt-2 text-sm text-slate-300">Ingresa con tu cuenta para continuar.</p>
+      <div className="relative mx-auto flex min-h-[calc(100dvh-3rem)] w-full max-w-sm flex-col justify-center">
+        <div className="mb-8 text-center animate-view-in">
+          <div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-[26px] border border-white/10 bg-white/[0.06] shadow-pop">
+            <img src="/icon-512.png" alt="CuboPolar" className="block h-12 w-12 object-contain" />
           </div>
-
-          <div className="rounded-[32px] border border-white/10 bg-white/[0.08] p-6 shadow-[0_26px_60px_rgba(2,10,15,0.42)] backdrop-blur-2xl sm:p-7">
-            <form className="space-y-4" onSubmit={handle}>
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/60 sm:tracking-[0.18em]">Correo</label>
-                <input value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com" type="email" autoComplete="email"
-                  data-testid="login-email"
-                  className="w-full rounded-[18px] border border-white/10 bg-slate-800 px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:border-cyan-300/60 focus:outline-none focus:ring-2 focus:ring-cyan-200/10" />
-              </div>
-              <div>
-                <label className="mb-1.5 block text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100/60 sm:tracking-[0.18em]">Contrasena</label>
-                <input value={pass} onChange={e => setPass(e.target.value)} type="password" placeholder="••••••" autoComplete="current-password"
-                  data-testid="login-password"
-                  className="w-full rounded-[18px] border border-white/10 bg-slate-800 px-4 py-3 text-sm text-white placeholder:text-slate-400 focus:border-cyan-300/60 focus:outline-none focus:ring-2 focus:ring-cyan-200/10" />
-              </div>
-              {err && <p className="rounded-2xl border border-red-400/20 bg-red-500/8 px-3 py-2 text-xs font-medium text-red-200" role="alert" aria-live="polite">{err}</p>}
-              <button type="submit" disabled={loading}
-                data-testid="login-submit"
-                className="w-full rounded-[18px] bg-gradient-to-r from-[#0c708d] to-[#0f8fb2] py-3 text-sm font-bold text-white shadow-[0_20px_32px_rgba(12,112,141,0.28)] transition-all hover:translate-y-[-1px] hover:from-[#0f7d9d] hover:to-[#11a0c9] disabled:opacity-50">
-                {loading ? "Verificando..." : "Iniciar sesion"}
-              </button>
-            </form>
-          </div>
+          <p className="erp-kicker text-cyan-200/70">CUBOPOLAR</p>
+          <h1 className="font-display mt-2 text-[1.9rem] font-bold text-white">Bienvenido</h1>
+          <p className="mt-1.5 text-[15px] text-slate-300">Entra con tu cuenta para empezar el día.</p>
         </div>
+
+        <form className="space-y-4 animate-view-in" onSubmit={handle} noValidate>
+          <div>
+            <label htmlFor="login-email" className="mb-1.5 block text-[13px] font-medium text-slate-300">Correo</label>
+            <input id="login-email" value={email} onChange={e => setEmail(e.target.value)} placeholder="tu@correo.com" type="email" autoComplete="email" inputMode="email" autoCapitalize="none"
+              data-testid="login-email"
+              className="min-h-[52px] w-full rounded-[16px] border border-white/10 bg-white/[0.07] px-4 py-3 text-[16px] text-white placeholder:text-slate-500 focus:border-cyan-300/50 focus:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-300/20" />
+          </div>
+          <div>
+            <label htmlFor="login-password" className="mb-1.5 block text-[13px] font-medium text-slate-300">Contraseña</label>
+            <div className="relative">
+              <input id="login-password" value={pass} onChange={e => setPass(e.target.value)} type={verPass ? "text" : "password"} placeholder="••••••••" autoComplete="current-password"
+                data-testid="login-password"
+                className="min-h-[52px] w-full rounded-[16px] border border-white/10 bg-white/[0.07] px-4 py-3 pr-14 text-[16px] text-white placeholder:text-slate-500 focus:border-cyan-300/50 focus:bg-white/10 focus:outline-none focus:ring-2 focus:ring-cyan-300/20" />
+              <button type="button" onClick={() => setVerPass(v => !v)} aria-label={verPass ? "Ocultar contraseña" : "Mostrar contraseña"}
+                className="absolute right-1.5 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full text-slate-400 hover:bg-white/10 hover:text-white">
+                <Icons.Eye />
+              </button>
+            </div>
+          </div>
+          {err && (
+            <p className="flex items-start gap-2 rounded-[14px] border border-red-400/20 bg-red-500/10 px-3.5 py-3 text-[13px] font-medium text-red-200" role="alert" aria-live="polite">
+              <span className="mt-0.5 flex-shrink-0"><Icons.AlertTriangle /></span>{err}
+            </p>
+          )}
+          <button type="submit" disabled={loading}
+            data-testid="login-submit"
+            className="mt-2 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-[16px] bg-cyan-300 text-[15px] font-bold text-[#0b1f3a] shadow-[0_14px_32px_-10px_rgba(103,232,249,0.6)] transition-all hover:bg-cyan-200 disabled:opacity-60">
+            {loading ? <><BtnSpinner /> Verificando…</> : "Iniciar sesión"}
+          </button>
+        </form>
+        <p className="mt-8 text-center text-[12px] text-slate-500">Sistema operativo de Cubo Polar · Mazatlán</p>
       </div>
     </div>
   );

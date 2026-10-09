@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { resolverOperacion, claveTraspaso, claveAjusteCuarto } from '../../data/stockContratosLogic';
-import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtPct, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtPct, useToast, PAGE_SIZE, Paginator, PageHeader } from './viewsCommon';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { esEmpaque, validarAjusteExistencia, REGLA_ENTRADA_EMPAQUE } from '../../data/empaqueLogic';
 
@@ -189,19 +189,15 @@ export function InventarioView({ data, actions }) {
 
   return (<div>
     {ConfirmEl}
-    <div className="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
-      <div><h2 className="text-lg font-bold text-slate-800">Inventario</h2><p className="text-xs text-slate-400">Cuartos fríos, existencias y movimientos</p></div>
-      <div className="flex flex-wrap gap-2">
-        <button onClick={()=>{setCfForm({nombre:"",temp:"-10",capacidad:"0"});setCfModal("new")}} className="flex-1 sm:flex-none px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Cuarto Frío</button>
-        <button onClick={()=>{
+    <PageHeader title="Congeladores" subtitle="Cuartos fríos, existencias y movimientos"
+      action={()=>{setCfForm({nombre:"",temp:"-10",capacidad:"0"});setCfModal("new")}} actionLabel="Nuevo cuarto"
+      extraButtons={<button onClick={()=>{
           const cfs = (data.cuartosFrios || []).map(c => s(c.id));
           const firstSku = (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado")[0]?.sku || "";
           setTraspasoForm({origen: cfs[0] || "", destino: cfs[1] || cfs[0] || "", sku: s(firstSku), cantidad:""});
           setTraspasoModal(true); setTraspasoErrors({});
-        }} className="flex-1 sm:flex-none px-3 py-2 bg-blue-600 text-white text-xs font-bold rounded-xl min-h-[44px]">Traspaso</button>
-      </div>
-    </div>
-    <div className="flex sm:grid sm:grid-cols-3 gap-3 sm:gap-4 mb-4 sm:mb-6 overflow-x-auto sm:overflow-x-visible pb-1 sm:pb-0 snap-x snap-mandatory -mx-4 px-4 sm:mx-0 sm:px-0">
+        }} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-field border border-line bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Icons.Swap /> Traspaso</button>} />
+    <div className="grid gap-3 mb-4 sm:grid-cols-3 sm:gap-4 sm:mb-6">
       {totalStockByCF.length === 0 ? <EmptyState message="Sin cuartos fríos" /> :
       totalStockByCF.map(cf=><div key={cf.id} className="min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 snap-start">
         <div className="flex items-center justify-between mb-3">

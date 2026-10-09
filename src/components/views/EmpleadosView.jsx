@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, todayISO, fmtMoney } from './viewsCommon';
+import { useState, useMemo, Icons, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, todayISO, fmtMoney, PageHeader } from './viewsCommon';
 
 export function EmpleadosView({ data, actions }) {
   const toast = useToast();
@@ -119,10 +119,7 @@ export function EmpleadosView({ data, actions }) {
 
   return (<div className="space-y-4">
     {ConfirmEl}
-    <div className="flex items-center justify-between">
-      <div><h2 className="text-lg font-bold text-slate-800">Empleados ({emps.length})</h2></div>
-      <button onClick={openNew} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo empleado</button>
-    </div>
+    <PageHeader title={`Empleados (${emps.length})`} subtitle="Personal de la empresa" action={openNew} actionLabel="Nuevo empleado" />
     <div className="flex flex-col sm:flex-row items-stretch gap-2">
       <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Buscar por nombre, puesto o departamento..." className="flex-1 px-3 py-2.5 border border-slate-200 rounded-xl text-sm min-h-[44px]" />
       <select value={filterEstatus} onChange={e => setFilterEstatus(e.target.value)} className="px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white min-h-[44px]">
@@ -135,8 +132,8 @@ export function EmpleadosView({ data, actions }) {
     {filtered.length === 0 && (
       <EmptyState
         message={search || filterEstatus !== "Activos" ? "Sin resultados" : "Aún no hay empleados activos"}
-        hint={search || filterEstatus !== "Activos" ? "Intenta con otra búsqueda o limpia los filtros" : "Click + Nuevo empleado para empezar"}
-        cta={search || filterEstatus !== "Activos" ? "Limpiar filtros" : "+ Nuevo empleado"}
+        hint={search || filterEstatus !== "Activos" ? "Intenta con otra búsqueda o limpia los filtros" : "Registra al personal para asistencia y nómina"}
+        cta={search || filterEstatus !== "Activos" ? "Limpiar filtros" : "Nuevo empleado"}
         onCta={search || filterEstatus !== "Activos" ? () => { setSearch(''); setFilterEstatus('Activos'); } : openNew}
       />
     )}

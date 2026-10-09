@@ -610,7 +610,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             ) : (
               <div className="space-y-2">
                 {tableroDemanda.map(r => (
-                  <div key={r.sku} className={`rounded-[16px] border p-3 ${r.faltante > 0 ? 'border-amber-200 bg-white' : 'border-slate-100 bg-slate-50'}`}>
+                  <div key={r.sku} className={`rounded-card border p-3 ${r.faltante > 0 ? 'border-amber-200 bg-white' : 'border-slate-100 bg-slate-50'}`}>
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <p className="truncate text-sm font-semibold text-slate-800">{r.producto}</p>
                       {r.faltante > 0 ? (
@@ -778,8 +778,8 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 )}
                 <div className="border-t border-slate-100">
                   <button type="button" onClick={() => { setSacarModal({ cfId: s(cf.id), cfNombre: s(cf.nombre) }); setSacarForm({ sku: "", cantidad: "", motivo: "", detalle: "" }); }}
-                    className="min-h-[44px] w-full py-3 text-xs font-bold text-amber-700 active:bg-amber-50">
-                    − Sacar hielo (carga a ruta / otro)
+                    className="flex min-h-[48px] w-full items-center justify-center gap-1.5 py-3 text-[13px] font-semibold text-amber-700 active:bg-amber-50">
+                    <Icons.Minus /> Sacar hielo (carga a ruta / otro)
                   </button>
                 </div>
               </Card>
@@ -896,11 +896,28 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       </div>
 
       {/* ═══ MODAL: Ya produje hielo ═══ */}
-      <Modal open={!!modal} onClose={cerrarProd} kicker="Producción" title="¿Qué produjiste?" safeBottom closeOnEscape={!guardandoProd}>
+      <Modal open={!!modal} onClose={cerrarProd} kicker="Producción" title="¿Qué produjiste?" safeBottom closeOnEscape={!guardandoProd}
+        footer={
+          <FormBtn primary size="lg" className="w-full" onClick={registrarProduccion}
+            disabled={
+              guardandoProd ||
+              !form.sku ||
+              !form.cantidad || n(form.cantidad) <= 0 ||
+              !bolsaSku ||
+              n(form.cantidad) > stockBolsa ||
+              (form.conMerma && (
+                !form.mermaCantidad || n(form.mermaCantidad) <= 0 ||
+                n(form.mermaCantidad) > n(form.cantidad) ||
+                !fotoMermaProdFile
+              ))
+            }>
+            {guardandoProd ? 'Guardando...' : 'Registrar producción'}
+          </FormBtn>
+        }>
         <div className="space-y-3">
           <div>
             <label className={LABEL}>Producto</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               {skuOptions.map(p => (
                 <ChoiceButton key={p.sku} active={form.sku === s(p.sku)} onClick={() => setForm(f => ({ ...f, sku: s(p.sku) }))} className="text-xs">
                   {s(p.nombre)}
@@ -940,7 +957,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           </div>
           <div>
             <label className={LABEL}>Turno</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               {["Turno 1", "Turno 2", "Turno 3"].map(t => (
                 <ChoiceButton key={t} active={form.turno === t} onClick={() => setForm(f => ({ ...f, turno: t }))}>
                   {t}
@@ -997,11 +1014,11 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                 <label className={`${LABEL} mb-2`}>Evidencia (foto) *</label>
                 {fotoMermaProdPreview ? (
                   <div>
-                    <img src={fotoMermaProdPreview} alt="Evidencia" className="h-32 w-full rounded-xl border border-emerald-300 object-cover" />
+                    <img src={fotoMermaProdPreview} alt="Evidencia" className="h-32 w-full rounded-field border border-emerald-300 object-cover" />
                     <button type="button" onClick={clearFotoMermaProd} className="mt-1 text-xs text-slate-400">Tomar otra</button>
                   </div>
                 ) : (
-                  <label className="flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-[16px] border-2 border-dashed border-slate-300 py-4 text-xs font-semibold text-slate-500">
+                  <label className="flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-field border-2 border-dashed border-slate-300 py-4 text-[13px] font-semibold text-slate-500">
                     <Icons.Camera /> Tomar foto de evidencia
                     <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePickFile(clearFotoMermaProd, setFotoMermaProdFile, setFotoMermaProdPreview)} />
                   </label>
@@ -1010,25 +1027,15 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             </Card>
           )}
         </div>
-        <FormBtn primary size="lg" className="mt-4 w-full" onClick={registrarProduccion}
-          disabled={
-            guardandoProd ||
-            !form.sku ||
-            !form.cantidad || n(form.cantidad) <= 0 ||
-            !bolsaSku ||
-            n(form.cantidad) > stockBolsa ||
-            (form.conMerma && (
-              !form.mermaCantidad || n(form.mermaCantidad) <= 0 ||
-              n(form.mermaCantidad) > n(form.cantidad) ||
-              !fotoMermaProdFile
-            ))
-          }>
-          {guardandoProd ? 'Guardando...' : 'Registrar producción'}
-        </FormBtn>
       </Modal>
 
       {/* ═══ MODAL: Mover entre congeladores ═══ */}
-      <Modal open={!!traspasoModal} onClose={() => setTraspasoModal(false)} kicker="Movimiento" title="Mover entre congeladores" safeBottom closeOnEscape={!haciendoTraspaso}>
+      <Modal open={!!traspasoModal} onClose={() => setTraspasoModal(false)} kicker="Movimiento" title="Mover entre congeladores" safeBottom closeOnEscape={!haciendoTraspaso}
+        footer={
+          <FormBtn primary size="lg" className="w-full" onClick={hacerTraspaso} disabled={haciendoTraspaso || !tForm.cantidad || n(tForm.cantidad) <= 0 || tForm.origen === tForm.destino}>
+            {haciendoTraspaso ? 'Trasladando…' : 'Mover'}
+          </FormBtn>
+        }>
         <div className="space-y-3">
           <div>
             <label className={LABEL}>De</label>
@@ -1052,7 +1059,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           </div>
           <div>
             <label className={LABEL}>Producto</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               {skuOptions.map(p => (
                 <ChoiceButton key={p.sku} active={tForm.sku === s(p.sku)} onClick={() => setTForm(f => ({ ...f, sku: s(p.sku) }))} className="text-xs">
                   {s(p.sku)}
@@ -1063,19 +1070,21 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           <FormInput label="Cantidad" type="number" min="0" inputMode="numeric" value={tForm.cantidad} onChange={e => setTForm(f => ({ ...f, cantidad: e.target.value }))}
             inputClassName="text-center !text-xl font-bold" placeholder="Cantidad" />
         </div>
-        <FormBtn primary size="lg" className="mt-4 w-full" onClick={hacerTraspaso} disabled={haciendoTraspaso || !tForm.cantidad || n(tForm.cantidad) <= 0 || tForm.origen === tForm.destino}>
-          {haciendoTraspaso ? 'Trasladando…' : 'Mover'}
-        </FormBtn>
       </Modal>
 
       {/* ═══ MODAL: Sacar hielo ═══ */}
-      <Modal open={!!sacarModal} onClose={() => setSacarModal(null)} kicker="Salida" title="Sacar hielo" safeBottom closeOnEscape={!haciendoSalida}>
+      <Modal open={!!sacarModal} onClose={() => setSacarModal(null)} kicker="Salida" title="Sacar hielo" safeBottom closeOnEscape={!haciendoSalida}
+        footer={sacarModal && (
+          <FormBtn warning size="lg" className="w-full" onClick={hacerSalida} disabled={haciendoSalida || !sacarForm.cantidad || n(sacarForm.cantidad) <= 0 || !s(sacarForm.motivo)}>
+            {haciendoSalida ? 'Sacando…' : 'Sacar del congelador'}
+          </FormBtn>
+        )}>
         {sacarModal && (<>
           <p className="mb-4 text-sm text-slate-500">{sacarModal.cfNombre}</p>
           <div className="space-y-3">
             <div>
               <label className={LABEL}>Producto</label>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="grid grid-cols-2 gap-2">
                 {skuOptions.map(p => (
                   <ChoiceButton key={p.sku} active={sacarForm.sku === s(p.sku)} onClick={() => setSacarForm(f => ({ ...f, sku: s(p.sku) }))} className="text-xs">
                     {s(p.sku)}
@@ -1087,7 +1096,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               inputClassName="text-center !text-xl font-bold" placeholder="Cantidad" autoFocus />
             <div>
               <label className={LABEL}>Motivo</label>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="grid grid-cols-2 gap-2">
                 {MOTIVOS_SALIDA_MANUAL.map(m => (
                   <ChoiceButton key={m} tone="amber" active={sacarForm.motivo === m} onClick={() => setSacarForm(f => ({ ...f, motivo: m }))} className="text-xs">
                     {m}
@@ -1103,18 +1112,20 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               <p className="mt-2 text-[11px] text-slate-400">Producto dañado o perdido: usa <b>Merma</b>. Diferencia de conteo: la ajusta Admin en Inventario.</p>
             </div>
           </div>
-          <FormBtn warning size="lg" className="mt-4 w-full" onClick={hacerSalida} disabled={haciendoSalida || !sacarForm.cantidad || n(sacarForm.cantidad) <= 0 || !s(sacarForm.motivo)}>
-            {haciendoSalida ? 'Sacando…' : 'Sacar del congelador'}
-          </FormBtn>
         </>)}
       </Modal>
 
       {/* ═══ MODAL MERMA ═══ */}
-      <Modal open={!!mermaModal} onClose={() => setMermaModal(false)} kicker="Merma" title="Registrar merma" safeBottom closeOnEscape={!guardandoMerma}>
+      <Modal open={!!mermaModal} onClose={() => setMermaModal(false)} kicker="Merma" title="Registrar merma" safeBottom closeOnEscape={!guardandoMerma}
+        footer={
+          <FormBtn danger size="lg" className="w-full" onClick={registrarMerma} disabled={guardandoMerma || !mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMermaFile}>
+            {guardandoMerma ? 'Guardando...' : 'Registrar merma'}
+          </FormBtn>
+        }>
         <div className="space-y-3">
           <div>
             <label className={LABEL}>Producto</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               {(data.productos || []).filter(p => s(p.tipo) === "Producto Terminado").map(p => (
                 <ChoiceButton key={p.sku} tone="red" active={mForm.sku === s(p.sku)} onClick={() => setMForm(f => ({ ...f, sku: s(p.sku) }))} className="text-xs">
                   {s(p.nombre)}
@@ -1126,7 +1137,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             inputClassName="text-center !text-xl font-bold" placeholder="0" />
           <div>
             <label className={LABEL}>Causa</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               {MERMA_CAUSAS.map(c => (
                 <ChoiceButton key={c} tone="red" active={mForm.causa === c} onClick={() => setMForm(f => ({ ...f, causa: c }))} className="text-xs">
                   {c}
@@ -1147,18 +1158,15 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
           <div>
             <label className={`${LABEL} mb-2`}>Evidencia (foto) *</label>
             {fotoMermaPreview ? (
-              <div><img src={fotoMermaPreview} alt="Evidencia" className="h-32 w-full rounded-xl border border-emerald-300 object-cover" /><button type="button" onClick={clearFotoMerma} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
+              <div><img src={fotoMermaPreview} alt="Evidencia" className="h-32 w-full rounded-field border border-emerald-300 object-cover" /><button type="button" onClick={clearFotoMerma} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
             ) : (
-              <label className="flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-[16px] border-2 border-dashed border-slate-300 py-4 text-xs font-semibold text-slate-500">
+              <label className="flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-field border-2 border-dashed border-slate-300 py-4 text-[13px] font-semibold text-slate-500">
                 <Icons.Camera /> Tomar foto de evidencia
                 <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePickFile(clearFotoMerma, setFotoMermaFile, setFotoMermaPreview)} />
               </label>
             )}
           </div>
         </div>
-        <FormBtn danger size="lg" className="mt-4 w-full" onClick={registrarMerma} disabled={guardandoMerma || !mForm.cantidad || n(mForm.cantidad) <= 0 || !fotoMermaFile}>
-          {guardandoMerma ? 'Guardando...' : 'Registrar merma'}
-        </FormBtn>
       </Modal>
 
     </div>

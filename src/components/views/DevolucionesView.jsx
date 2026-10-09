@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, PAGE_SIZE, Paginator, KpiTile } from './viewsCommon';
 import { diaNegocio, sumarDias } from '../../utils/fechas';
 
 export function DevolucionesView({ data }) {
@@ -60,36 +60,27 @@ export function DevolucionesView({ data }) {
       <PageHeader title="Devoluciones" subtitle="Reembolsos y reposiciones post-entrega" />
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
-        <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5">
-          <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">Devoluciones</p>
-          <p className="text-xl sm:text-3xl font-extrabold text-slate-800">{stats.count}</p>
-        </div>
-        <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5">
-          <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">Total reembolsado</p>
-          <p className="text-xl sm:text-3xl font-extrabold text-red-600">{fmtMoney(stats.total)}</p>
-        </div>
-        <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5">
-          <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">Notas crédito pendientes</p>
-          <p className="text-xl sm:text-3xl font-extrabold text-amber-600">{stats.pendientes}</p>
-        </div>
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <KpiTile label="Devoluciones" value={stats.count} />
+        <KpiTile label="Reembolsado" value={fmtMoney(stats.total)} tone="danger" />
+        <KpiTile label="Notas de crédito pendientes" value={stats.pendientes} tone="warning" className="col-span-2" />
       </div>
 
       {/* Filtros */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-4">
-        <input type="date" value={fechaInicio} onChange={e => { setFechaInicio(e.target.value); setPage(0); }} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white" />
-        <input type="date" value={fechaFin} onChange={e => { setFechaFin(e.target.value); setPage(0); }} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white" />
-        <select value={filtroCliente} onChange={e => { setFiltroCliente(e.target.value); setPage(0); }} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <input type="date" aria-label="Desde" value={fechaInicio} onChange={e => { setFechaInicio(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15" />
+        <input type="date" aria-label="Hasta" value={fechaFin} onChange={e => { setFechaFin(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15" />
+        <select value={filtroCliente} onChange={e => { setFiltroCliente(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15 col-span-2 sm:col-span-1">
           <option value="">Todos los clientes</option>
           {(data?.clientes || []).map(c => <option key={c.id} value={c.id}>{s(c.nombre)}</option>)}
         </select>
-        <select value={filtroTipo} onChange={e => { setFiltroTipo(e.target.value); setPage(0); }} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
+        <select value={filtroTipo} onChange={e => { setFiltroTipo(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15">
           <option value="">Todos los tipos</option>
           <option value="Efectivo">Efectivo</option>
           <option value="Nota credito">Nota crédito</option>
           <option value="Reposicion">Reposición</option>
         </select>
-        <select value={filtroNotaCredito} onChange={e => { setFiltroNotaCredito(e.target.value); setPage(0); }} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white">
+        <select value={filtroNotaCredito} onChange={e => { setFiltroNotaCredito(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15">
           <option value="">Todas (CFDI)</option>
           <option value="pendiente">Nota crédito pendiente</option>
           <option value="sin_nota">Sin nota crédito</option>

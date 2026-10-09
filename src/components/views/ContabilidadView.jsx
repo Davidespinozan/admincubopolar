@@ -1,4 +1,4 @@
-import { useState, Icons, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
+import { useState, Icons, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE, PageHeader } from './viewsCommon';
 import { diaNegocio } from '../../utils/fechas';
 import { traducirError } from '../../utils/errorMessages';
 import { esAsientoDeContrato } from '../../data/asientosContablesLogic';
@@ -89,25 +89,20 @@ export function ContabilidadView({ data, actions }) {
 
   const todos = [...cont.ingresos.map(i => ({ ...i, _tipo: "Ingreso" })), ...cont.egresos.map(e => ({ ...e, _tipo: "Egreso" }))].sort((a, b) => (b.id || 0) - (a.id || 0));
 
-  return (<div className="space-y-4">
+  return (<div className="space-y-3">
     {ConfirmEl}
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h2 className="text-lg font-bold text-slate-800">Contabilidad</h2>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-        <div className="flex gap-2">
-          <button onClick={() => reporteFinanciero(cont, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
-          <button onClick={() => reporteFinanciero(cont, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => openNew("Ingreso")} className="flex-1 sm:flex-none px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Ingreso</button>
-          <button onClick={() => openNew("Egreso")} className="flex-1 sm:flex-none px-3 py-2 bg-red-500 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Gasto</button>
-        </div>
-      </div>
+    <PageHeader title="Movimientos" subtitle="Ingresos y gastos del mes" extraButtons={<>
+      <button onClick={() => reporteFinanciero(cont, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-field border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
+      <button onClick={() => reporteFinanciero(cont, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-field border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
+    </>} />
+    <div className="grid grid-cols-2 gap-2">
+      <FormBtn success onClick={() => openNew("Ingreso")}><Icons.Plus /> Ingreso</FormBtn>
+      <FormBtn danger onClick={() => openNew("Egreso")}><Icons.Plus /> Gasto</FormBtn>
     </div>
 
-    <div className="flex items-center gap-2">
-      <label className="text-xs font-bold text-slate-500 uppercase">Mes</label>
-      <input type="month" value={mes} onChange={e => setMes(e.target.value || diaNegocio().slice(0, 7))} className="px-3 py-2 border border-slate-200 rounded-xl text-base sm:text-sm min-h-[44px]" />
+    <div className="flex items-center gap-3">
+      <label className="text-[13px] font-medium text-slate-700">Mes</label>
+      <input type="month" value={mes} onChange={e => setMes(e.target.value || diaNegocio().slice(0, 7))} className="min-h-[44px] rounded-field border border-line bg-slate-50 px-3 py-2 text-[15px] text-ink focus:bg-white focus:outline-none" />
     </div>
     {reporteError && <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2">No se pudo cargar el reporte: {reporteError}</p>}
 

@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion, SegmentedTabs } from './viewsCommon';
 import { diaNegocio, sumarDias } from '../../utils/fechas';
 import { useRef } from 'react';
 import { resolverOperacion } from '../../data/produccionAtomicaLogic';
@@ -184,16 +184,7 @@ export function ProduccionView({ data, actions }) {
     />
 
     {/* Tabs */}
-    <div className="flex gap-2 mb-5">
-      <button onClick={() => setTab('produccion')}
-        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'produccion' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
-        Producción
-      </button>
-      <button onClick={() => setTab('preparaciones')}
-        className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'preparaciones' ? 'bg-orange-500 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
-        <Icons.Snowflake /> Preparaciones {prodPrep.length > 0 && <span className="ml-1 text-xs opacity-80">({prodPrep.length})</span>}
-      </button>
-    </div>
+    <SegmentedTabs className="mb-4" value={tab} onChange={setTab} items={[{ k: 'produccion', l: 'Producción', icon: 'Factory' }, { k: 'preparaciones', l: prodPrep.length > 0 ? `Preparaciones (${prodPrep.length})` : 'Preparaciones', icon: 'Snowflake' }]} />
 
     {/* ═══ TAB: PRODUCCIÓN NORMAL ═══ */}
     {tab === 'produccion' && <>
@@ -247,7 +238,7 @@ export function ProduccionView({ data, actions }) {
                     const totalTurno = registros.reduce((sum, r) => sum + n(r.cantidad), 0);
 
                     return (
-                      <div key={turno} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                      <div key={turno} className="overflow-hidden rounded-card border border-line bg-white">
                         <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                           <p className="text-xs font-semibold text-slate-700">{turno}</p>
                           {registros.length > 0 ? (
@@ -262,26 +253,31 @@ export function ProduccionView({ data, actions }) {
                               const prod = (data.productos || []).find(p => s(p.sku) === s(r.sku));
                               const nombreProd = prod ? s(prod.nombre) : s(r.sku);
                               return (
-                                <div key={r.id} className="px-4 py-2.5 flex items-center justify-between gap-3 hover:bg-slate-50">
-                                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                                    <span className="font-mono text-xs font-semibold text-blue-600 flex-shrink-0">{s(r.folio)}</span>
-                                    <div className="min-w-0">
-                                      <p className="text-sm font-medium text-slate-800 truncate">{nombreProd}</p>
-                                      <p className="text-xs text-slate-400">{s(r.maquina)} · {n(r.cantidad).toLocaleString()} bolsas</p>
+                                <div key={r.id} className="px-4 py-3">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-[15px] font-semibold text-ink">{nombreProd}</p>
+                                      <p className="mt-0.5 text-[13px] text-slate-500"><span className="font-mono text-slate-400">{s(r.folio)}</span> · {s(r.maquina)}</p>
+                                    </div>
+                                    <div className="flex-shrink-0 text-right">
+                                      <p className="tnum text-[17px] font-bold text-ink">{n(r.cantidad).toLocaleString()}</p>
+                                      <p className="text-[11px] text-slate-400">bolsas</p>
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-2 flex-shrink-0">
+                                  <div className="mt-2 flex items-center justify-between gap-2">
                                     <StatusBadge status={r.estatus} />
-                                    <button onClick={() => openEdit(r)} title="Editar" className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                    </button>
-                                    {(() => { const rv = reversibilidadProduccion(r); return rv.reversible ? (
-                                    <button onClick={() => { setRevModal(r); setRevMotivo(""); opRevRef.current = null; }} title="Revertir producción" className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-xs font-semibold">
-                                      Revertir
-                                    </button>
-                                    ) : (
-                                    <span title={rv.razon || ''} className="text-[10px] text-slate-400 max-w-[120px] truncate">{s(r.estatus) === 'Revertida' ? 'Revertida' : 'No reversible'}</span>
-                                    ); })()}
+                                    <div className="flex items-center gap-1">
+                                      {(() => { const rv = reversibilidadProduccion(r); return rv.reversible ? (
+                                      <button onClick={() => { setRevModal(r); setRevMotivo(""); opRevRef.current = null; }} title="Revertir producción" className="inline-flex min-h-[36px] items-center gap-1 rounded-full px-3 text-[13px] font-semibold text-red-700 transition-colors hover:bg-red-50">
+                                        <Icons.Undo /> Revertir
+                                      </button>
+                                      ) : (
+                                      <span title={rv.razon || ''} className="px-2 text-[12px] text-slate-400">{s(r.estatus) === 'Revertida' ? 'Revertida' : 'No reversible'}</span>
+                                      ); })()}
+                                      <button onClick={() => openEdit(r)} title="Editar" aria-label="Editar" className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-ink">
+                                        <Icons.Pen />
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               );

@@ -1,4 +1,4 @@
-import { useState, useMemo, Icons, DataTable, PageHeader, s, fmtDateTime, useDebounce, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, DataTable, PageHeader, s, fmtDateTime, useDebounce, PAGE_SIZE, Paginator, KpiTile } from './viewsCommon';
 import { diaNegocio } from '../../utils/fechas';
 
 export function AuditoriaView({ data }) {
@@ -35,18 +35,9 @@ export function AuditoriaView({ data }) {
 
     {/* Estadísticas */}
     <div className="grid grid-cols-3 gap-3 mb-4">
-      <div className="bg-blue-50 rounded-xl p-3 text-center border border-blue-100">
-        <p className="text-2xl font-bold text-blue-600">{stats.accionesHoy}</p>
-        <p className="text-xs text-blue-500">Acciones hoy</p>
-      </div>
-      <div className="bg-emerald-50 rounded-xl p-3 text-center border border-emerald-100">
-        <p className="text-2xl font-bold text-emerald-600">{stats.usuariosActivos}</p>
-        <p className="text-xs text-emerald-500">Usuarios activos</p>
-      </div>
-      <div className="bg-slate-50 rounded-xl p-3 text-center border border-slate-100">
-        <p className="text-2xl font-bold text-slate-600">{stats.total}</p>
-        <p className="text-xs text-slate-500">Total registros</p>
-      </div>
+      <KpiTile label="Hoy" value={stats.accionesHoy} hint="acciones" />
+      <KpiTile label="Usuarios" value={stats.usuariosActivos} hint="activos" />
+      <KpiTile label="Total" value={stats.total} hint="registros" />
     </div>
 
     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">

@@ -1,4 +1,4 @@
-import { useState, useMemo, StatusBadge, PageHeader, Modal, FormBtn, EmptyState, s, n, eqId, fmtDate, fmtMoney } from './viewsCommon';
+import { useState, useMemo, StatusBadge, PageHeader, Modal, FormBtn, EmptyState, s, n, eqId, fmtDate, fmtMoney, KpiTile, SegmentedTabs } from './viewsCommon';
 import { useEffect } from 'react';
 import { calcularEsperadoPorRuta, formatDiferencia } from '../../data/cierreCajaLogic';
 import { diaNegocio } from '../../utils/fechas';
@@ -111,32 +111,12 @@ export function ConciliacionView({ data, actions }) {
       <PageHeader title="Cortes de Caja" subtitle="Conciliación de rutas con captura de contado físico" />
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4">
-        <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5">
-          <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">Cierres hoy</p>
-          <p className="text-xl sm:text-3xl font-extrabold text-slate-800">{stats.cierresHoy}</p>
-        </div>
-        <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5">
-          <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">Contado hoy</p>
-          <p className="text-xl sm:text-3xl font-extrabold text-emerald-700">{fmtMoney(stats.totalContadoHoy)}</p>
-        </div>
-        <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5">
-          <p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase mb-1">Diferencia acumulada (período)</p>
-          <p className={`text-xl sm:text-3xl font-extrabold ${stats.sumaDiferencias === 0 ? 'text-slate-700' : stats.sumaDiferencias > 0 ? 'text-blue-700' : 'text-red-700'}`}>
-            {stats.sumaDiferencias > 0 ? '+' : ''}{fmtMoney(stats.sumaDiferencias)}
-          </p>
-        </div>
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <KpiTile label="Cierres hoy" value={stats.cierresHoy} />
+        <KpiTile label="Contado hoy" value={fmtMoney(stats.totalContadoHoy)} tone="success" />
+        <KpiTile label="Diferencia del periodo" value={`${stats.sumaDiferencias > 0 ? '+' : ''}${fmtMoney(stats.sumaDiferencias)}`} tone={stats.sumaDiferencias < 0 ? 'danger' : undefined} className="col-span-2" />
       </div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 border-b border-slate-200 mb-4">
-        <button onClick={() => setTab('pendientes')} className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] ${tab === 'pendientes' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>
-          Pendientes de cerrar ({rutasPendientes.length})
-        </button>
-        <button onClick={() => setTab('historico')} className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] ${tab === 'historico' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>
-          Histórico ({cierresFiltrados.length})
-        </button>
-      </div>
+      <SegmentedTabs className="mb-4" value={tab} onChange={setTab} items={[{ k: 'pendientes', l: `Por cerrar (${rutasPendientes.length})` }, { k: 'historico', l: `Histórico (${cierresFiltrados.length})` }]} />
 
       {/* TAB: PENDIENTES */}
       {tab === 'pendientes' && pendientesSrv.error && (

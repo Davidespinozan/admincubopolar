@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Icons } from '../ui/Icons';
-import { StatusBadge, DataTable, PageHeader, CapacityBar } from '../ui/Components';
+import { StatusBadge, DataTable, PageHeader, CapacityBar, KpiTile, SegmentedTabs, Chips, Card, SectionLabel, ListRow, IconButton } from '../ui/Components';
 import Modal, { FormInput, FormSelect, FormBtn, useConfirm } from '../ui/Modal';
 import { EmptyState } from '../ui/Skeleton';
 import { s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today, todayISO, todayLocalISO, centavos, fmtMoney, fmtPct, extraerTelefono, normalizeStr } from '../../utils/safe';
@@ -15,7 +15,7 @@ export {
   useState, useMemo, useCallback,
   supabase,
   Icons,
-  StatusBadge, DataTable, PageHeader, CapacityBar,
+  StatusBadge, DataTable, PageHeader, CapacityBar, KpiTile, SegmentedTabs, Chips, Card, SectionLabel, ListRow, IconButton,
   Modal, FormInput, FormSelect, FormBtn, useConfirm,
   EmptyState,
   s, n, money, eqId, fmtDate, fmtDateTime, useDebounce, today, todayISO, todayLocalISO, centavos, fmtMoney, fmtPct, extraerTelefono, normalizeStr,

@@ -232,7 +232,11 @@ export default function EditarVentaModal({
   };
 
   return (
-    <Modal open={!!open} onClose={() => { if (!saving) onClose?.(); }} title={`Editar orden ${s(orden?.folio)}`} wide>
+    <Modal open={!!open} onClose={() => { if (!saving) onClose?.(); }} title={`Editar orden ${s(orden?.folio)}`} kicker="Ventas" wide
+      footer={<>
+        <FormBtn size="lg" className="flex-1" onClick={() => { if (!saving) onClose?.(); }}>Cancelar</FormBtn>
+        <FormBtn primary size="lg" className="flex-[2]" onClick={guardar} loading={saving}>Guardar cambios</FormBtn>
+      </>}>
       {!orden ? null : (
         <div className="space-y-4">
           {/* Cliente y tipo cobro: read-only */}
@@ -404,10 +408,6 @@ export default function EditarVentaModal({
             />
           </div>
 
-          <div className="flex justify-end gap-2 mt-2">
-            <FormBtn onClick={() => { if (!saving) onClose?.(); }}>Cancelar</FormBtn>
-            <FormBtn primary onClick={guardar} loading={saving}>Guardar cambios</FormBtn>
-          </div>
         </div>
       )}
     </Modal>

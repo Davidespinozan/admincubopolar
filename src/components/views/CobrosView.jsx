@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast } from './viewsCommon';
+import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast, PageHeader, KpiTile, SegmentedTabs } from './viewsCommon';
 import { diaNegocio } from '../../utils/fechas';
 
 export function CobrosView({ data, actions }) {
@@ -56,31 +56,13 @@ export function CobrosView({ data, actions }) {
 
   const METODOS = ['Efectivo', 'Transferencia', 'Tarjeta'];
 
-  return (<div className="space-y-4">
-    <div className="flex items-center justify-between">
-      <h2 className="text-lg font-bold text-slate-800">Cobros y Cuentas por Cobrar</h2>
-    </div>
-
+  return (<div className="space-y-3">
+    <PageHeader title="Por cobrar" subtitle="Cuentas por cobrar y pagos recientes" />
     <div className="grid grid-cols-2 gap-3">
-      <div className="bg-amber-50 rounded-xl p-4 border border-amber-200">
-        <p className="text-[10px] text-amber-500 uppercase font-bold">Por cobrar</p>
-        <p className="text-xl font-extrabold text-amber-700">{fmtMoney(totalPendiente)}</p>
-        <p className="text-xs text-amber-600 mt-1">{cxcPendientes.length} cuentas pendientes</p>
-      </div>
-      <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
-        <p className="text-[10px] text-emerald-500 uppercase font-bold">Cobrado hoy</p>
-        <p className="text-xl font-extrabold text-emerald-700">{fmtMoney(totalCobradoHoy)}</p>
-      </div>
+      <KpiTile label="Por cobrar" value={fmtMoney(totalPendiente)} hint={`${cxcPendientes.length} ${cxcPendientes.length === 1 ? 'cuenta pendiente' : 'cuentas pendientes'}`} tone="warning" />
+      <KpiTile label="Cobrado hoy" value={fmtMoney(totalCobradoHoy)} tone="success" />
     </div>
-
-    <div className="flex gap-2 border-b border-slate-200">
-      <button onClick={() => setTab('pendientes')} className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] ${tab === 'pendientes' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>
-        Pendientes ({cxcPendientes.length})
-      </button>
-      <button onClick={() => setTab('pagos')} className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] ${tab === 'pagos' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>
-        Pagos recientes
-      </button>
-    </div>
+    <SegmentedTabs value={tab} onChange={setTab} items={[{ k: 'pendientes', l: `Pendientes (${cxcPendientes.length})` }, { k: 'pagos', l: 'Pagos recientes' }]} />
 
     {tab === 'pendientes' && (
       <div className="space-y-2">
@@ -118,7 +100,7 @@ export function CobrosView({ data, actions }) {
               )}
               <div className="flex justify-between items-center">
                 <span className="text-xs text-slate-400">Vence: {fmtDate(cxc.fechaVencimiento)}</span>
-                <button onClick={() => openCobro(cxc)} className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg min-h-[36px]">Cobrar</button>
+                <FormBtn success onClick={() => openCobro(cxc)}>Cobrar</FormBtn>
               </div>
             </div>
           );

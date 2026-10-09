@@ -890,8 +890,8 @@ export function RutasView({ data, actions }) {
                   onClick={() => toggleOrden(o.id)}
                   className={`w-full px-3 py-2.5 text-left flex items-start gap-3 transition-colors ${sel ? 'bg-slate-100' : 'hover:bg-slate-50'}`}
                 >
-                  <span className={`mt-0.5 w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center text-[10px] font-bold ${sel ? 'border-slate-700 bg-slate-700 text-white' : 'border-slate-300'}`}>
-                    {sel ? '✓' : ''}
+                  <span className={`mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-md border-2 [&>svg]:h-3.5 [&>svg]:w-3.5 ${sel ? 'border-ink bg-ink text-white' : 'border-slate-300'}`} aria-hidden="true">
+                    {sel ? <Icons.Check /> : null}
                   </span>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">

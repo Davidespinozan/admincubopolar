@@ -138,48 +138,43 @@ export function MermasView({ data, actions }) {
         <p className="text-[10px] text-amber-500">Unidades × costo promedio actual del empaque. No es un gasto adicional: el empaque ya se reconoció al producir.</p>
         <p className="text-xs text-amber-500 mt-0.5">{kpi.count} {kpi.count === 1 ? 'merma' : 'mermas'}{kpi.revertidas > 0 ? ` · ${kpi.revertidas} revertida${kpi.revertidas === 1 ? '' : 's'} (no suman)` : ''}</p>
       </div>
-      <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between">
+      <div className="flex items-center justify-between rounded-card border border-line bg-white p-4 shadow-card">
         <div>
-          <p className="text-[10px] text-slate-500 uppercase font-bold">Período</p>
-          <p className="text-sm font-bold text-slate-700">{fmtDate(fechaInicio)} → {fmtDate(fechaFin)}</p>
+          <p className="erp-kicker text-slate-500">Período</p>
+          <p className="tnum text-[15px] font-bold text-ink">{fmtDate(fechaInicio)} → {fmtDate(fechaFin)}</p>
         </div>
-        <button onClick={limpiarFiltros} className="text-xs text-blue-600 font-bold hover:underline">Resetear filtros</button>
+        <button onClick={limpiarFiltros} className="min-h-[40px] rounded-full px-3 text-[13px] font-semibold text-accent hover:bg-accent-soft">Resetear</button>
       </div>
     </div>
 
-    {/* Filtros */}
-    <div className="bg-white border border-slate-100 rounded-2xl p-4 mb-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+    {/* Filtros: fechas y ruta/SKU en dos columnas; origen a lo ancho */}
+    <div className="mb-4 rounded-card border border-line bg-white p-4 shadow-card">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Desde</label>
-          <input type="date" value={fechaInicio} onChange={e => { setFechaInicio(e.target.value); setPage(0); }}
-            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white min-h-[44px]" />
+          <label className="erp-kicker mb-1.5 block text-slate-500">Desde</label>
+          <input type="date" value={fechaInicio} onChange={e => { setFechaInicio(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15" />
         </div>
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Hasta</label>
-          <input type="date" value={fechaFin} onChange={e => { setFechaFin(e.target.value); setPage(0); }}
-            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white min-h-[44px]" />
+          <label className="erp-kicker mb-1.5 block text-slate-500">Hasta</label>
+          <input type="date" value={fechaFin} onChange={e => { setFechaFin(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15" />
         </div>
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Ruta</label>
-          <select value={filtroRuta} onChange={e => { setFiltroRuta(e.target.value); setPage(0); }}
-            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white min-h-[44px]">
+          <label className="erp-kicker mb-1.5 block text-slate-500">Ruta</label>
+          <select value={filtroRuta} onChange={e => { setFiltroRuta(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15">
             <option value="">Todas</option>
             {rutaOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">SKU</label>
-          <select value={filtroSku} onChange={e => { setFiltroSku(e.target.value); setPage(0); }}
-            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white min-h-[44px]">
+          <label className="erp-kicker mb-1.5 block text-slate-500">SKU</label>
+          <select value={filtroSku} onChange={e => { setFiltroSku(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15">
             <option value="">Todos</option>
             {skuOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
-        <div className="lg:col-span-4">
-          <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Origen / Usuario</label>
-          <select value={filtroOrigen} onChange={e => { setFiltroOrigen(e.target.value); setPage(0); }}
-            className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-white min-h-[44px]">
+        <div className="col-span-2 lg:col-span-4">
+          <label className="erp-kicker mb-1.5 block text-slate-500">Origen / Usuario</label>
+          <select value={filtroOrigen} onChange={e => { setFiltroOrigen(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15">
             <option value="">Todos</option>
             {origenOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>

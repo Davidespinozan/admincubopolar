@@ -20,10 +20,7 @@ export function KardexView({ data }) {
 
   return (
     <div>
-      <div className="mb-4">
-        <h2 className="text-lg font-bold text-slate-800">Historial de Inventario</h2>
-        <p className="text-xs text-slate-400">Todos los movimientos de productos: entradas, salidas, traspasos, mermas y devoluciones</p>
-      </div>
+      <p className="mb-3 text-[13px] text-slate-500">Todos los movimientos: entradas, salidas, traspasos, mermas y devoluciones.</p>
 
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mb-4">
         <div className="flex-1 relative">
@@ -32,7 +29,7 @@ export function KardexView({ data }) {
             value={search}
             onChange={e => { setSearch(e.target.value); setPageKardex(0); }}
             placeholder="Buscar producto, referencia o usuario..."
-            className="w-full pl-10 pr-4 py-3 md:py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:border-slate-400 min-h-[44px]"
+            className="min-h-[48px] w-full rounded-field border border-line bg-white pl-10 pr-4 text-[15px] text-ink placeholder:text-slate-400 focus:border-accent focus:outline-none md:min-h-[44px]"
           />
         </div>
         <select

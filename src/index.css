@@ -1,196 +1,126 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/* ── Tokens del sistema "CUBOPOLAR 2026" (docs/sistema/diseno.md) ── */
 :root {
-  --cp-bg: #ebf2f4;
-  --cp-bg-deep: #07131a;
-  --cp-panel: rgba(255, 255, 255, 0.82);
-  --cp-panel-strong: rgba(255, 255, 255, 0.94);
-  --cp-muted: #59707a;
-  --cp-ink: #08141b;
-  --cp-line: rgba(8, 20, 27, 0.08);
-  --cp-line-strong: rgba(8, 20, 27, 0.14);
-  --cp-cyan: #7ee7ff;
-  --cp-teal: #0b7798;
-  --cp-warm: #ffd6aa;
-  --cp-shadow: 0 18px 40px rgba(3, 14, 19, 0.08);
-  --cp-shadow-strong: 0 28px 60px rgba(3, 14, 19, 0.14);
+  --cp-bg: #f4f6f9;
+  --cp-surface: #ffffff;
+  --cp-ink: #0b1220;
+  --cp-text-2: #5b6472;
+  --cp-text-3: #8a94a3;
+  --cp-line: #e6eaf0;
+  --cp-line-strong: #d6dce5;
+  --cp-accent: #0e7490;
+  --cp-accent-soft: rgba(14, 116, 144, 0.1);
+  --cp-brand-a: #0b1f3a;
+  --cp-brand-b: #0f172a;
+  --cp-shadow-card: 0 1px 2px rgba(11, 18, 32, 0.04), 0 10px 28px -14px rgba(11, 18, 32, 0.14);
+  --cp-shadow-sheet: 0 -8px 40px rgba(11, 18, 32, 0.14);
+  --cp-shadow-pop: 0 18px 48px -12px rgba(11, 18, 32, 0.28);
+  --cp-ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* ── Base ── */
 * { -webkit-tap-highlight-color: transparent; }
 html { -webkit-text-size-adjust: 100%; }
 
-/* ── iOS zoom prevention en focus de inputs (Tanda 16 P0) ──
-   iOS Safari fuerza zoom del viewport cuando un input/select/textarea
-   tiene font-size < 16px. La app usa Tailwind text-sm (14px) en ~110
-   campos para densidad UI desktop; en mobile esto disparaba zoom auto
-   al focus que NO regresa solo. Forzamos 16px solo en mobile (≤768px)
-   para no afectar desktop. !important porque las clases Tailwind
-   utilities tienen el mismo specificity y cargan después.            */
+/* iOS hace zoom si un campo tiene menos de 16 px: en móvil todos los campos van a 16 px. */
 @media (max-width: 768px) {
-  input,
-  select,
-  textarea {
-    font-size: 16px !important;
-  }
+  input, select, textarea { font-size: 16px !important; }
 }
 
 body {
-  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'cv02';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior-x: none;
   color: var(--cp-ink);
-  background:
-    radial-gradient(circle at top left, rgba(126, 231, 255, 0.42), transparent 34%),
-    radial-gradient(circle at 82% 18%, rgba(255, 214, 170, 0.36), transparent 24%),
-    linear-gradient(180deg, #f4f8fa 0%, var(--cp-bg) 46%, #e5eef1 100%);
+  background: var(--cp-bg);
+  line-height: 1.45;
 }
 
-::selection {
-  background: rgba(11, 119, 152, 0.18);
-  color: var(--cp-ink);
-}
+::selection { background: var(--cp-accent-soft); color: var(--cp-ink); }
 
-.font-display {
-  font-family: 'Space Grotesk', 'IBM Plex Sans', system-ui, sans-serif;
-}
+.font-display { font-family: 'Inter', system-ui, sans-serif; letter-spacing: -0.02em; }
+.tnum, .font-display { font-variant-numeric: tabular-nums; }
 
-/* ── Safe area for iOS bottom bar / notch ── */
-.safe-bottom {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
-}
+/* ── Safe area ── */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
-/* ── Prevent horizontal overflow globally ── */
-html, body {
-  overflow-x: hidden;
-  overflow-y: auto;
-  max-width: 100vw;
-}
-#root {
-  max-width: 100vw;
-  overflow-x: hidden;
-}
+/* ── Sin desbordamiento horizontal ── */
+html, body { overflow-x: hidden; overflow-y: auto; max-width: 100vw; }
+#root { max-width: 100vw; overflow-x: hidden; }
 
-/* ── Focus styles ── */
-*:focus-visible {
-  outline: 2px solid rgba(11, 119, 152, 0.55);
-  outline-offset: 2px;
-  border-radius: 8px;
-}
+/* ── Foco visible (teclado) ── */
+*:focus-visible { outline: 2px solid rgba(14, 116, 144, 0.6); outline-offset: 2px; border-radius: 10px; }
 
-button,
-input,
-select,
-textarea {
-  transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+button, input, select, textarea, a {
+  transition: background-color 0.16s var(--cp-ease), border-color 0.16s var(--cp-ease), color 0.16s var(--cp-ease), box-shadow 0.16s var(--cp-ease), transform 0.16s var(--cp-ease), opacity 0.16s var(--cp-ease);
 }
+button:active { transform: scale(0.985); }
 
-.bg-white.border.border-slate-100.rounded-2xl,
-.bg-white.border.border-slate-100.rounded-xl,
-.bg-white.border.border-slate-100.rounded-t-2xl,
-.bg-white.w-full.max-w-lg.rounded-t-2xl,
-.bg-white.w-full.max-w-md.rounded-2xl,
-.relative.bg-white.rounded-2xl.shadow-2xl,
-.relative.bg-white.w-full.max-h-\[92vh\].overflow-y-auto.rounded-t-2xl {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.93), rgba(246, 250, 252, 0.86));
-  border-color: var(--cp-line);
-  box-shadow: var(--cp-shadow);
-}
+/* Campos nativos: mismo lenguaje que FormInput */
+select { appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%235b6472' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px !important; }
+input[type='date'], input[type='time'], input[type='datetime-local'] { min-height: 48px; }
+input[type='number'] { -moz-appearance: textfield; }
+input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
-.bg-slate-50.rounded-xl,
-.bg-slate-50.rounded-lg,
-.bg-slate-50.rounded-2xl {
-  background: linear-gradient(180deg, rgba(244, 249, 251, 0.9), rgba(237, 244, 247, 0.76));
-}
+/* ── Superficies legadas (clases antiguas de vistas no migradas) ── */
+.erp-panel { background: var(--cp-surface); border: 1px solid var(--cp-line); box-shadow: var(--cp-shadow-card); }
+.erp-shell-blur { backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }
+.erp-dark-panel { background: linear-gradient(180deg, var(--cp-brand-a), var(--cp-brand-b)); border: 1px solid rgba(255, 255, 255, 0.08); box-shadow: var(--cp-shadow-pop); }
+.erp-kicker { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.erp-hairline { border-color: var(--cp-line); }
+.bg-white\/80, .bg-white\/70, .bg-white\/60 { background-color: var(--cp-surface) !important; }
+.backdrop-blur-xl, .backdrop-blur-2xl { backdrop-filter: none; -webkit-backdrop-filter: none; }
+.shadow-lg, .shadow-xl, .shadow-2xl, .shadow-md { box-shadow: var(--cp-shadow-card); }
 
-.shadow-lg,
-.shadow-xl,
-.shadow-2xl,
-.shadow-md {
-  box-shadow: var(--cp-shadow);
-}
-
-.erp-shell-blur {
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-}
-
-.erp-panel {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(247, 251, 252, 0.8));
-  border: 1px solid var(--cp-line);
-  box-shadow: var(--cp-shadow);
-}
-
-.erp-dark-panel {
-  background: linear-gradient(180deg, rgba(7, 19, 26, 0.96), rgba(9, 24, 32, 0.92));
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: var(--cp-shadow-strong);
-}
-
-.erp-kicker {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-}
-
-.erp-hairline {
-  border-color: var(--cp-line);
-}
-
-/* ── Scrollbar — desktop only ── */
+/* ── Scrollbar (escritorio) ── */
 @media (min-width: 768px) {
   ::-webkit-scrollbar { width: 6px; height: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: rgba(8, 20, 27, 0.14); border-radius: 999px; }
-  ::-webkit-scrollbar-thumb:hover { background: rgba(8, 20, 27, 0.22); }
+  ::-webkit-scrollbar-thumb { background: rgba(11, 18, 32, 0.14); border-radius: 999px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(11, 18, 32, 0.22); }
 }
-
-/* ── Snap scroll for horizontal mobile ── */
 .snap-x { scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; }
 .snap-start { scroll-snap-align: start; }
 .snap-mandatory { scroll-snap-type: x mandatory; }
-
-/* ── Hide scrollbar on mobile horizontal scroll ── */
 @media (max-width: 767px) {
   .overflow-x-auto::-webkit-scrollbar { display: none; }
   .overflow-x-auto { -ms-overflow-style: none; scrollbar-width: none; }
 }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-/* ── Toast animation ── */
-@keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-.animate-slide-in { animation: slide-in 0.2s ease-out; }
-
-/* ── Mobile drawer (left side) ── */
+/* ── Movimiento ── */
+@keyframes view-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes sheet-in { from { transform: translateY(24px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
+@keyframes pop-in { from { transform: scale(0.96); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes toast-in { from { transform: translateY(12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideInLeft { from { transform: translateX(-100%); } to { transform: translateX(0); } }
-.animate-fadeIn { animation: fadeIn 0.2s ease-out; }
-.animate-slideInLeft { animation: slideInLeft 0.25s ease-out; }
+@keyframes shimmer { from { background-position: -400px 0; } to { background-position: 400px 0; } }
+.animate-view-in { animation: view-in 0.22s var(--cp-ease) backwards; } /* backwards: al terminar no queda transform (un ancestro con transform rompe position:fixed de las hojas) */
+.animate-sheet-in { animation: sheet-in 0.26s var(--cp-ease) both; }
+.animate-pop-in { animation: pop-in 0.18s var(--cp-ease) both; }
+.animate-toast-in, .animate-slide-in { animation: toast-in 0.2s var(--cp-ease) both; }
+.animate-fadeIn { animation: fadeIn 0.18s ease-out both; }
+.animate-slideInLeft { animation: slideInLeft 0.24s var(--cp-ease) both; }
+.skeleton { background: linear-gradient(90deg, #eef1f5 25%, #f6f8fb 37%, #eef1f5 63%); background-size: 800px 100%; animation: shimmer 1.3s linear infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .animate-view-in, .animate-sheet-in, .animate-pop-in, .animate-toast-in, .animate-slide-in, .animate-fadeIn, .animate-slideInLeft, .skeleton { animation: none; }
+  button:active { transform: none; }
+}
 
-/* ── Google Places Autocomplete (legacy y nuevo Web Component) ── */
-.pac-container {
-  z-index: 999999 !important;
-  border-radius: 12px;
-  box-shadow: 0 18px 40px rgba(3, 14, 19, 0.16);
-  border: 1px solid var(--cp-line);
-  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
-}
-.pac-item { padding: 8px 12px; cursor: pointer; }
-.pac-item:hover { background: rgba(126, 231, 255, 0.12); }
-
-/* PlaceAutocompleteElement (nuevo web component) */
-gmp-place-autocomplete {
-  width: 100%;
-  display: block;
-}
-gmp-place-autocomplete::part(container) {
-  border-radius: 16px;
-  border: 1px solid #e2e8f0;
-  background: rgba(255, 255, 255, 0.8);
-  min-height: 44px;
-}
+/* ── Google Places Autocomplete ── */
+.pac-container { z-index: 999999 !important; border-radius: 14px; box-shadow: var(--cp-shadow-pop); border: 1px solid var(--cp-line); font-family: 'Inter', system-ui, sans-serif; }
+.pac-item { padding: 10px 12px; cursor: pointer; }
+.pac-item:hover { background: var(--cp-accent-soft); }
+gmp-place-autocomplete { width: 100%; display: block; }
+gmp-place-autocomplete::part(container) { border-radius: 14px; border: 1px solid var(--cp-line); background: #f8fafc; min-height: 48px; }

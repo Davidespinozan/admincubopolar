@@ -1,7 +1,6 @@
-// BusquedaGlobal — buscador del shell admin (Tanda 27). Botón en la
-// topbar que abre un panel con input + resultados; tocar un resultado
-// navega al módulo. Mismo patrón visual que los paneles de alertas y
-// notificaciones. La lógica de búsqueda vive en data/busquedaLogic.js.
+// BusquedaGlobal — buscador del shell (back office). Botón en la barra
+// superior que abre un panel con campo y resultados; tocar un resultado
+// navega al módulo. La lógica de búsqueda vive en data/busquedaLogic.ts.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buscarGlobal } from '../../data/busquedaLogic';
 import { Icons } from './Icons';
@@ -34,51 +33,56 @@ export default function BusquedaGlobal({ data, onNavigate }) {
     <>
       <button
         onClick={() => setAbierto(a => !a)}
-        className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]"
+        className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition-colors hover:bg-slate-100 lg:h-11 lg:w-11"
         title="Buscar (clientes, ventas, rutas…)"
         aria-label="Buscar"
         aria-haspopup="dialog"
         aria-expanded={abierto}
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <Icons.Search />
       </button>
       {abierto && (
-        <div className="erp-panel absolute right-0 top-12 z-[70] max-h-[28rem] w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] sm:w-96 md:w-[24rem]" role="dialog" aria-modal="false" aria-label="Búsqueda global">
-          <div className="border-b border-slate-200/80 p-3">
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Buscar cliente, folio, ruta, producto…"
-              className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
-              aria-label="Texto a buscar"
-            />
-          </div>
-          {query.trim().length < 2 ? (
-            <div className="p-4 text-center text-sm text-slate-400">Escribe al menos 2 letras</div>
-          ) : resultados.length === 0 ? (
-            <div className="p-4 text-center text-sm text-slate-400">Sin resultados para “{query.trim()}”</div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {resultados.map(r => (
-                <button
-                  key={`${r.tipo}-${r.id}`}
-                  onClick={() => ir(r)}
-                  className="w-full text-left px-4 py-3 flex gap-3 items-center hover:bg-slate-50 transition-colors"
-                >
-                  <IconoResultado nombre={r.icono} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold text-slate-800 truncate">{r.titulo}</span>
-                    {r.subtitulo && <span className="block text-xs text-slate-500 truncate">{r.subtitulo}</span>}
-                  </span>
-                  <span className="flex-shrink-0 text-[10px] font-bold uppercase tracking-wide text-slate-400">{r.tipo}</span>
-                </button>
-              ))}
+        <>
+          <div className="fixed inset-0 z-[60] bg-ink/20 animate-fadeIn" onClick={() => setAbierto(false)} aria-hidden="true" />
+          <div className="absolute right-0 top-12 z-[70] max-h-[70vh] w-[calc(100vw-16px)] overflow-y-auto rounded-card border border-line bg-white shadow-pop animate-pop-in sm:w-96" role="dialog" aria-modal="false" aria-label="Búsqueda global">
+            <div className="sticky top-0 border-b border-line bg-white p-3">
+              <div className="relative">
+                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"><Icons.Search /></span>
+                <input
+                  ref={inputRef}
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Cliente, folio, ruta, producto…"
+                  className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 pl-10 pr-3.5 text-[15px] text-ink placeholder:text-slate-400 focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15"
+                  aria-label="Texto a buscar"
+                />
+              </div>
             </div>
-          )}
-        </div>
+            {query.trim().length < 2 ? (
+              <div className="p-5 text-center text-[13px] text-slate-500">Escribe al menos 2 letras</div>
+            ) : resultados.length === 0 ? (
+              <div className="p-5 text-center text-[13px] text-slate-500">Sin resultados para “{query.trim()}”</div>
+            ) : (
+              <div className="divide-y divide-line">
+                {resultados.map(r => (
+                  <button
+                    key={`${r.tipo}-${r.id}`}
+                    onClick={() => ir(r)}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-slate-50"
+                  >
+                    <IconoResultado nombre={r.icono} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[15px] font-semibold text-ink">{r.titulo}</span>
+                      {r.subtitulo && <span className="block truncate text-[13px] text-slate-500">{r.subtitulo}</span>}
+                    </span>
+                    <span className="flex-shrink-0 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold capitalize text-slate-600">{r.tipo}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </>
       )}
-      {abierto && <div className="fixed inset-0 z-[60]" onClick={() => setAbierto(false)} aria-hidden="true" />}
     </>
   );
 }
@@ -86,7 +90,7 @@ export default function BusquedaGlobal({ data, onNavigate }) {
 function IconoResultado({ nombre }) {
   const Ic = Icons[nombre] || Icons.Package;
   return (
-    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600" aria-hidden="true">
+    <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px] bg-accent-soft text-accent" aria-hidden="true">
       <Ic />
     </span>
   );

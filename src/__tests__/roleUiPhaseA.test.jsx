@@ -16,20 +16,21 @@ const html = (el) => renderToStaticMarkup(el);
 describe('A1: primitivas — la salida por defecto no cambia', () => {
   it('FormBtn sin props nuevas conserva sus clases de siempre; size="lg" y tonos nuevos son opcionales', () => {
     const base = html(<FormBtn primary onClick={() => {}}>Guardar</FormBtn>);
+    // Sistema 2026: radio 14 (rounded-field), tinta (bg-ink); lg = 52 px.
     expect(base).toMatch(/min-h-\[44px\]/);
-    expect(base).toMatch(/rounded-\[16px\]/);
-    expect(base).toMatch(/bg-slate-900/);
-    expect(base).not.toMatch(/min-h-\[56px\]/);
+    expect(base).toMatch(/rounded-field/);
+    expect(base).toMatch(/bg-ink/);
+    expect(base).not.toMatch(/min-h-\[52px\]/);
     const lg = html(<FormBtn success size="lg">Llegaron</FormBtn>);
-    expect(lg).toMatch(/min-h-\[56px\]/);
+    expect(lg).toMatch(/min-h-\[52px\]/);
     expect(lg).toMatch(/bg-emerald-600/);
     expect(html(<FormBtn warning>x</FormBtn>)).toMatch(/bg-amber-600/);
     expect(html(<FormBtn disabled>x</FormBtn>)).toMatch(/opacity-50/);
   });
   it('FormInput: hint e inputClassName son opcionales; error sigue teniendo prioridad sobre hint', () => {
     const plain = html(<FormInput label="Nombre" value="" onChange={() => {}} />);
-    expect(plain).toMatch(/min-h-\[44px\] w-full rounded-\[16px\]/);
-    expect(plain).not.toMatch(/text-slate-400 mt-1/);
+    expect(plain).toMatch(/min-h-\[48px\] w-full rounded-field/);
+    expect(plain).not.toMatch(/mt-1 text-xs text-slate-500/);
     const withHint = html(<FormInput label="Costo" hint="ayuda" inputClassName="text-center" value="" onChange={() => {}} />);
     expect(withHint).toMatch(/ayuda/);
     expect(withHint).toMatch(/text-center/);
@@ -40,36 +41,40 @@ describe('A1: primitivas — la salida por defecto no cambia', () => {
   it('Modal: sin kicker ni safeBottom es el de siempre; con ellos agrega etiqueta y relleno inferior', () => {
     const base = html(<Modal open onClose={() => {}} title="T"><p>c</p></Modal>);
     expect(base).toMatch(/z-\[90\]/);
-    expect(base).toMatch(/rounded-t-\[28px\]/);
+    expect(base).toMatch(/rounded-t-panel/);
+    expect(base).toMatch(/animate-sheet-in/);
     expect(base).not.toMatch(/erp-kicker/);
     expect(base).not.toMatch(/safe-area-inset-bottom/);
+    // Sistema 2026: pie pegajoso opcional con safe-area.
+    expect(html(<Modal open onClose={() => {}} title="T" footer={<button>Ok</button>}><p>c</p></Modal>)).toMatch(/data-testid="hoja-pie"[^>]*>|hoja-pie/);
     const sheet = html(<Modal open onClose={() => {}} title="T" kicker="Movimiento" safeBottom><p>c</p></Modal>);
     expect(sheet).toMatch(/erp-kicker/);
     expect(sheet).toMatch(/safe-area-inset-bottom/);
     expect(html(<Modal open={false} onClose={() => {}} title="T"><p>c</p></Modal>)).toBe('');
   });
   it('Card, SectionLabel, RoleHeader y HeaderStat renderizan el lenguaje del shell de Administración', () => {
-    expect(html(<Card>x</Card>)).toMatch(/rounded-card border shadow-card border-slate-200\/80 bg-white\/80/);
-    expect(html(<Card tone="danger" padding="p-2.5">x</Card>)).toMatch(/border-red-200\/80 bg-red-50\/80 p-2\.5/);
-    expect(html(<SectionLabel>Hoy</SectionLabel>)).toMatch(/uppercase tracking-\[0\.18em\] text-slate-400/);
+    expect(html(<Card>x</Card>)).toMatch(/rounded-card border shadow-card border-line bg-white/);
+    expect(html(<Card tone="danger" padding="p-2.5">x</Card>)).toMatch(/border-red-100 bg-red-50 p-2\.5/);
+    expect(html(<SectionLabel>Hoy</SectionLabel>)).toMatch(/uppercase tracking-\[0\.08em\] text-slate-500/);
     const h = html(<RoleHeader kicker="Almacén" title="Almacén de Bolsas" subtitle="Ana" accent="amber" onLogout={() => {}}><p>nota</p></RoleHeader>);
     expect(h).toMatch(/from-blue-950 via-slate-900 to-slate-900/);   // el mismo degradado del aside de Admin
-    expect(h).toMatch(/erp-kicker text-amber-200\/80/);
+    expect(h).toMatch(/erp-kicker text-amber-200\/90/);
     expect(h).toMatch(/font-display/);
     expect(h).toMatch(/safe-area-inset-top/);
     expect(h).toMatch(/Salir/);
     expect(h).toMatch(/nota/);
     expect(html(<RoleHeader title="Sin salir" />)).not.toMatch(/Salir/);
     expect(html(<HeaderStat label="Vendido hoy" value="$1,000" />)).toMatch(/bg-white\/10/);   // B2: /8 no existe en la escala de Tailwind
-    expect(html(<StatusBadge status="Bajo" />)).toMatch(/bg-red-100\/80/);
-    expect(html(<StatusBadge status="OK" />)).toMatch(/bg-emerald-100\/80/);
-    expect(html(<StatusBadge status="Creada" />)).toMatch(/bg-amber-100\/80/);   // sin cambio
+    expect(html(<StatusBadge status="Bajo" />)).toMatch(/bg-red-50 text-red-800/);
+    expect(html(<StatusBadge status="OK" />)).toMatch(/bg-emerald-50 text-emerald-800/);
+    expect(html(<StatusBadge status="Creada" />)).toMatch(/bg-amber-50 text-amber-800/);
   });
   it('tokens: radios y sombras con nombre; el aviso global queda por encima de modal y confirmación', () => {
     const tw = src('../../tailwind.config.js');
-    expect(tw).toMatch(/card: '24px'/);
+    expect(tw).toMatch(/field: '14px'/);
+    expect(tw).toMatch(/card: '20px'/);
     expect(tw).toMatch(/panel: '28px'/);
-    expect(tw).toMatch(/sheet: '0 24px 56px/);
+    expect(tw).toMatch(/sheet: '0 -8px 40px/);
     expect(src('../components/ui/Toast.jsx')).toMatch(/z-\[96\]/);
   });
 });

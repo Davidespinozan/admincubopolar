@@ -29,8 +29,10 @@ describe('A1+: primitivas nuevas (SegmentedTabs, ChoiceButton, KpiTile)', () => 
   });
   it('KpiTile usa la familia de tarjetas del shell', () => {
     const h = html(<KpiTile label="Vendido hoy" value="$1,000" hint="hoy" />);
-    expect(h).toMatch(/rounded-card border border-slate-200\/80 bg-white\/80/);
+    // Sistema 2026: superficie blanca con línea fina; cifra tabular.
+    expect(h).toMatch(/rounded-card border p-4 shadow-card border-line bg-white/);
     expect(h).toMatch(/font-display/);
+    expect(h).toMatch(/tnum/);
     expect(h).toMatch(/hoy/);
   });
 });
@@ -190,11 +192,11 @@ describe('B2: pulido visual e integración en el shell (solo presentación)', ()
     expect(c).toMatch(/CUBOPOLAR/);
     expect(c).toMatch(/pb-3/);
     expect(c).toMatch(/0\.75rem/);
-    expect(c).toMatch(/text-\[1\.25rem\]/);
+    expect(c).toMatch(/text-\[1\.35rem\]/);
     const n = html(<RoleHeader kicker="Ventas" title="Ventas del día" />);
     expect(n).not.toMatch(/CUBOPOLAR/);
     expect(n).toMatch(/44px/);
-    expect(n).toMatch(/text-\[1\.6rem\]/);
+    expect(n).toMatch(/text-\[1\.7rem\]/);
   });
   it('dentro del shell la vista no repite el título de página y ocupa el workspace', () => {
     for (const f of ['../components/VentasStandaloneView.jsx', '../components/ProduccionStandaloneView.jsx', '../components/BolsasView.jsx']) {
@@ -231,9 +233,9 @@ describe('B3: primitiva BottomNav', async () => {
     expect((h.match(/min-h-\[56px\]/g) || []).length).toBe(2);
     // B3.1: mismo lenguaje oscuro que el aside de escritorio
     expect(h).toMatch(/border-white\/10 bg-gradient-to-t from-blue-950 via-slate-900 to-slate-900 text-slate-100/);
-    expect(h).toMatch(/aria-current="page"[^>]*text-white[^>]*>[\s\S]*?bg-blue-600 text-white/);
-    expect(h).toMatch(/aria-label="Uno" class="[^"]*text-slate-300\/80/);
-    expect(h).toMatch(/bg-white\/5 text-slate-300/);
+    // Sistema 2026: activo = píldora de acento cian; inactivo gris claro.
+    expect(h).toMatch(/aria-current="page"[^>]*text-white[^>]*>[\s\S]*?bg-cyan-400\/20 text-cyan-200/);
+    expect(h).toMatch(/aria-label="Uno" class="[^"]*text-slate-400/);
     expect(h).not.toMatch(/bg-white\/95|text-slate-900/);
     expect(h).toMatch(/repeat\(2, minmax\(0, 1fr\)\)/);
     expect(h).not.toMatch(/Más/);

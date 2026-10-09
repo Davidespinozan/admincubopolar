@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, EmptyState, s, n, fmtMoney, fmtDate, useConfirm } from './viewsCommon';
+import { useState, useMemo, Modal, EmptyState, s, n, fmtMoney, fmtDate, useConfirm, PageHeader, FormBtn, Icons } from './viewsCommon';
 import { diaNegocio } from '../../utils/fechas';
 import { periodoNominaDe, etiquetaPeriodoNomina, previewRecibo, camposDeRecibo } from '../../data/nominaLogic';
 
@@ -117,13 +117,9 @@ export function NominaView({ data, actions }) {
 
   return (<div className="space-y-4">
     {ConfirmEl}
-    <div className="flex flex-wrap justify-between items-center gap-2">
-      <div>
-        <h2 className="text-lg font-bold text-slate-800">Nómina</h2>
-        {semanaActual && <p className="text-xs text-slate-400">Semana actual: {etiquetaPeriodoNomina(semanaActual)} · pago el viernes</p>}
-      </div>
-      <button onClick={() => crear(null)} disabled={ocupado} className="bg-emerald-600 disabled:bg-slate-300 text-white px-4 min-h-[44px] rounded-lg text-sm font-semibold">+ Nómina de esta semana</button>
-    </div>
+    <PageHeader title="Nómina" subtitle={semanaActual ? `Semana actual: ${etiquetaPeriodoNomina(semanaActual)} · pago el viernes` : 'Periodos y recibos'} />
+    {semanaActual && <p className="text-[13px] text-slate-500 sm:hidden">Semana actual: {etiquetaPeriodoNomina(semanaActual)} · pago el viernes</p>}
+    <FormBtn primary className="w-full" onClick={() => crear(null)} disabled={ocupado}><Icons.Plus /> Nómina de esta semana</FormBtn>
     <details className="bg-white rounded-xl p-3 border border-slate-100">
       <summary className="text-xs text-slate-500 cursor-pointer min-h-[32px]">Crear la nómina de otra semana</summary>
       <div className="flex flex-wrap gap-2 mt-2 items-end">

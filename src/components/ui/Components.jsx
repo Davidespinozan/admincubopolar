@@ -1,38 +1,44 @@
 import { Icons } from './Icons';
 import { EmptyState } from './Skeleton';
 
+// Primitivas del sistema "CUBOPOLAR 2026" (docs/sistema/diseno.md): lienzo
+// neutro, superficies blancas con línea fina, radios 14/20/28, una tinta, un
+// acento. Toda vista usa estas piezas; nada se dibuja a mano.
+
 // ─── STATUS BADGE ───
 const STATUS_COLORS = {
-  "Activo": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
-  "Activa": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
-  "Revertida": "bg-slate-100/80 text-slate-600 border-slate-200/80",
-  "Inactivo": "bg-slate-100/90 text-slate-600 border-slate-200",
-  "Creada": "bg-amber-100/80 text-amber-900 border-amber-200/80",
-  "Asignada": "bg-sky-100/90 text-sky-900 border-sky-200/80",
-  "En ruta": "bg-blue-100/80 text-blue-900 border-blue-200/80",
-  "Entregada": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
-  "No entregada": "bg-amber-100/80 text-amber-900 border-amber-200/80",
-  "Facturada": "bg-cyan-100/90 text-cyan-900 border-cyan-200/80",
-  "En progreso": "bg-sky-100/90 text-sky-900 border-sky-200/80",
-  "Completada": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
-  "Programada": "bg-slate-100/90 text-slate-700 border-slate-200/90",
-  "Cerrada": "bg-slate-200/80 text-slate-800 border-slate-300/80",
-  "Confirmada": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
-  "En proceso": "bg-amber-100/80 text-amber-900 border-amber-200/80",
-  "Empaque": "bg-orange-100/80 text-orange-900 border-orange-200/80",
-  "Producto Terminado": "bg-cyan-100/90 text-cyan-900 border-cyan-200/80",
-  "Entrada": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
-  "Salida": "bg-red-100/80 text-red-900 border-red-200/80",
-  "Traspaso": "bg-sky-100/90 text-sky-900 border-sky-200/80",
-  "Devolución": "bg-violet-100/80 text-violet-900 border-violet-200/80",
-  "Merma": "bg-amber-100/80 text-amber-900 border-amber-200/80",
-  // Fase A: nivel de existencia (vistas por rol).
-  "OK": "bg-emerald-100/80 text-emerald-900 border-emerald-200/80",
-  "Bajo": "bg-red-100/80 text-red-900 border-red-200/80",
+  "Activo": "bg-emerald-50 text-emerald-800 border-emerald-100",
+  "Activa": "bg-emerald-50 text-emerald-800 border-emerald-100",
+  "Revertida": "bg-slate-100 text-slate-600 border-slate-200",
+  "Inactivo": "bg-slate-100 text-slate-600 border-slate-200",
+  "Creada": "bg-amber-50 text-amber-800 border-amber-100",
+  "Asignada": "bg-sky-50 text-sky-800 border-sky-100",
+  "En ruta": "bg-blue-50 text-blue-800 border-blue-100",
+  "Entregada": "bg-emerald-50 text-emerald-800 border-emerald-100",
+  "No entregada": "bg-amber-50 text-amber-800 border-amber-100",
+  "Facturada": "bg-cyan-50 text-cyan-800 border-cyan-100",
+  "En progreso": "bg-sky-50 text-sky-800 border-sky-100",
+  "Completada": "bg-emerald-50 text-emerald-800 border-emerald-100",
+  "Programada": "bg-slate-100 text-slate-700 border-slate-200",
+  "Cerrada": "bg-slate-200/70 text-slate-800 border-slate-300/70",
+  "Confirmada": "bg-emerald-50 text-emerald-800 border-emerald-100",
+  "En proceso": "bg-amber-50 text-amber-800 border-amber-100",
+  "Empaque": "bg-orange-50 text-orange-800 border-orange-100",
+  "Producto Terminado": "bg-cyan-50 text-cyan-800 border-cyan-100",
+  "Entrada": "bg-emerald-50 text-emerald-800 border-emerald-100",
+  "Salida": "bg-red-50 text-red-800 border-red-100",
+  "Traspaso": "bg-sky-50 text-sky-800 border-sky-100",
+  "Devolución": "bg-violet-50 text-violet-800 border-violet-100",
+  "Merma": "bg-amber-50 text-amber-800 border-amber-100",
+  "Pendiente": "bg-amber-50 text-amber-800 border-amber-100",
+  "Pagada": "bg-emerald-50 text-emerald-800 border-emerald-100",
+  "Vencida": "bg-red-50 text-red-800 border-red-100",
+  "OK": "bg-emerald-50 text-emerald-800 border-emerald-100",
+  "Bajo": "bg-red-50 text-red-800 border-red-100",
 };
-const DEFAULT_STATUS_COLOR = "bg-slate-100/90 text-slate-700 border-slate-200/90";
+const DEFAULT_STATUS_COLOR = "bg-slate-100 text-slate-700 border-slate-200";
 export const StatusBadge = ({ status }) => (
-  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${STATUS_COLORS[status] || DEFAULT_STATUS_COLOR}`}>
+  <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none ${STATUS_COLORS[status] || DEFAULT_STATUS_COLOR}`}>
     {status}
   </span>
 );
@@ -44,16 +50,8 @@ export const AlertBadge = ({ tipo }) => {
 };
 
 // ─── ADAPTIVE DATA TABLE ───
-// Desktop: standard table | Mobile: stacked cards
-// Single component, zero duplication. Breakpoint handled via CSS.
-//
-// Props:
-//   columns: [{ key, label, bold, render, primary, hideOnMobile }]
-//     - primary: true → shown as card title on mobile (first match)
-//     - hideOnMobile: true → hidden in card mode
-//   cardTitle: (row) => string — override for mobile card title
-//   cardSubtitle: (row) => ReactNode — extra line under title
-//   data, onRowClick
+// Desktop: tabla | Móvil: tarjetas apiladas (misma fuente, sin duplicar).
+//   columns: [{ key, label, bold, render, primary, hideOnMobile, badge }]
 export const DataTable = ({
   columns,
   data,
@@ -68,7 +66,6 @@ export const DataTable = ({
   onEmptySecondary,
   emptyIcon,
 }) => {
-  // Determine which column is "primary" for card title
   const primaryCol = columns.find(c => c.primary) || columns.find(c => c.bold) || columns[0];
   const secondaryCols = columns.filter(c => c !== primaryCol && !c.hideOnMobile);
 
@@ -86,22 +83,21 @@ export const DataTable = ({
         />
       )}
 
-      {/* ── DESKTOP TABLE (hidden on mobile) ── */}
-      {data.length > 0 && <div className="hidden overflow-x-auto rounded-[28px] border border-slate-200/80 bg-white/70 shadow-[0_14px_32px_rgba(8,20,27,0.06)] md:block">
+      {data.length > 0 && <div className="hidden overflow-x-auto rounded-card border border-line bg-white shadow-card md:block">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-slate-200/80 bg-slate-900/[0.025]">
+            <tr className="border-b border-line bg-slate-50/80">
               {columns.map(col => (
-                <th key={col.key + col.label} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{col.label}</th>
+                <th key={col.key + col.label} className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">{col.label}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {data.map((row, i) => (
-              <tr key={i} onClick={() => onRowClick?.(row)} className="cursor-pointer border-b border-slate-100/90 transition-colors hover:bg-slate-900/[0.025] group">
+              <tr key={i} onClick={() => onRowClick?.(row)} className="cursor-pointer border-b border-line/80 transition-colors hover:bg-slate-50 group">
                 {columns.map(col => (
-                  <td key={col.key + col.label} className="px-4 py-3.5 text-sm">
-                    {col.render ? col.render(row[col.key], row) : <span className={col.bold ? "font-semibold text-slate-800" : "text-slate-600"}>{row[col.key]}</span>}
+                  <td key={col.key + col.label} className="px-4 py-3.5 text-sm tnum">
+                    {col.render ? col.render(row[col.key], row) : <span className={col.bold ? "font-semibold text-ink" : "text-slate-600"}>{row[col.key]}</span>}
                   </td>
                 ))}
               </tr>
@@ -110,19 +106,17 @@ export const DataTable = ({
         </table>
       </div>}
 
-      {/* ── MOBILE CARDS (hidden on desktop) ── */}
       {data.length > 0 && <div className="space-y-2 md:hidden">
         {data.map((row, i) => {
           const badgeCol = columns.find(c => c.badge);
           return (
-          <div key={i} onClick={() => onRowClick?.(row)} className="cursor-pointer rounded-[20px] border border-slate-200/80 bg-white/80 p-3 shadow-[0_8px_20px_rgba(8,20,27,0.05)] transition-colors active:bg-slate-50 sm:p-4">
-            {/* Card header: primary value + badge top-right */}
-            <div className="flex items-start justify-between gap-2 mb-1.5">
+          <div key={i} onClick={() => onRowClick?.(row)} className="cursor-pointer rounded-card border border-line bg-white p-3.5 shadow-card transition-colors active:bg-slate-50">
+            <div className="mb-2 flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-bold text-slate-800 sm:text-[15px]">
+                <div className="line-clamp-2 text-[15px] font-semibold leading-snug text-ink [&_.truncate]:whitespace-normal">
                   {cardTitle ? cardTitle(row) : (primaryCol.render ? primaryCol.render(row[primaryCol.key], row) : row[primaryCol.key])}
-                </p>
-                {cardSubtitle && <div className="mt-0.5">{cardSubtitle(row)}</div>}
+                </div>
+                {cardSubtitle && <div className="mt-0.5 text-[13px] text-slate-500">{cardSubtitle(row)}</div>}
               </div>
               {badgeCol && (
                 <div className="flex-shrink-0">
@@ -130,15 +124,14 @@ export const DataTable = ({
                 </div>
               )}
             </div>
-            {/* Card body: key-value pairs */}
             <div className="space-y-1.5">
               {secondaryCols.filter(c => !c.badge).map(col => {
                 const val = col.render ? col.render(row[col.key], row) : row[col.key];
                 if (val === undefined || val === null || val === "") return null;
                 return (
-                  <div key={col.key + col.label} className="flex items-start justify-between gap-2 text-xs sm:text-sm">
-                    <span className="text-slate-400 flex-shrink-0">{col.label}</span>
-                    <span className="min-w-0 break-words text-right font-medium text-slate-700">{val}</span>
+                  <div key={col.key + col.label} className="flex items-start justify-between gap-3 text-[13px]">
+                    <span className="flex-shrink-0 text-slate-500">{col.label}</span>
+                    <span className="min-w-0 break-words text-right font-medium text-slate-800 tnum">{val}</span>
                   </div>
                 );
               })}
@@ -152,20 +145,18 @@ export const DataTable = ({
 };
 
 // ─── PAGE HEADER ───
-// Mobile: stacked, full-width action button
-// Desktop: row with inline button
-// Mobile-first (2026-10-09): en celular el título ya está en la barra superior
-// del shell; aquí solo quedan las acciones, sin tarjeta. En sm+ se ve completo.
+// Móvil: el título vive en la barra superior del shell; aquí solo las acciones.
+// sm+: título, subtítulo y acciones en una fila.
 export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon, extraButtons }) => (
-  <div className={`mb-3 flex-col gap-3 sm:mb-6 sm:flex sm:flex-row sm:items-center sm:justify-between sm:rounded-[28px] sm:border sm:border-slate-200/80 sm:bg-white/60 sm:px-5 sm:py-4.5 sm:shadow-[0_12px_24px_rgba(8,20,27,0.05)] sm:backdrop-blur-xl ${action || extraButtons ? 'flex' : 'hidden'}`} data-testid="page-header">
+  <div className={`mb-3 flex-col gap-3 sm:mb-6 sm:flex sm:flex-row sm:items-center sm:justify-between ${action || extraButtons ? 'flex' : 'hidden'}`} data-testid="page-header">
     <div className="hidden min-w-0 sm:block">
-      <h1 className="font-display text-[1.6rem] font-bold tracking-[-0.03em] text-slate-900">{title}</h1>
-      {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+      <h1 className="font-display text-[1.5rem] font-bold text-ink">{title}</h1>
+      {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
     </div>
     <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:flex-shrink-0">
       {extraButtons}
       {action && (
-        <button onClick={action} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-[14px] bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(8,20,27,0.14)] transition-all hover:bg-slate-800 sm:gap-2 sm:rounded-[16px]">
+        <button onClick={action} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-field bg-ink px-4 py-2.5 text-sm font-semibold text-white shadow-cta transition-colors hover:bg-slate-800">
           {actionIcon || <Icons.Plus />} {actionLabel}
         </button>
       )}
@@ -173,21 +164,36 @@ export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon, e
   </div>
 );
 
+// ─── ICON BUTTON ───
+// Botón de solo icono (acciones de fila, cabecera): 40 px, área táctil 44.
+export const IconButton = ({ icon, label, onClick, tone = "neutral", className = "", disabled }) => {
+  const Ic = Icons[icon] || Icons.MoreH;
+  const tones = {
+    neutral: "text-slate-500 hover:bg-slate-100 hover:text-ink",
+    danger: "text-red-600 hover:bg-red-50",
+    accent: "text-accent hover:bg-accent-soft",
+  };
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} aria-label={label} title={label}
+      className={`inline-flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px] transition-colors disabled:opacity-40 ${tones[tone] || tones.neutral} ${className}`}>
+      <Ic />
+    </button>
+  );
+};
+
 // ─── STAT CARD ───
 export const StatCard = ({ label, value, unit, change, up, icon: IconComp }) => (
-  <div className="rounded-[24px] border border-slate-200/80 bg-white/80 p-4 shadow-[0_12px_24px_rgba(8,20,27,0.06)] transition-all hover:translate-y-[-1px] hover:shadow-[0_16px_28px_rgba(8,20,27,0.08)] sm:p-5">
-    <div className="flex items-start justify-between mb-2 sm:mb-3">
-      <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</span>
-      <div className="flex h-8 w-8 items-center justify-center rounded-[12px] bg-slate-900 text-cyan-200 sm:h-9 sm:w-9">
-        <IconComp />
-      </div>
+  <div className="rounded-card border border-line bg-white p-4 shadow-card sm:p-5">
+    <div className="mb-2 flex items-start justify-between sm:mb-3">
+      <SectionLabel>{label}</SectionLabel>
+      {IconComp && <div className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-accent-soft text-accent"><IconComp /></div>}
     </div>
     <div className="flex items-baseline gap-1.5 sm:gap-2">
-      <span className="font-display text-2xl font-bold tracking-[-0.05em] text-slate-900 sm:text-[2rem]">{value}</span>
-      <span className="text-xs font-medium text-slate-400">{unit}</span>
+      <span className="font-display text-2xl font-bold text-ink tnum sm:text-[1.9rem]">{value}</span>
+      {unit && <span className="text-xs font-medium text-slate-500">{unit}</span>}
     </div>
     {change && (
-      <div className={`mt-1.5 flex items-center gap-1 text-xs font-semibold sm:mt-2 ${up ? "text-emerald-700" : "text-slate-400"}`}>
+      <div className={`mt-1.5 flex items-center gap-1 text-xs font-semibold sm:mt-2 ${up ? "text-emerald-700" : "text-slate-500"}`}>
         {up ? <Icons.ArrowUp /> : null}
         {change}
       </div>
@@ -197,63 +203,98 @@ export const StatCard = ({ label, value, unit, change, up, icon: IconComp }) => 
 
 // ─── CAPACITY BAR ───
 export const CapacityBar = ({ pct }) => (
-  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200/80">
+  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
     <div className={`h-full rounded-full transition-all ${pct > 80 ? "bg-amber-500" : pct > 50 ? "bg-sky-600" : "bg-emerald-500"}`} style={{ width: `${Math.min(100, pct)}%` }} />
   </div>
 );
 
 // ─── CARD ───
-// Fase A: la tarjeta de contenido del shell de Administración (misma familia
-// que StatCard / DataTable móvil) para que las vistas por rol no repitan
-// bordes, radios y sombras a mano.
 export const Card = ({ children, className = "", padding = "p-4 sm:p-5", tone }) => (
   <div className={`rounded-card border shadow-card ${
-    tone === "success" ? "border-emerald-200/80 bg-emerald-50/80" :
-    tone === "warning" ? "border-amber-200/80 bg-amber-50/80" :
-    tone === "danger" ? "border-red-200/80 bg-red-50/80" :
-    "border-slate-200/80 bg-white/80"
+    tone === "success" ? "border-emerald-100 bg-emerald-50" :
+    tone === "warning" ? "border-amber-100 bg-amber-50" :
+    tone === "danger" ? "border-red-100 bg-red-50" :
+    tone === "dark" ? "border-white/10 bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 text-slate-100" :
+    "border-line bg-white"
   } ${padding} ${className}`}>
     {children}
   </div>
 );
 
 // ─── SECTION LABEL ───
-// Etiqueta de sección en mayúsculas (la misma de DataTable y StatCard).
 export const SectionLabel = ({ children, className = "" }) => (
-  <p className={`text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 ${className}`}>{children}</p>
+  <p className={`text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 ${className}`}>{children}</p>
+);
+
+// ─── LIST ROW ───
+// Fila de lista (clientes, empleados, rutas…): icono/avatar, título, subtítulo,
+// valor a la derecha y chevron si navega. Dentro de `Card padding="p-0"` o suelta.
+export const ListRow = ({ icon, avatar, title, subtitle, value, valueHint, badge, onClick, chevron, trailing, className = "" }) => {
+  const Ic = icon ? (Icons[icon] || Icons.Package) : null;
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag type={onClick ? "button" : undefined} onClick={onClick}
+      className={`flex w-full items-center gap-3 px-4 py-3 text-left ${onClick ? "transition-colors active:bg-slate-50" : ""} ${className}`}>
+      {avatar !== undefined && (
+        <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-accent-soft text-sm font-bold text-accent">{String(avatar || '?').charAt(0).toUpperCase()}</span>
+      )}
+      {Ic && <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px] bg-slate-100 text-slate-600"><Ic /></span>}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold text-ink">{title}</span>
+        {subtitle && <span className="mt-0.5 block truncate text-[13px] text-slate-500">{subtitle}</span>}
+      </span>
+      {(value !== undefined || badge) && (
+        <span className="flex flex-shrink-0 flex-col items-end gap-1">
+          {value !== undefined && <span className="text-[15px] font-semibold text-ink tnum">{value}</span>}
+          {valueHint && <span className="text-[11px] text-slate-500">{valueHint}</span>}
+          {badge}
+        </span>
+      )}
+      {trailing}
+      {chevron && <span className="flex-shrink-0 text-slate-400"><Icons.ChevronRight /></span>}
+    </Tag>
+  );
+};
+
+// ─── CHIPS (filtros desplazables) ───
+export const Chips = ({ items, value, onChange, className = "" }) => (
+  <div className={`no-scrollbar -mx-3 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0 ${className}`} role="tablist">
+    {items.map(t => {
+      const active = value === t.k;
+      return (
+        <button key={t.k} type="button" role="tab" aria-selected={active} onClick={() => onChange(t.k)}
+          className={`inline-flex min-h-[40px] flex-shrink-0 items-center gap-1.5 rounded-full border px-4 text-sm font-semibold transition-colors ${
+            active ? "border-ink bg-ink text-white" : "border-line bg-white text-slate-600"}`}>
+          {t.l}{t.n != null && <span className={`rounded-full px-1.5 text-[11px] ${active ? "bg-white/20" : "bg-slate-100 text-slate-600"}`}>{t.n}</span>}
+        </button>
+      );
+    })}
+  </div>
 );
 
 // ─── ROLE HEADER ───
-// Fase A: cabecera de las vistas por rol (Almacén Bolsas, Ventas, Producción,
-// Chofer) con el lenguaje del shell de Administración: el mismo degradado
-// oscuro del aside, kicker, título display y el nombre del usuario. El rol
-// solo aporta un acento de color; el marco es el mismo producto.
-//   kicker/title/subtitle: textos. accent: 'amber' | 'emerald' | 'sky' | 'cyan'.
-//   onLogout/logoutLabel: botón de salida (en "Ver como" devuelve a Admin).
-//   right: nodos extra junto al botón (p. ej. firmas pendientes).
-//   children: contenido bajo el título (KPIs, nota).
+// Cabecera oscura de las vistas por rol (Chofer en modo enfoque): marca, título,
+// bienvenida y acciones. `compact`: título más chico, contenido antes.
 const ACCENTS = {
-  amber:   "text-amber-200/80",
-  emerald: "text-emerald-200/80",
-  sky:     "text-sky-200/80",
-  cyan:    "text-cyan-200/80",
+  amber:   "text-amber-200/90",
+  emerald: "text-emerald-200/90",
+  sky:     "text-sky-200/90",
+  cyan:    "text-cyan-200/90",
 };
-//   compact (B2): modo operativo (Chofer): menos alto, marca CUBOPOLAR + rol en
-//   una línea, título más chico; el contenido operativo aparece antes.
 export const RoleHeader = ({ kicker, title, subtitle, accent = "cyan", onLogout, logoutLabel = "Salir", right, children, compact = false }) => (
-  <header className={`bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 px-4 text-slate-100 shadow-[0_20px_50px_rgba(8,20,27,0.18)] ${compact ? "pb-3" : "pb-5"}`}
+  <header className={`bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 px-4 text-slate-100 ${compact ? "pb-3" : "pb-5"}`}
     style={{ paddingTop: compact ? "max(env(safe-area-inset-top, 0px), 0.75rem)" : "max(env(safe-area-inset-top, 44px), 44px)" }}>
     <div className="mx-auto w-full max-w-[640px] md:max-w-3xl lg:max-w-5xl">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           {kicker && <p className={`erp-kicker ${ACCENTS[accent] || ACCENTS.cyan}`}>{compact ? <><span className="text-white/60">CUBOPOLAR</span> · {kicker}</> : kicker}</p>}
-          <h1 className={`font-display font-bold tracking-[-0.04em] text-white ${compact ? "text-[1.25rem] sm:text-[1.4rem]" : "text-[1.6rem] sm:text-[1.8rem]"}`}>{title}</h1>
-          {subtitle && <p className="truncate text-xs text-slate-300">{subtitle}</p>}
+          <h1 className={`font-display font-bold text-white ${compact ? "text-[1.35rem]" : "text-[1.7rem]"}`}>{title}</h1>
+          {subtitle && <p className="truncate text-[13px] text-slate-300">{subtitle}</p>}
         </div>
         <div className="flex flex-shrink-0 items-center gap-2">
           {right}
           {onLogout && (
-            <button onClick={onLogout} className="inline-flex min-h-[36px] items-center justify-center rounded-[13px] border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/15">
+            <button onClick={onLogout} className="inline-flex min-h-[40px] items-center justify-center rounded-[12px] border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/15">
               {logoutLabel}
             </button>
           )}
@@ -266,31 +307,30 @@ export const RoleHeader = ({ kicker, title, subtitle, accent = "cyan", onLogout,
 
 // Tarjeta de cifra para el RoleHeader (fondo oscuro).
 export const HeaderStat = ({ label, value, className = "" }) => (
-  <div className={`rounded-[22px] border border-white/10 bg-white/10 p-3.5 backdrop-blur-xl ${className}`}>
-    <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-300">{label}</p>
-    <p className="mt-1.5 font-display text-2xl font-bold tracking-[-0.04em] text-white">{value}</p>
+  <div className={`rounded-card border border-white/10 bg-white/10 p-3.5 ${className}`}>
+    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-300">{label}</p>
+    <p className="mt-1.5 font-display text-2xl font-bold text-white tnum">{value}</p>
   </div>
 );
 
 // ─── SEGMENTED TABS ───
-// Fase A3: control segmentado de las vistas por rol (Ventas, Producción).
-// En el shell compartido las mismas pestañas viven en el menú lateral; en
-// móvil este control es el acceso con una mano. `items`: [{ k, l, icon? }].
+// Control segmentado (≤ 4 opciones): pista gris, píldora activa. `accent`
+// colorea la píldora en las vistas por rol (emerald Ventas, blue Producción).
 const SEG_ACTIVE = {
-  slate:   "bg-slate-900 text-white shadow-[0_12px_22px_rgba(8,20,27,0.16)]",
-  emerald: "bg-emerald-600 text-white shadow-[0_12px_22px_rgba(5,150,105,0.14)]",
-  blue:    "bg-blue-600 text-white shadow-[0_12px_22px_rgba(37,99,235,0.14)]",
-  amber:   "bg-amber-600 text-white shadow-[0_12px_22px_rgba(217,119,6,0.14)]",
+  slate:   "bg-white text-ink shadow-[0_1px_2px_rgba(11,18,32,0.08),0_2px_8px_rgba(11,18,32,0.06)]",
+  emerald: "bg-emerald-600 text-white shadow-[0_6px_16px_-8px_rgba(5,150,105,0.6)]",
+  blue:    "bg-blue-600 text-white shadow-[0_6px_16px_-8px_rgba(37,99,235,0.6)]",
+  amber:   "bg-amber-600 text-white shadow-[0_6px_16px_-8px_rgba(217,119,6,0.6)]",
 };
 export const SegmentedTabs = ({ items, value, onChange, accent = "slate", className = "" }) => (
-  <div className={`grid gap-1 rounded-[20px] border border-slate-200/80 bg-white/70 p-1.5 shadow-panel ${className}`}
+  <div className={`grid gap-1 rounded-[14px] bg-slate-900/[0.06] p-1 ${className}`}
     style={{ gridTemplateColumns: `repeat(${Math.max(1, items.length)}, minmax(0, 1fr))` }} role="tablist">
     {items.map(t => {
       const Ic = t.icon ? Icons[t.icon] : null;
       const active = value === t.k;
       return (
         <button key={t.k} type="button" role="tab" aria-selected={active} onClick={() => onChange(t.k)}
-          className={`inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-[16px] px-2 py-2.5 text-sm font-semibold transition-all ${active ? (SEG_ACTIVE[accent] || SEG_ACTIVE.slate) : "text-slate-600 hover:bg-slate-900/[0.04]"}`}>
+          className={`inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[11px] px-2 py-2 text-[13px] font-semibold transition-all ${active ? (SEG_ACTIVE[accent] || SEG_ACTIVE.slate) : "text-slate-600 hover:text-ink"}`}>
           {Ic && <span className="[&>svg]:h-4 [&>svg]:w-4"><Ic /></span>}
           <span className="truncate">{t.l}</span>
         </button>
@@ -300,11 +340,9 @@ export const SegmentedTabs = ({ items, value, onChange, accent = "slate", classN
 );
 
 // ─── CHOICE BUTTON ───
-// Fase A3: opción de captura táctil (producto, método de pago, turno, cuarto,
-// causa…). Reemplaza los botones `border-2` que cada vista por rol dibujaba
-// a mano. `active` + `tone` dan el estado seleccionado.
+// Opción de captura táctil (producto, método de pago, turno, cuarto, causa…).
 const CHOICE_ACTIVE = {
-  slate:   "border-slate-900 bg-slate-900 text-white",
+  slate:   "border-ink bg-ink text-white",
   blue:    "border-blue-500 bg-blue-50 text-blue-800",
   emerald: "border-emerald-500 bg-emerald-50 text-emerald-800",
   amber:   "border-amber-500 bg-amber-50 text-amber-800",
@@ -313,42 +351,40 @@ const CHOICE_ACTIVE = {
 };
 export const ChoiceButton = ({ active, tone = "blue", onClick, children, className = "", disabled }) => (
   <button type="button" onClick={onClick} disabled={disabled} aria-pressed={!!active}
-    className={`min-h-[44px] rounded-[16px] border-2 px-3 py-2.5 text-sm font-semibold transition-colors ${
-      active ? (CHOICE_ACTIVE[tone] || CHOICE_ACTIVE.blue) : "border-slate-200 bg-white/80 text-slate-600 hover:bg-slate-50"
+    className={`min-h-[48px] rounded-field border-2 px-3 py-2.5 text-[14px] font-semibold leading-tight transition-colors ${
+      active ? (CHOICE_ACTIVE[tone] || CHOICE_ACTIVE.blue) : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
     } ${disabled ? "opacity-40 cursor-not-allowed" : ""} ${className}`}>
     {children}
   </button>
 );
 
-// ─── KPI ROW (contenido claro, dentro del shell) ───
-// Cifras de cabecera de una vista por rol cuando la vista vive dentro del
-// shell compartido (fondo claro): misma familia que StatCard, sin icono.
-// B3.2: `compact` para un valor textual (p. ej. "12× HPC-5K"), `children`
-// para un indicador bajo la cifra (p. ej. CapacityBar). Sin ellos es la de siempre.
-export const KpiTile = ({ label, value, hint, compact = false, children, className = "" }) => (
-  <div className={`rounded-card border border-slate-200/80 bg-white/80 p-4 shadow-card ${className}`}>
-    <SectionLabel>{label}</SectionLabel>
+// ─── KPI TILE ───
+// Cifra de cabecera: etiqueta 11 px, cifra tabular, pista. En `grid grid-cols-2`.
+export const KpiTile = ({ label, value, hint, compact = false, tone, children, className = "" }) => (
+  <div className={`rounded-card border p-4 shadow-card ${
+    tone === "success" ? "border-emerald-100 bg-emerald-50" :
+    tone === "warning" ? "border-amber-100 bg-amber-50" :
+    tone === "danger" ? "border-red-100 bg-red-50" :
+    tone === "accent" ? "border-transparent bg-ink text-white" :
+    "border-line bg-white"} ${className}`}>
+    <p className={`text-[11px] font-semibold uppercase tracking-[0.08em] ${tone === "accent" ? "text-white/60" : "text-slate-500"}`}>{label}</p>
     <p className={compact
-      ? "mt-1.5 truncate text-base font-bold tracking-[-0.02em] text-slate-900 sm:text-lg"
-      : "mt-1.5 font-display text-2xl font-bold tracking-[-0.05em] text-slate-900 sm:text-[1.8rem]"}>{value}</p>
-    {hint && <p className="mt-0.5 text-xs text-slate-400">{hint}</p>}
+      ? `mt-1 truncate text-base font-bold ${tone === "accent" ? "text-white" : "text-ink"}`
+      : `mt-1 font-display text-2xl font-bold tnum ${tone === "accent" ? "text-white" : tone === "danger" ? "text-red-700" : tone === "warning" ? "text-amber-700" : tone === "success" ? "text-emerald-700" : "text-ink"}`}>{value}</p>
+    {hint && <p className={`mt-0.5 text-xs ${tone === "accent" ? "text-white/60" : "text-slate-500"}`}>{hint}</p>}
     {children ? <div className="mt-2">{children}</div> : null}
   </div>
 );
 
 // ─── BOTTOM NAV (móvil) ───
-// B3: navegación inferior fija para los roles en modo completo. Consume los
-// mismos ids/iconos que el sidebar (navRolLogic.bottomNavParaRol); se oculta
-// en lg+ donde manda el sidebar. `masActivo`: el módulo actual vive en el menú.
-// B3.1: mismo lenguaje oscuro que el aside de escritorio (degradado
-// blue-950 → slate-900, borde white/10, icono activo bg-blue-600, texto
-// inactivo slate-300/80): es el sidebar en su forma móvil.
-const BN_ITEM = "flex min-h-[56px] min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-semibold transition-colors";
-const BN_ICON = "flex h-8 w-11 items-center justify-center rounded-[12px] transition-colors [&>svg]:h-5 [&>svg]:w-5";
-const bnItem = (active) => `${BN_ITEM} ${active ? "text-white" : "text-slate-300/80 hover:text-white"}`;
-const bnIcon = (active) => `${BN_ICON} ${active ? "bg-blue-600 text-white shadow-[0_10px_20px_rgba(2,10,15,0.3)]" : "bg-white/5 text-slate-300"}`;
+// Barra inferior con la marca oscura (misma del menú y del sidebar): 5 destinos,
+// activo con píldora de acento. Se oculta en lg+ (manda el sidebar).
+const BN_ITEM = "flex min-h-[56px] min-w-0 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-[11px] font-medium transition-colors";
+const BN_ICON = "flex h-8 w-12 items-center justify-center rounded-full transition-colors [&>svg]:h-5 [&>svg]:w-5";
+const bnItem = (active) => `${BN_ITEM} ${active ? "text-white font-semibold" : "text-slate-400 hover:text-white"}`;
+const bnIcon = (active) => `${BN_ICON} ${active ? "bg-cyan-400/20 text-cyan-200" : "text-slate-400"}`;
 export const BottomNav = ({ items, value, onChange, onMas, mas = false, masActivo = false }) => (
-  <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-gradient-to-t from-blue-950 via-slate-900 to-slate-900 text-slate-100 shadow-[0_-20px_50px_rgba(8,20,27,0.18)] lg:hidden"
+  <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-gradient-to-t from-blue-950 via-slate-900 to-slate-900 text-slate-100 lg:hidden"
     style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }} aria-label="Navegación principal" data-testid="bottom-nav">
     <div className="mx-auto grid w-full max-w-3xl px-1" style={{ gridTemplateColumns: `repeat(${items.length + (mas ? 1 : 0)}, minmax(0, 1fr))` }}>
       {items.map(it => {

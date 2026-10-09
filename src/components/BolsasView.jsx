@@ -19,7 +19,7 @@ const CONTENIDO = "mx-auto w-full max-w-[640px] space-y-4 md:max-w-3xl lg:max-w-
 // B2: dentro del shell el contenido ocupa el workspace como las vistas de Admin.
 const CONTENIDO_SHELL = "w-full space-y-4";
 const NOTA = "Registra lo que llega y lo que entregas a Producción. El inventario es el total de la empresa: baja cuando Producción usa las bolsas.";
-const SKU_BTN = "rounded-[16px] border-2 px-3 py-3 text-left text-sm font-semibold transition-colors";
+const SKU_BTN = "min-h-[48px] rounded-field border-2 px-3 py-3 text-left text-[14px] font-semibold leading-tight transition-colors";
 
 export default function BolsasView({ user, data, actions, onLogout, embedded = false }) {
   const [modal, setModal] = useState(null); // "entrada" | "salida"
@@ -192,17 +192,23 @@ export default function BolsasView({ user, data, actions, onLogout, embedded = f
       </div>
 
       <Modal open={!!modal} onClose={() => setModal(null)} kicker="Movimiento" safeBottom closeOnEscape={!registrando}
-        title={esEntrada ? "¿Cuántas llegaron?" : "¿Cuántas entregaste a producción?"}>
+        title={esEntrada ? "¿Cuántas llegaron?" : "¿Cuántas entregaste a producción?"}
+        footer={
+          <FormBtn success={esEntrada} warning={!esEntrada} size="lg" className="w-full" onClick={registrar}
+            disabled={registrando || !form.cantidad || n(form.cantidad) <= 0 || (modal === "salida" && n(form.cantidad) > stockActual(form.sku)) || (modal === "entrada" && !(n(form.costo) > 0))}>
+            {registrando ? "Registrando…" : <><Icons.Check /> {esEntrada ? "Registrar entrada" : "Registrar entrega"}</>}
+          </FormBtn>
+        }>
         {modal === "salida" && (
           <p className="mb-3 text-xs text-slate-500">Queda registrada la entrega a Producción. No descuenta el total de la empresa: las bolsas se descuentan cuando Producción registra lo que produjo.</p>
         )}
         <div className="space-y-3">
           <div>
             <label className="mb-1.5 block text-sm font-medium text-slate-700">Tipo de bolsa</label>
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div className="grid grid-cols-2 gap-2">
               {empaques.map(p => (
                 <button key={p.sku} type="button" onClick={() => setForm(f => ({ ...f, sku: s(p.sku) }))}
-                  className={`${SKU_BTN} ${form.sku === s(p.sku) ? (esEntrada ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-amber-500 bg-amber-50 text-amber-800") : "border-slate-200 bg-white/80 text-slate-600"}`}>
+                  className={`${SKU_BTN} ${form.sku === s(p.sku) ? (esEntrada ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-amber-500 bg-amber-50 text-amber-800") : "border-slate-200 bg-white text-slate-700"}`}>
                   {s(p.nombre)}
                   <p className="mt-0.5 text-xs font-normal text-slate-400">Total empresa: {n(p.stock).toLocaleString()}</p>
                 </button>
@@ -222,13 +228,13 @@ export default function BolsasView({ user, data, actions, onLogout, embedded = f
               {n(form.costo) > 0 && (
                 <div>
                   <label className="mb-1.5 block text-sm font-medium text-slate-700">Forma de pago</label>
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button type="button" onClick={() => setForm(f => ({ ...f, esCredito: false }))}
-                      className={`${SKU_BTN} text-center ${!form.esCredito ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white/80 text-slate-600"}`}>
+                      className={`${SKU_BTN} text-center ${!form.esCredito ? "border-emerald-500 bg-emerald-50 text-emerald-800" : "border-slate-200 bg-white text-slate-700"}`}>
                       Contado
                     </button>
                     <button type="button" onClick={() => setForm(f => ({ ...f, esCredito: true }))}
-                      className={`${SKU_BTN} text-center ${form.esCredito ? "border-amber-500 bg-amber-50 text-amber-800" : "border-slate-200 bg-white/80 text-slate-600"}`}>
+                      className={`${SKU_BTN} text-center ${form.esCredito ? "border-amber-500 bg-amber-50 text-amber-800" : "border-slate-200 bg-white text-slate-700"}`}>
                       Crédito
                     </button>
                   </div>
@@ -240,10 +246,6 @@ export default function BolsasView({ user, data, actions, onLogout, embedded = f
             </>
           )}
         </div>
-        <FormBtn success={esEntrada} warning={!esEntrada} size="lg" className="mt-4 w-full" onClick={registrar}
-          disabled={registrando || !form.cantidad || n(form.cantidad) <= 0 || (modal === "salida" && n(form.cantidad) > stockActual(form.sku)) || (modal === "entrada" && !(n(form.costo) > 0))}>
-          {registrando ? "Registrando…" : <><Icons.Check /> {esEntrada ? "Registrar entrada" : "Registrar entrega"}</>}
-        </FormBtn>
       </Modal>
     </div>
   );

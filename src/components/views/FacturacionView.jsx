@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, EmptyState, s, n, fmtDate, fmtMoney, useToast, Icons } from './viewsCommon';
+import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, EmptyState, s, n, fmtDate, fmtMoney, useToast, Icons, KpiTile } from './viewsCommon';
 import CancelarCFDIModal from '../CancelarCFDIModal';
 import { isSandboxMode } from '../../lib/facturamaMode';
 import { estadoComplementosOrden, ESTADO_COMPLEMENTO } from '../../data/complementoLogic';
@@ -99,10 +99,10 @@ export function FacturacionView({ data, actions }) {
         <span><span className="font-bold">Facturación en modo prueba.</span> Las facturas que se timbren aquí no son válidas ante el SAT hasta activar la facturación real.</span>
       </div>
     )}
-    <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
-      <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5 text-center"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase">Por facturar</p><p className="text-xl sm:text-3xl font-extrabold text-amber-600 mt-1 sm:mt-2">{(data.facturacionPendiente || []).length}</p></div>
-      <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5 text-center"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase">Facturadas</p><p className="text-xl sm:text-3xl font-extrabold text-emerald-600 mt-1 sm:mt-2">{timbradas}</p></div>
-      <div className="bg-white border border-slate-100 rounded-2xl p-3 sm:p-5 text-center"><p className="text-[10px] sm:text-xs font-semibold text-slate-400 uppercase">Facturado</p><p className="text-xl sm:text-3xl font-extrabold text-slate-800 mt-1 sm:mt-2">{fmtMoney(totalFact)}</p></div>
+    <div className="grid grid-cols-2 gap-3 mb-4">
+      <KpiTile label="Por facturar" value={(data.facturacionPendiente || []).length} tone="warning" />
+      <KpiTile label="Facturadas" value={timbradas} tone="success" />
+      <KpiTile label="Facturado" value={fmtMoney(totalFact)} className="col-span-2" />
     </div>
 
     {/* Pendientes de timbrar */}

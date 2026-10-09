@@ -789,8 +789,37 @@ export default function NuevaVentaModal({
     </div>
   );
 
+  const cliCred = clienteSeleccionado;
+  const esCredito = form.tipoCobro === 'Credito';
+  const limiteCli = n(cliCred?.limite_credito);
+  const saldoCli = n(cliCred?.saldo);
+  const disponibleCred = Math.max(0, limiteCli - saldoCli);
+  const excedeCredito = esCredito && cliCred?.credito_autorizado && totalCalc > disponibleCred;
+
+  // Pie pegajoso de la hoja: Cancelar/Atrás a la izquierda, acción principal a la derecha.
+  const pie = (
+    <div className="flex w-full flex-col gap-2">
+      {excedeCredito && (
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-red-600">
+          <Icons.AlertTriangle /> Excede crédito disponible ({fmtMoney(disponibleCred)})
+        </p>
+      )}
+      <div className="flex gap-2">
+        {ft.wizard && step > 1
+          ? <FormBtn size="lg" className="flex-1" onClick={prevStep}><Icons.ChevronLeft /> Atrás</FormBtn>
+          : <FormBtn size="lg" className="flex-1" onClick={handleClose}>Cancelar</FormBtn>}
+        {ft.wizard && step < 3 && <FormBtn primary size="lg" className="flex-[2]" onClick={nextStep}>Siguiente <Icons.ChevronRight /></FormBtn>}
+        {(!ft.wizard || step === 3) && (
+          <FormBtn primary size="lg" className="flex-[2]" onClick={save} loading={saving} disabled={excedeCredito}>
+            {form.requiereFactura ? 'Crear venta con factura' : 'Crear venta'}
+          </FormBtn>
+        )}
+      </div>
+    </div>
+  );
+
   return (
-    <Modal open={!!open} onClose={handleClose} title="Nueva venta" wide>
+    <Modal open={!!open} onClose={handleClose} title="Nueva venta" kicker="Ventas" wide footer={pie}>
       {ft.wizard && wizardHeader}
 
       {ft.wizard ? (
@@ -806,36 +835,6 @@ export default function NuevaVentaModal({
           {stepDetalles}
         </>
       )}
-
-      {(() => {
-        const cliCred = clienteSeleccionado;
-        const esCredito = form.tipoCobro === 'Credito';
-        const limiteCli = n(cliCred?.limite_credito);
-        const saldoCli = n(cliCred?.saldo);
-        const disponibleCred = Math.max(0, limiteCli - saldoCli);
-        const excedeCredito = esCredito && cliCred?.credito_autorizado && totalCalc > disponibleCred;
-        return (
-          <div className="flex justify-between gap-2 mt-6 pt-4 border-t border-slate-100">
-            <FormBtn onClick={handleClose}>Cancelar</FormBtn>
-            <div className="flex gap-2 flex-col items-end">
-              {excedeCredito && (
-                <p className="flex items-center gap-1.5 text-xs text-red-600 font-semibold">
-                  <Icons.AlertTriangle /> Excede crédito disponible ({fmtMoney(disponibleCred)})
-                </p>
-              )}
-              <div className="flex gap-2">
-                {ft.wizard && step > 1 && <FormBtn onClick={prevStep}>← Atrás</FormBtn>}
-                {ft.wizard && step < 3 && <FormBtn primary onClick={nextStep}>Siguiente →</FormBtn>}
-                {(!ft.wizard || step === 3) && (
-                  <FormBtn primary onClick={save} loading={saving} disabled={excedeCredito}>
-                    {form.requiereFactura ? 'Crear venta con factura' : 'Crear venta'}
-                  </FormBtn>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </Modal>
   );
 }

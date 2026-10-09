@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, lazy, Suspense, Component } from 'react';
 import { diaNegocio } from '../utils/fechas';
 import { Icons } from './ui/Icons';
-import { useConfirm, useBodyScrollLock } from './ui/Modal';
+import Modal, { useConfirm, FormInput, FormSelect, FormTextarea, FormBtn } from './ui/Modal';
 import { useToast } from './ui/Toast';
 import DashboardView from './views/DashboardView';
 import BotonFirmasPendientes from './BotonFirmasPendientes';
@@ -14,7 +14,8 @@ import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
 import { navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
   MODULO_ASISTENCIA, MODULO_MI_ASISTENCIA, MODULO_CALENDARIO, MODULO_MIS_ACTIVIDADES, idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas } from '../data/navRolLogic';
-import { BottomNav } from './ui/Components';
+import { BottomNav, PageHeader, Card, ListRow, IconButton, StatusBadge, Chips } from './ui/Components';
+import { ViewSkeleton, EmptyState } from './ui/Skeleton';
 
 // Lazy-load all module views — splits ~1MB main chunk into on-demand pieces
 const ClientesView      = lazy(() => import('./views/ClientesView.jsx').then(m => ({ default: m.ClientesView })));
@@ -157,38 +158,6 @@ class ChunkErrorBoundary extends Component {
   Mobile: drawer lateral. Desktop: sidebar agrupado por área.
 */
 
-const AREA_META = {
-  operacion: {
-    tagline: 'Cadena fria y despacho',
-    subtitle: 'planta, stock y rutas',
-    chip: 'border-cyan-200/80 bg-cyan-100/80 text-cyan-900',
-    glow: 'from-cyan-300/50 via-sky-200/40 to-transparent',
-  },
-  comercial: {
-    tagline: 'Ventas y relacion comercial',
-    subtitle: 'pedidos, clientes y pricing',
-    chip: 'border-emerald-200/80 bg-emerald-100/80 text-emerald-900',
-    glow: 'from-emerald-300/40 via-teal-200/30 to-transparent',
-  },
-  finanzas: {
-    tagline: 'Tu dinero',
-    subtitle: 'lo que entra, lo que sale, lo que falta',
-    chip: 'border-amber-200/80 bg-amber-100/80 text-amber-900',
-    glow: 'from-amber-200/50 via-orange-200/30 to-transparent',
-  },
-  equipo: {
-    tagline: 'Tu equipo',
-    subtitle: 'personas y configuracion',
-    chip: 'border-violet-200/80 bg-violet-100/80 text-violet-900',
-    glow: 'from-violet-200/40 via-slate-200/30 to-transparent',
-  },
-  // Áreas de los roles de campo (Fase B)
-  ventas:  { tagline: 'Ventas del día', subtitle: 'cobros y órdenes', chip: 'border-emerald-200/80 bg-emerald-100/80 text-emerald-900', glow: 'from-emerald-300/40 via-teal-200/30 to-transparent' },
-  planta:  { tagline: 'Producción', subtitle: 'planta y congeladores', chip: 'border-cyan-200/80 bg-cyan-100/80 text-cyan-900', glow: 'from-cyan-300/50 via-sky-200/40 to-transparent' },
-  almacen: { tagline: 'Almacén', subtitle: 'empaque', chip: 'border-amber-200/80 bg-amber-100/80 text-amber-900', glow: 'from-amber-200/50 via-orange-200/30 to-transparent' },
-  ruta:    { tagline: 'Ruta', subtitle: 'entregas', chip: 'border-cyan-200/80 bg-cyan-100/80 text-cyan-900', glow: 'from-cyan-300/50 via-sky-200/40 to-transparent' },
-  personal: { tagline: 'Mi asistencia', subtitle: 'entrada y salida', chip: 'border-violet-200/80 bg-violet-100/80 text-violet-900', glow: 'from-violet-200/40 via-slate-200/30 to-transparent' },
-};
 
 // Fase B: `rolVista` es el rol cuya experiencia se pinta (el propio, o el de
 // "Ver como" para Admin); `usuarioRol` es el usuario con id/auth_id resueltos
@@ -362,8 +331,6 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   // B3.6: el módulo del menú dueño de la vista (filtro interno → su módulo).
   const modulo = moduloDeVista(nav, view) || view;
   const current = ALL_ITEMS.find(n => n.id === modulo) || [MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES].find(n => n.id === modulo);
-  const currentArea = areaDeModulo(nav, modulo) || nav.areas[0];
-  const currentMeta = AREA_META[currentArea?.id] || AREA_META.operacion;
 
   // Modo enfoque (Chofer): sin sidebar ni cabecera del shell; la vista trae
   // su propio chrome mínimo y la identidad del producto (RoleHeader).
@@ -371,7 +338,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
     return (
       <div className="min-h-dvh text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''} data-modo="enfoque">
         <ChunkErrorBoundary viewName={MODULO_CHOFER.id}>
-          <Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>
+          <Suspense fallback={<div className="p-4"><ViewSkeleton /></div>}>
             {view === MODULO_MI_ASISTENCIA.id
               ? <div className="mx-auto max-w-lg px-4 py-4"><MiAsistenciaView actions={actions} onVolver={() => go(MODULO_CHOFER.id)} /></div>
               : view === MODULO_MIS_ACTIVIDADES.id
@@ -385,10 +352,6 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
 
   return (
     <div className="min-h-dvh text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''} data-rol-vista={rol || ''}>
-      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className={`absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br ${currentMeta.glow} blur-3xl`} />
-        <div className="absolute bottom-[-10%] right-[-6%] h-[22rem] w-[22rem] rounded-full bg-gradient-to-br from-slate-200/60 via-white/20 to-transparent blur-3xl" />
-      </div>
 
       {/* ═══ SIDEBAR — desktop ═══ */}
       <aside className="fixed left-0 top-0 z-40 hidden w-[300px] flex-col overflow-hidden border-r border-blue-200/60 bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 text-slate-100 shadow-[0_20px_50px_rgba(8,20,27,0.18)] lg:flex xl:w-[320px]" style={{ ...topFijo, height: offsetSuperior ? `calc(100% - ${offsetSuperior}px)` : "100%" }}>
@@ -490,8 +453,8 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
           Mobile-first (2026-10-09): menú, título completo y, a la derecha, solo
           búsqueda (back office), firmas cuando hay pendientes y UNA campana
           "Avisos" que junta alertas y notificaciones. */}
-      <header className={`sticky px-3 pt-2 lg:ml-[300px] lg:px-6 lg:pt-4 xl:ml-[320px] ${avisosOpen ? 'z-[80]' : 'z-30'}`} style={{ ...topFijo, paddingTop: "max(env(safe-area-inset-top, 0px), 0.5rem)" }}>
-        <div className="erp-panel erp-shell-blur flex items-center justify-between gap-2 rounded-[22px] px-3 py-2 lg:rounded-[28px] lg:px-5 lg:py-3.5" data-testid="topbar">
+      <header className={`sticky border-b border-line bg-canvas/90 backdrop-blur-xl lg:ml-[300px] xl:ml-[320px] ${avisosOpen ? 'z-[80]' : 'z-30'}`} style={{ ...topFijo, paddingTop: "env(safe-area-inset-top, 0px)" }}>
+        <div className="flex h-14 items-center justify-between gap-2 px-2 lg:h-16 lg:px-6" data-testid="topbar">
           <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <button
               onClick={() => setMobileDrawerOpen(true)}
@@ -500,14 +463,14 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
             >
               <Icons.Menu />
             </button>
-            <p className="font-display min-w-0 flex-1 truncate text-[1.05rem] font-bold tracking-[-0.03em] text-slate-900 lg:text-[1.55rem]" data-testid="topbar-titulo">{current?.label || "Resumen"}</p>
+            <p className="font-display min-w-0 flex-1 truncate text-[17px] font-semibold text-ink lg:text-[1.35rem]" data-testid="topbar-titulo">{current?.label || "Resumen"}</p>
           </div>
           <div className="relative flex flex-shrink-0 items-center gap-1.5">
             {nav.chrome.busqueda && <BusquedaGlobal data={data} onNavigate={go} />}
             {nav.chrome.firmas && <BotonFirmasPendientes user={usuarioRol || user} data={data} actions={actions} />}
             {(nav.chrome.alertas || nav.chrome.notificaciones) && (
               <button onClick={() => setAvisosOpen(v => !v)}
-                className="relative flex h-10 w-10 items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-600 transition-colors hover:text-slate-900 lg:h-11 lg:w-11 lg:rounded-[16px]"
+                className="relative flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition-colors hover:bg-slate-100 lg:h-11 lg:w-11"
                 title="Avisos" aria-label="Avisos" aria-haspopup="dialog" aria-expanded={avisosOpen} data-testid="boton-avisos">
                 <Icons.Bell />
                 {(alertasActivas.length + notifNoLeidas.length) > 0 && (
@@ -519,8 +482,8 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
             )}
             {avisosOpen && (
               <>
-                <div className="fixed inset-0 z-[60] bg-slate-950/20" onClick={() => setAvisosOpen(false)} aria-hidden="true" />
-                <div className="absolute right-0 top-12 z-[70] max-h-[75vh] w-[calc(100vw-24px)] overflow-y-auto rounded-[22px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(3,14,19,0.22)] sm:w-96" role="dialog" aria-modal="false" aria-label="Avisos" data-testid="panel-avisos">
+                <div className="fixed inset-0 z-[60] bg-ink/20 animate-fadeIn" onClick={() => setAvisosOpen(false)} aria-hidden="true" />
+                <div className="absolute right-0 top-12 z-[70] max-h-[75vh] w-[calc(100vw-16px)] overflow-y-auto rounded-card border border-line bg-white shadow-pop animate-pop-in sm:w-96" role="dialog" aria-modal="false" aria-label="Avisos" data-testid="panel-avisos">
                   <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
                     <p className="text-sm font-bold text-slate-900">Avisos</p>
                     {nav.chrome.notificaciones && notifNoLeidas.length > 0 && <button onClick={() => actions.marcarTodasLeidas()} className="text-xs font-semibold text-blue-600">Marcar leídas</button>}
@@ -697,17 +660,16 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       )}
 
       {/* ═══ MAIN ═══ */}
-      <main className={`px-3 pt-4 sm:px-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px] ${bottomNav ? "pb-[calc(env(safe-area-inset-bottom,0px)+88px)]" : ""}`} data-bottom-nav={bottomNav ? 'si' : 'no'}>
+      <main className={`px-4 pt-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px] ${bottomNav ? "pb-[calc(env(safe-area-inset-bottom,0px)+88px)]" : "pb-8"}`} data-bottom-nav={bottomNav ? 'si' : 'no'}>
         <div className="relative">
-          <div className={`pointer-events-none absolute inset-x-8 top-0 h-16 rounded-[32px] bg-gradient-to-r ${currentMeta.glow} opacity-45 blur-3xl`} />
           {/* Bienvenida en la pantalla de inicio de cada rol (el Resumen de Admin trae la suya). */}
           {view === nav.inicio && view !== 'dashboard' && (
-            <div className="relative mb-3 px-1" data-testid="saludo-rol">
-              <p className="font-display text-[1.45rem] font-bold leading-tight tracking-[-0.03em] text-slate-900">{textoSaludo((usuarioRol || user)?.nombre)}</p>
-              <p className="mt-0.5 text-sm text-slate-500">{subtituloRol(rol)}</p>
+            <div className="relative mb-4" data-testid="saludo-rol">
+              <p className="font-display text-[1.65rem] font-bold leading-tight text-ink">{textoSaludo((usuarioRol || user)?.nombre)}</p>
+              <p className="mt-0.5 text-[15px] text-slate-500">{subtituloRol(rol)}</p>
             </div>
           )}
-          <div className="relative"><ChunkErrorBoundary><Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>{renderView()}</Suspense></ChunkErrorBoundary></div>
+          <div key={view} className="relative animate-view-in"><ChunkErrorBoundary><Suspense fallback={<ViewSkeleton />}>{renderView()}</Suspense></ChunkErrorBoundary></div>
         </div>
       </main>
 
@@ -725,8 +687,6 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
 function ComodatosView({ data, actions }) {
   const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(null);
-  // Tanda 17 P1: body scroll lock cuando modal de comodato está abierto.
-  useBodyScrollLock(modal !== null);
   const empty = { clienteId: "", negocio: "", direccion: "", contacto: "", congeladorModelo: "", capacidad: "60", stockMaximo: "60", frecuencia: "Diario" };
   const [form, setForm] = useState(empty);
   const comodatos = data.comodatos || [];
@@ -755,109 +715,70 @@ function ComodatosView({ data, actions }) {
     });
     setModal(c);
   };
+  const nombreCliente = (c) => (data.clientes || []).find(cli => String(cli.id) === String(c.clienteId || c.cliente_id))?.nombre || 'Sin cliente';
 
-  return (<div className="space-y-4">
+  return (<div className="space-y-3">
     {ConfirmEl}
-    <div className="flex items-center justify-between">
-      <div><h2 className="text-lg font-bold text-slate-800">Comodatos</h2><p className="text-xs text-slate-400">Congeladores en negocios. El chofer repone y cobra.</p></div>
-      <button onClick={() => { setForm(empty); setModal('new'); }} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo</button>
-    </div>
-    {comodatos.length > 0 ? comodatos.map(c => (
-      <div key={c.id} className="bg-white rounded-xl p-4 border border-slate-100">
-        {(() => {
-          const cliente = (data.clientes || []).find(cli => String(cli.id) === String(c.clienteId || c.cliente_id));
-          return (
-        <div className="flex justify-between items-start">
-          <div>
-            <p className="text-sm font-bold text-slate-800">{c.negocio}</p>
-            <p className="text-xs text-slate-500 font-semibold">Cliente: {cliente?.nombre || 'Sin cliente'}</p>
-            <p className="text-xs text-slate-400">{c.direccion} · {c.contacto}</p>
-          </div>
-          <span className={`text-xs font-bold px-2 py-1 rounded-full ${c.estatus === "Activo" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{c.estatus}</span>
-        </div>
-          );
-        })()}
-        <div className="flex gap-2 mt-2 flex-wrap">
-          {c.congeladorModelo && <span className="text-xs bg-slate-100 text-slate-600 font-semibold px-2 py-1 rounded-lg">{c.congeladorModelo}</span>}
-          <span className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-lg">Cap: {c.capacidad}</span>
-          <span className="text-xs bg-amber-50 text-amber-700 font-semibold px-2 py-1 rounded-lg">Stock: {c.stockActual || 0}</span>
-          <span className="text-xs bg-purple-50 text-purple-700 font-semibold px-2 py-1 rounded-lg">{c.frecuencia}</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
-          <button onClick={() => openEdit(c)} className="inline-flex min-h-[40px] items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl border border-blue-200"><Icons.Edit /> Editar</button>
-          <button onClick={() => askConfirm(
-            c.estatus === 'Activo' ? 'Desactivar comodato' : 'Activar comodato',
-            c.estatus === 'Activo'
-              ? `¿Marcar comodato "${c.negocio}" como inactivo? Podrás reactivarlo después.`
-              : `¿Reactivar comodato "${c.negocio}"?`,
-            async () => { await actions.updateComodato(c.id, { estatus: c.estatus === 'Activo' ? 'Inactivo' : 'Activo' }); },
-            c.estatus === 'Activo'
-          )} className="inline-flex min-h-[40px] items-center gap-1.5 px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-200">
-            {c.estatus === 'Activo' ? <><Icons.Ban /> Desactivar</> : <><Icons.CheckCircle /> Activar</>}
-          </button>
-          <button onClick={() => askConfirm(
-            'Eliminar comodato',
-            `¿Eliminar comodato "${c.negocio}"? Esta acción no se puede deshacer.`,
-            async () => { await actions.deleteComodato(c.id); },
-            true
-          )} className="px-3 py-2 bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200">Eliminar</button>
-        </div>
-      </div>
-    )) : <p className="text-sm text-slate-400 text-center py-8">Sin comodatos. Usa + Nuevo para registrar.</p>}
-    {modal && (
-      <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/50" onClick={() => setModal(null)}>
-        <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-          <h3 className="font-bold text-lg text-slate-800 mb-4">{modal === 'new' ? 'Nuevo comodato' : 'Editar comodato'}</h3>
-          <div className="space-y-3">
-            <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Cliente *</label>
-              <select value={form.clienteId} onChange={e => setForm({...form, clienteId: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm bg-white">
-                <option value="">Seleccionar cliente activo...</option>
-                {clientesActivos.map(cli => <option key={cli.id} value={cli.id}>{cli.nombre}</option>)}
-              </select>
-            </div>
-            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Negocio *</label><input value={form.negocio} onChange={e => setForm({...form, negocio: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" placeholder="OXXO Centro" /></div>
-            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dirección</label><input value={form.direccion} onChange={e => setForm({...form, direccion: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
-            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Teléfono contacto</label><input value={form.contacto} onChange={e => setForm({...form, contacto: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
-            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Modelo congelador</label><input value={form.congeladorModelo} onChange={e => setForm({...form, congeladorModelo: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" placeholder="Imbera VR-17" /></div>
-            <div className="grid grid-cols-3 gap-3">
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Capacidad</label><input type="number" min="0" value={form.capacidad} onChange={e => setForm({...form, capacidad: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Stock máximo</label><input type="number" min="0" value={form.stockMaximo} onChange={e => setForm({...form, stockMaximo: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Frecuencia</label><select value={form.frecuencia} onChange={e => setForm({...form, frecuencia: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm"><option>Diario</option><option>Cada 2 días</option><option>Cada 3 días</option><option>Semanal</option></select></div>
-            </div>
-          </div>
-          {modal !== 'new' && (
-            <div className="space-y-2 mt-4">
-              <button onClick={() => askConfirm(
-                'Desactivar comodato',
-                `¿Marcar comodato "${form.negocio}" como inactivo? Podrás reactivarlo después.`,
-                async () => { await actions.updateComodato(modal.id, { estatus: 'Inactivo' }); setModal(null); },
-                true
-              )} className="flex w-full items-center justify-center gap-1.5 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200"><Icons.Ban /> Desactivar comodato</button>
-              <button onClick={() => askConfirm(
-                'Eliminar comodato',
-                `¿Eliminar comodato "${form.negocio}"? Esta acción no se puede deshacer.`,
-                async () => { await actions.deleteComodato(modal.id); setModal(null); },
-                true
-              )} className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-bold rounded-xl border border-slate-200">Eliminar comodato</button>
-            </div>
-          )}
-          <button onClick={save} disabled={!form.clienteId || !form.negocio.trim()} className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm mt-4 disabled:opacity-40">Guardar comodato</button>
-        </div>
-      </div>
+    <PageHeader title="Comodatos" subtitle="Congeladores en negocios. El chofer repone y cobra." action={() => { setForm(empty); setModal('new'); }} actionLabel="Nuevo comodato" />
+    {comodatos.length > 0 ? (
+      <Card padding="p-0" className="divide-y divide-line">
+        {comodatos.map(c => (
+          <ListRow key={c.id} icon="Thermometer" title={c.negocio} subtitle={`${nombreCliente(c)} · ${c.frecuencia || ''}${c.congeladorModelo ? ` · ${c.congeladorModelo}` : ''}`}
+            value={`${c.stockActual || 0}/${c.capacidad}`} valueHint="stock / capacidad" badge={<StatusBadge status={c.estatus} />}
+            onClick={() => openEdit(c)} chevron />
+        ))}
+      </Card>
+    ) : (
+      <Card padding="p-0"><EmptyState icon="Thermometer" message="Sin comodatos" hint="Registra los congeladores que prestas a negocios." cta="Nuevo comodato" onCta={() => { setForm(empty); setModal('new'); }} /></Card>
     )}
+    <Modal open={!!modal} onClose={() => setModal(null)} title={modal === 'new' ? 'Nuevo comodato' : 'Editar comodato'} kicker="Comodatos"
+      footer={<>
+        <FormBtn className="flex-1" onClick={() => setModal(null)}>Cancelar</FormBtn>
+        <FormBtn primary className="flex-1" onClick={save} disabled={!form.clienteId || !form.negocio.trim()}>Guardar</FormBtn>
+      </>}>
+      <div className="space-y-3">
+        <FormSelect label="Cliente *" value={form.clienteId} onChange={e => setForm({...form, clienteId: e.target.value})}
+          options={[{ value: '', label: 'Seleccionar cliente activo…' }, ...clientesActivos.map(cli => ({ value: String(cli.id), label: cli.nombre }))]} />
+        <FormInput label="Negocio *" value={form.negocio} onChange={e => setForm({...form, negocio: e.target.value})} placeholder="OXXO Centro" />
+        <FormInput label="Dirección" value={form.direccion} onChange={e => setForm({...form, direccion: e.target.value})} />
+        <FormInput label="Teléfono de contacto" type="tel" value={form.contacto} onChange={e => setForm({...form, contacto: e.target.value})} />
+        <FormInput label="Modelo del congelador" value={form.congeladorModelo} onChange={e => setForm({...form, congeladorModelo: e.target.value})} placeholder="Imbera VR-17" />
+        <div className="grid grid-cols-2 gap-3">
+          <FormInput label="Capacidad" type="number" min="0" inputMode="numeric" value={form.capacidad} onChange={e => setForm({...form, capacidad: e.target.value})} />
+          <FormInput label="Stock máximo" type="number" min="0" inputMode="numeric" value={form.stockMaximo} onChange={e => setForm({...form, stockMaximo: e.target.value})} />
+        </div>
+        <FormSelect label="Frecuencia" value={form.frecuencia} onChange={e => setForm({...form, frecuencia: e.target.value})} options={["Diario", "Cada 2 días", "Cada 3 días", "Semanal"]} />
+        {modal && modal !== 'new' && (
+          <div className="grid grid-cols-2 gap-2 pt-2">
+            <FormBtn onClick={() => askConfirm(
+              modal.estatus === 'Activo' ? 'Desactivar comodato' : 'Activar comodato',
+              modal.estatus === 'Activo' ? `¿Marcar comodato "${form.negocio}" como inactivo? Podrás reactivarlo después.` : `¿Reactivar comodato "${form.negocio}"?`,
+              async () => { await actions.updateComodato(modal.id, { estatus: modal.estatus === 'Activo' ? 'Inactivo' : 'Activo' }); setModal(null); },
+              modal.estatus === 'Activo'
+            )}>{modal.estatus === 'Activo' ? <><Icons.Ban /> Desactivar</> : <><Icons.CheckCircle /> Activar</>}</FormBtn>
+            <FormBtn danger onClick={() => askConfirm(
+              'Eliminar comodato',
+              `¿Eliminar comodato "${form.negocio}"? Esta acción no se puede deshacer.`,
+              async () => { await actions.deleteComodato(modal.id); setModal(null); },
+              true
+            )}><Icons.Trash /> Eliminar</FormBtn>
+          </div>
+        )}
+      </div>
+    </Modal>
   </div>);
 }
 
+const ESTATUS_LEAD = ["Nuevo", "Contactado", "Convertido", "Descartado"];
 function LeadsView({ data, actions }) {
   const [askConfirm, ConfirmEl] = useConfirm();
   const toast = useToast();
   const [modal, setModal] = useState(false); // false | "new" | <lead obj>
-  // Tanda 17 P1: body scroll lock cuando modal de lead está abierto.
-  useBodyScrollLock(!!modal);
   const empty = { nombre: "", telefono: "", correo: "", mensaje: "", origen: "Landing page" };
   const [form, setForm] = useState(empty);
+  const [filtro, setFiltro] = useState('Nuevo');
   const leads = data.leads || [];
+  const visibles = filtro === 'Todos' ? leads : leads.filter(l => (l.estatus || 'Nuevo') === filtro);
 
   const openNew = () => { setForm(empty); setModal("new"); };
 
@@ -908,56 +829,55 @@ function LeadsView({ data, actions }) {
     );
   };
 
-  return (<div className="space-y-4">
+  return (<div className="space-y-3">
     {ConfirmEl}
-    <div className="flex items-center justify-between">
-      <div><h2 className="text-lg font-bold text-slate-800">Leads ({leads.length})</h2><p className="text-xs text-slate-400">Contactos de landing page y otros canales</p></div>
-      <button onClick={openNew} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl min-h-[44px]">+ Nuevo</button>
-    </div>
-    {leads.length > 0 ? leads.map(l => (
-      <div key={l.id} className="bg-white rounded-xl p-4 border border-slate-100">
-        <div className="flex justify-between items-start gap-2">
-          <div className="min-w-0">
-            <p className="text-sm font-bold text-slate-800 truncate">{l.nombre}</p>
-            <p className="text-xs text-slate-400 truncate">{l.telefono}{l.correo ? ` · ${l.correo}` : ""}</p>
-          </div>
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <select value={l.estatus} onChange={e => cambiarEstatus(l.id, e.target.value)}
-              className={`text-xs font-bold px-2 py-1 rounded-full border-0 cursor-pointer ${
-                l.estatus === "Nuevo" ? "bg-blue-100 text-blue-700" :
-                l.estatus === "Contactado" ? "bg-amber-100 text-amber-700" :
-                l.estatus === "Convertido" ? "bg-emerald-100 text-emerald-700" :
-                "bg-slate-100 text-slate-500"
-              }`}>
-              <option>Nuevo</option><option>Contactado</option><option>Convertido</option><option>Descartado</option>
-            </select>
-            <button onClick={() => openEdit(l)} title="Editar" aria-label="Editar lead" className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"><Icons.Edit /></button>
-            <button onClick={() => eliminarLead(l)} title="Eliminar" aria-label="Eliminar lead" className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors"><Icons.Trash /></button>
-          </div>
-        </div>
-        {l.mensaje && <p className="text-xs text-slate-500 mt-1 bg-slate-50 rounded-lg p-2">{l.mensaje}</p>}
-        <p className="text-[10px] text-slate-400 mt-1">{l.origen} · {l.fecha}</p>
-      </div>
-    )) : <p className="text-sm text-slate-400 text-center py-8">Sin leads. Usa + Nuevo para registrar uno manual.</p>}
-    {modal && (
-      <div className="fixed inset-0 z-[90] flex items-end sm:items-center justify-center bg-black/50" onClick={() => setModal(false)}>
-        <div className="bg-white w-full max-w-lg rounded-t-2xl sm:rounded-2xl p-5" onClick={e => e.stopPropagation()}>
-          <h3 className="font-bold text-lg text-slate-800 mb-4">{modal === "new" ? "Nuevo lead" : `Editar lead — ${modal.nombre || ""}`}</h3>
-          <div className="space-y-3">
-            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Nombre *</label><input value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Teléfono</label><input value={form.telefono} onChange={e => setForm({...form, telefono: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
-              <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Correo</label><input value={form.correo} onChange={e => setForm({...form, correo: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" /></div>
+    <PageHeader title="Leads" subtitle="Contactos de landing page y otros canales" action={openNew} actionLabel="Nuevo lead" />
+    <Chips value={filtro} onChange={setFiltro} items={[...ESTATUS_LEAD.map(e => ({ k: e, l: e, n: leads.filter(l => (l.estatus || 'Nuevo') === e).length })), { k: 'Todos', l: 'Todos' }]} />
+    {visibles.length > 0 ? (
+      <Card padding="p-0" className="divide-y divide-line">
+        {visibles.map(l => (
+          <div key={l.id} className="px-4 py-3">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-[12px] bg-slate-100 text-slate-600"><Icons.Phone /></span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[15px] font-semibold text-ink">{l.nombre}</p>
+                <p className="truncate text-[13px] text-slate-500">{l.telefono}{l.correo ? ` · ${l.correo}` : ""}</p>
+                {l.mensaje && <p className="mt-1.5 rounded-[10px] bg-slate-50 px-2.5 py-2 text-[13px] text-slate-600">{l.mensaje}</p>}
+                <p className="mt-1 text-[11px] text-slate-500">{l.origen}{l.fecha ? ` · ${l.fecha}` : ''}</p>
+              </div>
+              <div className="flex flex-shrink-0 items-center">
+                <IconButton icon="Edit" label="Editar lead" onClick={() => openEdit(l)} />
+                <IconButton icon="Trash" label="Eliminar lead" tone="danger" onClick={() => eliminarLead(l)} />
+              </div>
             </div>
-            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Mensaje</label><textarea value={form.mensaje} onChange={e => setForm({...form, mensaje: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm" rows={2} /></div>
-            <div><label className="block text-xs font-bold text-slate-500 uppercase mb-1">Origen</label><select value={form.origen} onChange={e => setForm({...form, origen: e.target.value})} className="w-full px-3 py-2.5 border rounded-xl text-sm"><option>Landing page</option><option>WhatsApp</option><option>Teléfono</option><option>Referido</option><option>Redes sociales</option></select></div>
+            <div className="mt-2 grid grid-cols-4 gap-1">
+              {ESTATUS_LEAD.map(e => (
+                <button key={e} type="button" onClick={() => cambiarEstatus(l.id, e)} aria-pressed={(l.estatus || 'Nuevo') === e}
+                  className={`min-h-[36px] rounded-full text-[12px] font-semibold transition-colors ${(l.estatus || 'Nuevo') === e
+                    ? (e === 'Convertido' ? 'bg-emerald-600 text-white' : e === 'Descartado' ? 'bg-slate-700 text-white' : e === 'Contactado' ? 'bg-amber-500 text-white' : 'bg-ink text-white')
+                    : 'bg-slate-100 text-slate-600'}`}>{e}</button>
+              ))}
+            </div>
           </div>
-          <div className="flex gap-2 mt-4">
-            <button onClick={() => setModal(false)} className="flex-1 py-3 border border-slate-200 text-slate-600 font-bold rounded-xl text-sm">Cancelar</button>
-            <button onClick={save} disabled={!form.nombre.trim()} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl text-sm disabled:opacity-40">{modal === "new" ? "Guardar lead" : "Guardar cambios"}</button>
-          </div>
-        </div>
-      </div>
+        ))}
+      </Card>
+    ) : (
+      <Card padding="p-0"><EmptyState icon="Phone" message={filtro === 'Todos' ? 'Sin leads' : `Sin leads en "${filtro}"`} hint="Los contactos de la landing aparecen aquí; también puedes registrarlos a mano." cta="Nuevo lead" onCta={openNew} /></Card>
     )}
+    <Modal open={!!modal} onClose={() => setModal(false)} title={modal === "new" ? "Nuevo lead" : `Editar lead`} kicker={modal && modal !== "new" ? modal.nombre : "Leads"}
+      footer={<>
+        <FormBtn className="flex-1" onClick={() => setModal(false)}>Cancelar</FormBtn>
+        <FormBtn primary className="flex-1" onClick={save} disabled={!form.nombre.trim()}>{modal === "new" ? "Guardar lead" : "Guardar cambios"}</FormBtn>
+      </>}>
+      <div className="space-y-3">
+        <FormInput label="Nombre *" value={form.nombre} onChange={e => setForm({...form, nombre: e.target.value})} />
+        <div className="grid grid-cols-2 gap-3">
+          <FormInput label="Teléfono" type="tel" value={form.telefono} onChange={e => setForm({...form, telefono: e.target.value})} />
+          <FormInput label="Correo" type="email" value={form.correo} onChange={e => setForm({...form, correo: e.target.value})} />
+        </div>
+        <FormTextarea label="Mensaje" value={form.mensaje} onChange={e => setForm({...form, mensaje: e.target.value})} rows={2} />
+        <FormSelect label="Origen" value={form.origen} onChange={e => setForm({...form, origen: e.target.value})} options={["Landing page", "WhatsApp", "Teléfono", "Referido", "Redes sociales"]} />
+      </div>
+    </Modal>
   </div>);
 }

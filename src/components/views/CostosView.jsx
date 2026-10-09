@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { diaNegocio } from '../../utils/fechas';
 import { rangoMes } from '../../data/finanzasLogic';
-import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, fmtDate, fmtMoney, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, useConfirm, s, n, fmtDate, fmtMoney, useToast, PAGE_SIZE, Paginator, KpiTile, SegmentedTabs, Icons } from './viewsCommon';
 
 const CATEGORIAS_COSTO = ['Nómina', 'Renta', 'Servicios', 'Gasolina', 'Mantenimiento', 'Empaque', 'Materia Prima', 'Administrativo', 'Otro'];
 const FRECUENCIAS = ['Mensual', 'Quincenal', 'Semanal', 'Único'];
@@ -169,46 +169,29 @@ export function CostosView({ data, actions }) {
     <PageHeader title="Costos y Gastos" subtitle="Gestión de costos fijos y variables" />
 
     {/* Summary Cards */}
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-      <div className="bg-white border border-slate-100 rounded-xl p-4">
-        <p className="text-xs text-slate-400 uppercase">Total mes actual</p>
-        <p className="text-xl font-bold text-slate-800">{totalMes === null ? '—' : fmtMoney(totalMes)}</p>
-      </div>
-      <div className="bg-white border border-slate-100 rounded-xl p-4">
-        <p className="text-xs text-slate-400 uppercase">Costos fijos</p>
-        <p className="text-xl font-bold text-slate-800">{costosFijos.filter(c => c.activo).length}</p>
-      </div>
-      <div className="bg-white border border-slate-100 rounded-xl p-4">
-        <p className="text-xs text-slate-400 uppercase">Registros historial</p>
-        <p className="text-xl font-bold text-slate-800">{costosHistorial.length}</p>
-      </div>
-      <div className="bg-white border border-slate-100 rounded-xl p-4">
-        <p className="text-xs text-slate-400 uppercase">Mayor gasto</p>
-        <p className="text-sm font-semibold text-red-600">
-          {Object.entries(totalesPorCategoria).sort((a, b) => b[1] - a[1])[0]?.[0] || '-'}
-        </p>
-      </div>
+    <div className="grid grid-cols-2 gap-3 mb-4 lg:grid-cols-4">
+      <KpiTile label="Total del mes" value={totalMes === null ? '—' : fmtMoney(totalMes)} tone="accent" />
+      <KpiTile label="Costos fijos" value={costosFijos.filter(c => c.activo).length} hint="activos" />
+      <KpiTile label="Registros" value={costosHistorial.length} hint="en el historial" />
+      <KpiTile label="Mayor gasto" value={Object.entries(totalesPorCategoria).sort((a, b) => b[1] - a[1])[0]?.[0] || '—'} compact />
     </div>
 
     {/* Tabs */}
-    <div className="flex gap-2 mb-4">
-      <button onClick={() => { setTab('fijos'); setPage(0); }} className={`px-4 py-2 text-sm font-semibold rounded-lg min-h-[44px] ${tab === 'fijos' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Costos Fijos</button>
-      <button onClick={() => { setTab('historial'); setPage(0); }} className={`px-4 py-2 text-sm font-semibold rounded-lg min-h-[44px] ${tab === 'historial' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>Historial</button>
-    </div>
+    <SegmentedTabs className="mb-4" value={tab} onChange={(k) => { setTab(k); setPage(0); }} items={[{ k: 'fijos', l: 'Costos fijos' }, { k: 'historial', l: 'Historial' }]} />
 
     <div className="bg-white border border-slate-100 rounded-2xl p-3.5 sm:p-5">
       {/* Filter */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 mb-4">
-        <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setPage(0); }} className="border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-600 focus:outline-none focus:border-blue-400 min-h-[44px]">
+      <div className="mb-4 flex flex-col gap-2.5 sm:flex-row sm:items-center">
+        <select value={filterCat} onChange={e => { setFilterCat(e.target.value); setPage(0); }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15 sm:w-auto sm:flex-1">
           <option value="">Todas las categorías</option>
           {CATEGORIAS_COSTO.map(c => <option key={c}>{c}</option>)}
         </select>
-        <div className="flex gap-2 ml-auto">
+        <div className="flex gap-2 sm:ml-auto">
           {tab === 'fijos' && (
-            <button onClick={openNew} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 min-h-[44px]">+ Nuevo costo fijo</button>
+            <FormBtn primary className="w-full sm:w-auto" onClick={openNew}><Icons.Plus /> Nuevo costo fijo</FormBtn>
           )}
           {tab === 'historial' && (
-            <button onClick={openGasto} className="px-4 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl hover:bg-emerald-700 min-h-[44px]">+ Registrar gasto</button>
+            <FormBtn primary className="w-full sm:w-auto" onClick={openGasto}><Icons.Plus /> Registrar gasto</FormBtn>
           )}
         </div>
       </div>
@@ -233,7 +216,7 @@ export function CostosView({ data, actions }) {
                 <div className="flex justify-end gap-2 mt-2 pt-2 border-t border-slate-100">
                   <button onClick={() => openEdit(c)} className="px-3 py-1.5 text-xs bg-slate-100 rounded-lg hover:bg-slate-200">Editar</button>
                   {c.activo && (
-                    <button onClick={() => openAplicar(c)} className="px-3 py-1.5 text-xs bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">Aplicar</button>
+                    <FormBtn success onClick={() => openAplicar(c)}>Aplicar</FormBtn>
                   )}
                 </div>
               </div>

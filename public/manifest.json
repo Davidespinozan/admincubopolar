@@ -4,9 +4,9 @@
   "description": "Sistema ERP para manufactura y distribución de hielo",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#1d4ed8",
-  "orientation": "any",
+  "background_color": "#f4f6f9",
+  "theme_color": "#0b1f3a",
+  "orientation": "portrait",
   "icons": [
     {
       "src": "/icon-192.png",

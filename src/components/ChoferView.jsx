@@ -31,7 +31,7 @@ const MERMA_CAUSAS = ["Bolsa rota", "Hielo derretido", "Daño transporte", "Rech
 const CHOFER_SHELL = "min-h-dvh w-full text-slate-900";
 const CONTENIDO = "mx-auto w-full max-w-[640px] px-4 pt-4 md:max-w-3xl lg:max-w-5xl";
 const LABEL = "mb-1.5 block text-sm font-medium text-slate-700";
-const FOTO_LABEL = "flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-[16px] border-2 border-dashed py-3 text-xs font-semibold";
+const FOTO_LABEL = "flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-field border-2 border-dashed py-3 text-[13px] font-semibold";
 
 // Igualdad de la lista de entregas por los campos que vienen de la base
 // (orden, folio, total, método y piezas); las locales se comparan por identidad.
@@ -908,7 +908,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     <div className={CHOFER_SHELL} data-testid="chofer-shell">
       <RoleHeader compact kicker="Chofer" title="Cargar camión" subtitle={saludo} accent="cyan" onLogout={onLogout}>
         {barraPersonal}
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[16px] border border-white/10 bg-white/10 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-card border border-white/10 bg-white/10 px-3 py-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">Paso 1 de 3</span>
           <span className="text-sm font-semibold text-white">Marca cuánto cargaste</span>
           <span className="text-xs text-slate-300">· Producción debe firmar antes de salir.</span>
@@ -1019,7 +1019,12 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         </div>
 
         {/* Modal de firma */}
-        <Modal open={!!firmaModal} onClose={() => setFirmaModal(false)} title="Firma de Producción" closeOnEscape={!enviandoFirma}>
+        <Modal open={!!firmaModal} onClose={() => setFirmaModal(false)} title="Firma de Producción" kicker="Carga" closeOnEscape={!enviandoFirma}
+          footer={<>
+            <FormBtn ghost size="lg" onClick={limpiarFirma}>Limpiar</FormBtn>
+            <FormBtn size="lg" className="flex-1" onClick={() => setFirmaModal(false)}>Cancelar</FormBtn>
+            <FormBtn success size="lg" className="flex-[1.4]" onClick={() => enviarFirma(false)} disabled={enviandoFirma || !firmaTienePuntos}>{enviandoFirma ? 'Enviando…' : 'Confirmar'}</FormBtn>
+          </>}>
           <p className="mb-3 text-xs text-slate-500">Dibuja tu firma con el dedo</p>
 
           <canvas
@@ -1038,7 +1043,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
                 firmaContextRef.current = ctx;
               }
             }}
-            className="h-48 w-full touch-none rounded-[16px] border-2 border-slate-300 bg-white"
+            className="h-48 w-full touch-none rounded-card border-2 border-slate-300 bg-white"
             onMouseDown={e => {
               const rect = e.currentTarget.getBoundingClientRect();
               firmaContextRef.current.beginPath();
@@ -1074,15 +1079,14 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             onTouchEnd={() => setFirmaDibujando(false)}
           />
 
-          <div className="mt-3 grid grid-cols-3 gap-2">
-            <FormBtn ghost onClick={limpiarFirma}>Limpiar</FormBtn>
-            <FormBtn onClick={() => setFirmaModal(false)}>Cancelar</FormBtn>
-            <FormBtn success onClick={() => enviarFirma(false)} disabled={enviandoFirma || !firmaTienePuntos}>{enviandoFirma ? 'Enviando…' : 'Confirmar'}</FormBtn>
-          </div>
         </Modal>
 
         {/* Modal de excepción */}
-        <Modal open={!!excepcionModal} onClose={() => setExcepcionModal(false)} title="Carga sin firma" closeOnEscape={!enviandoFirma}>
+        <Modal open={!!excepcionModal} onClose={() => setExcepcionModal(false)} title="Carga sin firma" kicker="Excepción" closeOnEscape={!enviandoFirma}
+          footer={<>
+            <FormBtn size="lg" className="flex-1" onClick={() => { setExcepcionModal(false); setMotivoExcepcion(''); }}>Cancelar</FormBtn>
+            <FormBtn danger size="lg" className="flex-[2]" onClick={() => enviarFirma(true)} disabled={enviandoFirma || !motivoExcepcion.trim()}>{enviandoFirma ? 'Enviando…' : 'Confirmar excepción'}</FormBtn>
+          </>}>
           <p className="mb-4 text-xs text-slate-600">Esta acción queda registrada en auditoría. Solo úsala si no hay nadie de Producción/Admin disponible.</p>
           <label className={LABEL}>Motivo (obligatorio)</label>
           <textarea
@@ -1090,12 +1094,8 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             onChange={e => setMotivoExcepcion(e.target.value)}
             placeholder="Ej: Producción no llegó a la hora, urgencia de salir..."
             rows={3}
-            className="w-full resize-none rounded-[16px] border border-slate-200 bg-white/80 px-3.5 py-3 text-sm focus:border-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-50"
+            className="w-full resize-none rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15"
           />
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            <FormBtn onClick={() => { setExcepcionModal(false); setMotivoExcepcion(''); }}>Cancelar</FormBtn>
-            <FormBtn danger onClick={() => enviarFirma(true)} disabled={enviandoFirma || !motivoExcepcion.trim()}>{enviandoFirma ? 'Enviando…' : 'Confirmar excepción'}</FormBtn>
-          </div>
         </Modal>
       </div>
     );
@@ -1286,7 +1286,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           const url = `https://www.google.com/maps/dir/?api=1&destination=${dest.latitud},${dest.longitud}${waypts ? `&waypoints=${encodeURIComponent(waypts)}` : ''}&travelmode=driving`;
           return (
             <button type="button" onClick={() => window.open(url, '_blank')}
-              className="mb-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[16px] bg-blue-600 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98]">
+              className="mb-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-field bg-ink py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98]">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
               Ver ruta completa ({conCoords.length} paradas)
             </button>
@@ -1294,15 +1294,29 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         })()}
         {/* Mobile-first: las 3 acciones en una sola fila (antes se apilaban y tapaban la lista). */}
         <div className="grid grid-cols-3 gap-2">
-          <button type="button" onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false }); }} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-[16px] bg-cyan-200 px-2 py-2 text-xs font-bold text-slate-950 transition-transform active:scale-[0.98]"><Icons.ShoppingCart />Venta rápida</button>
-          <button type="button" onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-[16px] bg-white/10 px-2 py-2 text-xs font-bold text-amber-200 transition-transform active:scale-[0.98]"><Icons.AlertTriangle />Merma</button>
-          <button type="button" onClick={() => setStep("cierre")} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-[16px] bg-white px-2 py-2 text-xs font-bold text-slate-950"><Icons.ClipboardCheck />Cerrar ruta</button>
+          <button type="button" onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false }); }} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-card bg-cyan-200 px-2 py-2 text-xs font-bold text-slate-950 transition-transform active:scale-[0.98]"><Icons.ShoppingCart />Venta rápida</button>
+          <button type="button" onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-card bg-white/10 px-2 py-2 text-xs font-bold text-amber-200 transition-transform active:scale-[0.98]"><Icons.AlertTriangle />Merma</button>
+          <button type="button" onClick={() => setStep("cierre")} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-card bg-white px-2 py-2 text-xs font-bold text-slate-950"><Icons.ClipboardCheck />Cerrar ruta</button>
         </div>
       </div>
 
       {/* Modal cobro */}
       <Modal open={!!entregaModal} onClose={() => setEntregaModal(null)} kicker="Cobro" safeBottom closeOnEscape={!confirmandoEntrega && !generandoLink}
-        title={entregaModal ? `Entregar a ${entregaModal.clienteNombre}` : ""}>
+        title={entregaModal ? `Entregar a ${entregaModal.clienteNombre}` : ""}
+        footer={entregaModal && !checkoutUrl && (() => {
+          // Tanda 6 🟢-4: deshabilitar confirmar si Transferencia sin foto.
+          const faltaFotoTransf = cobroMetodo === "Transferencia" && !fotoTransf;
+          const disabled = generandoLink || confirmandoEntrega || faltaFotoTransf;
+          return (
+            <FormBtn success size="lg" className="w-full" onClick={confirmarEntrega} disabled={disabled}>
+              {generandoLink ? 'Generando link…'
+                : confirmandoEntrega ? 'Registrando entrega…'
+                : faltaFotoTransf ? 'Falta foto del comprobante'
+                : cobroMetodo === "QR / Link de pago" ? 'Generar link de pago'
+                : 'Confirmar entrega'}
+            </FormBtn>
+          );
+        })()}>
         {entregaModal && (<>
           <div className="my-3 flex flex-wrap gap-1">{entregaModal.items.map((it, i) => <span key={i} className="rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{it.cant}× {it.sku}</span>)}</div>
           <p className="mb-4 font-display text-3xl font-bold tracking-[-0.04em] text-slate-900">{fmtMoney(entregaModal.totalCalc)}</p>
@@ -1316,7 +1330,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           {cobroMetodo==="Transferencia" && <div className="mb-4 space-y-2">
             <FormInput label="Referencia" value={cobroRef} onChange={e=>setCobroRef(e.target.value)} placeholder="Referencia (últimos 6 dígitos)" />
             {fotoTransf ? (
-              <div><img src={fotoTransf} alt="Comprobante" className="h-32 w-full rounded-xl border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoTransf(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
+              <div><img src={fotoTransf} alt="Comprobante" className="h-32 w-full rounded-field border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoTransf(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
             ) : (
               <label className={`${FOTO_LABEL} border-red-300 bg-red-50/50 text-red-600`}>
                 <Icons.Camera /> Foto del comprobante (obligatoria)
@@ -1341,7 +1355,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
                   const href = tel
                     ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`
                     : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-                  return <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center justify-center rounded-[16px] bg-emerald-600 px-5 py-3 text-xs font-semibold text-white">WhatsApp</a>;
+                  return <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center justify-center rounded-field bg-emerald-600 px-5 py-3 text-sm font-semibold text-white">WhatsApp</a>;
                 })()}
               </div>
               <button type="button" onClick={() => { setCheckoutUrl(null); setShortUrl(null); setEntregaModal(null); }} className="w-full py-2 text-xs font-semibold text-slate-500">Cerrar</button>
@@ -1351,7 +1365,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           <div className="mb-4">
             <label className={`${LABEL} mb-2`}>Evidencia de entrega (opcional)</label>
             {fotoEntrega ? (
-              <div><img src={fotoEntrega} alt="Evidencia" className="h-32 w-full rounded-xl border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoEntrega(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
+              <div><img src={fotoEntrega} alt="Evidencia" className="h-32 w-full rounded-field border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoEntrega(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
             ) : (
               <label className={`${FOTO_LABEL} border-slate-300 text-slate-500`}>
                 <Icons.Camera /> Foto de nota o entrega
@@ -1359,25 +1373,16 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
               </label>
             )}
           </div>
-          {!checkoutUrl && (() => {
-            // Tanda 6 🟢-4: deshabilitar confirmar si Transferencia sin foto.
-            const faltaFotoTransf = cobroMetodo === "Transferencia" && !fotoTransf;
-            const disabled = generandoLink || confirmandoEntrega || faltaFotoTransf;
-            return (
-              <FormBtn success size="lg" className="w-full" onClick={confirmarEntrega} disabled={disabled}>
-                {generandoLink ? 'Generando link…'
-                  : confirmandoEntrega ? 'Registrando entrega…'
-                  : faltaFotoTransf ? 'Falta foto del comprobante'
-                  : cobroMetodo === "QR / Link de pago" ? 'Generar link de pago'
-                  : 'Confirmar entrega'}
-              </FormBtn>
-            );
-          })()}
         </>)}
       </Modal>
 
       {/* Modal venta express */}
-      <Modal open={!!ventaModal} onClose={() => setVentaModal(false)} kicker="Venta rapida" title="Venta exprés" safeBottom closeOnEscape={!creandoVenta}>
+      <Modal open={!!ventaModal} onClose={() => setVentaModal(false)} kicker="Venta rápida" title="Venta exprés" safeBottom closeOnEscape={!creandoVenta}
+        footer={
+          <FormBtn primary size="lg" className="w-full" onClick={crearVentaExpress} disabled={creandoVenta||!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&!!errorFacturaExpress)}>
+            {creandoVenta ? "Creando venta…" : vForm.factura ? "Crear venta con factura" : "Crear venta"}
+          </FormBtn>
+        }>
         <div className="space-y-3">
           <div>
             <label className={LABEL}>Cliente de lista</label>
@@ -1385,7 +1390,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
               const id = e.target.value;
               const cli = clientesActivos.find(c => String(c.id) === String(id));
               setVForm(f => ({ ...f, clienteId: id, cliente: id ? s(cli?.nombre) : f.cliente }));
-            }} className="min-h-[44px] w-full rounded-[16px] border border-slate-200 bg-white/80 px-3.5 py-3 text-sm focus:border-cyan-600 focus:outline-none">
+            }} className="min-h-[48px] w-full rounded-field border border-line bg-slate-50 px-3.5 py-3 text-[15px] text-ink focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15">
               <option value="">Seleccionar cliente...</option>
               {clientesActivos.map(c => <option key={c.id} value={c.id}>{s(c.nombre)}</option>)}
             </select>
@@ -1437,13 +1442,15 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           </div>
 
         </div>
-        <FormBtn primary size="lg" className="mt-4 w-full" onClick={crearVentaExpress} disabled={creandoVenta||!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&!!errorFacturaExpress)}>
-          {creandoVenta ? "Creando venta…" : vForm.factura ? "Crear venta con factura" : "Crear venta"}
-        </FormBtn>
       </Modal>
 
       {/* Modal merma */}
-      <Modal open={!!mermaModal} onClose={() => setMermaModal(false)} kicker="Incidencia" title="Registrar merma" safeBottom closeOnEscape={!registrandoMerma}>
+      <Modal open={!!mermaModal} onClose={() => setMermaModal(false)} kicker="Incidencia" title="Registrar merma" safeBottom closeOnEscape={!registrandoMerma}
+        footer={
+          <FormBtn warning size="lg" className="w-full" onClick={registrarMerma} disabled={registrandoMerma||!mForm.cant||n(mForm.cant)<=0||!fotoMerma}>
+            {registrandoMerma ? "Registrando…" : "Registrar merma"}
+          </FormBtn>
+        }>
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-2">{productos.map(p => <ChoiceButton key={p.sku} tone="amber" active={mForm.sku===s(p.sku)} onClick={() => setMForm(f=>({...f,sku:s(p.sku)}))} className="text-xs">{s(p.nombre)}</ChoiceButton>)}</div>
           <FormInput label="Cantidad" type="number" min="0" value={mForm.cant} onChange={e => setMForm(f=>({...f,cant:e.target.value}))} inputClassName="text-center !text-xl font-bold" placeholder="Cantidad" />
@@ -1452,7 +1459,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         <div className="mt-4">
           <label className={`${LABEL} mb-2`}>Evidencia (foto) *</label>
           {fotoMerma ? (
-            <div className="mb-3"><img src={fotoMerma} alt="Evidencia" className="h-32 w-full rounded-xl border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoMerma(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
+            <div className="mb-3"><img src={fotoMerma} alt="Evidencia" className="h-32 w-full rounded-field border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoMerma(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
           ) : (
             <label className={`${FOTO_LABEL} border-slate-300 text-slate-500`}>
               <Icons.Camera /> Tomar foto de evidencia
@@ -1460,13 +1467,16 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             </label>
           )}
         </div>
-        <FormBtn warning size="lg" className="mt-4 w-full" onClick={registrarMerma} disabled={registrandoMerma||!mForm.cant||n(mForm.cant)<=0||!fotoMerma}>
-          {registrandoMerma ? "Registrando…" : "Registrar merma"}
-        </FormBtn>
       </Modal>
 
       {/* Modal No entregada */}
-      <Modal open={!!noEntregaModal} onClose={() => !marcandoNoEntrega && setNoEntregaModal(null)} kicker="Incidencia" title="Marcar como no entregada" safeBottom closeOnEscape={!marcandoNoEntrega}>
+      <Modal open={!!noEntregaModal} onClose={() => !marcandoNoEntrega && setNoEntregaModal(null)} kicker="Incidencia" title="Marcar como no entregada" safeBottom closeOnEscape={!marcandoNoEntrega}
+        footer={noEntregaModal && (<>
+          <FormBtn size="lg" className="flex-1" onClick={() => setNoEntregaModal(null)} disabled={marcandoNoEntrega}>Cancelar</FormBtn>
+          <FormBtn warning size="lg" className="flex-[2]" onClick={confirmarNoEntrega} disabled={marcandoNoEntrega || (noEntregaForm.motivo === 'Otro' && !s(noEntregaForm.otroMotivo).trim())}>
+            {marcandoNoEntrega ? 'Guardando…' : 'Confirmar'}
+          </FormBtn>
+        </>)}>
         {noEntregaModal && (<>
           <p className="mb-4 text-sm text-slate-500">{s(noEntregaModal.clienteNombre || noEntregaModal.cliente)}</p>
           <div className="space-y-3">
@@ -1487,7 +1497,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
                 </div>
               )}
             </div>
-            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-[16px] bg-slate-50 px-4 py-3">
+            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-field bg-slate-50 px-4 py-3">
               <div>
                 <p className="text-sm font-semibold text-slate-700">Reagendar para próxima ruta</p>
                 <p className="text-[11px] text-slate-500">El admin verá la marca al armar la próxima ruta.</p>
@@ -1499,12 +1509,6 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
                 className="h-5 w-5 rounded border-slate-300 accent-amber-500"
               />
             </label>
-          </div>
-          <div className="mt-5 grid grid-cols-2 gap-2">
-            <FormBtn onClick={() => setNoEntregaModal(null)} disabled={marcandoNoEntrega}>Cancelar</FormBtn>
-            <FormBtn warning onClick={confirmarNoEntrega} disabled={marcandoNoEntrega || (noEntregaForm.motivo === 'Otro' && !s(noEntregaForm.otroMotivo).trim())}>
-              {marcandoNoEntrega ? 'Guardando…' : 'Confirmar'}
-            </FormBtn>
           </div>
         </>)}
       </Modal>

@@ -194,18 +194,16 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
             setRutaSeleccionada(primera);
             setFirmaTienePuntos(false);
           }}
-          className="w-full bg-amber-500 hover:bg-amber-600 transition-colors text-slate-900 px-4 py-3 flex items-center justify-center gap-3 shadow-[0_4px_12px_rgba(251,191,36,0.25)] animate-pulse"
+          className="flex w-full items-center gap-3 rounded-card border border-amber-200 bg-amber-50 px-4 py-3 text-left transition-colors active:bg-amber-100"
         >
-          <span className="flex-shrink-0"><Icons.AlertTriangle /></span>
-          <div className="text-left">
-            <p className="text-sm font-extrabold tracking-tight">
+          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-500 text-white"><Icons.Pen /></span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[15px] font-semibold text-amber-900">
               {rutasPendientes.length} firma{rutasPendientes.length === 1 ? '' : 's'} pendiente{rutasPendientes.length === 1 ? '' : 's'}
             </p>
-            <p className="text-[11px] font-semibold opacity-80">Tocar para firmar</p>
+            <p className="text-[13px] text-amber-800/80">Tocar para firmar</p>
           </div>
-          <span className="ml-2 text-xs font-bold bg-slate-900 text-amber-300 px-2 py-0.5 rounded-full">
-            URGENTE
-          </span>
+          <span className="flex-shrink-0 text-amber-700"><Icons.ChevronRight /></span>
         </button>
       )}
 
@@ -216,12 +214,12 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
       <button
         ref={triggerRef}
         onClick={() => setAbierto(!abierto)}
-        className="relative inline-flex h-10 w-10 items-center justify-center rounded-[14px] border border-amber-200 bg-amber-50 text-amber-700 transition-colors hover:bg-amber-100 lg:h-11 lg:w-11 lg:rounded-[16px]"
+        className="relative inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-700 transition-colors hover:bg-slate-100 lg:h-11 lg:w-11"
         title="Firmas pendientes" aria-label="Firmas pendientes"
       >
         <Icons.Pen />
         {rutasPendientes.length > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-[10px] font-extrabold rounded-full flex items-center justify-center bg-amber-500 text-white">
+          <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold text-white">
             {rutasPendientes.length}
           </span>
         )}
@@ -229,16 +227,16 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
 
       {/* Dropdown con lista */}
       {abierto && (
-        <div ref={dropdownRef} className="absolute top-full right-0 mt-2 w-[calc(100vw-32px)] sm:w-80 bg-white rounded-[20px] shadow-[0_20px_50px_rgba(3,14,19,0.18)] border border-slate-200 overflow-hidden z-50">
-          <div className="bg-slate-900 px-4 py-3 text-white">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-200">
+        <div ref={dropdownRef} className="absolute right-0 top-full z-50 mt-2 w-[calc(100vw-32px)] overflow-hidden rounded-card border border-line bg-white shadow-pop animate-pop-in sm:w-80">
+          <div className="border-b border-line px-4 py-3">
+            <p className="erp-kicker text-slate-500">
               {esAdmin ? 'Esperando firma de Producción' : 'Firmas de carga'}
             </p>
-            <h3 className="font-display text-base font-bold tracking-tight">
+            <h3 className="font-display text-[15px] font-bold text-ink">
               {rutasPendientes.length} ruta{rutasPendientes.length === 1 ? '' : 's'} esperando
             </h3>
             {esAdmin && (
-              <p className="text-[11px] text-slate-300 mt-1">Solo firma si Producción no está disponible</p>
+              <p className="mt-1 text-[11px] text-slate-500">Solo firma si Producción no está disponible</p>
             )}
           </div>
           {rutasPendientes.length === 0 ? (
@@ -257,14 +255,14 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
                   <button
                     key={r.id}
                     onClick={() => handleAbrirRuta(r)}
-                    className="w-full text-left px-4 py-3 hover:bg-amber-50 transition-colors"
+                    className="w-full px-4 py-3 text-left transition-colors active:bg-slate-50"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-bold text-slate-800">{s(r.folio) || `Ruta #${r.id}`}</p>
+                        <p className="text-[15px] font-semibold text-ink">{s(r.folio) || `Ruta #${r.id}`}</p>
                         <p className="text-xs text-slate-500 mt-0.5">{choferNombre || 'Sin chofer'} · {totalBolsas} bolsas</p>
                       </div>
-                      <span className="text-amber-600 text-xs font-bold ml-2">Firmar →</span>
+                      <span className="ml-2 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Firmar</span>
                     </div>
                   </button>
                 );
@@ -278,8 +276,8 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
 
       {/* Modal de advertencia para Admin antes de firmar */}
       {advertenciaAdmin && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={() => setAdvertenciaAdmin(null)}>
-          <div className="bg-white w-full max-w-md rounded-[24px] p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/40 p-5 animate-fadeIn" onClick={() => setAdvertenciaAdmin(null)}>
+          <div className="w-full max-w-md rounded-panel bg-white p-5 shadow-pop animate-pop-in" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-center w-14 h-14 bg-amber-100 text-amber-700 rounded-full mx-auto mb-3">
               <Icons.AlertTriangle />
             </div>
@@ -295,7 +293,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
             <div className="flex gap-2">
               <button
                 onClick={() => setAdvertenciaAdmin(null)}
-                className="flex-1 py-3 bg-slate-200 text-slate-700 text-sm font-bold rounded-xl"
+                className="min-h-[48px] flex-1 rounded-field border border-line bg-white text-sm font-semibold text-slate-700"
               >
                 Cancelar
               </button>
@@ -306,7 +304,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
                   setRutaSeleccionada(ruta);
                   setFirmaTienePuntos(false);
                 }}
-                className="flex-1 py-3 bg-amber-600 text-white text-sm font-bold rounded-xl"
+                className="min-h-[48px] flex-1 rounded-field bg-amber-600 text-sm font-semibold text-white"
               >
                 Firmar como Admin
               </button>
@@ -317,17 +315,17 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
 
       {/* Modal de firma */}
       {rutaSeleccionada && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={() => !firmando && setRutaSeleccionada(null)}>
-          <div className="bg-white w-full max-w-md rounded-[24px] p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Firma de Producción</p>
-            <h3 className="font-display text-lg font-bold text-slate-900 mb-1">{s(rutaSeleccionada.folio)}</h3>
-            <p className="text-xs text-slate-500 mb-3">
+        <div className="fixed inset-0 z-[95] flex items-end justify-center bg-ink/40 animate-fadeIn md:items-center md:p-5" onClick={() => !firmando && setRutaSeleccionada(null)}>
+          <div className="w-full max-w-md rounded-t-panel bg-white p-5 shadow-sheet animate-sheet-in md:rounded-panel md:shadow-pop" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 20px)" }} onClick={e => e.stopPropagation()}>
+            <p className="erp-kicker text-slate-500">Firma de Producción</p>
+            <h3 className="font-display mb-1 text-[17px] font-bold text-ink">{s(rutaSeleccionada.folio)}</h3>
+            <p className="mb-3 text-[13px] text-slate-500">
               Chofer: {s(rutaSeleccionada.choferNombre || rutaSeleccionada.chofer_nombre || rutaSeleccionada.chofer || '—')}
             </p>
 
             {/* Resumen de carga */}
-            <div className="bg-slate-50 rounded-xl p-3 mb-3 max-h-40 sm:max-h-32 overflow-y-auto">
-              <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Carga reportada</p>
+            <div className="mb-3 max-h-40 overflow-y-auto rounded-field bg-slate-50 p-3 sm:max-h-32">
+              <p className="erp-kicker mb-2 text-slate-500">Carga reportada</p>
               {(() => {
                 const cargaReal = (rutaSeleccionada.carga_real && typeof rutaSeleccionada.carga_real === 'object') ? rutaSeleccionada.carga_real : {};
                 const entries = Object.entries(cargaReal);
@@ -337,7 +335,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
                   return (
                     <div key={sku} className="flex justify-between text-sm py-0.5">
                       <span className="text-slate-700">{prod ? s(prod.nombre) : sku}</span>
-                      <span className="font-bold text-slate-800">{qty}</span>
+                      <span className="tnum font-bold text-ink">{qty}</span>
                     </div>
                   );
                 });
@@ -345,7 +343,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
             </div>
 
             {/* Canvas de firma */}
-            <p className="text-xs font-semibold text-slate-600 mb-2">Dibuja tu firma:</p>
+            <p className="mb-2 text-[13px] font-medium text-slate-700">Dibuja tu firma</p>
             <canvas
               ref={el => {
                 if (el && !ctxRef.current) {
@@ -362,7 +360,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
                   ctxRef.current = ctx;
                 }
               }}
-              className="w-full h-48 sm:h-40 border-2 border-slate-300 rounded-xl bg-white touch-none"
+              className="h-48 w-full touch-none rounded-card border-2 border-slate-300 bg-white sm:h-40"
               onMouseDown={e => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 ctxRef.current.beginPath();
@@ -398,13 +396,13 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
               onTouchEnd={() => setFirmaDibujando(false)}
             />
 
-            <div className="flex gap-2 mt-3">
-              <button onClick={limpiarFirma} className="flex-1 py-2.5 bg-slate-100 text-slate-700 text-sm font-bold rounded-xl">Limpiar</button>
-              <button onClick={() => setRutaSeleccionada(null)} className="flex-1 py-2.5 bg-slate-200 text-slate-700 text-sm font-bold rounded-xl" disabled={firmando}>Cancelar</button>
+            <div className="mt-3 flex gap-2">
+              <button onClick={limpiarFirma} className="min-h-[48px] rounded-field bg-slate-100 px-4 text-sm font-semibold text-slate-700">Limpiar</button>
+              <button onClick={() => setRutaSeleccionada(null)} className="min-h-[48px] flex-1 rounded-field border border-line bg-white text-sm font-semibold text-slate-700" disabled={firmando}>Cancelar</button>
               <button
                 onClick={confirmarFirma}
                 disabled={!firmaTienePuntos || firmando}
-                className="flex-1 py-2.5 bg-emerald-600 text-white text-sm font-bold rounded-xl disabled:opacity-40"
+                className="min-h-[48px] flex-[1.4] rounded-field bg-emerald-600 text-sm font-semibold text-white disabled:opacity-40"
               >
                 {firmando ? 'Firmando…' : 'Confirmar'}
               </button>

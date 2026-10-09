@@ -1,4 +1,4 @@
-import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast, PAGE_SIZE, Paginator, PageHeader, KpiTile, SegmentedTabs } from './viewsCommon';
 import { diaNegocio, mesNegocio } from '../../utils/fechas';
 import { useRef } from 'react';
 import { resolverOperacion } from '../../data/produccionAtomicaLogic';
@@ -130,40 +130,14 @@ export function CuentasPorPagarView({ data, actions }) {
   const paginatedPendientes = useMemo(() => cxpPendientes.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [cxpPendientes, page]);
   const paginatedPagadas = useMemo(() => cxpPagadas.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [cxpPagadas, page]);
 
-  return (<div className="space-y-4">
+  return (<div className="space-y-3">
     {ConfirmEl}
-    <div className="flex items-center justify-between">
-      <h2 className="text-lg font-bold text-slate-800">Cuentas por Pagar</h2>
-      <button onClick={openNew} className="px-4 py-2 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 min-h-[44px]">
-        + Nueva deuda
-      </button>
-    </div>
-
-    {/* Summary */}
+    <PageHeader title="Por pagar" subtitle="Deudas con proveedores y sus pagos" action={openNew} actionLabel="Nueva deuda" />
     <div className="grid grid-cols-2 gap-3">
-      <div className="bg-red-50 rounded-xl p-4 border border-red-200">
-        <p className="text-[10px] text-red-500 uppercase font-bold">Por pagar</p>
-        <p className="text-xl font-extrabold text-red-700">{fmtMoney(totalPorPagar)}</p>
-        <p className="text-xs text-red-600 mt-1">{cxpPendientes.length} cuentas pendientes</p>
-      </div>
-      <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
-        <p className="text-[10px] text-emerald-500 uppercase font-bold">Pagado este mes</p>
-        <p className="text-xl font-extrabold text-emerald-700">{fmtMoney(pagadoEsteMes)}</p>
-      </div>
+      <KpiTile label="Por pagar" value={fmtMoney(totalPorPagar)} hint={`${cxpPendientes.length} ${cxpPendientes.length === 1 ? 'cuenta pendiente' : 'cuentas pendientes'}`} tone="danger" />
+      <KpiTile label="Pagado este mes" value={fmtMoney(pagadoEsteMes)} tone="success" />
     </div>
-
-    {/* Tabs */}
-    <div className="flex gap-2 border-b border-slate-200">
-      <button onClick={() => { setTab('pendientes'); setPage(0); }} className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] ${tab === 'pendientes' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>
-        Pendientes ({cxpPendientes.length})
-      </button>
-      <button onClick={() => { setTab('pagadas'); setPage(0); }} className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] ${tab === 'pagadas' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>
-        Pagadas ({cxpPagadas.length})
-      </button>
-      <button onClick={() => { setTab('pagos'); setPage(0); }} className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-[2px] ${tab === 'pagos' ? 'border-blue-500 text-blue-600' : 'border-transparent text-slate-500'}`}>
-        Pagos recientes
-      </button>
-    </div>
+    <SegmentedTabs value={tab} onChange={(k) => { setTab(k); setPage(0); }} items={[{ k: 'pendientes', l: `Pendientes (${cxpPendientes.length})` }, { k: 'pagadas', l: `Pagadas (${cxpPagadas.length})` }, { k: 'pagos', l: 'Pagos' }]} />
 
     {tab === 'pendientes' && (
       <div className="space-y-2">
@@ -204,7 +178,7 @@ export function CuentasPorPagarView({ data, actions }) {
                 <span className="text-xs text-slate-400">Vence: {cxp.fechaVencimiento ? fmtDate(cxp.fechaVencimiento) : 'Sin fecha'}</span>
                 <div className="flex gap-2">
                   <button onClick={() => openEdit(cxp)} className="px-3 py-2 bg-slate-100 text-slate-600 text-xs font-semibold rounded-lg min-h-[36px]">Editar</button>
-                  <button onClick={() => openPago(cxp)} className="px-4 py-2 bg-emerald-600 text-white text-xs font-bold rounded-lg min-h-[36px]">Pagar</button>
+                  <FormBtn success onClick={() => openPago(cxp)}>Pagar</FormBtn>
                 </div>
               </div>
             </div>

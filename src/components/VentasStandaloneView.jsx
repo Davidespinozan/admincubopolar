@@ -309,7 +309,15 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
 
       {/* ═══ MODAL COBRO ═══ */}
       <Modal open={!!pagoModal} onClose={cerrarCobro} kicker={pagoModal?.entregaPagada ? "Entrega" : "Cobranza"} safeBottom closeOnEscape={!generandoLink && !venta.enviando}
-        title={pagoModal ? `${pagoModal.entregaPagada ? 'Entregar' : 'Cobrar'} ${s(pagoModal.folio)}` : ""}>
+        title={pagoModal ? `${pagoModal.entregaPagada ? 'Entregar' : 'Cobrar'} ${s(pagoModal.folio)}` : ""}
+        footer={pagoModal && !checkoutUrl && (
+          <FormBtn success size="lg" className="w-full" onClick={confirmarCobro}
+            disabled={generandoLink || venta.enviando || (!!modoCobro && (!venta.validacion.ok || sinClienteCredito))}>
+            {generandoLink ? 'Generando link…' : venta.enviando ? 'Registrando…'
+              : modoCobro === 'pagado_link' ? 'Entregar pedido' : modoCobro === 'credito' ? 'Registrar crédito y entregar'
+              : modoCobro === 'contado' ? 'Cobrar y entregar' : 'Generar link de pago'}
+          </FormBtn>
+        )}>
         {pagoModal && (<>
           <p className="mb-4 text-sm text-slate-500">{s(pagoModal.cliente)} — <span className="font-bold text-slate-800">{fmtMoney(pagoModal.total)}</span>
             {pagoModal.requiereFactura && <span className="ml-2 rounded-full border border-violet-200/80 bg-violet-100/80 px-2 py-0.5 text-[10px] font-bold text-violet-900">FACTURA</span>}
@@ -319,7 +327,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
           )}
           {!pagoModal.entregaPagada && (<>
           <SectionLabel className="mb-2">Método de pago</SectionLabel>
-          <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="mb-4 grid grid-cols-2 gap-2">
             {PAGOS.map(m => (
               <ChoiceButton key={m} tone="emerald" active={pagoForm.metodo === m} onClick={() => setPagoForm(f => ({ ...f, metodo: m }))} className="text-xs">
                 {m}
@@ -337,7 +345,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
             <Card tone="success" padding="p-4" className="mb-4 space-y-3">
               <p className="flex items-center gap-1.5 text-xs font-bold text-emerald-700"><Icons.Check /> Link de pago generado</p>
               <p className="break-all rounded-[12px] border border-slate-200 bg-white p-2 text-xs text-slate-600">{shortUrl || checkoutUrl}</p>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="grid grid-cols-2 gap-2">
                 <FormBtn ghost onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); showToast('Link copiado'); }} className="text-xs">Copiar link</FormBtn>
                 {(() => {
                   const cliente = (data?.clientes || []).find(c => String(c.id) === String(pagoModal.clienteId || pagoModal.cliente_id));
@@ -347,7 +355,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
                   const href = tel
                     ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`
                     : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-                  return <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center justify-center rounded-[16px] bg-emerald-600 px-5 py-3 text-xs font-semibold text-white hover:bg-emerald-700">Enviar por WhatsApp</a>;
+                  return <a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex min-h-[44px] items-center justify-center rounded-field bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700">Enviar por WhatsApp</a>;
                 })()}
               </div>
               <p className="text-[11px] text-slate-500">El pedido se entrega cuando el pago se confirme.</p>
@@ -359,14 +367,6 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
           )}
           {modoCobro && (
             <div className="mb-4"><VentaDirectaOrigen venta={venta} disabled={venta.enviando} /></div>
-          )}
-          {!checkoutUrl && (
-            <FormBtn success size="lg" className="w-full" onClick={confirmarCobro}
-              disabled={generandoLink || venta.enviando || (!!modoCobro && (!venta.validacion.ok || sinClienteCredito))}>
-              {generandoLink ? 'Generando link…' : venta.enviando ? 'Registrando…'
-                : modoCobro === 'pagado_link' ? 'Entregar pedido' : modoCobro === 'credito' ? 'Registrar crédito y entregar'
-                : modoCobro === 'contado' ? 'Cobrar y entregar' : 'Generar link de pago'}
-            </FormBtn>
           )}
         </>)}
       </Modal>
