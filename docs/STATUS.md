@@ -34,6 +34,10 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
   `45f027956dcae88dd93d0588692078995bedf48088a5b6a548273c02ff111fbb`; de 118:
   `b4d2a77b730b99b999548408b37f5b763cbe4e8520d4228291a26f0c64923a8e`; de 119:
   `cd499211b5d47eed71142401789d455a323a3007ab92cd72f3190127fc67f0ad`; 109–118 sin cambio.
+- Corrección puntual de 056 (2026-10-09, por el dueño en el SQL Editor): producción tenía `clientes.numero_interior` y
+  `configuracion_empresa.numero_exterior` pero NO `configuracion_empresa.numero_interior` (056 aplicada a medias; Ajustes
+  fallaba al guardar con "Could not find the 'numero_interior' column"). Se agregó solo esa columna (`ADD COLUMN IF NOT
+  EXISTS numero_interior TEXT`); verificada en solo lectura. Sin código, deploy, datos, RLS ni grants afectados.
 - Conteos tras 121 (cambian con cada fase; no son invariantes): 170 funciones · 87 policies · 50 tablas · 62 triggers en
   `public`; 92 funciones ejecutables por authenticated. Diff de 120: +8 funciones, +3 policies (`usuarios.admin_read`,
   `bitacora_cambios.dueno_read` / `desde_disparador`), +2 tablas (`bitacora_cambios`, `usuarios_password_temporal`), +15 triggers,
@@ -226,7 +230,9 @@ contexto: Fase 2 PENDING y sin autorizar.
 - **No incluido (PROPOSED, sin autorizar):** GER-2 aprobaciones del Dueño con umbrales (pago a proveedor > $5,000, devolución en efectivo,
   cancelar venta cobrada / anular CxC, nómina por periodo, ajuste de inventario a la baja > 50 bolsas, diferencia de caja > $200, precio
   público y precio especial > 10 % abajo); GER-3 cerrar el REST de cuentas por pagar, precios, salarios y asientos manuales.
-- **Residuales aceptables:** la temporal inicial es conocida (ventana hasta el primer ingreso); el acceso adicional de Ventas no factura;
+- **Decisión del dueño (2026-10-09):** el cambio obligatorio de contraseña es opcional y nace apagado (casilla en el alta y al
+  restablecer); la contraseña inicial sirve hasta que alguien la cambie. OWNER ACCEPTED RISK.
+- **Residuales aceptables:** la contraseña inicial es conocida (cualquiera que la conozca entra a esa cuenta); el acceso adicional de Ventas no factura;
   el Chofer no muestra accesos adicionales; `service_role` / SQL de confianza tienen la autoridad del Dueño.
 - **Observación (sin tocar):** el usuario de Producción que estaba activo el 2026-10-09 temprano ya no lo está (activos: Admin 1, Chofer 1;
   6 usuarios en total, antes 7). No es efecto de GER-1 (estado de negocio idéntico antes y después de 120 y 121).

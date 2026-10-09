@@ -1,6 +1,7 @@
 // admin-reset-password — GER-1 (mig 120): Administración restablece la
-// contraseña de un usuario a una TEMPORAL (p. ej. cuando la olvidó). La cuenta
-// queda sin autoridad hasta que su dueño elige una propia (cambio obligatorio).
+// contraseña de un usuario (p. ej. cuando la olvidó). Con `forzarCambio` es
+// TEMPORAL: la cuenta queda sin autoridad hasta que su dueño elige una propia.
+// Sin él (opción por defecto, decisión del dueño) queda como definitiva.
 //
 // Reglas (las mismas de guardar_usuario; lógica pura en usuariosLogic):
 //   · solo Admin; a otro Admin solo el Dueño; al Dueño nadie por aquí;
@@ -64,6 +65,19 @@ export const createHandler = ({
     if (error) return badRequest(error.message || 'No se pudo cambiar la contraseña');
   } catch (error) {
     return serverError('No se pudo cambiar la contraseña', error.message);
+  }
+
+  // Decisión del dueño (2026-10-09): el cambio obligatorio es opcional. Sin
+  // `forzarCambio` la contraseña nueva queda como definitiva y, si la cuenta
+  // estaba obligada a cambiarla, se libera (service role; 121 no lo impide).
+  if (body?.forzarCambio !== true) {
+    try {
+      const { error } = await supabase.from('usuarios').update({ debe_cambiar_password: false }).eq('id', objetivo.id);
+      if (error) throw error;
+    } catch (error) {
+      return serverError('La contraseña se cambió, pero no se pudo liberar la cuenta. Vuelve a restablecerla.', error.message);
+    }
+    return ok({ usuario: { id: objetivo.id, nombre: objetivo.nombre }, temporal: false });
   }
 
   try {

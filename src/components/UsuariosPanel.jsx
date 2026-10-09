@@ -29,6 +29,21 @@ const QUE_VE = {
 };
 const PASSWORD_INICIAL = '12345678';
 
+// Decisión del dueño (2026-10-09): el cambio obligatorio es opcional y nace apagado.
+function CasillaForzar({ checked, onChange }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-field bg-slate-50 px-3 py-3" data-testid="casilla-forzar-cambio">
+      <input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} className="mt-0.5 h-5 w-5 flex-shrink-0 rounded border-slate-300" />
+      <span className="min-w-0">
+        <span className="block text-[14px] font-semibold text-ink">Obligar a cambiarla al entrar</span>
+        <span className="block text-[12px] text-slate-500">
+          {checked ? 'No podrá usar ningún módulo hasta elegir una contraseña propia.' : 'Sin marcar, esta contraseña sirve hasta que alguien la cambie: quien la conozca puede entrar a la cuenta.'}
+        </span>
+      </span>
+    </label>
+  );
+}
+
 export default function UsuariosPanel({ data, actions, user }) {
   const toast = useToast();
   const dueno = esDueno(user);
@@ -47,7 +62,7 @@ export default function UsuariosPanel({ data, actions, user }) {
 
   const abrirNuevo = () => {
     setErrores({});
-    setForm({ empleadoId: '', nombre: '', rol: rolesAlta.includes('Ventas') ? 'Ventas' : rolesAlta[0], email: '', emailTocado: false, password: PASSWORD_INICIAL, accesos: [] });
+    setForm({ empleadoId: '', nombre: '', rol: rolesAlta.includes('Ventas') ? 'Ventas' : rolesAlta[0], email: '', emailTocado: false, password: PASSWORD_INICIAL, accesos: [], forzar: false });
     setModal('nuevo');
   };
   const abrirEditar = (u) => {
@@ -76,7 +91,7 @@ export default function UsuariosPanel({ data, actions, user }) {
     try {
       let res;
       try {
-        res = await backendPost('admin-create-user', { email: form.email.trim().toLowerCase(), password: form.password, nombre: form.nombre.trim(), rol: form.rol });
+        res = await backendPost('admin-create-user', { email: form.email.trim().toLowerCase(), password: form.password, nombre: form.nombre.trim(), rol: form.rol, forzarCambio: !!form.forzar });
       } catch (err) {
         captureError(err, { fn: 'admin-create-user', status: err?.status });
         setErrores({ email: err?.message || 'No se pudo crear el usuario' });
@@ -90,8 +105,8 @@ export default function UsuariosPanel({ data, actions, user }) {
       }
       if (form.empleadoId) await actions.vincularEmpleadoUsuario?.(form.empleadoId, nuevo.id);
       await actions.recargarDatos?.();
-      toast?.success(res.temporal === false
-        ? 'Usuario creado. No quedó marcada como temporal: restablece su contraseña.'
+      toast?.success(!form.forzar ? 'Usuario creado. Ya puede entrar con esa contraseña.'
+        : res.temporal === false ? 'Usuario creado. No quedó marcada como temporal: restablece su contraseña.'
         : 'Usuario creado. Al entrar deberá elegir su propia contraseña.');
       setModal(null); setForm(null);
     } finally {
@@ -121,9 +136,9 @@ export default function UsuariosPanel({ data, actions, user }) {
     if (vp.error) { setReset(r => ({ ...r, error: vp.error })); return; }
     setGuardando(true);
     try {
-      const r = await actions.restablecerPassword(reset.usuario.id, reset.password);
+      const r = await actions.restablecerPassword(reset.usuario.id, reset.password, { forzarCambio: !!reset.forzar });
       if (r?.error) { setReset(x => ({ ...x, error: r.error })); return; }
-      toast?.success(`Contraseña temporal lista para ${s(reset.usuario.nombre)}. Le pedirá cambiarla al entrar.`);
+      toast?.success(reset.forzar ? `Contraseña temporal lista para ${s(reset.usuario.nombre)}. Le pedirá cambiarla al entrar.` : `Contraseña de ${s(reset.usuario.nombre)} actualizada.`);
       setReset(null);
     } finally {
       setGuardando(false);
@@ -198,8 +213,9 @@ export default function UsuariosPanel({ data, actions, user }) {
             )}
             <FormInput label="Correo para entrar *" type="email" value={form.email} error={errores.email} autoCapitalize="none" autoCorrect="off"
               onChange={e => setForm(f => ({ ...f, email: e.target.value, emailTocado: true }))} hint="Se sugiere con nombre, apellido y rol. Puedes cambiarlo." />
-            <FormInput label="Contraseña temporal *" value={form.password} error={errores.password} autoCapitalize="none" autoCorrect="off"
-              onChange={e => setForm(f => ({ ...f, password: e.target.value }))} hint="Al entrar por primera vez el sistema le pedirá elegir la suya." />
+            <FormInput label="Contraseña *" value={form.password} error={errores.password} autoCapitalize="none" autoCorrect="off"
+              onChange={e => setForm(f => ({ ...f, password: e.target.value }))} hint="La puede cambiar después en “Mi cuenta”." />
+            <CasillaForzar checked={form.forzar} onChange={v => setForm(f => ({ ...f, forzar: v }))} />
           </div>
         )}
       </Modal>
@@ -243,7 +259,7 @@ export default function UsuariosPanel({ data, actions, user }) {
               </div>
             )}
             {permisos.password && (editando.auth_id || editando.authId) && (
-              <button type="button" onClick={() => setReset({ usuario: editando, password: PASSWORD_INICIAL })}
+              <button type="button" onClick={() => setReset({ usuario: editando, password: PASSWORD_INICIAL, forzar: false })}
                 className="flex min-h-[48px] w-full items-center justify-center gap-2 rounded-field border border-line bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50" data-testid="usuario-restablecer">
                 <Icons.Lock /> Restablecer contraseña
               </button>
@@ -253,16 +269,17 @@ export default function UsuariosPanel({ data, actions, user }) {
       </Modal>
 
       {/* ── Restablecer contraseña ── */}
-      <Modal open={!!reset} onClose={() => !guardando && setReset(null)} kicker="Contraseña temporal" title={reset ? s(reset.usuario.nombre) : ''} closeOnEscape={!guardando}
+      <Modal open={!!reset} onClose={() => !guardando && setReset(null)} kicker="Restablecer contraseña" title={reset ? s(reset.usuario.nombre) : ''} closeOnEscape={!guardando}
         footer={<>
           <FormBtn size="lg" className="flex-1" onClick={() => setReset(null)} disabled={guardando}>Cancelar</FormBtn>
           <FormBtn primary size="lg" className="flex-[2]" onClick={restablecer} loading={guardando}>Restablecer</FormBtn>
         </>}>
         {reset && (
           <div className="space-y-3">
-            <p className="text-[14px] text-slate-600">Su contraseña actual deja de servir. Entrará con esta temporal y el sistema le pedirá elegir una propia antes de usar cualquier módulo.</p>
-            <FormInput label="Contraseña temporal" value={reset.password} error={reset.error} autoCapitalize="none" autoCorrect="off"
+            <p className="text-[14px] text-slate-600">Su contraseña actual deja de servir y entrará con esta.</p>
+            <FormInput label="Contraseña nueva" value={reset.password} error={reset.error} autoCapitalize="none" autoCorrect="off"
               onChange={e => setReset(r => ({ ...r, password: e.target.value, error: null }))} />
+            <CasillaForzar checked={!!reset.forzar} onChange={v => setReset(r => ({ ...r, forzar: v }))} />
           </div>
         )}
       </Modal>

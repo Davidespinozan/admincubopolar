@@ -154,19 +154,19 @@ describe('Netlify: alta, restablecer y alcance de órdenes', () => {
   const como = (profile) => async () => ({ profile });
   const alta = { email: 'jessica.munoz.admin@cubopolar.com', password: '12345678', nombre: 'Jessica Muñoz Gurrola', rol: 'Admin' };
 
-  it('Admin no crea otro Admin; el Dueño sí, y queda con contraseña temporal', async () => {
+  it('Admin no crea otro Admin; el Dueño sí; con forzarCambio queda con contraseña temporal', async () => {
     const fake = makeFakeSupabase({}, { authId: 'uuid-j' });
     const r1 = await crearUsuario({ getProfile: como(ADMIN), getSupabase: () => fake })(evento(alta));
     expect(r1.statusCode).toBe(403);
     expect(fake.authCalls.createUser).toHaveLength(0);
-    const r2 = await crearUsuario({ getProfile: como(DUENO), getSupabase: () => fake })(evento(alta));
+    const r2 = await crearUsuario({ getProfile: como(DUENO), getSupabase: () => fake })(evento({ ...alta, forzarCambio: true }));
     expect(r2.statusCode).toBe(200);
     expect(JSON.parse(r2.body).temporal).toBe(true);
     expect(fake.rpcs).toEqual([{ name: 'fijar_password_temporal', args: { p_usuario_id: fake.db.usuarios[0].id, p_por: 'Santiago Mier' } }]);
   });
   it('si no se pudo fijar la temporal, el alta no se revierte y se avisa', async () => {
     const fake = makeFakeSupabase({}, { authId: 'uuid-v', rpcImpl: { fijar_password_temporal: () => ({ data: null, error: { message: 'boom' } }) } });
-    const r = await crearUsuario({ getProfile: como(ADMIN), getSupabase: () => fake })(evento({ ...alta, rol: 'Ventas' }));
+    const r = await crearUsuario({ getProfile: como(ADMIN), getSupabase: () => fake })(evento({ ...alta, rol: 'Ventas', forzarCambio: true }));
     expect(r.statusCode).toBe(200);
     expect(JSON.parse(r.body).temporal).toBe(false);
     expect(fake.authCalls.deleteUser).toHaveLength(0);
@@ -175,7 +175,7 @@ describe('Netlify: alta, restablecer y alcance de órdenes', () => {
     const db = { usuarios: [{ ...VENTAS }, { ...ADMIN2, auth_id: 'a3' }, { ...DUENO, auth_id: 'a45' }, { ...ADMIN, auth_id: 'a2' }] };
     const fake = makeFakeSupabase(db);
     const h = restablecer({ getProfile: como(ADMIN), getSupabase: () => fake });
-    const ok = await h(evento({ usuarioId: 6, password: '12345678' }));
+    const ok = await h(evento({ usuarioId: 6, password: '12345678', forzarCambio: true }));
     expect(ok.statusCode).toBe(200);
     expect(fake.authCalls.updateUserById).toEqual([{ id: 'a6', attrs: { password: '12345678' } }]);
     expect(fake.rpcs.at(-1)).toEqual({ name: 'fijar_password_temporal', args: { p_usuario_id: 6, p_por: 'Jessica Muñoz Gurrola' } });
@@ -187,9 +187,25 @@ describe('Netlify: alta, restablecer y alcance de órdenes', () => {
   });
   it('restablecer: si la huella no se fija, 500 TEMPORAL_NO_FIJADA (reintentar lo corrige)', async () => {
     const fake = makeFakeSupabase({ usuarios: [{ ...VENTAS }] }, { rpcImpl: { fijar_password_temporal: () => ({ data: null, error: { message: 'x' } }) } });
-    const r = await restablecer({ getProfile: como(ADMIN), getSupabase: () => fake })(evento({ usuarioId: 6, password: '12345678' }));
+    const r = await restablecer({ getProfile: como(ADMIN), getSupabase: () => fake })(evento({ usuarioId: 6, password: '12345678', forzarCambio: true }));
     expect(r.statusCode).toBe(500);
     expect(JSON.parse(r.body).code).toBe('TEMPORAL_NO_FIJADA');
+  });
+  it('cambio obligatorio OPCIONAL (decisión del dueño): sin forzarCambio la contraseña queda como definitiva', async () => {
+    const fake = makeFakeSupabase({}, { authId: 'uuid-m' });
+    const r = await crearUsuario({ getProfile: como(DUENO), getSupabase: () => fake })(evento({ ...alta, rol: 'Ventas' }));
+    expect(r.statusCode).toBe(200);
+    expect(JSON.parse(r.body)).toMatchObject({ temporal: false, forzarCambio: false });
+    expect(fake.rpcs).toHaveLength(0);                                   // no se fija huella ni cambio obligatorio
+    const fake2 = makeFakeSupabase({ usuarios: [{ ...VENTAS, debe_cambiar_password: true }] });
+    const r2 = await restablecer({ getProfile: como(ADMIN), getSupabase: () => fake2 })(evento({ usuarioId: 6, password: '12345678' }));
+    expect(r2.statusCode).toBe(200);
+    expect(JSON.parse(r2.body).temporal).toBe(false);
+    expect(fake2.rpcs).toHaveLength(0);
+    expect(fake2.db.usuarios[0].debe_cambiar_password).toBe(false);      // y la cuenta queda liberada
+    const panel = src('../components/UsuariosPanel.jsx');
+    expect(panel).toMatch(/data-testid="casilla-forzar-cambio"/);
+    expect(panel).toMatch(/password: PASSWORD_INICIAL, accesos: \[\], forzar: false \}/);   // nace apagada
   });
   it('el acceso adicional de Ventas ve sus órdenes como un vendedor; Almacén solo, no', async () => {
     const supabase = makeFakeSupabase();

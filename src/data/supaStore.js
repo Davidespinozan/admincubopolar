@@ -3283,9 +3283,9 @@ export function useSupaStore(userId, userName, userRol) {
         return { data };
       },
 
-      restablecerPassword: async (usuarioId, password) => {
+      restablecerPassword: async (usuarioId, password, { forzarCambio = false } = {}) => {
         try {
-          const data = await backendPost('admin-reset-password', { usuarioId: Number(usuarioId), password });
+          const data = await backendPost('admin-reset-password', { usuarioId: Number(usuarioId), password, forzarCambio: !!forzarCambio });
           rf();
           return { data };
         } catch (e) {

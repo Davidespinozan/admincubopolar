@@ -85,8 +85,9 @@ corrida. Vitest `b4Privilegios` compara los grants con las escrituras directas d
 ## Open residuals
 - `increment_saldo` (solo limpieza) y `error_log` con INSERT abierto (riesgo de observabilidad).
 - `service_role` y SQL de confianza pasan las guardas por diseño (y tienen la autoridad del Dueño en `guardar_usuario`).
-- GER-1: la contraseña temporal inicial es conocida (la elige Administración); quien la conozca puede entrar
-  antes que su dueño y fijar la suya (ventana hasta el primer ingreso; el Dueño/Admin la restablecen). El
+- GER-1: el cambio obligatorio de contraseña es OPCIONAL y nace apagado (decisión del dueño, 2026-10-09): sin
+  marcarlo, la contraseña inicial que elige Administración sirve hasta que alguien la cambie (quien la conozca
+  entra a la cuenta, también a una de Admin). Con la casilla marcada aplica la contraseña temporal de 120. El
   acceso adicional no factura. Chofer (modo enfoque) no muestra accesos adicionales en pantalla.
 - `git push` está preaprobado en la configuración local de Claude; la regla de autorización está en `CLAUDE.md`.
 

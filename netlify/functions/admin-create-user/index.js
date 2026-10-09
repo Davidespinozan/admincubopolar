@@ -112,10 +112,15 @@ export const createHandler = ({
     .single();
 
   if (!insertError && usuario) {
-    // GER-1 (120): la contraseña que eligió Administración es TEMPORAL. El
-    // servidor guarda su huella y la cuenta no tiene autoridad hasta que su
-    // dueño la cambia. Si este paso falla la cuenta queda creada y usable:
-    // se avisa para restablecerla (no se revierte un alta válida).
+    // GER-1 (120): con `forzarCambio` la contraseña que eligió Administración es
+    // TEMPORAL: el servidor guarda su huella y la cuenta no tiene autoridad
+    // hasta que su dueño la cambia. Si el paso falla la cuenta queda creada y
+    // usable: se avisa para restablecerla (no se revierte un alta válida).
+    // Decisión del dueño (2026-10-09): el cambio obligatorio es OPCIONAL; sin
+    // `forzarCambio` la contraseña inicial sirve hasta que alguien la cambie.
+    if (body?.forzarCambio !== true) {
+      return ok({ user: { id: authId, email }, usuario, temporal: false, forzarCambio: false });
+    }
     let temporal = true;
     try {
       const { error: tempError } = await supabase.rpc('fijar_password_temporal', {
@@ -127,7 +132,7 @@ export const createHandler = ({
       temporal = false;
       console.error('[admin-create-user] no se pudo fijar la contraseña temporal', { usuarioId: usuario.id, error: error?.message });
     }
-    return ok({ user: { id: authId, email }, usuario, temporal });
+    return ok({ user: { id: authId, email }, usuario, temporal, forzarCambio: true });
   }
 
   // Rollback: no dejar auth.users huérfano.
