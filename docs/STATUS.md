@@ -1,12 +1,15 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-09 (GER-1 activo: BD hasta 121, repositorio `afad162`; Santiago es Dueño; ZONA-1 (122) MIGRATION APPLIED TO PRODUCTION + VALIDATED, deploy del frontend PENDIENTE). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-09 (ZONA-1: zona del negocio = Durango, mig 122 aplicada y frontend `28a2024` desplegado; GER-1 activo; Santiago es Dueño). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Repositorio desplegado: `afad162` (GER-1) — DEPLOYED (Netlify `6ac95f9464056c0008f6049b`, ready 2026-10-09); bundle vivo
+- Repositorio desplegado: `28a2024` (ZONA-1 docs sobre `8f18d75` feat(122) y `5913523` recordatorio de asistencia) — DEPLOYED (Netlify
+  `6ac97f5dece4b70008f29f2c`, ready 2026-10-09T23:57:49Z, `commit_ref` = `28a2024`); bundle vivo verificado a las 23:58Z (49 archivos js):
+  `America/Monterrey` 1 archivo, `America/Mazatlan` 0, "hora de Durango" 1, "Cubo Polar · Durango" 1, `-06:00` 1, `recordatorio-asistencia` 1.
+  Base anterior: `afad162` (GER-1) — DEPLOYED (Netlify `6ac95f9464056c0008f6049b`, ready 2026-10-09); bundle vivo
   verificado (`guardar_usuario`, `confirmar_cambio_password`, `panel-dueno`, `cambio-obligatorio`, `admin-reset-password`;
   0 archivos con `from('usuarios').update`). Netlify Functions: **18** (nueva `admin-reset-password`; cambian las que usan
   `_lib/auth.js` y `admin-create-user`: los digests anteriores ya no aplican). Entre `f7d5e66` y `afad162` (solo UI, DEPLOYED):
@@ -22,8 +25,13 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
   documentación se publica encima sin cambios de código. WF-0.2 (119) no cambió el frontend: su commit (migración,
   pruebas, runner y STATUS) se publica sobre el mismo código. Bases anteriores: `dddedee` (WF-0 + PD-01), `95d69a3` (OP-01E),
   `3bdf4ce` (CLOSURE-1), `5f1632b` (OL-04), `c09d82a` (B3.6), `9a94881` (OL-03B), `cfce0f2` (OL-03A).
-- Base de datos: migraciones aplicadas hasta la **121** (120 y 121 el 2026-10-09, por el dueño en el SQL Editor de Supabase, una vez
-  cada una; SHA-256 de 120 `a7cbfda218d2996bfb1931bdf659f0b53bc768f18ebc3b052914b2acd15850a3`, de 121
+- Base de datos: migraciones aplicadas hasta la **122** (122 zona del negocio el 2026-10-09 entre 22:05Z y 23:51Z, por el dueño en el SQL
+  Editor; SHA-256 `06cef88222e8b6ac4f68fa01300e74ce187b247a239dcb41b8786cdc528de05e`; md5 de `fin_zona_negocio`
+  `776af6e18276586f82b16cc1a2de8474`). En el mismo intervalo el dueño aplicó la migración MULTISUCURSAL de otra sesión (archivo aún sin
+  commit, llamado `122_multisucursal.sql` en su árbol; entrará al repositorio como 123): `sucursales` (217 principales), 9 funciones,
+  `crear_orden`, `update_orden_atomic`, `precio_canonico`, `lineas_canonicas`, 1 policy, 5 triggers; conteos a las 23:51Z: 181 funciones ·
+  88 policies · 51 tablas · 48 secuencias. Su verificación y STATUS los documenta esa fase. 120 y 121 el 2026-10-09, por el dueño en el
+  SQL Editor de Supabase, una vez cada una; SHA-256 de 120 `a7cbfda218d2996bfb1931bdf659f0b53bc768f18ebc3b052914b2acd15850a3`, de 121
   `ee2316afc519f9ddbc9e2f6984b286d828592916f983f2ebb220f8fb727b91e4`). Anteriores: hasta la 119 (111 el 2026-10-06T16:27Z, 112 el
   16:29:58Z, 113 el 17:51:58Z, 114 el 18:58:15Z, 115 el 2026-10-07T00:05:37Z, 116 el 2026-10-07T17:48:57Z,
   117 el 18:19:21Z, 118 el 18:19:56Z, 119 el 19:32:05Z, una vez cada una; se
@@ -216,8 +224,9 @@ contenido (OL-03A y 112); OL-03B, B3.6 y OL-04 DEPLOYED / TECHNICALLY VERIFIED. 
 contexto: Fase 2 PENDING y sin autorizar.
 
 ## Zona horaria del negocio = Durango (ZONA-1, mig 122) — 2026-10-09
-**MIGRATION APPLIED TO PRODUCTION (por el dueño, SQL Editor, 2026-10-09 entre 22:05Z y 23:51Z) / VALIDATED IN PRODUCTION (solo
-lectura, 23:51Z) — COMMITTED (rama `worktree-zona-durango`, sobre `05e9f2b`); push/deploy del frontend: ver la línea base.** El
+**DEPLOYED / TECHNICALLY VERIFIED (2026-10-09): migración 122 aplicada por el dueño (SQL Editor, entre 22:05Z y 23:51Z) y validada en
+solo lectura (23:51Z y 23:57Z: `error_log` 254 sin filas nuevas); frontend `28a2024` desplegado (Netlify `6ac97f5dece4b70008f29f2c`) con
+el bundle vivo verificado. Sin cierre del dueño registrado ("CLOSED IN PRODUCTION" pendiente de su palabra).** El
 clasificador de permisos de la sesión bloqueó `supabase db query` contra producción ("Production Deploy"); el dueño aplicó el SQL.
 - **Verificado en producción (23:51Z):** `fin_zona_negocio()` = `America/Monterrey`, md5 `776af6e18276586f82b16cc1a2de8474`
   (antes `7688ea0b…`), IMMUTABLE, `search_path=public, pg_temp`, EXECUTE para authenticated y service_role, sin anon; `fin_hoy()` =
@@ -244,11 +253,11 @@ clasificador de permisos de la sesión bloqueó `supabase db query` contra produ
   SEARCH_PATH 119/119. Suites 096/098/100/116/118/119 y el runner derivan ahora sus instantes frontera de `fin_zona_negocio()` (corren
   antes y después de 122). Vitest 1,481 en UTC / Mazatlán / CDMX / Madrid; lint, typecheck, build y `diff --check` limpios.
   Runner: `PG_PORT` opcional (dos gates a la vez).
-- **Activación:** 1) 122 aplicada por el dueño ✔ → 2) verificación de solo lectura ✔ → 3) push del commit → 4) bundle vivo con
-  `America/Monterrey` y sin `America/Mazatlan` → 5) este STATUS a DEPLOYED / TECHNICALLY VERIFIED.
+- **Activación (completa):** 1) 122 aplicada por el dueño ✔ → 2) verificación de solo lectura ✔ → 3) push `28a2024` por el dueño (el
+  clasificador bloqueó el push de la sesión) ✔ → 4) bundle vivo con `America/Monterrey` y sin `America/Mazatlan` ✔ → 5) STATUS ✔.
 - **Numeración:** la migración multisucursal de la otra sesión también se llamó 122 en su árbol de trabajo (sin commit); ambas se
   aplicaron en producción. En el repositorio 122 = zona; la multisucursal debe entrar como 123 (aviso enviado a esa sesión).
-- **Turnos de asistencia:** no capturar hasta que 122 esté aplicada (se interpretarían con una hora de desfase). Centro de trabajo ya
+- **Turnos de asistencia:** ya se pueden capturar en hora de Durango. Centro de trabajo ya
   registrado (id 1, 23.983809, -104.665219, radio 100 m, precisión 50 m; auditoría 762).
 - **Fuera de alcance, observado en solo lectura (2026-10-09):** `error_log` llegó a 253 (STATUS registraba 192) y hubo 3 intentos de
   timbrado fallidos (órdenes 46 y 56) con GL-3 abierto; el dueño declaró que todos los datos actuales de producción son de prueba
