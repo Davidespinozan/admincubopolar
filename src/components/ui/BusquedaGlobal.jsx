@@ -4,6 +4,7 @@
 // notificaciones. La lógica de búsqueda vive en data/busquedaLogic.js.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { buscarGlobal } from '../../data/busquedaLogic';
+import { Icons } from './Icons';
 
 export default function BusquedaGlobal({ data, onNavigate }) {
   const [abierto, setAbierto] = useState(false);
@@ -65,7 +66,7 @@ export default function BusquedaGlobal({ data, onNavigate }) {
                   onClick={() => ir(r)}
                   className="w-full text-left px-4 py-3 flex gap-3 items-center hover:bg-slate-50 transition-colors"
                 >
-                  <span className="text-lg flex-shrink-0" aria-hidden="true">{r.icono}</span>
+                  <IconoResultado nombre={r.icono} />
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold text-slate-800 truncate">{r.titulo}</span>
                     {r.subtitulo && <span className="block text-xs text-slate-500 truncate">{r.subtitulo}</span>}
@@ -79,5 +80,14 @@ export default function BusquedaGlobal({ data, onNavigate }) {
       )}
       {abierto && <div className="fixed inset-0 z-[60]" onClick={() => setAbierto(false)} aria-hidden="true" />}
     </>
+  );
+}
+
+function IconoResultado({ nombre }) {
+  const Ic = Icons[nombre] || Icons.Package;
+  return (
+    <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600" aria-hidden="true">
+      <Ic />
+    </span>
   );
 }

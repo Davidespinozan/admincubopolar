@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { diaNegocio } from '../../utils/fechas';
 import { construirBandeja } from '../../data/bandejaLogic';
 import { s } from '../../utils/safe';
+import { Icons } from '../ui/Icons';
 
 export function BandejaView({ data, user, onNavigate }) {
   const tareas = useMemo(() => construirBandeja(data, diaNegocio()), [data]);
@@ -24,7 +25,7 @@ export function BandejaView({ data, user, onNavigate }) {
 
       {tareas.length === 0 && (
         <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-8 text-center">
-          <p className="text-4xl mb-2">✅</p>
+          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><Icons.CheckCircle /></div>
           <p className="text-base font-bold text-emerald-700">Nada que atender</p>
           <p className="text-sm text-emerald-600 mt-1">Sin firmas pendientes, sin cartera vencida, sin rutas abiertas de ayer.</p>
         </div>
@@ -52,6 +53,7 @@ export function BandejaView({ data, user, onNavigate }) {
 }
 
 function TarjetaTarea({ tarea, onNavigate, urgente = false }) {
+  const Ic = Icons[tarea.icono] || Icons.Package;
   return (
     <button
       onClick={() => onNavigate?.(tarea.modulo)}
@@ -61,7 +63,7 @@ function TarjetaTarea({ tarea, onNavigate, urgente = false }) {
           : 'bg-white border-slate-200 hover:bg-slate-50'
       }`}
     >
-      <span className="text-2xl flex-shrink-0" aria-hidden="true">{tarea.icono}</span>
+      <span className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl ${urgente ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`} aria-hidden="true"><Ic /></span>
       <span className="flex-1 min-w-0">
         <span className={`block text-sm font-bold ${urgente ? 'text-red-900' : 'text-slate-800'}`}>{tarea.titulo}</span>
         <span className={`block text-xs mt-0.5 ${urgente ? 'text-red-700' : 'text-slate-500'}`}>{tarea.detalle}</span>

@@ -6,7 +6,6 @@ import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { Card, SectionLabel, StatusBadge, RoleHeader } from './ui/Components';
 import { Icons } from './ui/Icons';
 import { useToast } from './ui/Toast';
-import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { resolverOperacion } from '../data/produccionAtomicaLogic';
 import { clasificarMovEmpaque, resumenDiaEmpaque } from '../data/empaqueLogic';
 
@@ -115,7 +114,6 @@ export default function BolsasView({ user, data, actions, onLogout, embedded = f
 
   return (
     <div className={embedded ? "text-slate-900" : BOLSAS_SHELL} data-testid="bolsas-shell">
-      {!embedded && <ModoPruebaBanner />}
       {embedded ? (
         /* B2: el shell pone el título de página; aquí solo la nota operativa. */
         <p className="text-sm text-slate-500">{NOTA}</p>

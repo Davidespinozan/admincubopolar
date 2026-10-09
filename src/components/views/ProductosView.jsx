@@ -75,8 +75,8 @@ export function ProductosView({ data, actions }) {
   const hasDemoProducts = useMemo(() => data.productos.some(p => s(p.sku).startsWith('DEMO-')), [data.productos]);
 
   const exportBtns = <>
-    <button onClick={() => reporteInventario(data.productos, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
-    <button onClick={() => reporteInventario(data.productos, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+    <button onClick={() => reporteInventario(data.productos, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
+    <button onClick={() => reporteInventario(data.productos, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
   </>;
 
   return (<div>
@@ -152,7 +152,7 @@ export function ProductosView({ data, actions }) {
         {/* Tanda 4 🔴-7: claves SAT para CFDI 4.0. Hielo: 50202302; Empaque: 24121800. */}
         <details className="mt-2 sm:col-span-2">
           <summary className="cursor-pointer text-xs text-slate-500 font-semibold hover:text-slate-700">
-            🧾 Claves SAT para facturación (CFDI 4.0)
+            <span className="inline-flex items-center gap-1.5 align-middle"><Icons.Receipt /> Claves SAT para facturación (CFDI 4.0)</span>
           </summary>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
             <FormInput

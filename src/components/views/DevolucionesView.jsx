@@ -1,4 +1,4 @@
-import { useState, useMemo, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, PAGE_SIZE, Paginator } from './viewsCommon';
+import { useState, useMemo, Icons, DataTable, PageHeader, Modal, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, PAGE_SIZE, Paginator } from './viewsCommon';
 import { diaNegocio, sumarDias } from '../../utils/fechas';
 
 export function DevolucionesView({ data }) {
@@ -126,8 +126,8 @@ export function DevolucionesView({ data }) {
                 const req = r.requiereNotaCredito || r.requiere_nota_credito;
                 const uuid = r.cfdiNotaCreditoUuid || r.cfdi_nota_credito_uuid;
                 if (!req) return <span className="text-[10px] text-slate-400">—</span>;
-                if (uuid) return <span className="text-[10px] font-bold text-emerald-600">✓ Timbrada</span>;
-                return <span className="text-[10px] font-bold text-amber-600">⏳ NOTA FISCAL PENDIENTE</span>;
+                if (uuid) return <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600"><Icons.Check /> Timbrada</span>;
+                return <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600"><Icons.Hourglass /> NOTA FISCAL PENDIENTE</span>;
               }},
               { key: 'usuario', label: 'Por', hideOnMobile: true, render: v => <span className="text-xs text-slate-500">{s(v)}</span> },
             ]}

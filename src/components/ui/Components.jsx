@@ -154,16 +154,18 @@ export const DataTable = ({
 // ─── PAGE HEADER ───
 // Mobile: stacked, full-width action button
 // Desktop: row with inline button
+// Mobile-first (2026-10-09): en celular el título ya está en la barra superior
+// del shell; aquí solo quedan las acciones, sin tarjeta. En sm+ se ve completo.
 export const PageHeader = ({ title, subtitle, action, actionLabel, actionIcon, extraButtons }) => (
-  <div className="mb-3 flex flex-col gap-3 rounded-[22px] border border-slate-200/80 bg-white/60 px-3 py-2.5 shadow-[0_12px_24px_rgba(8,20,27,0.05)] backdrop-blur-xl sm:mb-6 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:rounded-[28px] sm:px-5 sm:py-4.5">
-    <div className="min-w-0">
-      <h1 className="font-display text-base font-bold tracking-[-0.03em] text-slate-900 sm:text-[1.6rem]">{title}</h1>
-      {subtitle && <p className="hidden text-xs text-slate-500 sm:block sm:mt-1 sm:text-sm">{subtitle}</p>}
+  <div className={`mb-3 flex-col gap-3 sm:mb-6 sm:flex sm:flex-row sm:items-center sm:justify-between sm:rounded-[28px] sm:border sm:border-slate-200/80 sm:bg-white/60 sm:px-5 sm:py-4.5 sm:shadow-[0_12px_24px_rgba(8,20,27,0.05)] sm:backdrop-blur-xl ${action || extraButtons ? 'flex' : 'hidden'}`} data-testid="page-header">
+    <div className="hidden min-w-0 sm:block">
+      <h1 className="font-display text-[1.6rem] font-bold tracking-[-0.03em] text-slate-900">{title}</h1>
+      {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
     </div>
     <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap sm:flex-shrink-0">
       {extraButtons}
       {action && (
-        <button onClick={action} className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-[13px] bg-slate-900 px-3 py-2 text-xs font-semibold text-white shadow-[0_10px_20px_rgba(8,20,27,0.14)] transition-all hover:translate-y-[-1px] hover:bg-slate-800 sm:min-h-[44px] sm:gap-2 sm:rounded-[16px] sm:px-4 sm:py-2.5 sm:text-sm">
+        <button onClick={action} className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-[14px] bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(8,20,27,0.14)] transition-all hover:bg-slate-800 sm:gap-2 sm:rounded-[16px]">
           {actionIcon || <Icons.Plus />} {actionLabel}
         </button>
       )}

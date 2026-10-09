@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { mermasActivas } from '../data/mermasLogic';
-import { Modal, FormBtn, useToast, s, n, fmtMoney } from './views/viewsCommon';
+import { Modal, FormBtn, useToast, Icons, s, n, fmtMoney } from './views/viewsCommon';
 import { reporteRutaDiaria } from '../utils/exportReports';
 
 export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
@@ -128,7 +128,7 @@ export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
 
         {/* Resumen económico */}
         <div>
-          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">💰 Resumen económico</h4>
+          <h4 className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide mb-2"><Icons.DollarSign /> Resumen económico</h4>
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4">
               <p className="text-[10px] font-semibold text-emerald-600 uppercase mb-1">Cobrado</p>
@@ -148,7 +148,7 @@ export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
         {/* Carga y movimiento */}
         {skusUnicos.length > 0 && (
           <div>
-            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">📦 Carga y movimiento{usarBalance ? '' : ' (registro histórico, sin balance canónico)'}</h4>
+            <h4 className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide mb-2"><Icons.Package /> Carga y movimiento{usarBalance ? '' : ' (registro histórico, sin balance canónico)'}</h4>
             <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50">
@@ -190,7 +190,7 @@ export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
         {/* Entregas */}
         {rutaOrdenes.length > 0 && (
           <div>
-            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">🚚 Entregas del día · {rutaOrdenes.length}</h4>
+            <h4 className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide mb-2"><Icons.Truck /> Entregas del día · {rutaOrdenes.length}</h4>
             <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden max-h-72 overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 sticky top-0">
@@ -228,7 +228,7 @@ export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
         {/* Mermas */}
         {mermasRuta.length > 0 && (
           <div>
-            <h4 className="text-xs font-bold text-red-500 uppercase tracking-wide mb-2">⚠️ Mermas reportadas · {mermasRuta.length}</h4>
+            <h4 className="flex items-center gap-1.5 text-xs font-bold text-red-500 uppercase tracking-wide mb-2"><Icons.AlertTriangle /> Mermas reportadas · {mermasRuta.length}</h4>
             <div className="bg-red-50 border border-red-200 rounded-2xl p-3 space-y-2">
               {mermasRuta.map((m, i) => {
                 const prod = findProd(m.sku);
@@ -249,11 +249,11 @@ export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
         {/* Firma de carga */}
         {ruta.carga_confirmada_at && (
           <div>
-            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">✍️ Firma de carga</h4>
+            <h4 className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide mb-2"><Icons.Pen /> Firma de carga</h4>
             {ruta.firma_excepcion ? (
               <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-lg">⚠️</span>
+                  <span className="text-red-600"><Icons.AlertTriangle /></span>
                   <span className="text-sm font-bold text-red-700">Carga sin firma — Excepción</span>
                 </div>
                 <p className="text-xs text-slate-600 mb-2">
@@ -294,7 +294,7 @@ export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
 
         {/* Notas adicionales */}
         <div>
-          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">📝 Notas adicionales (opcional)</h4>
+          <h4 className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-wide mb-2"><Icons.FileText /> Notas adicionales (opcional)</h4>
           <textarea
             value={notas}
             onChange={e => setNotas(e.target.value)}
@@ -309,7 +309,7 @@ export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
       {/* Footer */}
       <div className="flex justify-between gap-2 mt-6 pt-4 border-t border-slate-100">
         <FormBtn onClick={onClose}>Cerrar</FormBtn>
-        <FormBtn primary onClick={handleDescargarPDF}>📄 Descargar PDF</FormBtn>
+        <FormBtn primary onClick={handleDescargarPDF}><span className="inline-flex items-center gap-1.5"><Icons.Download /> Descargar PDF</span></FormBtn>
       </div>
     </Modal>
   );

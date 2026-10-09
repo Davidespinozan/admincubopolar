@@ -181,7 +181,10 @@ describe('WF-0: rol Empleado aislado', () => {
   it('el Chofer (modo enfoque) tiene acceso a "Mi asistencia" en todos sus pasos', () => {
     const chofer = sinComentarios(src('../components/ChoferView.jsx'));
     expect(chofer).toMatch(/export default function ChoferView\(\{ user, data, actions, onLogout, onMiAsistencia, onMisActividades \}\)/);
-    expect((chofer.match(/\{botonAsistencia\}|right=\{botonAsistencia\}/g) || []).length).toBe(5);
+    // Mobile-first: fila bajo el título (barraPersonal) en 4 pasos; en "En ruta" junto a "Ver mapa".
+    expect(chofer).toMatch(/const barraPersonal = \(botonAsistencia \|\| botonActividades\) \? \(\s*<div[^>]*>\{botonAsistencia\}\{botonActividades\}<\/div>/);
+    expect((chofer.match(/\{barraPersonal\}/g) || []).length).toBe(4);
+    expect(chofer).toMatch(/\{botonAsistencia\}\s*\{botonActividades\}\s*<button type="button" onClick=\{\(\) => setMapaVisible/);
   });
 });
 

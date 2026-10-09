@@ -4,6 +4,10 @@
 import { useEffect, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { navUrl, navUrlFallback } from '../../utils/navegacion';
+import { Icons } from './Icons';
+
+// Palomita SVG en línea para el HTML de Leaflet (sin emojis).
+const svgCheck = (size) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px"><polyline points="20 6 9 17 4 12"/></svg>`;
 
 // Ícono numerado para cada parada
 const stopIcon = (L, num, entregada) => L.divIcon({
@@ -15,7 +19,7 @@ const stopIcon = (L, num, entregada) => L.divIcon({
     font-weight:700;font-size:12px;
     border:2.5px solid white;
     box-shadow:0 2px 10px rgba(0,0,0,0.35)">
-    ${entregada ? '✓' : num}
+    ${entregada ? svgCheck(14) : num}
   </div>`,
   className: '',
   iconSize: [30, 30],
@@ -31,7 +35,7 @@ const buildPopupHtml = (p) => {
       <p style="font-weight:700;margin:0 0 2px;font-size:14px">${p.nombre || ''}</p>
       <p style="font-size:11px;color:#64748b;margin:0 0 10px">${p.direccion || '—'}</p>
       ${p.entregada
-        ? `<p style="text-align:center;color:#10b981;font-weight:600;font-size:13px">✓ Entregada</p>`
+        ? `<p style="text-align:center;color:#10b981;font-weight:600;font-size:13px">${svgCheck(13)} Entregada</p>`
         : `<a href="${primary}"
              onclick="setTimeout(function(){window.location.href='${fallback}'},600);return true;"
              style="display:block;text-align:center;background:#1e293b;color:white;
@@ -240,8 +244,8 @@ export default function MapaRuta({ paradas = [], onEditarCliente }) {
 
       {/* Error de GPS (no bloquea el mapa) */}
       {gpsError && (
-        <div className="absolute bottom-3 left-3 right-3 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded-xl shadow">
-          ⚠ {gpsError}
+        <div className="absolute bottom-3 left-3 right-3 flex items-center gap-1.5 bg-amber-50 border border-amber-200 text-amber-800 text-xs px-3 py-2 rounded-xl shadow">
+          <span className="flex-shrink-0"><Icons.AlertTriangle /></span>{gpsError}
         </div>
       )}
 
@@ -269,7 +273,7 @@ export default function MapaRuta({ paradas = [], onEditarCliente }) {
           className="absolute top-3 left-3 max-w-[55%] bg-white/95 backdrop-blur-sm rounded-xl px-3 py-2 text-xs shadow border border-amber-300"
           title="Estas paradas no tienen coordenadas. Necesitan dirección con lat/lng para aparecer en el mapa."
         >
-          <p className="font-bold text-amber-700 mb-1">⚠ Sin ubicación ({sinCoords.length})</p>
+          <p className="flex items-center gap-1.5 font-bold text-amber-700 mb-1"><Icons.AlertTriangle /> Sin ubicación ({sinCoords.length})</p>
           <ul className="space-y-1 max-h-32 overflow-y-auto">
             {sinCoords.map((p, i) => (
               <li key={p.id ?? i} className="flex items-center justify-between gap-2">

@@ -34,10 +34,10 @@ export function AsistenciaView({ data, actions }) {
   return (
     <div>
       <PageHeader title="Asistencia" subtitle="Reloj checador: entradas, salidas, turnos y centro de trabajo" />
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="-mx-3 mb-4 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
         {TABS.map(t => (
           <button key={t.k} type="button" onClick={() => setTab(t.k)}
-            className={`min-h-[40px] rounded-[14px] px-4 text-sm font-semibold ${tab === t.k ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>
+            className={`min-h-[40px] flex-shrink-0 rounded-[14px] px-4 text-sm font-semibold ${tab === t.k ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>
             {t.l}
           </button>
         ))}

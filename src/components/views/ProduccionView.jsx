@@ -1,4 +1,4 @@
-import { useState, useMemo, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion } from './viewsCommon';
+import { useState, useMemo, Icons, StatusBadge, PageHeader, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, useToast, useConfirm, reporteProduccion } from './viewsCommon';
 import { diaNegocio, sumarDias } from '../../utils/fechas';
 import { useRef } from 'react';
 import { resolverOperacion } from '../../data/produccionAtomicaLogic';
@@ -172,8 +172,8 @@ export function ProduccionView({ data, actions }) {
   }, [prodNormal]);
 
   const exportBtns = <>
-    <button onClick={() => reporteProduccion(data.produccion, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
-    <button onClick={() => reporteProduccion(data.produccion, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+    <button onClick={() => reporteProduccion(data.produccion, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
+    <button onClick={() => reporteProduccion(data.produccion, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
   </>;
 
   return (<div>
@@ -190,8 +190,8 @@ export function ProduccionView({ data, actions }) {
         Producción
       </button>
       <button onClick={() => setTab('preparaciones')}
-        className={`px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'preparaciones' ? 'bg-orange-500 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
-        🧊 Preparaciones {prodPrep.length > 0 && <span className="ml-1 text-xs opacity-80">({prodPrep.length})</span>}
+        className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-colors ${tab === 'preparaciones' ? 'bg-orange-500 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
+        <Icons.Snowflake /> Preparaciones {prodPrep.length > 0 && <span className="ml-1 text-xs opacity-80">({prodPrep.length})</span>}
       </button>
     </div>
 

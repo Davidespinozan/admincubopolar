@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
+import { Icons } from './ui/Icons';
 import { s, n, eqId, fmtMoney, validarRFC } from '../utils/safe';
 import { validateDireccion, placeSelectionToEntrega } from '../data/direccionLogic';
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
@@ -360,7 +361,7 @@ export default function NuevaVentaModal({
             step > num ? 'bg-emerald-500 text-white' :
             'bg-slate-100 text-slate-400'
           }`}>
-            {step > num ? '✓' : num}
+            {step > num ? <Icons.Check /> : num}
           </div>
           <div className="flex-1">
             <p className={`text-xs font-semibold ${step === num ? 'text-slate-900' : 'text-slate-400'}`}>
@@ -529,7 +530,7 @@ export default function NuevaVentaModal({
             const disponible = Math.max(0, limite - saldoCli);
             return (
               <div className="mt-2 pt-2 border-t border-emerald-200 text-xs text-purple-700 font-semibold">
-                💳 Crédito autorizado · Límite {fmtMoney(limite)} · Saldo {fmtMoney(saldoCli)} · <span className={disponible > 0 ? 'text-emerald-700' : 'text-red-700'}>Disponible {fmtMoney(disponible)}</span>
+                <span className="inline-block align-middle mr-1"><Icons.CreditCard /></span>Crédito autorizado · Límite {fmtMoney(limite)} · Saldo {fmtMoney(saldoCli)} · <span className={disponible > 0 ? 'text-emerald-700' : 'text-red-700'}>Disponible {fmtMoney(disponible)}</span>
               </div>
             );
           })()}
@@ -558,7 +559,7 @@ export default function NuevaVentaModal({
               onClick={() => setForm(f => ({ ...f, tipoCobro: 'Contado' }))}
               className={`py-3 rounded-xl text-sm font-bold border-2 transition-all ${form.tipoCobro === 'Contado' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}`}
             >
-              💵 Cobrar al entregar
+              <span className="inline-flex items-center justify-center gap-1.5"><Icons.DollarSign /> Cobrar al entregar</span>
             </button>
             {(() => {
               const tieneCredito = !!clienteSeleccionado?.credito_autorizado;
@@ -572,7 +573,7 @@ export default function NuevaVentaModal({
                     form.tipoCobro === 'Credito' ? 'border-purple-500 bg-purple-50 text-purple-700' : 'border-slate-200 text-slate-500'
                   }`}
                 >
-                  📋 A crédito
+                  <span className="inline-flex items-center justify-center gap-1.5"><Icons.CreditCard /> A crédito</span>
                   {!tieneCredito && <span className="block text-[10px] text-slate-400 mt-0.5 font-normal">Cliente sin crédito</span>}
                 </button>
               );
@@ -589,7 +590,7 @@ export default function NuevaVentaModal({
 
       {errors.productos && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3">
-          <p className="text-xs text-red-700 font-semibold">⚠️ {errors.productos}</p>
+          <p className="flex items-center gap-1.5 text-xs text-red-700 font-semibold"><span className="flex-shrink-0"><Icons.AlertTriangle /></span>{errors.productos}</p>
         </div>
       )}
 
@@ -759,7 +760,7 @@ export default function NuevaVentaModal({
           {ft.tipoCobro && (
             <div className="flex justify-between">
               <span className="text-slate-500">Tipo de cobro</span>
-              <span className="font-semibold text-slate-800">{form.tipoCobro === 'Contado' ? '💵 Cobrar al entregar' : '📋 A crédito'}</span>
+              <span className="font-semibold text-slate-800">{form.tipoCobro === 'Contado' ? 'Cobrar al entregar' : 'A crédito'}</span>
             </div>
           )}
           <div className="border-t border-slate-200 pt-2 mt-2">
@@ -818,8 +819,8 @@ export default function NuevaVentaModal({
             <FormBtn onClick={handleClose}>Cancelar</FormBtn>
             <div className="flex gap-2 flex-col items-end">
               {excedeCredito && (
-                <p className="text-xs text-red-600 font-semibold">
-                  ⚠ Excede crédito disponible ({fmtMoney(disponibleCred)})
+                <p className="flex items-center gap-1.5 text-xs text-red-600 font-semibold">
+                  <Icons.AlertTriangle /> Excede crédito disponible ({fmtMoney(disponibleCred)})
                 </p>
               )}
               <div className="flex gap-2">

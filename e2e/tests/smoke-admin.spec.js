@@ -24,13 +24,10 @@ test.describe('Smoke Admin', () => {
     consoleWatcher.assertNoUnexpected();
   });
 
-  // Tanda 14: el banner MODO PRUEBA debe ser visible mientras la app esté
-  // conectada al sandbox de Facturama. Si la prod ya cambió a producción
-  // real (VITE_FACTURAMA_MODE=production), el banner desaparece y este
-  // test debe ajustarse manualmente (renombrar a `should NOT be visible`).
-  test('banner MODO PRUEBA visible mientras esté en sandbox', async ({ adminPage }) => {
-    await expect(adminPage.locator('[data-testid="modo-prueba-banner"]'))
-      .toBeVisible();
+  // Mobile-first (2026-10-09): ya no hay banner global de MODO PRUEBA; el
+  // aviso de sandbox vive solo dentro de Facturación.
+  test('sin banner global de modo prueba', async ({ adminPage }) => {
+    await expect(adminPage.locator('[data-testid="modo-prueba-banner"]')).toHaveCount(0);
   });
 
   // Tanda 19: tras un reload de página, la sesión debe restaurarse

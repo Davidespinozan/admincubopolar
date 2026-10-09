@@ -106,7 +106,7 @@ describe('OL-04 llamadores: identidad del pago, sin cifras fiscales', () => {
     const fv = src('../components/views/FacturacionView.jsx');
     expect(fv).toMatch(/<PagosComplemento orden=\{o\} pagos=\{data\.pagosCxc\} operaciones=\{data\.cfdiOperaciones\} onEmitir=\{handleEmitirComplemento\}/);
     expect(fv).toMatch(/onClick=\{\(\) => onEmitir\(f\.pago\.id\)\}/);
-    for (const t of ['Emitir complemento', '✓ Complemento emitido', 'En proceso', 'Requiere conciliación', 'No elegible']) expect(fv).toContain(t);
+    for (const t of ['Emitir complemento', 'Complemento emitido', 'En proceso', 'Requiere conciliación', 'No elegible']) expect(fv).toContain(t);
     expect(fv).not.toMatch(/reintentarComplemento|complementosPorOrden/);
   });
   it('el webhook y el cierre de ruta NO llaman al proveedor de complementos', () => {

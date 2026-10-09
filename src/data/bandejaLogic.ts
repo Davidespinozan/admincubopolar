@@ -25,6 +25,7 @@ export interface DataBandeja {
 export interface TareaBandeja {
   id: string;
   prioridad: 'alta' | 'media';
+  /** Nombre de un componente de `Icons` (ui/Icons.jsx), p. ej. 'Truck'. */
   icono: string;
   titulo: string;
   detalle: string;
@@ -55,7 +56,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'firmas',
       prioridad: 'alta',
-      icono: '✍️',
+      icono: 'Pen',
       titulo: plural(firmas.length, 'carga espera firma', 'cargas esperan firma'),
       detalle: 'El chofer no puede salir hasta que Producción firme.',
       modulo: 'rutas',
@@ -74,7 +75,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'rutas-atoradas',
       prioridad: 'alta',
-      icono: '🚚',
+      icono: 'Truck',
       titulo: plural(atoradas.length, 'ruta de días anteriores sigue abierta', 'rutas de días anteriores siguen abiertas'),
       detalle: `${nombres ? nombres + ' — ' : ''}sin cierre no hay corte de caja ni retorno de inventario.`,
       modulo: 'rutas',
@@ -94,7 +95,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'cxc-vencidas',
       prioridad: 'alta',
-      icono: '💰',
+      icono: 'DollarSign',
       titulo: `Cartera vencida: ${money(total)}`,
       detalle: `${plural(cxcVencidas.length, 'cuenta vencida', 'cuentas vencidas')} — entre más días pasan, más difícil cobrar.`,
       modulo: 'cobros',
@@ -111,7 +112,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'cierres-diferencia',
       prioridad: 'alta',
-      icono: '⚠️',
+      icono: 'AlertTriangle',
       titulo: plural(cierresDif.length, 'corte de hoy con diferencia de caja', 'cortes de hoy con diferencia de caja'),
       detalle: 'El efectivo contado no cuadra con lo esperado. Revísalo hoy mismo.',
       modulo: 'conciliacion',
@@ -129,7 +130,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'stock-critico',
       prioridad: 'alta',
-      icono: '🧊',
+      icono: 'Snowflake',
       titulo: plural(stockCritico.length, 'producto bajo mínimo', 'productos bajo mínimo'),
       detalle: 'Sin stock no hay reparto mañana. Programa producción.',
       modulo: 'produccion',
@@ -144,7 +145,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'actividades-vencidas',
       prioridad: 'alta',
-      icono: '🗓️',
+      icono: 'Calendar',
       titulo: plural(actVencidas.length, 'actividad vencida', 'actividades vencidas'),
       detalle: 'Mantenimientos, pagos u obligaciones que pasaron su fecha límite sin completarse.',
       modulo: 'calendario',
@@ -157,7 +158,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'ordenes-sin-ruta',
       prioridad: 'media',
-      icono: '📦',
+      icono: 'Box',
       titulo: plural(sinRuta.length, 'venta sin asignar a ruta', 'ventas sin asignar a ruta'),
       detalle: 'Asígnalas a una ruta para que salgan a reparto.',
       modulo: 'rutas',
@@ -171,7 +172,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'por-facturar',
       prioridad: 'media',
-      icono: '🧾',
+      icono: 'Receipt',
       titulo: plural(porFacturar.length, 'venta por facturar', 'ventas por facturar'),
       detalle: 'Clientes esperando su CFDI.',
       modulo: 'facturacion',
@@ -185,7 +186,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'complementos-ppd',
       prioridad: 'media',
-      icono: '📄',
+      icono: 'FileText',
       titulo: plural(complementos.length, 'complemento de pago pendiente', 'complementos de pago pendientes'),
       detalle: 'Facturas a crédito (PPD) sin complemento — el SAT lo exige al cobrar.',
       modulo: 'facturacion',
@@ -199,7 +200,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'stock-bajo',
       prioridad: 'media',
-      icono: '📉',
+      icono: 'TrendDown',
       titulo: plural(stockBajo.length, 'producto en nivel bajo', 'productos en nivel bajo'),
       detalle: 'Todavía no es crítico, pero planéalo en la siguiente producción.',
       modulo: 'produccion',
@@ -213,7 +214,7 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
     tareas.push({
       id: 'leads-nuevos',
       prioridad: 'media',
-      icono: '📞',
+      icono: 'Phone',
       titulo: plural(leadsNuevos.length, 'lead sin contactar', 'leads sin contactar'),
       detalle: 'Llegaron de la landing — un lead frío se pierde en días.',
       modulo: 'leads',

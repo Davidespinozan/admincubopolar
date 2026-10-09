@@ -8,6 +8,7 @@ import { s, n, fmtDateTime, fmtMoney, fmtPct } from '../../utils/safe';
 import { rangoMes, lineasEstadoResultados, lineasFlujoEfectivo } from '../../data/finanzasLogic';
 import { esPreparacion } from '../../data/preparacionBarraLogic';
 import { resumenActividades } from '../../data/calendarioLogic';
+import { textoSaludo, subtituloRol } from '../../data/saludoLogic';
 
 // ── FIX P3: ALL DERIVED STATE NOW MEMOIZED ──
 // BEFORE: 4 reduce/filter calls ran on every render — even when user
@@ -18,15 +19,6 @@ import { resumenActividades } from '../../data/calendarioLogic';
 // Also: inventarioMov.slice(0,5) created a new array ref every render,
 // causing DataTable to re-render even though the data was identical.
 
-// Detecta si el "nombre" del usuario es realmente un nombre humano
-// o un username derivado de email (ej: "santy_mier_21" en vez de "Santiago Mier")
-function looksLikeRealName(nombre) {
-  if (!nombre) return false;
-  const t = String(nombre).trim();
-  // Un nombre real típicamente tiene espacio (Nombre + Apellido)
-  // y no tiene guiones bajos, números, ni puntos
-  return t.includes(' ') && !/[_\d.]/.test(t);
-}
 
 export default function DashboardView({ data, user, actions, onNavigate }) {
   const hoy = new Date();
@@ -231,13 +223,8 @@ export default function DashboardView({ data, user, actions, onNavigate }) {
   const lineasER = useMemo(() => lineasEstadoResultados(reporte), [reporte]);
   const lineasFE = useMemo(() => lineasFlujoEfectivo(reporte), [reporte]);
 
-  // ── ZONA 1: Saludo según hora ──
-  const saludo = useMemo(() => {
-    const h = new Date().getHours();
-    if (h < 12) return { texto: 'Buen día', emoji: '☀️' };
-    if (h < 19) return { texto: 'Buenas tardes', emoji: '👋' };
-    return { texto: 'Buenas noches', emoji: '🌙' };
-  }, []);
+  // ── ZONA 1: Saludo según la hora del negocio (mismo de todos los roles) ──
+  const saludo = textoSaludo(user?.nombre);
 
   // ── ZONA 1: Resumen accionable de "hoy" ──
   const accionablesHoy = useMemo(() => {
@@ -303,30 +290,17 @@ export default function DashboardView({ data, user, actions, onNavigate }) {
 
   return (
     <div>
-      {hayCal && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3" data-testid="dashboard-calendario">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="font-semibold text-slate-800">Calendario</span>
-            <span className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-900">Pendientes hoy {resumenCal.pendientesHoy}</span>
-            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-700">Por vencer {resumenCal.porVencer}</span>
-            <span className="rounded-full border border-red-300 bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-800">Vencidas {resumenCal.vencidas}</span>
-          </div>
-          {onNavigate && <button onClick={() => onNavigate('calendario')} className="rounded-[12px] bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Ver calendario →</button>}
-        </div>
-      )}
-      {/* ═══ ZONA 1: HOY (lo accionable) ═══ */}
+      {/* ═══ ZONA 1: bienvenida y lo accionable de hoy ═══ */}
+      <div className="mb-3 px-1" data-testid="saludo-rol">
+        <p className="font-display text-[1.45rem] font-bold leading-tight tracking-[-0.03em] text-slate-900 md:text-2xl">{saludo}</p>
+        <p className="mt-0.5 text-sm text-slate-500">{subtituloRol(user?.rol)}</p>
+      </div>
       {accionablesHoy.length > 0 && (
-        <div className="mb-4 md:mb-6 rounded-[28px] border border-slate-200/80 bg-gradient-to-br from-white via-white to-cyan-50/40 p-5 md:p-7 shadow-[0_18px_40px_rgba(8,20,27,0.08)]">
-          <div className="mb-4 md:mb-5">
-            <p className="font-display text-xl md:text-2xl font-bold tracking-[-0.03em] text-slate-900">
-              {saludo.texto}{looksLikeRealName(user?.nombre) ? `, ${user.nombre.split(' ')[0]}` : ''} {saludo.emoji}
-            </p>
-            <p className="text-sm text-slate-500 mt-1">Esto es lo que necesitas atender hoy</p>
-          </div>
+        <div className="mb-4 md:mb-6 rounded-[24px] border border-slate-200/80 bg-white p-3 md:p-5 shadow-[0_12px_28px_rgba(8,20,27,0.06)]">
 
-          <div className="space-y-2.5 md:space-y-3 mb-5">
+          <div className="space-y-2 md:space-y-3">
             {accionablesHoy.map((a, i) => (
-              <div key={i} className="flex items-center justify-between gap-3 rounded-[18px] border border-slate-100 bg-white px-4 py-3 hover:border-slate-300 transition-colors">
+              <div key={i} className="flex items-center justify-between gap-3 rounded-[18px] border border-slate-100 bg-slate-50/60 px-3 py-2.5 hover:border-slate-300 transition-colors">
                 <div className="flex items-center gap-3 min-w-0">
                   <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full ${
                     a.tipo === 'entregas' ? 'bg-blue-50 text-blue-600' :
@@ -335,14 +309,14 @@ export default function DashboardView({ data, user, actions, onNavigate }) {
                   }`}>
                     {a.tipo === 'entregas' ? <Icons.Truck /> : a.tipo === 'produccion' ? <Icons.Factory /> : <Icons.DollarSign />}
                   </span>
-                  <p className="text-sm md:text-base font-semibold text-slate-800 truncate">{a.texto}</p>
+                  <p className="text-sm md:text-base font-semibold leading-snug text-slate-800 line-clamp-2">{a.texto}</p>
                 </div>
                 {onNavigate && (
                   <button
                     onClick={() => onNavigate(a.target)}
-                    className="flex-shrink-0 inline-flex items-center gap-1 rounded-[12px] bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
+                    className="flex-shrink-0 inline-flex min-h-[40px] items-center gap-1 rounded-[12px] bg-slate-900 px-3 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
                   >
-                    {a.cta} →
+                    {a.cta} <Icons.ChevronRight />
                   </button>
                 )}
               </div>
@@ -358,6 +332,17 @@ export default function DashboardView({ data, user, actions, onNavigate }) {
         </div>
       )}
 
+      {hayCal && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-slate-200/80 bg-white/80 px-4 py-3" data-testid="dashboard-calendario">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <span className="font-semibold text-slate-800">Calendario</span>
+            <span className="rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-900">Pendientes hoy {resumenCal.pendientesHoy}</span>
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-700">Por vencer {resumenCal.porVencer}</span>
+            <span className="rounded-full border border-red-300 bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-800">Vencidas {resumenCal.vencidas}</span>
+          </div>
+          {onNavigate && <button onClick={() => onNavigate('calendario')} className="rounded-[12px] bg-slate-900 px-3 py-2 text-xs font-semibold text-white">Ver calendario →</button>}
+        </div>
+      )}
       {/* ═══ ZONA 2: ESTA SEMANA (números clave en una sola línea) ═══ */}
       <div className="mb-4 md:mb-6 rounded-[24px] border border-slate-200/80 bg-white p-3 sm:p-4 md:p-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 mb-3">Esta semana</p>

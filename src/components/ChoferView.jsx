@@ -12,9 +12,9 @@ import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloque
 import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from '../data/stockContratosLogic';
 import { useColaOffline } from '../data/useColaOffline';
 import { conteoInicial, diferenciasConteo, totalesBalance, mensajeNoEntrega } from '../data/inventarioRutaLogic';
-import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { Card, SectionLabel, RoleHeader, ChoiceButton } from './ui/Components';
+import { textoSaludo } from '../data/saludoLogic';
 import { Icons } from './ui/Icons';
 import { useToast } from './ui/Toast';
 import { EmptyState } from './ui/Skeleton';
@@ -33,22 +33,40 @@ const CONTENIDO = "mx-auto w-full max-w-[640px] px-4 pt-4 md:max-w-3xl lg:max-w-
 const LABEL = "mb-1.5 block text-sm font-medium text-slate-700";
 const FOTO_LABEL = "flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-[16px] border-2 border-dashed py-3 text-xs font-semibold";
 
+// Igualdad de la lista de entregas por los campos que vienen de la base
+// (orden, folio, total, método y piezas); las locales se comparan por identidad.
+export function mismasEntregas(a, b) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  return a.every((x, i) => {
+    const y = b[i];
+    if (x === y) return true;
+    if (!x || !y || !x.ordenId || String(x.ordenId) !== String(y.ordenId)) return false;
+    return x.folio === y.folio && Number(x.total) === Number(y.total) && x.pago === y.pago
+      && JSON.stringify(x.items || []) === JSON.stringify(y.items || []);
+  });
+}
+
 export default function ChoferView({ user, data, actions, onLogout, onMiAsistencia, onMisActividades }) {
   const [stepOverride, setStepOverride] = useState(null);
-  // PD-01: acceso a "Mi asistencia" (entrada / salida) desde cualquier paso.
+  // PD-01 / PD-02: acceso a "Mi asistencia" y "Mis actividades" desde cualquier paso.
+  // Mobile-first (2026-10-09): van en una fila bajo el título (no compiten con él).
   const botonAsistencia = onMiAsistencia ? (
     <button type="button" onClick={onMiAsistencia} data-testid="chofer-mi-asistencia"
-      className="inline-flex min-h-[36px] items-center justify-center rounded-[13px] border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/15">
-      Asistencia
+      className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[13px] border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/15">
+      <Icons.Clock /> Asistencia
     </button>
   ) : null;
-  // PD-02: "Mis actividades" junto a la asistencia.
   const botonActividades = onMisActividades ? (
     <button type="button" onClick={onMisActividades} data-testid="chofer-mis-actividades"
-      className="inline-flex min-h-[36px] items-center justify-center rounded-[13px] border border-white/10 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-white/15">
-      Actividades
+      className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[13px] border border-white/10 bg-white/10 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-white/15">
+      <Icons.Calendar /> Actividades
     </button>
   ) : null;
+  const barraPersonal = (botonAsistencia || botonActividades) ? (
+    <div className="mb-3 flex flex-wrap gap-2" data-testid="chofer-barra-personal">{botonAsistencia}{botonActividades}</div>
+  ) : null;
+  const saludo = textoSaludo(user?.nombre);
 
   // Fase 18 paso 3: Carga real + firma
   const [cargaRealForm, setCargaRealForm] = useState({});
@@ -291,7 +309,12 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         // anterior (e.ordenId && ...) las descartaba en cada refresh.
         const dbIds = new Set(dbEntregas.map(e => String(e.ordenId)));
         const localOnly = prev.filter(e => !e.ordenId || !dbIds.has(String(e.ordenId)));
-        return [...dbEntregas, ...localOnly];
+        const merged = [...dbEntregas, ...localOnly];
+        // Sin cambios → mismo estado. Antes devolvía siempre un arreglo nuevo:
+        // ordenesConDetalle depende de `entregas`, así que con una orden ya
+        // Entregada el efecto se re-disparaba sin fin (Maximum update depth).
+        if (mismasEntregas(prev, merged)) return prev;
+        return merged;
       });
     }
   }, [ordenesConDetalle]);
@@ -866,7 +889,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       }
       limpiarCola();
       setRutaCerrada(true);
-      showToast("Ruta cerrada ✓");
+      showToast("Ruta cerrada");
     } catch {
       showToast("No se pudo cerrar la ruta", 'error');
     } finally {
@@ -883,8 +906,8 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
   // ═══ STEP 1: CARGAR (chofer marca cuánto cargó realmente) ═══
   if (step === "cargar") return (
     <div className={CHOFER_SHELL} data-testid="chofer-shell">
-      <ModoPruebaBanner />
-      <RoleHeader compact kicker="Chofer" title="Cargar camión" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} right={<>{botonAsistencia}{botonActividades}</>}>
+      <RoleHeader compact kicker="Chofer" title="Cargar camión" subtitle={saludo} accent="cyan" onLogout={onLogout}>
+        {barraPersonal}
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[16px] border border-white/10 bg-white/10 px-3 py-2">
           <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-cyan-200/70">Paso 1 de 3</span>
           <span className="text-sm font-semibold text-white">Marca cuánto cargaste</span>
@@ -949,8 +972,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 
     return (
       <div className={CHOFER_SHELL} data-testid="chofer-shell">
-        <ModoPruebaBanner />
-        <RoleHeader compact kicker="Chofer · Paso 2 de 3" title="Producción debe autorizar" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} right={<>{botonAsistencia}{botonActividades}</>} />
+        <RoleHeader compact kicker="Chofer · Paso 2 de 3" title="Producción debe autorizar" subtitle={saludo} accent="cyan" onLogout={onLogout}>{barraPersonal}</RoleHeader>
         <div className={`${CONTENIDO} space-y-4`}>
           <Card tone="warning" className="text-center">
             <p className="mb-2 flex justify-center text-amber-700 [&>svg]:h-10 [&>svg]:w-10"><Icons.Clock /></p>
@@ -1083,8 +1105,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
   if (step === "cargada") {
     return (
       <div className={CHOFER_SHELL} data-testid="chofer-shell">
-        <ModoPruebaBanner />
-        <RoleHeader compact kicker="Chofer · Lista para salir" title="Carga firmada ✓" subtitle={s(user?.nombre)} accent="cyan" onLogout={onLogout} right={<>{botonAsistencia}{botonActividades}</>} />
+        <RoleHeader compact kicker="Chofer · Lista para salir" title="Carga firmada" subtitle={saludo} accent="cyan" onLogout={onLogout}>{barraPersonal}</RoleHeader>
         <div className={`${CONTENIDO} space-y-4`}>
           <Card tone="success" className="text-center">
             <p className="mb-2 flex justify-center text-emerald-700 [&>svg]:h-10 [&>svg]:w-10"><Icons.Check /></p>
@@ -1110,19 +1131,18 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 
   // ═══ STEP 2: RUTA ═══
   if (step === "ruta") return (
-    <div className={CHOFER_SHELL} data-testid="chofer-shell" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 80px)" }}>
-      <ModoPruebaBanner />
+    <div className={CHOFER_SHELL} data-testid="chofer-shell" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 150px)" }}>
       <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
-      <RoleHeader compact kicker="Chofer" title="En ruta" subtitle={s(user?.nombre)} accent="cyan"
-        right={<>
+      <RoleHeader compact kicker="Chofer" title="En ruta" subtitle={saludo} accent="cyan"
+        right={<div className="text-right"><p className="font-display text-lg font-bold text-white">{fmtMoney(totalCobrado)}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>}>
+        <div className="mb-3 flex flex-wrap gap-2">
           {botonAsistencia}
           {botonActividades}
           <button type="button" onClick={() => setMapaVisible(v => !v)}
-            className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-[13px] px-4 py-2.5 text-xs font-bold transition-all ${mapaVisible ? 'bg-blue-500 text-white' : 'bg-white/15 text-cyan-200'}`}>
+            className={`inline-flex min-h-[40px] items-center gap-1.5 rounded-[13px] px-3 py-2 text-xs font-bold transition-all ${mapaVisible ? 'bg-blue-500 text-white' : 'bg-white/15 text-cyan-200'}`}>
             <Icons.MapPin /> {mapaVisible ? 'Ocultar mapa' : 'Ver mapa'}
           </button>
-          <div className="text-right"><p className="font-display text-lg font-bold text-white">{fmtMoney(totalCobrado)}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>
-        </>}>
+        </div>
         <div className="flex items-center gap-3 rounded-[18px] border border-white/10 bg-white/10 p-3">
           <div className="flex-1"><div className="h-2 overflow-hidden rounded-full bg-white/20"><div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${ordenesConDetalle.length > 0 ? (entregadasList.length / ordenesConDetalle.length) * 100 : 0}%` }} /></div></div>
           <span className="text-sm font-bold text-white">{entregadasList.length}/{ordenesConDetalle.length}</span>
@@ -1272,10 +1292,11 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             </button>
           );
         })()}
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-          <button type="button" onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false }); }} className="min-h-[56px] w-full rounded-[18px] bg-cyan-200 px-5 py-4 text-sm font-bold text-slate-950 transition-transform active:scale-[0.98]">Venta rápida</button>
-          <button type="button" onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="min-h-[56px] w-full rounded-[18px] bg-white/10 px-5 py-4 text-sm font-bold text-amber-200 transition-transform active:scale-[0.98]">Registrar merma</button>
-          <button type="button" onClick={() => setStep("cierre")} className="min-h-[56px] w-full rounded-[18px] bg-white px-5 py-4 text-sm font-bold text-slate-950">Cerrar ruta</button>
+        {/* Mobile-first: las 3 acciones en una sola fila (antes se apilaban y tapaban la lista). */}
+        <div className="grid grid-cols-3 gap-2">
+          <button type="button" onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false }); }} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-[16px] bg-cyan-200 px-2 py-2 text-xs font-bold text-slate-950 transition-transform active:scale-[0.98]"><Icons.ShoppingCart />Venta rápida</button>
+          <button type="button" onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-[16px] bg-white/10 px-2 py-2 text-xs font-bold text-amber-200 transition-transform active:scale-[0.98]"><Icons.AlertTriangle />Merma</button>
+          <button type="button" onClick={() => setStep("cierre")} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-[16px] bg-white px-2 py-2 text-xs font-bold text-slate-950"><Icons.ClipboardCheck />Cerrar ruta</button>
         </div>
       </div>
 
@@ -1500,10 +1521,9 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 
     return (
       <div className={CHOFER_SHELL} data-testid="chofer-shell">
-        <ModoPruebaBanner />
         <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
-        <RoleHeader compact kicker="Chofer · Paso 3 de 3" title="Cierre de ruta" subtitle={`${s(user?.nombre)} · ${fmtDate(new Date())}`} accent="cyan"
-          right={<>{botonAsistencia}{botonActividades}{!rutaCerrada && <button type="button" onClick={() => setStep("ruta")} className="inline-flex min-h-[44px] items-center rounded-[13px] border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white">← Volver</button>}</>} />
+        <RoleHeader compact kicker="Chofer · Paso 3 de 3" title="Cierre de ruta" subtitle={`${saludo} · ${fmtDate(new Date())}`} accent="cyan"
+          right={!rutaCerrada && <button type="button" onClick={() => setStep("ruta")} className="inline-flex min-h-[44px] items-center rounded-[13px] border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white">← Volver</button>}>{barraPersonal}</RoleHeader>
         <div className={`${CONTENIDO} space-y-4`}>
           <Card>
             <SectionLabel className="mb-3">Inventario del camión</SectionLabel>
@@ -1570,7 +1590,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             <SectionLabel className="mb-2 !text-amber-700">Mermas</SectionLabel>
             {mermas.map(m => <div key={m.id} className="flex justify-between py-1 text-xs"><span>{m.cant}× {m.sku}</span><span className="text-amber-600">{m.causa}</span></div>)}
           </Card>}
-          {pendientes.length > 0 && <Card tone="danger" padding="p-3"><p className="text-xs font-bold text-red-700">⚠ {pendientes.length} órdenes sin entregar</p></Card>}
+          {pendientes.length > 0 && <Card tone="danger" padding="p-3"><p className="flex items-center gap-1.5 text-xs font-bold text-red-700"><Icons.AlertTriangle /> {pendientes.length} órdenes sin entregar</p></Card>}
 
           {!rutaCerrada ? (
             <FormBtn primary size="lg" className="w-full !text-lg" onClick={cerrarRuta} disabled={cerrandoRuta || !balanceCierre || Object.keys(difConteo.faltante).length > 0 || Object.keys(difConteo.sobrante).length > 0}>
@@ -1607,7 +1627,7 @@ function BannerColaOffline({ online, cola, sincronizando, onSincronizar }) {
         {!online
           ? `Sin conexión — tus operaciones se guardan en el teléfono${pendientes > 0 ? ` (${pendientes} en espera)` : ''}`
           : `${pendientes} ${pendientes === 1 ? 'operación pendiente' : 'operaciones pendientes'} de sincronizar`}
-        {fallidas > 0 && <span className="ml-2 font-bold text-red-700">⚠ {fallidas} sin poder sincronizar — avisa al admin</span>}
+        {fallidas > 0 && <span className="ml-2 inline-flex items-center gap-1 font-bold text-red-700"><Icons.AlertTriangle /> {fallidas} sin poder sincronizar — avisa al admin</span>}
       </span>
       {online && pendientes > 0 && (
         <button

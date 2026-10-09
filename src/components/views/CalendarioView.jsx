@@ -64,16 +64,21 @@ export function CalendarioView({ data, actions, personal = false, onVolver }) {
         subtitle={personal ? 'Lo que tienes asignado: pendientes, próximas y completadas' : 'Mantenimientos, pagos y obligaciones con su ventana de ejecución'}
         action={esAdmin ? () => setForm({ recurrencia: 'mensual', categoria: 'mantenimiento', visibilidad: 'asignado', asignado_puede_completar: true, responsable_tipo: 'ninguno', dia_inicio: 1, dia_fin: 5 }) : undefined}
         actionLabel={esAdmin ? 'Nueva actividad' : undefined} />
-      <div className="mb-4 flex flex-wrap gap-2">
+      <div className="-mx-3 mb-4 flex gap-2 overflow-x-auto px-3 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" data-testid="calendario-pestanas">
         {VISTAS.filter(v => !personal || v.k !== 'mes').map(v => (
           <button key={v.k} type="button" onClick={() => setVista(v.k)}
-            className={`min-h-[40px] rounded-[14px] px-4 text-sm font-semibold ${vista === v.k ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>
+            className={`min-h-[40px] flex-shrink-0 rounded-[14px] px-4 text-sm font-semibold ${vista === v.k ? 'bg-slate-900 text-white' : 'border border-slate-200 bg-white text-slate-600'}`}>
             {v.l}
           </button>
         ))}
       </div>
       {error && <p className="mb-3 rounded-[14px] border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
       {vista === 'mes' && res && <Mes ym={ym} setYm={setYm} hoy={res.hoy} ocurrencias={res.ocurrencias} onSel={o => setSel(claveOcurrencia(o))} />}
+      {vista === 'mes' && res && (res.ocurrencias || []).length > 0 && (
+        <div className="mt-4 space-y-2 sm:hidden" data-testid="calendario-mes-lista">
+          {[...res.ocurrencias].sort((a, b) => String(a.ventana_fin).localeCompare(String(b.ventana_fin))).map(o => <Fila key={claveOcurrencia(o)} o={o} onClick={() => setSel(claveOcurrencia(o))} />)}
+        </div>
+      )}
       {vista !== 'mes' && res && lista.length === 0 && (
         <EmptyState message={vista === 'vencidas' ? 'Nada vencido' : vista === 'completadas' ? 'Sin actividades completadas' : 'Sin actividades próximas'}
           hint={personal ? 'Aquí aparecen solo las actividades que Admin te asigna.' : undefined} />
@@ -132,9 +137,9 @@ function Mes({ ym, setYm, hoy, ocurrencias, onSel }) {
           <div key={i} className={`min-h-[64px] rounded-[10px] border p-1 text-left ${dia === hoy ? 'border-slate-900' : 'border-slate-100'} ${dia ? 'bg-white' : 'bg-transparent border-transparent'}`}>
             {dia && <p className="text-[11px] font-semibold text-slate-500">{Number(dia.slice(8))}</p>}
             {(porDia[dia] || []).map(o => (
-              <button key={claveOcurrencia(o)} type="button" onClick={() => onSel(o)} title={o.titulo}
-                className={`mt-0.5 block w-full truncate rounded-[6px] border px-1 text-left text-[10px] font-semibold ${TONO[estadoActividad(o.estado).tono]}`}>
-                {o.titulo}
+              <button key={claveOcurrencia(o)} type="button" onClick={() => onSel(o)} title={o.titulo} aria-label={o.titulo}
+                className={`mt-0.5 block h-2 w-full rounded-full border sm:h-auto sm:truncate sm:rounded-[6px] sm:px-1 sm:text-left sm:text-[10px] sm:font-semibold ${TONO[estadoActividad(o.estado).tono]}`}>
+                <span className="hidden sm:inline">{o.titulo}</span>
               </button>
             ))}
           </div>

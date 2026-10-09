@@ -168,7 +168,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, message, confir
       <div className="absolute inset-0 bg-slate-950/40 backdrop-blur-md" aria-hidden="true" />
       <div className="relative w-full max-w-sm rounded-[28px] border border-slate-200/80 bg-white p-5 shadow-[0_30px_70px_rgba(3,14,19,0.18)]" onClick={e => e.stopPropagation()} role="alertdialog" aria-modal="true" aria-label={title || '¿Estás seguro?'}>
         <div className={`w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3 ${danger ? 'bg-red-100' : 'bg-amber-100'}`}>
-          <span className="text-xl">{danger ? '🗑' : '⚠️'}</span>
+          <span className={danger ? 'text-red-600' : 'text-amber-600'}>{danger ? <Icons.Trash /> : <Icons.AlertTriangle />}</span>
         </div>
         <h3 className="font-display mb-1 text-center text-base font-bold tracking-[-0.03em] text-slate-900">{title || '¿Estás seguro?'}</h3>
         {message && <p className="mb-4 text-center text-sm text-slate-500">{message}</p>}

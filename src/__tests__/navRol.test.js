@@ -175,17 +175,24 @@ describe('B: shell compartido y ruteo', () => {
     expect(shell).toMatch(/const nav = useMemo\(\(\) => navParaRol\(rol\), \[rol\]\);/);
     expect(shell).not.toMatch(/\bconst AREAS = \[/);
     expect(shell).toMatch(/\{nav\.areas\.map\(area => \{/);
-    expect(shell).toMatch(/\{nav\.areas\.map\(area => \(/);
+    // Mobile-first (2026-10-09): el drawer recorre las áreas del rol + "Mi espacio".
+    expect(shell).toMatch(/\{\[\.\.\.nav\.areas, \.\.\.\(miEspacio\.length \? \[\{ id: 'mi-espacio', label: 'Mi espacio', items: miEspacio \}\] : \[\]\)\]\.map\(area => \(/);
     expect(shell).toMatch(/onViewAs && nav\.chrome\.verComo &&/);
     expect(shell).toMatch(/nav\.chrome\.busqueda && <BusquedaGlobal/);
     expect(shell).toMatch(/nav\.chrome\.firmas && <BotonFirmasPendientes/);
     expect(shell).toMatch(/if \(nav\.modo === 'enfoque'\) \{/);
     expect(shell).toMatch(/<ChoferView user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} onMiAsistencia=\{\(\) => go\(MODULO_MI_ASISTENCIA\.id\)\} onMisActividades=\{\(\) => go\(MODULO_MIS_ACTIVIDADES\.id\)\} \/>/);
     expect(shell).toMatch(/view === MODULO_MIS_ACTIVIDADES\.id\s*\? <div className="mx-auto max-w-2xl px-4 py-4"><CalendarioView \{\.\.\.vp\} personal onVolver=\{\(\) => go\(MODULO_CHOFER\.id\)\} \/><\/div>/);
-    expect(shell).toMatch(/nav\.chrome\.misActividades && \(/);
     expect(shell).toMatch(/case MODULO_CALENDARIO\.id: return <CalendarioView \{\.\.\.vp\} \/>;\s*case MODULO_MIS_ACTIVIDADES\.id: return <CalendarioView \{\.\.\.vp\} personal \/>;/);
     expect(shell).toMatch(/view === MODULO_MI_ASISTENCIA\.id\s*\? <div className="mx-auto max-w-lg px-4 py-4"><MiAsistenciaView actions=\{actions\} onVolver=\{\(\) => go\(MODULO_CHOFER\.id\)\} \/><\/div>/);
-    expect(shell).toMatch(/nav\.chrome\.miAsistencia && \(/);
+    // Mobile-first (2026-10-09): "Mi asistencia" / "Mis actividades" van en el menú
+    // ("Mi espacio"), no en la cabecera; la cabecera tiene UNA campana "Avisos".
+    expect(shell).toMatch(/nav\.chrome\.miAsistencia && MODULO_MI_ASISTENCIA,\s*nav\.chrome\.misActividades && MODULO_MIS_ACTIVIDADES,/);
+    expect(shell).not.toMatch(/data-testid="boton-mi-asistencia"|data-testid="boton-mis-actividades"/);
+    expect((shell.match(/<Icons\.Bell \/>/g) || []).length).toBe(2);   // botón Avisos + ícono de cada notificación
+    expect(shell).toMatch(/data-testid="boton-avisos"/);
+    expect(shell).not.toMatch(/ModoPruebaBanner/);
+    expect(shell).toMatch(/view === nav\.inicio && view !== 'dashboard' && \(/);
     expect(shell).toMatch(/case 'ventas': case 'ventas-hoy': case 'ventas-todas':\s*return <VentasStandaloneView embedded filtro=\{filtroVentasDesdeVista\(view\)\} onFiltro=\{f => go\(vistaDesdeFiltroVentas\(f\)\)\} user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
     expect(shell).toMatch(/<ProduccionStandaloneView embedded tab=\{tabDesdeModulo\(view\)\} onTab=\{t => go\(moduloDesdeTab\('Producción', t\)\)\} user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
     expect(shell).toMatch(/<BolsasView embedded user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);

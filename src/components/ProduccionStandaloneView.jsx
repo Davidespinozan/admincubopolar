@@ -14,7 +14,6 @@ import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton, KpiTile, CapacityBar } from './ui/Components';
 import { Icons } from './ui/Icons';
 import { useToast } from './ui/Toast';
-import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import { EmptyState } from './ui/Skeleton';
 
 // Fase A4 (convergencia visual por rol): esta vista usa las primitivas del
@@ -557,7 +556,6 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   return (
     <div className={embedded ? "text-slate-900" : "min-h-dvh w-full text-slate-900"} data-testid="produccion-shell">
-      {!embedded && <ModoPruebaBanner />}
       {/* B2: el shell pone el título de página. B3.2: dentro del shell cada
           módulo abre con su propio resumen (abajo, por pestaña); la cabecera
           suelta conserva el resumen general. */}
@@ -715,7 +713,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                   </div>
                   <FormBtn success className="w-full" onClick={() => {
                     setCargasPendientes(prev => prev.map(p => p.id === cg.id ? { ...p, estatus: "Entregado" } : p));
-                    showToast("Carga entregada a " + cg.chofer + " ✓");
+                    showToast("Carga entregada a " + cg.chofer);
                   }}>
                     Entregar carga
                   </FormBtn>

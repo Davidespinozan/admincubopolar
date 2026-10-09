@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import ModoPruebaBanner from './ui/ModoPruebaBanner';
 
 export default function LoginScreen({ onLogin }) {
   const [email, setEmail] = useState("");
@@ -57,17 +56,15 @@ export default function LoginScreen({ onLogin }) {
     <div
       className="min-h-dvh overflow-y-auto bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 px-4 pb-6 text-white sm:px-6 sm:pb-8"
       style={{
-        // Tanda 18 P2 + 19-fix: NO aplicar paddingTop con safe-area aquí —
-        // el ModoPruebaBanner ya respeta safe-area-inset-top internamente.
-        // Aplicar ambos resulta en doble padding (~156px) que infla el
-        // banner. paddingBottom/left/right sí necesarios (home indicator
-        // y bordes redondeados en landscape).
+        // Safe areas de iPhone (notch / Dynamic Island, home indicator y
+        // bordes en landscape). Mobile-first 2026-10-09: sin banner global
+        // de modo prueba, el login respeta el safe-area superior él mismo.
+        paddingTop: 'max(env(safe-area-inset-top, 0px), 1.5rem)',
         paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 1.5rem)',
         paddingLeft: 'max(env(safe-area-inset-left, 0px), 1rem)',
         paddingRight: 'max(env(safe-area-inset-right, 0px), 1rem)',
       }}
     >
-      <ModoPruebaBanner />
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-cyan-300/14 blur-3xl" />
         <div className="absolute bottom-[-6%] right-[-8%] h-[22rem] w-[22rem] rounded-full bg-amber-200/12 blur-3xl" />

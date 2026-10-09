@@ -20,6 +20,7 @@ export interface DataBusqueda {
 export interface ResultadoBusqueda {
   tipo: 'cliente' | 'orden' | 'ruta' | 'producto' | 'lead' | 'empleado';
   id: string;
+  /** Nombre de un componente de `Icons` (ui/Icons.jsx), p. ej. 'User'. */
   icono: string;
   titulo: string;
   subtitulo: string;
@@ -70,7 +71,7 @@ export function buscarGlobal(
 
   for (const c of d.clientes || []) {
     agregar(coincide(q, c.nombre, c.nombreComercial, c.nombre_comercial, c.rfc, c.contacto), {
-      tipo: 'cliente', id: String(c.id), icono: '👤', modulo: 'clientes',
+      tipo: 'cliente', id: String(c.id), icono: 'User', modulo: 'clientes',
       titulo: String(c.nombre || ''),
       subtitulo: [c.nombreComercial || c.nombre_comercial, c.rfc].filter(Boolean).join(' · ') || 'Cliente',
     });
@@ -78,7 +79,7 @@ export function buscarGlobal(
 
   for (const o of d.ordenes || []) {
     agregar(coincide(q, o.folio, o.folioNota, o.folio_nota, o.cliente), {
-      tipo: 'orden', id: String(o.id), icono: '🛒', modulo: 'ordenes',
+      tipo: 'orden', id: String(o.id), icono: 'ShoppingCart', modulo: 'ordenes',
       titulo: `${String(o.folio || `#${o.id}`)} — ${String(o.cliente || '')}`.trim(),
       subtitulo: [o.estatus, o.total !== undefined ? money(o.total) : null].filter(Boolean).join(' · '),
     });
@@ -86,7 +87,7 @@ export function buscarGlobal(
 
   for (const r of d.rutas || []) {
     agregar(coincide(q, r.folio, r.nombre, r.chofer), {
-      tipo: 'ruta', id: String(r.id), icono: '🚚', modulo: 'rutas',
+      tipo: 'ruta', id: String(r.id), icono: 'Truck', modulo: 'rutas',
       titulo: String(r.folio || r.nombre || `Ruta #${r.id}`),
       subtitulo: [r.chofer, r.estatus].filter(Boolean).join(' · '),
     });
@@ -94,7 +95,7 @@ export function buscarGlobal(
 
   for (const p of d.productos || []) {
     agregar(coincide(q, p.sku, p.nombre), {
-      tipo: 'producto', id: String(p.sku ?? p.id), icono: '🧊', modulo: 'productos',
+      tipo: 'producto', id: String(p.sku ?? p.id), icono: 'Package', modulo: 'productos',
       titulo: String(p.nombre || p.sku || ''),
       subtitulo: [p.sku, p.tipo].filter(Boolean).join(' · '),
     });
@@ -102,7 +103,7 @@ export function buscarGlobal(
 
   for (const l of d.leads || []) {
     agregar(coincide(q, l.nombre, l.telefono, l.correo), {
-      tipo: 'lead', id: String(l.id), icono: '📞', modulo: 'leads',
+      tipo: 'lead', id: String(l.id), icono: 'Phone', modulo: 'leads',
       titulo: String(l.nombre || l.telefono || `Lead #${l.id}`),
       subtitulo: [l.telefono, l.estatus].filter(Boolean).join(' · '),
     });
@@ -110,7 +111,7 @@ export function buscarGlobal(
 
   for (const e of d.empleados || []) {
     agregar(coincide(q, e.nombre, e.puesto), {
-      tipo: 'empleado', id: String(e.id), icono: '🧑‍🏭', modulo: 'empleados',
+      tipo: 'empleado', id: String(e.id), icono: 'UserCheck', modulo: 'empleados',
       titulo: String(e.nombre || ''),
       subtitulo: String(e.puesto || 'Empleado'),
     });

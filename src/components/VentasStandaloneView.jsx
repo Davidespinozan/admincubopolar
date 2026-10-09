@@ -9,7 +9,6 @@ import VentaDirectaOrigen, { useVentaDirecta } from './VentaDirectaOrigen';
 import { EmptyState } from './ui/Skeleton';
 import { useToast } from './ui/Toast';
 import NuevaVentaModal from './NuevaVentaModal';
-import ModoPruebaBanner from './ui/ModoPruebaBanner';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { Card, SectionLabel, StatusBadge, RoleHeader, HeaderStat, SegmentedTabs, ChoiceButton } from './ui/Components';
 import { Icons } from './ui/Icons';
@@ -222,7 +221,6 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
 
   return (
     <div className={embedded ? "text-slate-900" : "min-h-dvh w-full text-slate-900"} data-testid="ventas-shell">
-      {!embedded && <ModoPruebaBanner />}
       {/* B2: el shell pone el título de página. B3.4: dentro del shell cada módulo
           abre con su propio contexto (abajo); la cabecera suelta no cambia. */}
       {!embedded && (

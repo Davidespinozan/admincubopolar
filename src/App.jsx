@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect, useRef, Suspense } from 'react'
 import LoginScreen from './components/Login'
 import CuboPolarERP from './components/CuboPolarERP'
 import BarraVistaPrevia, { ALTO_BARRA_VISTA_PREVIA } from './components/ui/BarraVistaPrevia'
+import { Icons } from './components/ui/Icons'
 import { useSupaStore } from './data/supaStore'
 import { supabase } from './lib/supabase'
 import { setUserContext, Sentry } from './lib/sentry'
@@ -336,7 +337,7 @@ function App() {
   const offlineBar = isOffline ? (
     <div className="fixed top-0 left-0 right-0 z-[120] border-b border-amber-300 bg-amber-100 px-4 py-2 text-amber-900 shadow-[0_8px_20px_rgba(180,83,9,0.18)]">
       <div className="flex items-center justify-center gap-2 text-center">
-        <span className="text-base">⚠️</span>
+        <span className="flex-shrink-0"><Icons.AlertTriangle /></span>
         <p className="text-xs font-semibold sm:text-sm">Sin conexión. Los cambios se guardarán cuando vuelva la conexión.</p>
       </div>
     </div>
@@ -345,7 +346,7 @@ function App() {
   const reconectadoBar = showReconectado && !isOffline ? (
     <div className="fixed top-0 left-0 right-0 z-[120] border-b border-emerald-300 bg-emerald-100 px-4 py-2 text-emerald-900 shadow-[0_8px_20px_rgba(5,150,105,0.18)]">
       <div className="flex items-center justify-center gap-2 text-center">
-        <span className="text-base">✓</span>
+        <span className="flex-shrink-0"><Icons.CheckCircle /></span>
         <p className="text-xs font-semibold sm:text-sm">Conexión restaurada</p>
       </div>
     </div>

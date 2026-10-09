@@ -419,7 +419,7 @@ export function RutasView({ data, actions }) {
     toast?.success(ordenIds.length + " órdenes asignadas a " + s(asignarModal.nombre));
     if (sinCoords.length > 0) {
       const lista = sinCoords.slice(0, 3).join(', ') + (sinCoords.length > 3 ? `, +${sinCoords.length - 3} más` : '');
-      toast?.info(`⚠ Sin ubicación en mapa: ${lista}. El chofer no podrá navegar GPS hasta ${sinCoords.length === 1 ? 'él' : 'ellos'}.`);
+      toast?.info(`Sin ubicación en mapa: ${lista}. El chofer no podrá navegar GPS hasta ${sinCoords.length === 1 ? 'él' : 'ellos'}.`);
     }
     setAsignarModal(null);
   };
@@ -566,8 +566,8 @@ export function RutasView({ data, actions }) {
   const ordenGrupos = ['En progreso', 'Programada', 'Completada', 'Cerrada'];
 
   const exportBtns = <>
-    <button onClick={() => reporteRutas(data.rutas, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
-    <button onClick={() => reporteRutas(data.rutas, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+    <button onClick={() => reporteRutas(data.rutas, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
+    <button onClick={() => reporteRutas(data.rutas, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
   </>;
 
   return (<div>
@@ -677,9 +677,9 @@ export function RutasView({ data, actions }) {
                                 <span className="text-sm font-bold text-slate-800 truncate">{s(r.nombre)}</span>
                               </div>
                               <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
-                                <span className="truncate">👤 {choferLabel(r)}</span>
+                                <span className="inline-flex items-center gap-1 min-w-0"><Icons.User /><span className="truncate">{choferLabel(r)}</span></span>
                                 {r.ayudanteNombre && <span className="truncate">+ {r.ayudanteNombre}</span>}
-                                {r.camionNombre && <span className="hidden sm:inline truncate">🚛 {r.camionNombre}</span>}
+                                {r.camionNombre && <span className="hidden sm:inline-flex items-center gap-1 min-w-0"><Icons.Truck /><span className="truncate">{r.camionNombre}</span></span>}
                               </div>
                             </div>
 
@@ -726,7 +726,7 @@ export function RutasView({ data, actions }) {
                                 <button onClick={() => setDetalleModal(r)} className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">Ver resumen</button>
                               )}
                               {isCerrada && (
-                                <span className="text-xs text-slate-400 italic px-3">Cerrada ✓</span>
+                                <span className="inline-flex items-center gap-1 text-xs text-slate-400 italic px-3">Cerrada <Icons.Check /></span>
                               )}
 
                               {/* Menú de 3 puntos */}
@@ -737,13 +737,13 @@ export function RutasView({ data, actions }) {
                                   </svg>
                                 </summary>
                                 <div className="absolute right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-10 py-1 min-w-[180px]">
-                                  <button onClick={(e) => { e.currentTarget.closest('details').open = false; abrirEdicion(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700">✏️ Editar</button>
+                                  <button onClick={(e) => { e.currentTarget.closest('details').open = false; abrirEdicion(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 inline-flex items-center gap-1.5 min-h-[40px]"><Icons.Edit /> Editar</button>
                                   {!isCerrada && !isProgramada && (
-                                    <button onClick={(e) => { e.currentTarget.closest('details').open = false; setDetalleModal(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700">👁️ Ver detalle</button>
+                                    <button onClick={(e) => { e.currentTarget.closest('details').open = false; setDetalleModal(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 inline-flex items-center gap-1.5 min-h-[40px]"><Icons.Eye /> Ver detalle</button>
                                   )}
                                   {isEnProgreso && (
                                     <button onClick={(e) => { e.currentTarget.closest('details').open = false; abrirCierre(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 text-amber-700 border-t border-slate-100">
-                                      🔒 Cerrar ruta (admin)
+                                      <span className="inline-flex items-center gap-1.5"><Icons.Lock /> Cerrar ruta (admin)</span>
                                       <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Solo si el chofer no puede</span>
                                     </button>
                                   )}
@@ -752,7 +752,7 @@ export function RutasView({ data, actions }) {
                                       e.currentTarget.closest('details').open = false;
                                       setReporteModal(r);
                                     }} className="w-full text-left px-3 py-2 text-xs hover:bg-blue-50 text-blue-700 border-t border-slate-100">
-                                      📊 Ver reporte
+                                      <span className="inline-flex items-center gap-1.5"><Icons.BarChart /> Ver reporte</span>
                                       <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Vista completa con descarga PDF</span>
                                     </button>
                                   )}
@@ -765,7 +765,7 @@ export function RutasView({ data, actions }) {
                                       <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Devuelve stock al cuarto y libera órdenes</span>
                                     </button>
                                   )}
-                                  <button onClick={(e) => { e.currentTarget.closest('details').open = false; askConfirm('Eliminar ruta', '¿Eliminar ruta ' + s(r.nombre) + '?', () => actions.deleteRuta(r.id), true); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600">🗑️ Eliminar</button>
+                                  <button onClick={(e) => { e.currentTarget.closest('details').open = false; askConfirm('Eliminar ruta', '¿Eliminar ruta ' + s(r.nombre) + '?', () => actions.deleteRuta(r.id), true); }} className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 inline-flex items-center gap-1.5 min-h-[40px]"><Icons.Trash /> Eliminar</button>
                                 </div>
                               </details>
                             </div>
@@ -806,7 +806,7 @@ export function RutasView({ data, actions }) {
               step > num ? 'bg-emerald-500 text-white' :
               'bg-slate-100 text-slate-400'
             }`}>
-              {step > num ? '✓' : num}
+              {step > num ? <Icons.Check /> : num}
             </div>
             <div className="flex-1">
               <p className={`text-xs font-semibold ${step === num ? 'text-slate-900' : 'text-slate-400'}`}>
@@ -899,7 +899,7 @@ export function RutasView({ data, actions }) {
                       <span className="text-xs font-semibold text-slate-700">{s(o.clienteNombre)}</span>
                       <span className="text-xs text-slate-400">{fmtDate(o.fecha)}</span>
                     </div>
-                    {o.dir && <p className="text-xs text-slate-500 truncate mt-0.5">📍 {o.dir}</p>}
+                    {o.dir && <p className="flex items-center gap-1 text-xs text-slate-500 mt-0.5 min-w-0"><span className="flex-shrink-0"><Icons.MapPin /></span><span className="truncate">{o.dir}</span></p>}
                     <p className="text-xs text-slate-400 truncate">{s(o.productos)}</p>
                   </div>
                   <span className="text-xs font-bold text-slate-700 flex-shrink-0">{fmtMoney(o.total)}</span>
@@ -915,7 +915,7 @@ export function RutasView({ data, actions }) {
         <div className="space-y-4">
           <p className="text-sm text-slate-500 mb-2">Cuántos productos lleva el chofer en el camión. La carga base cubre las órdenes; el extra es por si vende en ruta.</p>
 
-          {errors.carga && <div className="bg-red-50 border border-red-200 rounded-xl p-3"><p className="text-xs text-red-700 font-semibold">⚠️ {errors.carga}</p></div>}
+          {errors.carga && <div className="bg-red-50 border border-red-200 rounded-xl p-3"><p className="flex items-center gap-1.5 text-xs text-red-700 font-semibold"><span className="flex-shrink-0"><Icons.AlertTriangle /></span>{errors.carga}</p></div>}
 
           {/* Capacidad del camión */}
           {camionSeleccionado && capacidadCamion > 0 && (
@@ -933,7 +933,7 @@ export function RutasView({ data, actions }) {
                 />
               </div>
               {excedeCapacidad && (
-                <p className="text-xs text-red-700 font-semibold mt-1.5">⚠ Excede capacidad del camión por {(cargaTotalBolsas - capacidadCamion).toLocaleString()} bolsas</p>
+                <p className="flex items-center gap-1.5 text-xs text-red-700 font-semibold mt-1.5"><span className="flex-shrink-0"><Icons.AlertTriangle /></span>Excede capacidad del camión por {(cargaTotalBolsas - capacidadCamion).toLocaleString()} bolsas</p>
               )}
             </div>
           )}
@@ -945,7 +945,7 @@ export function RutasView({ data, actions }) {
               onClick={() => setForm(prev => ({ ...prev, cargaPorProducto: {...prev.cargaPorProducto, ...Object.fromEntries(Object.entries(demandaSeleccionados).map(([k,v]) => [k, v]))} }))}
               className="w-full py-2.5 text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200 rounded-xl hover:bg-slate-200 transition-colors"
             >
-              ⚡ Llenar carga con demanda de las {form.ordenesIds.length} órdenes seleccionadas ({Object.values(demandaSeleccionados).reduce((a,b)=>a+b,0)} productos)
+              <span className="inline-block align-middle mr-1"><Icons.Zap /></span>Llenar carga con demanda de las {form.ordenesIds.length} órdenes seleccionadas ({Object.values(demandaSeleccionados).reduce((a,b)=>a+b,0)} productos)
             </button>
           )}
 
@@ -1162,13 +1162,13 @@ export function RutasView({ data, actions }) {
           {detalleModal.carga_confirmada_at && (
             <div className="bg-white border border-slate-200 rounded-2xl p-4">
               <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">
-                ✍️ Firma de carga
+                <span className="inline-flex items-center gap-1.5"><Icons.Pen /> Firma de carga</span>
               </h4>
 
               {detalleModal.firma_excepcion ? (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-3">
                   <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">⚠️</span>
+                    <span className="text-red-600"><Icons.AlertTriangle /></span>
                     <span className="text-sm font-bold text-red-700">Carga sin firma — Excepción</span>
                   </div>
                   <p className="text-xs text-slate-600 mb-2">

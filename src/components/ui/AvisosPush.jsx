@@ -3,6 +3,7 @@
 // no se renderiza nada (seam); soportado → botón activar/desactivar
 // con el estado real de la suscripción de ESTE dispositivo.
 import { useEffect, useState } from 'react';
+import { Icons } from './Icons';
 import { activarPush, desactivarPush, obtenerConfigPush, soportaPush, suscripcionActual } from '../../lib/push';
 
 export default function AvisosPush() {
@@ -53,8 +54,8 @@ export default function AvisosPush() {
   return (
     <div className="border-b border-slate-200/80 px-4 py-2.5 bg-slate-50/60">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-slate-600">
-          {suscrito ? '🔔 Avisos activos en este dispositivo' : '🔕 Recibe avisos con la app cerrada'}
+        <p className="flex items-center gap-1.5 text-xs text-slate-600">
+          {suscrito ? <><Icons.Bell /> Avisos activos en este dispositivo</> : <><Icons.BellOff /> Recibe avisos con la app cerrada</>}
         </p>
         <button
           onClick={alternar}

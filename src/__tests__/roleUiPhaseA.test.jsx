@@ -80,7 +80,8 @@ describe('A2: Almacén de Bolsas — presentación nueva, negocio idéntico', ()
     expect(v).toMatch(/import Modal, \{ FormInput, FormBtn \} from '\.\/ui\/Modal'/);
     expect(v).toMatch(/import \{ Card, SectionLabel, StatusBadge, RoleHeader \} from '\.\/ui\/Components'/);
     expect(v).toMatch(/useToast\(\)/);
-    expect(v).toMatch(/<ModoPruebaBanner \/>/);
+    // Mobile-first (2026-10-09): sin banner global de modo prueba (solo vive en Facturación).
+    expect(v).not.toMatch(/ModoPruebaBanner/);
     expect(v).toMatch(/<RoleHeader kicker="Almacén" title="Almacén de Bolsas"/);
     expect(v).toMatch(/<Modal open=\{!!modal\}/);
     expect(v).not.toMatch(/from-amber-600 to-orange-600/);

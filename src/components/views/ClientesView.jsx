@@ -215,8 +215,8 @@ export function ClientesView({ data, actions }) {
   const paginated = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   const exportBtns = <>
-    <button onClick={() => reporteClientes(data.clientes, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
-    <button onClick={() => reporteClientes(data.clientes, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+    <button onClick={() => reporteClientes(data.clientes, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
+    <button onClick={() => reporteClientes(data.clientes, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
   </>;
 
   return (<div>
@@ -233,7 +233,7 @@ export function ClientesView({ data, actions }) {
         </select>
         <select value={filterDireccion} onChange={e=>{setFilterDireccion(e.target.value);setPage(0)}} className="px-3 py-2 border border-slate-300 rounded-xl text-sm bg-white min-h-[44px]" title="Filtrar por completitud de dirección">
           <option value="">Todas direcciones</option>
-          <option value="incompleta">⚠️ Sin número exterior</option>
+          <option value="incompleta">Sin número exterior</option>
         </select>
       </div>
       <DataTable columns={[
@@ -246,7 +246,7 @@ export function ClientesView({ data, actions }) {
                 <span
                   className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700"
                   title="Sin número exterior — entrega o CFDI pueden fallar"
-                >⚠️ Sin nº ext.</span>
+                ><Icons.AlertTriangle /> Sin nº ext.</span>
               )}
               {row.nombre_comercial && <span className="block text-xs text-slate-400">{s(row.nombre_comercial)}</span>}
             </div>
@@ -261,7 +261,7 @@ export function ClientesView({ data, actions }) {
             : <span className="text-xs text-slate-300">—</span>;
         }},
         {key:"saldo",label:"Saldo",bold:true,render:v=>v?fmtMoney(v):"$0"},
-        {key:"credito_autorizado",label:"Crédito",render:(_,row)=>row.credito_autorizado?<span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">{"✓ " + fmtMoney(row.limite_credito)}</span>:<span className="text-xs text-slate-400">—</span>},
+        {key:"credito_autorizado",label:"Crédito",render:(_,row)=>row.credito_autorizado?<span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full"><Icons.Check />{fmtMoney(row.limite_credito)}</span>:<span className="text-xs text-slate-400">—</span>},
         {key:"estatus",label:"Estatus",badge:true,render:v=><StatusBadge status={v}/>},
         {key:"acciones",label:"",render:(_,row)=>{
           const esActivo = s(row.estatus) !== "Inactivo";
@@ -272,7 +272,7 @@ export function ClientesView({ data, actions }) {
               onClick={()=>openEdit(row)}
               aria-label="Editar cliente"
               title="Editar"
-              className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+              className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
             >
               <Icons.Edit />
             </button>
@@ -280,27 +280,27 @@ export function ClientesView({ data, actions }) {
               onClick={()=>toggleEstatus(row)}
               aria-label={esActivo ? "Desactivar cliente" : "Activar cliente"}
               title={esActivo ? "Desactivar" : "Activar"}
-              className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors ${esActivo ? "text-red-500 hover:bg-red-50" : "text-emerald-600 hover:bg-emerald-50"}`}
+              className={`p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg transition-colors ${esActivo ? "text-red-500 hover:bg-red-50" : "text-emerald-600 hover:bg-emerald-50"}`}
             >
-              {esActivo ? <span className="text-base leading-none">⏸</span> : <Icons.UserCheck />}
+              {esActivo ? <Icons.Pause /> : <Icons.UserCheck />}
             </button>
             {puedeEliminar ? (
               <button
                 onClick={()=>eliminarCliente(row)}
                 aria-label="Eliminar permanentemente"
                 title="Eliminar permanentemente"
-                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
               >
-                <span className="text-base leading-none">🗑</span>
+                <Icons.Trash />
               </button>
             ) : (
               <button
                 disabled
                 aria-label="No se puede eliminar — tiene histórico"
                 title={`No se puede eliminar — tiene ${movs} ${movs === 1 ? 'movimiento' : 'movimientos'}. Usa Desactivar.`}
-                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
               >
-                <span className="text-base leading-none opacity-50">🗑</span>
+                <span className="opacity-50"><Icons.Trash /></span>
               </button>
             )}
           </div>;
@@ -323,7 +323,7 @@ export function ClientesView({ data, actions }) {
               step > n ? 'bg-emerald-500 text-white' :
               'bg-slate-100 text-slate-400'
             }`}>
-              {step > n ? '✓' : n}
+              {step > n ? <Icons.Check /> : n}
             </div>
             <div className="flex-1">
               <p className={`text-xs font-semibold ${step === n ? 'text-slate-900' : 'text-slate-400'}`}>
@@ -350,7 +350,7 @@ export function ClientesView({ data, actions }) {
           </div>
           <details className="mt-2">
             <summary className="cursor-pointer text-xs text-slate-500 font-semibold hover:text-slate-700">
-              ⚙️ Datos fiscales avanzados (opcional)
+              <span className="inline-flex items-center gap-1.5 align-middle"><Icons.Settings /> Datos fiscales avanzados (opcional)</span>
             </summary>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
               <FormSelect label="Régimen fiscal SAT" options={REGIMENES_OPTIONS} value={form.regimen} onChange={e=>setForm({...form,regimen:e.target.value})} />
@@ -420,7 +420,7 @@ export function ClientesView({ data, actions }) {
                     },
                     esActivo
                   )} className={`w-full px-4 py-2.5 text-sm font-bold rounded-xl border transition-colors ${esActivo ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-200" : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"}`}>
-                  {esActivo ? "⏸ Desactivar cliente" : "✓ Activar cliente"}
+                  <span className="inline-flex items-center justify-center gap-1.5">{esActivo ? <><Icons.Pause /> Desactivar cliente</> : <><Icons.Check /> Activar cliente</>}</span>
                 </button>
                 {puedeEliminar && (
                   <button onClick={() => askConfirm(
@@ -437,7 +437,7 @@ export function ClientesView({ data, actions }) {
                       },
                       true
                     )} className="w-full px-4 py-2.5 text-sm font-bold rounded-xl bg-red-700 text-white hover:bg-red-800 transition-colors">
-                    🗑 Eliminar permanentemente
+                    <span className="inline-flex items-center justify-center gap-1.5"><Icons.Trash /> Eliminar permanentemente</span>
                   </button>
                 )}
               </div>

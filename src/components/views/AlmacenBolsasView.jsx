@@ -55,7 +55,7 @@ export function AlmacenBolsasView({ data, actions }) {
               <div className="grid grid-cols-3 gap-1.5 text-center text-xs">
                 <div className="bg-amber-50 rounded-lg p-2"><p className="text-amber-500 font-bold">Entregado a prod.</p><p className="text-amber-700 font-extrabold">{f.entregado.toLocaleString()}</p></div>
                 <div className="bg-blue-50 rounded-lg p-2"><p className="text-blue-400 font-bold">Usó prod.</p><p className="text-blue-700 font-extrabold">{f.usado.toLocaleString()}</p></div>
-                <div className={`rounded-lg p-2 ${f.estado === 'uso_sin_entrega' ? "bg-red-50" : "bg-emerald-50"}`}><p className={`font-bold ${f.estado === 'uso_sin_entrega' ? "text-red-500" : "text-emerald-500"}`}>Dif.</p><p className={`font-extrabold ${f.estado === 'uso_sin_entrega' ? "text-red-700" : "text-emerald-700"}`}>{f.diferencia === 0 ? "✓ 0" : f.diferencia.toLocaleString()}</p></div>
+                <div className={`rounded-lg p-2 ${f.estado === 'uso_sin_entrega' ? "bg-red-50" : "bg-emerald-50"}`}><p className={`font-bold ${f.estado === 'uso_sin_entrega' ? "text-red-500" : "text-emerald-500"}`}>Dif.</p><p className={`font-extrabold ${f.estado === 'uso_sin_entrega' ? "text-red-700" : "text-emerald-700"}`}>{f.diferencia === 0 ? "0" : f.diferencia.toLocaleString()}</p></div>
               </div>
               <p className="text-[10px] text-slate-400 mt-1">
                 {f.estado === 'sin_usar' ? "Positivo: bolsas entregadas que Producción aún no usa (siguen en el total)."

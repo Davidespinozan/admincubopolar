@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Modal, { FormSelect, FormInput, FormTextarea, FormBtn } from './ui/Modal';
+import { Icons } from './ui/Icons';
 import { s, fmtMoney } from '../utils/safe';
 import { useToast } from './ui/Toast';
 import {
@@ -65,7 +66,7 @@ export default function CancelarCFDIModal({ open, orden, actions, onClose, onSuc
     <Modal open={open} onClose={onClose} title="Cancelar CFDI ante SAT">
       <div className="space-y-4">
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800">
-          <p className="font-bold mb-1">⚠ Acción irreversible</p>
+          <p className="flex items-center gap-1.5 font-bold mb-1"><Icons.AlertTriangle /> Acción irreversible</p>
           <p>La cancelación se reporta al SAT vía Facturama. La orden volverá a estatus <b>Entregada</b> y podrás re-timbrar si así se requiere.</p>
         </div>
 

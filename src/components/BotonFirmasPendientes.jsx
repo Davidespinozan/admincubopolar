@@ -1,3 +1,4 @@
+import { Icons } from './ui/Icons';
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { s, n } from '../utils/safe';
 import { resolverOperacion, claveCarga } from '../data/stockContratosLogic';
@@ -195,7 +196,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
           }}
           className="w-full bg-amber-500 hover:bg-amber-600 transition-colors text-slate-900 px-4 py-3 flex items-center justify-center gap-3 shadow-[0_4px_12px_rgba(251,191,36,0.25)] animate-pulse"
         >
-          <span className="text-xl">⚠️</span>
+          <span className="flex-shrink-0"><Icons.AlertTriangle /></span>
           <div className="text-left">
             <p className="text-sm font-extrabold tracking-tight">
               {rutasPendientes.length} firma{rutasPendientes.length === 1 ? '' : 's'} pendiente{rutasPendientes.length === 1 ? '' : 's'}
@@ -208,23 +209,19 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
         </button>
       )}
 
-      {/* Botón en topbar — solo en modo NO banner (la instancia banner solo muestra banner) */}
-      {!mostrarBannerUrgente && (
+      {/* Botón en topbar — solo en modo NO banner y solo si hay firmas pendientes
+          (mobile-first: la cabecera no muestra íconos sin nada que hacer). */}
+      {!mostrarBannerUrgente && rutasPendientes.length > 0 && (
         <>
       <button
         ref={triggerRef}
         onClick={() => setAbierto(!abierto)}
-        className="relative inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/8 border border-white/10 text-cyan-200 hover:bg-white/12 transition-colors"
-        title="Firmas pendientes"
+        className="relative inline-flex h-10 w-10 items-center justify-center rounded-[14px] border border-amber-200 bg-amber-50 text-amber-700 transition-colors hover:bg-amber-100 lg:h-11 lg:w-11 lg:rounded-[16px]"
+        title="Firmas pendientes" aria-label="Firmas pendientes"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
-          <path d="M12 19l7-7 3 3-7 7-3-3z"/>
-          <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/>
-          <path d="M2 2l7.586 7.586"/>
-          <circle cx="11" cy="11" r="2"/>
-        </svg>
+        <Icons.Pen />
         {rutasPendientes.length > 0 && (
-          <span className={`absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-[10px] font-extrabold rounded-full flex items-center justify-center border-2 border-slate-900 ${esProduccion ? 'bg-amber-400 text-slate-900' : 'bg-slate-300 text-slate-700'}`}>
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 text-[10px] font-extrabold rounded-full flex items-center justify-center bg-amber-500 text-white">
             {rutasPendientes.length}
           </span>
         )}
@@ -246,7 +243,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
           </div>
           {rutasPendientes.length === 0 ? (
             <div className="p-6 text-center">
-              <p className="text-3xl mb-2">✓</p>
+              <p className="mb-2 flex justify-center text-emerald-600"><Icons.CheckCircle /></p>
               <p className="text-sm font-semibold text-slate-600">Sin firmas pendientes</p>
               <p className="text-xs text-slate-400 mt-1">Todo está al día</p>
             </div>
@@ -283,8 +280,8 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
       {advertenciaAdmin && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4" onClick={() => setAdvertenciaAdmin(null)}>
           <div className="bg-white w-full max-w-md rounded-[24px] p-5 shadow-2xl" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-center w-14 h-14 bg-amber-100 rounded-full mx-auto mb-3">
-              <span className="text-3xl">⚠️</span>
+            <div className="flex items-center justify-center w-14 h-14 bg-amber-100 text-amber-700 rounded-full mx-auto mb-3">
+              <Icons.AlertTriangle />
             </div>
             <h3 className="font-display text-lg font-bold text-slate-900 text-center mb-2">
               Esta firma le corresponde a Producción

@@ -15,6 +15,7 @@
 
 import { lazy, Suspense } from 'react';
 import { FormInput } from './Modal';
+import { Icons } from './Icons';
 
 const AddressAutocomplete = lazy(() => import('./AddressAutocomplete'));
 
@@ -64,8 +65,8 @@ export default function DireccionForm({ value, onChange, error = null }) {
   return (
     <div className="space-y-3">
       {errorGeneral && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
-          ⚠️ {errorGeneral}
+        <div className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700">
+          <span className="flex-shrink-0"><Icons.AlertTriangle /></span>{errorGeneral}
         </div>
       )}
 
@@ -129,8 +130,8 @@ export default function DireccionForm({ value, onChange, error = null }) {
       </div>
 
       {(v.latitud != null || v.longitud != null) && (
-        <p className="text-[11px] text-slate-400">
-          📍 GPS: {v.latitud != null && v.longitud != null
+        <p className="flex items-center gap-1 text-[11px] text-slate-400">
+          <Icons.MapPin /> GPS: {v.latitud != null && v.longitud != null
             ? `${Number(v.latitud).toFixed(5)}, ${Number(v.longitud).toFixed(5)}`
             : 'Sin coordenadas — el chofer no podrá rutear con mapa'}
         </p>

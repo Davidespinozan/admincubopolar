@@ -87,7 +87,7 @@ export default class ErrorBoundary extends Component {
               onClick={this.handleCopyError}
               className="mt-3 text-xs text-slate-400 hover:text-slate-600 underline"
             >
-              {copied ? '✓ Copiado' : 'Copiar detalles del error'}
+              {copied ? 'Copiado' : 'Copiar detalles del error'}
             </button>
           </div>
         </div>

@@ -36,6 +36,11 @@ if (typeof document !== 'undefined' && !document.getElementById('chofer-pulse-cs
   document.head.appendChild(style);
 }
 
+// Íconos SVG en línea para el HTML de Leaflet (sin emojis).
+const svgStr = (size, inner, extra = '') => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:-2px;${extra}">${inner}</svg>`;
+const SVG_TRUCK = (size) => svgStr(size, '<rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>', 'margin-right:4px');
+const SVG_PIN = svgStr(11, '<path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>', 'margin-right:3px');
+
 const choferIcon = (L, nombre) => L.divIcon({
   html: `<div style="
     background:${COLORS.chofer.bg};border:3px solid ${COLORS.chofer.border};
@@ -44,7 +49,7 @@ const choferIcon = (L, nombre) => L.divIcon({
     font-weight:700;font-size:10px;padding:0 6px;
     box-shadow:0 0 0 4px rgba(16,185,129,0.3),0 2px 10px rgba(0,0,0,0.3);
     animation:chofer-pulse 2s infinite;white-space:nowrap;
-  ">🚛 ${nombre}</div>`,
+  ">${SVG_TRUCK(12)}${nombre}</div>`,
   className: '',
   iconSize: null,
   iconAnchor: [14, 14],
@@ -96,7 +101,7 @@ export default function MapaPedidos({ ordenes = [], choferUbicaciones = [] }) {
           <div style="min-width:180px;font-family:sans-serif;line-height:1.4">
             <p style="margin:0 0 2px;font-weight:700;font-size:13px;color:#1e293b">${o.folio || '—'}</p>
             <p style="margin:0 0 1px;font-size:12px;font-weight:600;color:#334155">${o.clienteNombre || '—'}</p>
-            ${o.dir ? `<p style="margin:0 0 6px;font-size:11px;color:#64748b">📍 ${o.dir}</p>` : ''}
+            ${o.dir ? `<p style="margin:0 0 6px;font-size:11px;color:#64748b">${SVG_PIN}${o.dir}</p>` : ''}
             <p style="margin:0 0 6px;font-size:11px;color:#475569">${o.productos || ''}</p>
             <div style="display:flex;justify-content:space-between;align-items:center">
               <span style="font-size:12px;font-weight:700;color:#0f172a">$${Number(o.total||0).toLocaleString()}</span>
@@ -117,7 +122,7 @@ export default function MapaPedidos({ ordenes = [], choferUbicaciones = [] }) {
         const hace = ch.created_at ? new Date(ch.created_at).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '';
         marker.bindPopup(`
           <div style="min-width:140px;font-family:sans-serif;line-height:1.4">
-            <p style="margin:0 0 2px;font-weight:700;font-size:13px;color:#065f46">🚛 ${ch.chofer_nombre || 'Chofer'}</p>
+            <p style="margin:0 0 2px;font-weight:700;font-size:13px;color:#065f46">${SVG_TRUCK(13)}${ch.chofer_nombre || 'Chofer'}</p>
             <p style="margin:0;font-size:11px;color:#64748b">Ruta: ${ch.ruta_folio || '—'}</p>
             <p style="margin:0;font-size:10px;color:#94a3b8">Última señal: ${hace}</p>
           </div>

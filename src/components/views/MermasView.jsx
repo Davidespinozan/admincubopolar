@@ -240,7 +240,7 @@ export function MermasView({ data, actions }) {
                       title="Revertir y regresar stock"
                       className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
                     >
-                      <span className="text-base leading-none">↩</span>
+                      <Icons.Undo />
                     </button>
                   ) : (
                     <span className="text-[11px] text-slate-400" title={s(row.motivoReverso || row.motivo_reverso)}>Revertida</span>
@@ -266,7 +266,7 @@ export function MermasView({ data, actions }) {
                   <div className="mt-1 flex items-center justify-between">
                     <span className={`font-bold ${esMermaActiva(r) ? 'text-amber-700' : 'text-slate-400 line-through'}`}>{fmtMoney(n(r.cantidad) * costo)}</span>
                     {puedeRevertirMerma(r).ok
-                      ? <button onClick={(e) => { e.stopPropagation(); setMotivoReverso(''); setBorrarModal(r); }} className="text-xs text-red-600 font-bold min-h-[44px] px-2">↩ Revertir</button>
+                      ? <button onClick={(e) => { e.stopPropagation(); setMotivoReverso(''); setBorrarModal(r); }} className="inline-flex items-center gap-1 text-xs text-red-600 font-bold min-h-[44px] px-2"><Icons.Undo /> Revertir</button>
                       : <span className="text-xs text-slate-400">Revertida</span>}
                   </div>
                 </div>
@@ -306,8 +306,8 @@ export function MermasView({ data, actions }) {
                 className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-base sm:text-sm bg-white min-h-[44px]" />
             </div>
             {esVieja && (
-              <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">
-                ⚠️ Esta merma es de hace {dias} días. Revertirla afectará el inventario actual. Asegúrate de que es lo correcto.
+              <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-700">
+                <span className="flex-shrink-0"><Icons.AlertTriangle /></span>Esta merma es de hace {dias} días. Revertirla afectará el inventario actual. Asegúrate de que es lo correcto.
               </div>
             )}
             <div className="flex justify-end gap-2 mt-2">

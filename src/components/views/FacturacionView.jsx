@@ -1,11 +1,11 @@
-import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, EmptyState, s, n, fmtDate, fmtMoney, useToast } from './viewsCommon';
+import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, EmptyState, s, n, fmtDate, fmtMoney, useToast, Icons } from './viewsCommon';
 import CancelarCFDIModal from '../CancelarCFDIModal';
 import { isSandboxMode } from '../../lib/facturamaMode';
 import { estadoComplementosOrden, ESTADO_COMPLEMENTO } from '../../data/complementoLogic';
 
 // OL-04: estado del complemento POR PAGO (parcialidad, monto, fecha) y acción sobre ESE pago.
 const ETIQUETA_COMPLEMENTO = {
-  [ESTADO_COMPLEMENTO.EMITIDO]: ['✓ Complemento emitido', 'bg-emerald-50 text-emerald-700'],
+  [ESTADO_COMPLEMENTO.EMITIDO]: ['Complemento emitido', 'bg-emerald-50 text-emerald-700'],
   [ESTADO_COMPLEMENTO.EN_PROCESO]: ['En proceso', 'bg-blue-50 text-blue-700'],
   [ESTADO_COMPLEMENTO.REQUIERE_CONCILIACION]: ['Requiere conciliación', 'bg-red-50 text-red-700'],
   [ESTADO_COMPLEMENTO.ESPERA_ANTERIOR]: ['Espera parcialidad anterior', 'bg-slate-100 text-slate-600'],
@@ -29,7 +29,7 @@ function PagosComplemento({ orden, pagos, operaciones, onEmitir, emitiendo }) {
                 {emitiendo === f.pago.id ? 'Emitiendo…' : 'Emitir complemento'}
               </button>
             ) : (
-              <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${cls}`} title={f.motivo || f.cfdiUuid || ''}>{txt}</span>
+              <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold ${cls}`} title={f.motivo || f.cfdiUuid || ''}>{f.estado === ESTADO_COMPLEMENTO.EMITIDO && <Icons.Check />}{txt}</span>
             )}
           </div>
         );
@@ -93,9 +93,10 @@ export function FacturacionView({ data, actions }) {
     {isSandboxMode() && (
       <div
         data-testid="facturacion-modo-prueba-aviso"
-        className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5 text-xs sm:text-sm text-amber-900"
+        className="mb-4 flex gap-2.5 rounded-[16px] border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs sm:text-sm text-amber-900"
       >
-        📋 <span className="font-bold">Modo prueba</span> — Las facturas timbradas en sandbox tienen UUID válido en Facturama pero <b>NO son válidas ante SAT</b>. Usar este módulo para entrenar; emitir facturas reales requiere cambiar a producción (ver docs/CUTOVER_PRODUCCION.md).
+        <span className="mt-0.5 flex-shrink-0"><Icons.Info /></span>
+        <span><span className="font-bold">Facturación en modo prueba.</span> Las facturas que se timbren aquí no son válidas ante el SAT hasta activar la facturación real.</span>
       </div>
     )}
     <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-4 sm:mb-6">
@@ -169,20 +170,20 @@ export function FacturacionView({ data, actions }) {
                   )}
                   {cancelado ? (
                     <span
-                      className="text-[10px] font-bold px-2 py-0.5 rounded bg-red-50 text-red-700"
+                      className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-red-50 text-red-700"
                       title={`Motivo ${s(o.cfdi_cancelado_motivo)} — ${fmtDate(o.cfdi_cancelado_at)}`}
                     >
-                      ✕ Cancelada {s(o.cfdi_cancelado_motivo) ? `(${s(o.cfdi_cancelado_motivo)})` : ''}
+                      <Icons.X /> Cancelada {s(o.cfdi_cancelado_motivo) ? `(${s(o.cfdi_cancelado_motivo)})` : ''}
                     </span>
                   ) : (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">
-                      ✓ Vigente
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">
+                      <Icons.Check /> Vigente
                     </span>
                   )}
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${esPPD ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
                     {esPPD ? 'PPD' : 'PUE'}
                   </span>
-                  {!cancelado && !esPPD && <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700">✓ Pagado</span>}
+                  {!cancelado && !esPPD && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700"><Icons.Check /> Pagado</span>}
                   {!cancelado && (
                     <button
                       onClick={() => setCancelOrden(o)}

@@ -82,7 +82,7 @@ export default function CierreCajaModal({ open, ruta, data, actions, onClose, on
         return;
       }
       opRef.current = null;
-      toast?.success(diferencia === 0 ? 'Caja cuadrada ✓' : `Cierre registrado (${dif.label.toLowerCase()})`);
+      toast?.success(diferencia === 0 ? 'Caja cuadrada' : `Cierre registrado (${dif.label.toLowerCase()})`);
       onSuccess?.(result?.cierreId);
       onClose?.();
     } finally {

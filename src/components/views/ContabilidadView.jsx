@@ -1,4 +1,4 @@
-import { useState, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
+import { useState, Icons, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE } from './viewsCommon';
 import { diaNegocio } from '../../utils/fechas';
 import { traducirError } from '../../utils/errorMessages';
 import { esAsientoDeContrato } from '../../data/asientosContablesLogic';
@@ -95,8 +95,8 @@ export function ContabilidadView({ data, actions }) {
       <h2 className="text-lg font-bold text-slate-800">Contabilidad</h2>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
         <div className="flex gap-2">
-          <button onClick={() => reporteFinanciero(cont, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
-          <button onClick={() => reporteFinanciero(cont, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+          <button onClick={() => reporteFinanciero(cont, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
+          <button onClick={() => reporteFinanciero(cont, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
         </div>
         <div className="flex gap-2">
           <button onClick={() => openNew("Ingreso")} className="flex-1 sm:flex-none px-3 py-2 bg-emerald-600 text-white text-xs font-bold rounded-xl min-h-[44px]">+ Ingreso</button>
@@ -154,8 +154,8 @@ export function ContabilidadView({ data, actions }) {
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 px-1" title="Asiento generado por el sistema; no se edita ni se borra">Sistema</span>
                 ) : (
                   <>
-                    <button onClick={() => openEdit(m)} title="Editar" aria-label="Editar movimiento" className="text-slate-500 hover:text-blue-600 text-sm p-1">✏️</button>
-                    <button onClick={() => askConfirm('Eliminar movimiento','¿Eliminar este movimiento contable?',()=>actions.deleteMovContable(m.id),true)} className="text-red-400 hover:text-red-600 text-xs p-1" title="Eliminar" aria-label="Eliminar movimiento">✕</button>
+                    <button onClick={() => openEdit(m)} title="Editar" aria-label="Editar movimiento" className="text-slate-500 hover:text-blue-600 rounded-lg min-w-[40px] min-h-[40px] inline-flex items-center justify-center"><Icons.Edit /></button>
+                    <button onClick={() => askConfirm('Eliminar movimiento','¿Eliminar este movimiento contable?',()=>actions.deleteMovContable(m.id),true)} className="text-red-400 hover:text-red-600 rounded-lg min-w-[40px] min-h-[40px] inline-flex items-center justify-center" title="Eliminar" aria-label="Eliminar movimiento"><Icons.Trash /></button>
                   </>
                 )}
               </div>

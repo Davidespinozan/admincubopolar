@@ -172,7 +172,7 @@ export function EmpleadosView({ data, actions }) {
                     onClick={() => openEdit(e)}
                     aria-label="Editar empleado"
                     title="Editar"
-                    className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+                    className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
                   >
                     <Icons.Edit />
                   </button>
@@ -180,27 +180,27 @@ export function EmpleadosView({ data, actions }) {
                     onClick={() => toggleEstatusEmp(e)}
                     aria-label={esActivo ? "Desactivar empleado" : "Activar empleado"}
                     title={esActivo ? "Desactivar" : "Activar"}
-                    className={`p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors ${esActivo ? "text-red-500 hover:bg-red-50" : "text-emerald-600 hover:bg-emerald-50"}`}
+                    className={`p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg transition-colors ${esActivo ? "text-red-500 hover:bg-red-50" : "text-emerald-600 hover:bg-emerald-50"}`}
                   >
-                    {esActivo ? <span className="text-base leading-none">⏸</span> : <Icons.UserCheck />}
+                    {esActivo ? <Icons.Pause /> : <Icons.UserCheck />}
                   </button>
                   {puedeEliminar ? (
                     <button
                       onClick={() => eliminarEmpleado(e)}
                       aria-label="Eliminar permanentemente"
                       title="Eliminar permanentemente"
-                      className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                      className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
                     >
-                      <span className="text-base leading-none">🗑</span>
+                      <Icons.Trash />
                     </button>
                   ) : (
                     <button
                       disabled
                       aria-label="No se puede eliminar — tiene histórico"
                       title={`No se puede eliminar — tiene ${movs} ${movs === 1 ? 'movimiento' : 'movimientos'}. Usa Desactivar.`}
-                      className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
+                      className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
                     >
-                      <span className="text-base leading-none opacity-50">🗑</span>
+                      <span className="opacity-50"><Icons.Trash /></span>
                     </button>
                   )}
                 </div>
@@ -247,7 +247,7 @@ export function EmpleadosView({ data, actions }) {
                   },
                   esActivo
                 )} className={`w-full px-4 py-2.5 text-sm font-bold rounded-xl border transition-colors ${esActivo ? "bg-red-50 hover:bg-red-100 text-red-600 border-red-200" : "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"}`}>
-                {esActivo ? "⏸ Desactivar empleado" : "✓ Activar empleado"}
+                <span className="inline-flex items-center justify-center gap-1.5">{esActivo ? <><Icons.Pause /> Desactivar empleado</> : <><Icons.Check /> Activar empleado</>}</span>
               </button>
               {puedeEliminar && (
                 <button onClick={() => askConfirm(
@@ -264,7 +264,7 @@ export function EmpleadosView({ data, actions }) {
                     },
                     true
                   )} className="w-full px-4 py-2.5 text-sm font-bold rounded-xl bg-red-700 text-white hover:bg-red-800 transition-colors">
-                  🗑 Eliminar permanentemente
+                  <span className="inline-flex items-center justify-center gap-1.5"><Icons.Trash /> Eliminar permanentemente</span>
                 </button>
               )}
             </div>

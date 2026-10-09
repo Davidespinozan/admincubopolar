@@ -10,6 +10,7 @@
 
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
+import { Icons } from './ui/Icons';
 import { s, n, eqId, fmtMoney } from '../utils/safe';
 import { stockDisponiblePorSku, stockDisponibleParaEdicion } from '../utils/stock';
 import { precioParaCliente } from '../data/mejorasMenoresLogic';
@@ -269,7 +270,7 @@ export default function EditarVentaModal({
               que se creo la orden. No bloqueante. */}
           {lineasConPrecioCambiado.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 space-y-1">
-              <p className="font-bold">⚠ Algunos precios cambiaron desde que se creó la orden</p>
+              <p className="flex items-center gap-1.5 font-bold"><Icons.AlertTriangle /> Algunos precios cambiaron desde que se creó la orden</p>
               <ul className="space-y-0.5 ml-1">
                 {lineasConPrecioCambiado.map((l, i) => (
                   <li key={i} className="font-mono">

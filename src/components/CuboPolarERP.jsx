@@ -9,7 +9,7 @@ import BusquedaGlobal from './ui/BusquedaGlobal';
 import AvisosPush from './ui/AvisosPush';
 import { logErrorToDb } from '../utils/errorLog';
 import { traducirError } from '../utils/errorMessages';
-import ModoPruebaBanner from './ui/ModoPruebaBanner';
+import { textoSaludo, subtituloRol } from '../data/saludoLogic';
 import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
 import { navParaRol, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
@@ -274,9 +274,14 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
     setAreasExpandidas(prev => ({ ...prev, [areaId]: !prev[areaId] }));
   };
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
-  const [alertasOpen, setAlertasOpen] = useState(false);
-  const [notifOpen, setNotifOpen] = useState(false);
 
+  // Mobile-first: "Mi asistencia" y "Mis actividades" viven en el menú (sección
+  // "Mi espacio"), no en la cabecera. El rol Empleado ya los tiene como módulos.
+  const miEspacio = useMemo(() => [
+    nav.chrome.miAsistencia && MODULO_MI_ASISTENCIA,
+    nav.chrome.misActividades && MODULO_MIS_ACTIVIDADES,
+  ].filter(Boolean), [nav]);
+  const [avisosOpen, setAvisosOpen] = useState(false);
   const notifNoLeidas = useMemo(() => (data.notificaciones || []).filter(n => !n.leida), [data.notificaciones]);
   const notifRecientes = useMemo(() => (data.notificaciones || []).slice(0, 30), [data.notificaciones]);
 
@@ -297,19 +302,18 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   }, [data.alertas]);
 
   useEffect(() => {
-    if (!alertasOpen && !mobileDrawerOpen && !notifOpen) return undefined;
+    if (!avisosOpen && !mobileDrawerOpen) return undefined;
 
     const handleKeyDown = (event) => {
       if (event.key === 'Escape') {
-        setAlertasOpen(false);
+        setAvisosOpen(false);
         setMobileDrawerOpen(false);
-        setNotifOpen(false);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [alertasOpen, mobileDrawerOpen, notifOpen]);
+  }, [avisosOpen, mobileDrawerOpen]);
 
   const renderView = () => {
     switch (view) {
@@ -381,8 +385,6 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
 
   return (
     <div className="min-h-dvh text-slate-900" data-testid="dashboard-shell" data-rol={user?.rol || ''} data-rol-vista={rol || ''}>
-      {/* Tanda 16-fix: sidebarOffset evita que el banner tape el logo del aside fijo en lg+. */}
-      <ModoPruebaBanner sidebarOffset />
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
         <div className={`absolute left-[-10%] top-[-8%] h-[24rem] w-[24rem] rounded-full bg-gradient-to-br ${currentMeta.glow} blur-3xl`} />
         <div className="absolute bottom-[-10%] right-[-6%] h-[22rem] w-[22rem] rounded-full bg-gradient-to-br from-slate-200/60 via-white/20 to-transparent blur-3xl" />
@@ -443,6 +445,26 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
               </div>
             );
           })}
+          {miEspacio.length > 0 && (
+            <div className="mb-3">
+              <p className="mb-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Mi espacio</p>
+              <div className="space-y-1">
+                {miEspacio.map(item => {
+                  const Ic = Icons[item.icon] || Icons.Package;
+                  const active = view === item.id;
+                  return (
+                    <button key={item.id} onClick={() => go(item.id)}
+                      className={`w-full rounded-[18px] px-3 py-2.5 text-left text-sm transition-all ${active ? 'bg-blue-50 text-blue-900 shadow-[0_16px_28px_rgba(2,10,15,0.16)]' : 'text-slate-300/80 hover:bg-white/5 hover:text-white'}`}>
+                      <span className="flex items-center gap-3">
+                        <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[14px] ${active ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-300'}`}><Ic /></span>
+                        <span className="truncate flex-1">{item.label}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </nav>
 
         {onViewAs && nav.chrome.verComo && (
@@ -464,103 +486,91 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
         </div>
       </aside>
 
-      {/* ═══ TOPBAR ═══ */}
-      <header className="sticky z-30 px-3 pt-2 lg:ml-[300px] lg:px-6 lg:pt-4 xl:ml-[320px]" style={{ ...topFijo, paddingTop: "max(env(safe-area-inset-top, 0px), 0.5rem)" }}>
-        <div className="erp-panel erp-shell-blur flex items-center justify-between gap-2 rounded-[22px] px-4 py-2.5 lg:rounded-[28px] lg:px-5 lg:py-3.5">
-          <div className="flex min-w-0 items-center gap-2.5">
+      {/* ═══ TOPBAR ═══
+          Mobile-first (2026-10-09): menú, título completo y, a la derecha, solo
+          búsqueda (back office), firmas cuando hay pendientes y UNA campana
+          "Avisos" que junta alertas y notificaciones. */}
+      <header className={`sticky px-3 pt-2 lg:ml-[300px] lg:px-6 lg:pt-4 xl:ml-[320px] ${avisosOpen ? 'z-[80]' : 'z-30'}`} style={{ ...topFijo, paddingTop: "max(env(safe-area-inset-top, 0px), 0.5rem)" }}>
+        <div className="erp-panel erp-shell-blur flex items-center justify-between gap-2 rounded-[22px] px-3 py-2 lg:rounded-[28px] lg:px-5 lg:py-3.5" data-testid="topbar">
+          <div className="flex min-w-0 flex-1 items-center gap-1.5">
             <button
               onClick={() => setMobileDrawerOpen(true)}
-              className="lg:hidden flex h-10 w-10 -ml-1 mr-1 flex-shrink-0 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+              className="lg:hidden flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-slate-700 hover:bg-slate-100 active:bg-slate-200 transition-colors"
               aria-label="Abrir menú"
             >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                <line x1="4" y1="6" x2="20" y2="6" />
-                <line x1="4" y1="12" x2="20" y2="12" />
-                <line x1="4" y1="18" x2="20" y2="18" />
-              </svg>
+              <Icons.Menu />
             </button>
-            <p className="font-display truncate text-base font-bold tracking-[-0.04em] text-slate-900 lg:text-[1.55rem]">{current?.label || "Resumen"}</p>
+            <p className="font-display min-w-0 flex-1 truncate text-[1.05rem] font-bold tracking-[-0.03em] text-slate-900 lg:text-[1.55rem]" data-testid="topbar-titulo">{current?.label || "Resumen"}</p>
           </div>
-          <div className="relative flex flex-shrink-0 items-center gap-2">
-            {nav.chrome.miAsistencia && (
-              <button onClick={() => go(MODULO_MI_ASISTENCIA.id)} className={`relative flex h-9 w-9 items-center justify-center rounded-[14px] border transition-colors lg:h-11 lg:w-11 lg:rounded-[16px] ${view === MODULO_MI_ASISTENCIA.id ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white/80 text-slate-500 hover:bg-white hover:text-slate-800'}`}
-                title="Mi asistencia" aria-label="Mi asistencia" data-testid="boton-mi-asistencia">
-                <Icons.Clock />
-              </button>
-            )}
-            {nav.chrome.misActividades && (
-              <button onClick={() => go(MODULO_MIS_ACTIVIDADES.id)} className={`relative flex h-9 w-9 items-center justify-center rounded-[14px] border transition-colors lg:h-11 lg:w-11 lg:rounded-[16px] ${view === MODULO_MIS_ACTIVIDADES.id ? 'border-violet-300 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white/80 text-slate-500 hover:bg-white hover:text-slate-800'}`}
-                title="Mis actividades" aria-label="Mis actividades" data-testid="boton-mis-actividades">
-                <Icons.Calendar />
-              </button>
-            )}
+          <div className="relative flex flex-shrink-0 items-center gap-1.5">
             {nav.chrome.busqueda && <BusquedaGlobal data={data} onNavigate={go} />}
             {nav.chrome.firmas && <BotonFirmasPendientes user={usuarioRol || user} data={data} actions={actions} />}
-            {nav.chrome.alertas && <button onClick={() => { setAlertasOpen(!alertasOpen); setNotifOpen(false); }} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Ver alertas" aria-label="Ver alertas" aria-haspopup="dialog" aria-expanded={alertasOpen}>
-              <Icons.Bell />{alertasActivas.length > 0 && <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />}
-            </button>}
-            {alertasOpen && (
-              <div className="erp-panel absolute right-0 top-12 z-[70] max-h-96 w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] sm:w-96 md:w-[22rem]" role="dialog" aria-modal="false" aria-label="Alertas activas">
-                <div className="border-b border-slate-200/80 px-4 py-3.5">
-                  <p className="text-sm font-semibold text-slate-900">Alertas activas</p>
-                  <p className="mt-0.5 text-xs text-slate-500">Pendientes que requieren revisión.</p>
-                </div>
-                {alertasActivas.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-slate-400">Sin alertas activas</div>
-                ) : (
-                  <div className="space-y-2 p-3">
-                    {alertasActivas.map((a, i) => (
-                      <div key={i} className="rounded-[18px] border border-slate-200/80 bg-white px-4 py-3">
-                        <p className="text-sm font-semibold text-slate-800">{a.titulo || 'Alerta'}</p>
-                        <p className="mt-1 text-xs leading-5 text-slate-500">{a.msg || a.mensaje || a.detalle}</p>
-                      </div>
-                    ))}
-                  </div>
+            {(nav.chrome.alertas || nav.chrome.notificaciones) && (
+              <button onClick={() => setAvisosOpen(v => !v)}
+                className="relative flex h-10 w-10 items-center justify-center rounded-[14px] border border-slate-200 bg-white text-slate-600 transition-colors hover:text-slate-900 lg:h-11 lg:w-11 lg:rounded-[16px]"
+                title="Avisos" aria-label="Avisos" aria-haspopup="dialog" aria-expanded={avisosOpen} data-testid="boton-avisos">
+                <Icons.Bell />
+                {(alertasActivas.length + notifNoLeidas.length) > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+                    {(alertasActivas.length + notifNoLeidas.length) > 9 ? '9+' : alertasActivas.length + notifNoLeidas.length}
+                  </span>
                 )}
-              </div>
+              </button>
             )}
-            {alertasOpen && <div className="fixed inset-0 z-[60]" onClick={() => setAlertasOpen(false)} aria-hidden="true" />}
-            {/* Notification bell */}
-            {nav.chrome.notificaciones && <button onClick={() => { setNotifOpen(!notifOpen); setAlertasOpen(false); }} className="relative flex h-9 w-9 items-center justify-center rounded-[14px] border border-slate-200 bg-white/80 text-slate-500 transition-colors hover:bg-white hover:text-slate-800 lg:h-11 lg:w-11 lg:rounded-[16px]" title="Notificaciones" aria-label="Notificaciones">
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-              {notifNoLeidas.length > 0 && <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center bg-blue-600 text-white text-[10px] font-bold rounded-full px-1">{notifNoLeidas.length > 9 ? '9+' : notifNoLeidas.length}</span>}
-            </button>}
-            {notifOpen && (
-              <div className="erp-panel absolute right-0 top-12 z-[70] max-h-[28rem] w-[calc(100vw-32px)] overflow-y-auto rounded-[24px] sm:w-96 md:w-[24rem]" role="dialog" aria-modal="false" aria-label="Notificaciones">
-                <div className="border-b border-slate-200/80 px-4 py-3.5 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">Notificaciones</p>
-                    <p className="mt-0.5 text-xs text-slate-500">{notifNoLeidas.length > 0 ? `${notifNoLeidas.length} sin leer` : 'Al día'}</p>
+            {avisosOpen && (
+              <>
+                <div className="fixed inset-0 z-[60] bg-slate-950/20" onClick={() => setAvisosOpen(false)} aria-hidden="true" />
+                <div className="absolute right-0 top-12 z-[70] max-h-[75vh] w-[calc(100vw-24px)] overflow-y-auto rounded-[22px] border border-slate-200 bg-white shadow-[0_24px_60px_rgba(3,14,19,0.22)] sm:w-96" role="dialog" aria-modal="false" aria-label="Avisos" data-testid="panel-avisos">
+                  <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-4 py-3">
+                    <p className="text-sm font-bold text-slate-900">Avisos</p>
+                    {nav.chrome.notificaciones && notifNoLeidas.length > 0 && <button onClick={() => actions.marcarTodasLeidas()} className="text-xs font-semibold text-blue-600">Marcar leídas</button>}
                   </div>
-                  {notifNoLeidas.length > 0 && <button onClick={() => actions.marcarTodasLeidas()} className="text-xs text-blue-600 font-semibold hover:text-blue-800">Marcar todas</button>}
-                </div>
-                <AvisosPush />
-                {notifRecientes.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-slate-400">Sin notificaciones</div>
-                ) : (
-                  <div className="divide-y divide-slate-100">
-                    {notifRecientes.map(nt => (
-                      <div key={nt.id} className={`px-4 py-3 flex gap-3 items-start cursor-pointer hover:bg-slate-50 transition-colors ${!nt.leida ? 'bg-blue-50/50' : ''}`} onClick={() => {
-                        // Tanda 25: la notificación navega al módulo donde
-                        // se atiende (crons → cobros/rutas, venta → ordenes…)
-                        if (!nt.leida) actions.marcarNotifLeida(nt.id);
-                        const destino = moduloParaNotificacion(nt);
-                        if (destino) { go(destino); setNotifOpen(false); }
-                      }}>
-                        <span className="text-lg flex-shrink-0 mt-0.5">{nt.icono || '🔔'}</span>
-                        <div className="min-w-0 flex-1">
-                          <p className={`text-sm ${!nt.leida ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>{nt.titulo}</p>
-                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">{nt.mensaje}</p>
-                          <p className="text-[10px] text-slate-400 mt-1">{nt.createdAt ? new Date(nt.createdAt).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                  {nav.chrome.alertas && alertasActivas.length > 0 && (
+                    <div className="border-b border-slate-100 p-3">
+                      <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Alertas</p>
+                      <div className="space-y-2">
+                        {alertasActivas.map((a, i) => (
+                          <div key={i} className="flex gap-3 rounded-[16px] bg-amber-50 px-3 py-2.5 text-amber-900">
+                            <span className="mt-0.5 flex-shrink-0"><Icons.AlertTriangle /></span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold">{a.titulo || 'Alerta'}</p>
+                              <p className="text-xs leading-5 opacity-80">{a.msg || a.mensaje || a.detalle}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {nav.chrome.notificaciones && (
+                    <>
+                      <AvisosPush />
+                      {notifRecientes.length === 0 ? (
+                        <div className="p-5 text-center text-sm text-slate-400">Sin notificaciones</div>
+                      ) : (
+                        <div className="divide-y divide-slate-100">
+                          {notifRecientes.map(nt => (
+                            <button key={nt.id} type="button" className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 ${!nt.leida ? 'bg-blue-50/60' : ''}`} onClick={() => {
+                              // Tanda 25: la notificación navega al módulo donde se atiende.
+                              if (!nt.leida) actions.marcarNotifLeida(nt.id);
+                              const destino = moduloParaNotificacion(nt);
+                              if (destino) { go(destino); setAvisosOpen(false); }
+                            }}>
+                              <span className="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600"><Icons.Bell /></span>
+                              <span className="min-w-0 flex-1">
+                                <span className={`block text-sm ${!nt.leida ? 'font-semibold text-slate-900' : 'text-slate-700'}`}>{nt.titulo}</span>
+                                <span className="mt-0.5 block text-xs text-slate-500 line-clamp-2">{nt.mensaje}</span>
+                                <span className="mt-1 block text-[10px] text-slate-400">{nt.createdAt ? new Date(nt.createdAt).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                              </span>
+                              {!nt.leida && <span className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-blue-500" />}
+                            </button>
+                          ))}
                         </div>
-                        {!nt.leida && <span className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-2" />}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </>
             )}
-            {notifOpen && <div className="fixed inset-0 z-[60]" onClick={() => setNotifOpen(false)} aria-hidden="true" />}
             <div className="hidden lg:flex items-center gap-2 ml-2 pl-3 border-l border-slate-200">
               <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-cyan-200">{user?.nombre?.[0] || "A"}</div>
               <span className="text-sm font-semibold text-slate-700">{user?.nombre || "Admin"}</span>
@@ -569,103 +579,103 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
         </div>
       </header>
 
-      {/* ═══ DRAWER LATERAL — mobile ═══ */}
+      {/* ═══ DRAWER LATERAL — mobile ═══
+          Mobile-first (2026-10-09): mismo fondo oscuro que la barra inferior y
+          el sidebar de escritorio, con íconos y la sección "Mi espacio". */}
       {mobileDrawerOpen && (
         <>
           <div
-            className="lg:hidden fixed inset-0 bg-black/40 z-40 animate-fadeIn"
+            className="lg:hidden fixed inset-0 bg-slate-950/50 z-40 animate-fadeIn"
             onClick={() => setMobileDrawerOpen(false)}
           />
           <aside
             // Tanda 16 P0: overscroll-contain previene que el scroll
             // del drawer se propague al body en iOS Safari.
-            className="lg:hidden fixed left-0 bottom-0 w-[85%] max-w-[320px] bg-white z-50 shadow-2xl overflow-y-auto overscroll-contain animate-slideInLeft flex flex-col" style={topFijo}
+            className="lg:hidden fixed left-0 bottom-0 w-[86%] max-w-[330px] bg-gradient-to-b from-blue-950 via-slate-900 to-slate-900 text-slate-100 z-50 shadow-2xl overflow-y-auto overscroll-contain animate-slideInLeft flex flex-col" style={topFijo}
             role="dialog"
             aria-modal="true"
             aria-label="Menú principal"
+            data-testid="drawer-movil"
           >
-            {/* Header */}
             <div
-              className="sticky top-0 bg-white border-b border-slate-100 px-4 pb-3 flex items-center justify-between z-10"
+              className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-blue-950/95 px-4 pb-3 backdrop-blur"
               style={{ paddingTop: "max(env(safe-area-inset-top, 0px), 0.75rem)" }}
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="h-9 w-9 flex-shrink-0 rounded-xl bg-slate-900 flex items-center justify-center">
-                  <img src="/icon-192.png" alt="CuboPolar" className="h-5 w-5" />
+                <div className="h-10 w-10 flex-shrink-0 rounded-[14px] border border-white/10 bg-white/10 flex items-center justify-center">
+                  <img src="/icon-192.png" alt="CuboPolar" className="h-6 w-6" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-extrabold text-slate-900 leading-tight">CUBOPOLAR</p>
-                  <p className="text-[10px] uppercase tracking-wider text-slate-400">ERP Operativo</p>
+                  <p className="font-display text-base font-bold leading-tight tracking-[-0.04em] text-white">CUBOPOLAR</p>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-slate-400">ERP operativo</p>
                 </div>
               </div>
               <button
                 onClick={() => setMobileDrawerOpen(false)}
-                className="h-9 w-9 flex-shrink-0 rounded-xl hover:bg-slate-100 flex items-center justify-center"
+                className="h-10 w-10 flex-shrink-0 rounded-xl text-slate-300 hover:bg-white/10 flex items-center justify-center"
                 aria-label="Cerrar menú"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                </svg>
+                <Icons.X />
               </button>
             </div>
 
-            {/* Áreas con módulos */}
             <nav className="flex-1 px-3 py-3">
-              {nav.areas.map(area => (
+              {[...nav.areas, ...(miEspacio.length ? [{ id: 'mi-espacio', label: 'Mi espacio', items: miEspacio }] : [])].map(area => (
                 <div key={area.id} className="mb-4">
-                  <p className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                  <p className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">
                     {area.label}
                   </p>
-                  <div className="space-y-0.5">
-                    {area.items.map(item => (
-                      <button
-                        key={item.id}
-                        onClick={() => { setView(item.id); setMobileDrawerOpen(false); }}
-                        className={`w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
-                          modulo === item.id
-                            ? 'bg-slate-900 text-white'
-                            : 'text-slate-700 hover:bg-slate-100 active:bg-slate-200'
-                        }`}
-                      >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="truncate">{item.label}</span>
-                          {item.id === 'bandeja' && urgentesBandeja > 0 && (
-                            <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">{urgentesBandeja}</span>
-                          )}
-                        </span>
-                      </button>
-                    ))}
+                  <div className="space-y-1">
+                    {area.items.map(item => {
+                      const Ic = Icons[item.icon] || Icons.Package;
+                      const activo = (area.id === 'mi-espacio' ? view : modulo) === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => go(item.id)}
+                          className={`w-full rounded-[16px] px-2.5 py-2 text-left text-[15px] font-semibold transition-colors ${
+                            activo ? 'bg-blue-50 text-blue-900' : 'text-slate-200 hover:bg-white/5 active:bg-white/10'
+                          }`}
+                        >
+                          <span className="flex items-center gap-3">
+                            <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[12px] ${activo ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-300'}`}><Ic /></span>
+                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                            {item.id === 'bandeja' && urgentesBandeja > 0 && (
+                              <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center">{urgentesBandeja}</span>
+                            )}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
             </nav>
 
-            {/* Footer: usuario + Ver como + Cerrar sesión */}
             <div
-              className="border-t border-slate-100 px-3 pt-3 sticky bottom-0 bg-white"
+              className="sticky bottom-0 border-t border-white/10 bg-slate-900/95 px-3 pt-3 backdrop-blur"
               style={{ paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0.75rem)" }}
             >
               {user && (
-                <div className="flex items-center gap-3 px-3 py-2 mb-2">
-                  <div className="h-9 w-9 rounded-full bg-gradient-to-br from-cyan-200 to-cyan-300 text-slate-900 flex items-center justify-center text-sm font-extrabold">
+                <div className="flex items-center gap-3 px-2 py-2 mb-2">
+                  <div className="h-10 w-10 flex-shrink-0 rounded-full bg-cyan-200 text-slate-950 flex items-center justify-center text-sm font-extrabold">
                     {(user.nombre || 'U').charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-bold text-slate-900 truncate">{user.nombre || 'Usuario'}</p>
-                    <p className="text-xs text-slate-500 truncate">{user.rol || ''}</p>
+                    <p className="text-sm font-bold text-white truncate">{user.nombre || 'Usuario'}</p>
+                    <p className="text-xs text-slate-400 truncate">{user.rol || ''}</p>
                   </div>
                 </div>
               )}
               {onViewAs && nav.chrome.verComo && (
                 <div className="mb-2 px-1">
-                  <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">Ver como…</p>
+                  <p className="px-2 mb-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Ver como…</p>
                   <div className="grid grid-cols-2 gap-1.5">
                     {["Chofer","Ventas","Producción","Almacén Bolsas"].map(r => (
                       <button
                         key={r}
                         onClick={() => { onViewAs(r); setMobileDrawerOpen(false); }}
-                        className="rounded-xl border border-blue-200 bg-blue-50 px-2 py-2 text-xs font-semibold text-blue-700 active:bg-blue-100"
+                        className="rounded-[12px] border border-white/10 bg-white/5 px-2 py-2 text-xs font-semibold text-white active:bg-white/10"
                       >
                         {r}
                       </button>
@@ -676,9 +686,9 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
               {onLogout && (
                 <button
                   onClick={() => { onLogout(); setMobileDrawerOpen(false); }}
-                  className="w-full text-left px-3 py-2.5 rounded-xl text-sm font-semibold text-red-600 hover:bg-red-50"
+                  className="flex w-full items-center gap-3 rounded-[14px] px-3 py-2.5 text-left text-sm font-semibold text-red-300 hover:bg-white/5"
                 >
-                  Cerrar sesión
+                  <Icons.LogOut /> Cerrar sesión
                 </button>
               )}
             </div>
@@ -690,6 +700,13 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       <main className={`px-3 pt-4 sm:px-4 lg:ml-[300px] lg:px-6 lg:pb-6 lg:pt-6 xl:ml-[320px] ${bottomNav ? "pb-[calc(env(safe-area-inset-bottom,0px)+88px)]" : ""}`} data-bottom-nav={bottomNav ? 'si' : 'no'}>
         <div className="relative">
           <div className={`pointer-events-none absolute inset-x-8 top-0 h-16 rounded-[32px] bg-gradient-to-r ${currentMeta.glow} opacity-45 blur-3xl`} />
+          {/* Bienvenida en la pantalla de inicio de cada rol (el Resumen de Admin trae la suya). */}
+          {view === nav.inicio && view !== 'dashboard' && (
+            <div className="relative mb-3 px-1" data-testid="saludo-rol">
+              <p className="font-display text-[1.45rem] font-bold leading-tight tracking-[-0.03em] text-slate-900">{textoSaludo((usuarioRol || user)?.nombre)}</p>
+              <p className="mt-0.5 text-sm text-slate-500">{subtituloRol(rol)}</p>
+            </div>
+          )}
           <div className="relative"><ChunkErrorBoundary><Suspense fallback={<div className="flex h-48 items-center justify-center text-sm text-slate-400">Cargando...</div>}>{renderView()}</Suspense></ChunkErrorBoundary></div>
         </div>
       </main>
@@ -767,7 +784,7 @@ function ComodatosView({ data, actions }) {
           <span className="text-xs bg-purple-50 text-purple-700 font-semibold px-2 py-1 rounded-lg">{c.frecuencia}</span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3">
-          <button onClick={() => openEdit(c)} className="px-3 py-2 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl border border-blue-200">✏️ Editar</button>
+          <button onClick={() => openEdit(c)} className="inline-flex min-h-[40px] items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 text-xs font-bold rounded-xl border border-blue-200"><Icons.Edit /> Editar</button>
           <button onClick={() => askConfirm(
             c.estatus === 'Activo' ? 'Desactivar comodato' : 'Activar comodato',
             c.estatus === 'Activo'
@@ -775,8 +792,8 @@ function ComodatosView({ data, actions }) {
               : `¿Reactivar comodato "${c.negocio}"?`,
             async () => { await actions.updateComodato(c.id, { estatus: c.estatus === 'Activo' ? 'Inactivo' : 'Activo' }); },
             c.estatus === 'Activo'
-          )} className="px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-200">
-            {c.estatus === 'Activo' ? '🗑 Desactivar' : '✅ Activar'}
+          )} className="inline-flex min-h-[40px] items-center gap-1.5 px-3 py-2 bg-red-50 text-red-600 text-xs font-bold rounded-xl border border-red-200">
+            {c.estatus === 'Activo' ? <><Icons.Ban /> Desactivar</> : <><Icons.CheckCircle /> Activar</>}
           </button>
           <button onClick={() => askConfirm(
             'Eliminar comodato',
@@ -816,7 +833,7 @@ function ComodatosView({ data, actions }) {
                 `¿Marcar comodato "${form.negocio}" como inactivo? Podrás reactivarlo después.`,
                 async () => { await actions.updateComodato(modal.id, { estatus: 'Inactivo' }); setModal(null); },
                 true
-              )} className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200">🗑 Desactivar comodato</button>
+              )} className="flex w-full items-center justify-center gap-1.5 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 text-sm font-bold rounded-xl border border-red-200"><Icons.Ban /> Desactivar comodato</button>
               <button onClick={() => askConfirm(
                 'Eliminar comodato',
                 `¿Eliminar comodato "${form.negocio}"? Esta acción no se puede deshacer.`,
@@ -914,8 +931,8 @@ function LeadsView({ data, actions }) {
               }`}>
               <option>Nuevo</option><option>Contactado</option><option>Convertido</option><option>Descartado</option>
             </select>
-            <button onClick={() => openEdit(l)} title="Editar" aria-label="Editar lead" className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors">✏️</button>
-            <button onClick={() => eliminarLead(l)} title="Eliminar" aria-label="Eliminar lead" className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors">🗑</button>
+            <button onClick={() => openEdit(l)} title="Editar" aria-label="Editar lead" className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"><Icons.Edit /></button>
+            <button onClick={() => eliminarLead(l)} title="Eliminar" aria-label="Eliminar lead" className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-red-500 hover:bg-red-50 transition-colors"><Icons.Trash /></button>
           </div>
         </div>
         {l.mensaje && <p className="text-xs text-slate-500 mt-1 bg-slate-50 rounded-lg p-2">{l.mensaje}</p>}

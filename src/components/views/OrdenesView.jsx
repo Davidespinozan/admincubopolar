@@ -135,8 +135,8 @@ export function OrdenesView({ data, actions, user }) {
   const paginated = useMemo(() => filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [filtered, page]);
 
   const exportBtns = <>
-    <button onClick={() => reporteVentas(data.ordenes, 'excel')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition-colors">📗 Excel</button>
-    <button onClick={() => reporteVentas(data.ordenes, 'pdf')} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">📕 PDF</button>
+    <button onClick={() => reporteVentas(data.ordenes, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
+    <button onClick={() => reporteVentas(data.ordenes, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
   </>;
 
   const openModal = () => setModal(true);
@@ -195,7 +195,7 @@ export function OrdenesView({ data, actions, user }) {
                 onClick={()=>setEditarOrden(row)}
                 aria-label="Editar orden"
                 title="Editar"
-                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
               >
                 <Icons.Edit />
               </button>
@@ -204,7 +204,7 @@ export function OrdenesView({ data, actions, user }) {
                 disabled
                 aria-label="No editable"
                 title={`Solo se puede editar en estatus Creada (actual: ${s(row.estatus)})`}
-                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
               >
                 <Icons.Edit />
               </button>
@@ -214,7 +214,7 @@ export function OrdenesView({ data, actions, user }) {
                 onClick={()=>{ setCancelarOrden(row); setMotivoCancelar(''); }}
                 aria-label="Cancelar orden"
                 title="Cancelar"
-                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-amber-600 hover:bg-amber-50 transition-colors"
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-amber-600 hover:bg-amber-50 transition-colors"
               >
                 <span className="text-base leading-none">⊘</span>
               </button>
@@ -223,7 +223,7 @@ export function OrdenesView({ data, actions, user }) {
                 disabled
                 aria-label="No se puede cancelar"
                 title={est.razonNoCancela || `No se puede cancelar (estatus ${s(row.estatus)})`}
-                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
               >
                 <span className="text-base leading-none opacity-50">⊘</span>
               </button>
@@ -234,18 +234,18 @@ export function OrdenesView({ data, actions, user }) {
                   disabled
                   aria-label="Devolución registrada"
                   title="Esta orden ya tiene una devolución registrada"
-                  className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-violet-300 cursor-not-allowed"
+                  className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-violet-300 cursor-not-allowed"
                 >
-                  <span className="text-base leading-none">↩</span>
+                  <Icons.Undo />
                 </button>
               ) : (
                 <button
                   onClick={() => setDevolverOrden(row)}
                   aria-label="Registrar devolución"
                   title="Registrar devolución"
-                  className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-violet-600 hover:bg-violet-50 transition-colors"
+                  className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-violet-600 hover:bg-violet-50 transition-colors"
                 >
-                  <span className="text-base leading-none">↩</span>
+                  <Icons.Undo />
                 </button>
               )
             )}
@@ -263,18 +263,18 @@ export function OrdenesView({ data, actions, user }) {
                 )}
                 aria-label="Eliminar permanentemente"
                 title="Eliminar permanentemente"
-                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-red-600 hover:bg-red-50 transition-colors"
               >
-                <span className="text-base leading-none">🗑</span>
+                <Icons.Trash />
               </button>
             ) : (
               <button
                 disabled
                 aria-label="No se puede eliminar"
                 title={est.razonNoElimina ? `No se puede eliminar — ${est.razonNoElimina}. Usa Cancelar.` : 'No se puede eliminar'}
-                className="p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-300 cursor-not-allowed"
               >
-                <span className="text-base leading-none opacity-50">🗑</span>
+                <span className="opacity-50"><Icons.Trash /></span>
               </button>
             )}
           </div>;
@@ -421,10 +421,10 @@ export function OrdenesView({ data, actions, user }) {
 
           {pagoForm.metodo==="QR / Link de pago" && checkoutUrl && (
             <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl space-y-3">
-              <p className="text-xs font-bold text-emerald-700">✓ Link de pago generado</p>
+              <p className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700"><Icons.CheckCircle /> Link de pago generado</p>
               <p className="text-xs text-slate-600 break-all bg-white p-2 rounded-lg border border-slate-200">{shortUrl || checkoutUrl}</p>
               <div className="grid grid-cols-2 gap-2">
-                <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); toast?.success('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold">📋 Copiar link</button>
+                <button onClick={() => { navigator.clipboard.writeText(shortUrl || checkoutUrl); toast?.success('Link copiado'); }} className="py-2.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5"><Icons.Copy /> Copiar link</button>
                 {(() => {
                   const cliente = (data?.clientes || []).find(c => String(c.id) === String(pagoModal.clienteId || pagoModal.cliente_id));
                   const tel = extraerTelefono(cliente?.contacto || cliente?.telefono);
@@ -433,7 +433,7 @@ export function OrdenesView({ data, actions, user }) {
                   const href = tel
                     ? `https://wa.me/52${tel}?text=${encodeURIComponent(msg)}`
                     : `https://wa.me/?text=${encodeURIComponent(msg)}`;
-                  return <a href={href} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center">📲 Enviar por WhatsApp</a>;
+                  return <a href={href} target="_blank" rel="noopener noreferrer" className="py-2.5 bg-green-500 text-white rounded-lg text-xs font-bold text-center inline-flex items-center justify-center gap-1.5"><Icons.Send /> Enviar por WhatsApp</a>;
                 })()}
               </div>
             </div>
