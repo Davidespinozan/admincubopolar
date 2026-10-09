@@ -8,7 +8,9 @@ Guía corta para capacitar al equipo. Describe solo lo que el sistema hace hoy
 Lo hace **Admin**, justo antes de la primera producción real. Hoy el producto
 terminado está en 0 y las existencias de bolsas en el sistema **no están verificadas**.
 
-1. **Bolsas EMP-5 (5 kg) y EMP-25 (25 kg):** contar las bolsas físicas.
+1. **Bolsas EMP-5 (5 kg), EMP-25 (25 kg con logo) y EMP-25-SL (25 kg sin logo):** contar las bolsas físicas,
+   separando las de 25 kg con logo y sin logo. Con logo = consumo (cubos y triturado purificado); sin logo =
+   enfriamiento y picada/triturada de barra. Las sin logo empiezan en 0: dar de alta su compra real.
    - Si hay **menos** que en el sistema: ajustar a la baja con el conteo (Inventario / Bolsas).
    - Si hay **más**: solo entran con una **recepción de compra real** (Almacén de Bolsas).
    - No producir ni preparar nada antes de este paso.
@@ -20,7 +22,7 @@ terminado está en 0 y las existencias de bolsas en el sistema **no están verif
 
 - 1 barra física de ~50 kg = **1 barra** en el sistema.
 - Vender una barra completa: sale 1 barra, **no** usa bolsa ($120).
-- **Preparar** 1 barra = **2 bolsas** de Picada o Triturada y usa **2 bolsas de 25 kg**.
+- **Preparar** 1 barra = **2 bolsas** de Picada o Triturada y usa **2 bolsas de 25 kg sin logo**.
 - Vender bolsas ya preparadas **no** vuelve a gastar barra ni bolsa ($60 cada una).
 - "Media barra" picada o triturada = **1 bolsa preparada**. No existen medias barras en el sistema.
 - La media barra **sin picar** no se maneja en el sistema (caso raro aceptado).

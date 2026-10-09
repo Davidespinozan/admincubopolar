@@ -248,11 +248,19 @@ picada, triturada y enfriamiento asignado en OP-03 (2026-10-07T03:18:42Z).
 | HPC-25K | Hielo Purificado en Cubos 25 kg | $92 | EMP-25 | 400 (sin cambio) |
 | HPT-5K | Hielo Purificado Triturado 5 kg | $36 | EMP-5 | 50 (sin cambio) |
 | HPT-25K | Hielo Purificado Triturado 25 kg | $98 | EMP-25 | 50 (sin cambio) |
-| HEC-25K | Hielo en Cubos para Enfriamiento 25 kg (nuevo) | $72 | EMP-25 | 0 |
+| HEC-25K | Hielo en Cubos para Enfriamiento 25 kg (nuevo) | $72 | EMP-25-SL (sin logo, desde 2026-10-09) | 0 |
 | HIB-50K | Barra de Hielo ~50 kg | $120 | ninguno (por diseño) | 0 |
-| HIP-25K | Picada de Barra ~25 kg | $60 | EMP-25 | 0 |
-| HIT-25K | Triturada de Barra ~25 kg | $60 | EMP-25 | 0 |
+| HIP-25K | Picada de Barra ~25 kg | $60 | EMP-25-SL (sin logo, desde 2026-10-09) | 0 |
+| HIT-25K | Triturada de Barra ~25 kg | $60 | EMP-25-SL (sin logo, desde 2026-10-09) | 0 |
 
+- **Bolsas de 25 kg con logo / sin logo (2026-10-09, SQL aplicado por el dueño en Supabase, auditoría id 734):**
+  `EMP-25` = "Bolsa 25 kg con logo" (consumo: HPC-25K, HPT-25K; 9,800 @ 2 sin cambio, siguen sin verificar);
+  `EMP-25-SL` = "Bolsa 25 kg sin logo" nueva (nace 0 @ 0, Apertura 0) para HEC-25K enfriamiento, HIP-25K picada y
+  HIT-25K triturada de barra. Sin código ni migración: producción y "Preparar barra" ya descuentan el empaque
+  configurado en el producto y lo guardan en cada registro. Verificado en solo lectura: solo cambiaron esos productos,
+  la secuencia/auditoría y el nuevo historial de apertura; `error_log` 192. **Pendiente del dueño:** recepción de compra
+  real de `EMP-25-SL` (sin ella no se produce enfriamiento ni se prepara barra) y conteo de apertura de `EMP-25`.
+  Bolsas de 5/20 kg con o sin logo: mismo mecanismo cuando se definan (20 kg requiere productos nuevos).
 - `HIT-5K` (Insumo de agosto, sin historia comprobada): eliminado. Sin nombres "Insumo" en el catálogo.
 - Inventario físico de producto terminado = **0** en los 3 cuartos, por el contrato de conteo
   (`ajustar_existencia_cuarto`; CF-1 HPC-5K 990→0, CF-2 HPC-25K 100→0, CF-3 HIT-25K 90→0). Sin ventas ni
