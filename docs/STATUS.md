@@ -1,12 +1,17 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-09 (UI mobile-first `f7d5e66` desplegada; BD sin cambio desde 119). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-09 (GER-1 activo: BD hasta 121, repositorio `afad162`; Santiago es Dueño). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
 
 ## Base de producción verificada
-- Repositorio desplegado: `f7d5e66` (revisión mobile-first, solo UI) — DEPLOYED (Netlify `6ac938a39008ec0008871a75`,
+- Repositorio desplegado: `afad162` (GER-1) — DEPLOYED (Netlify `6ac95f9464056c0008f6049b`, ready 2026-10-09); bundle vivo
+  verificado (`guardar_usuario`, `confirmar_cambio_password`, `panel-dueno`, `cambio-obligatorio`, `admin-reset-password`;
+  0 archivos con `from('usuarios').update`). Netlify Functions: **18** (nueva `admin-reset-password`; cambian las que usan
+  `_lib/auth.js` y `admin-create-user`: los digests anteriores ya no aplican). Entre `f7d5e66` y `afad162` (solo UI, DEPLOYED):
+  `3aab478` sistema de diseño 2026, `7d36760` bloque A, `bb0d15d` bloque B, `feb3721` favicon. Base anterior: `f7d5e66`
+  (revisión mobile-first, solo UI) — DEPLOYED (Netlify `6ac938a39008ec0008871a75`,
   2026-10-09); bundle vivo verificado (`boton-avisos`, `topbar-titulo`, `drawer-movil`, `saludo-rol`, "Mi espacio"; sin
   `modo-prueba-banner` ni "MODO PRUEBA"); 17 digests de Netlify Functions sin cambio. Base anterior:
   `089c521ef460d66ec664eb86abd73bee08b58843` (WF-0.1 + PD-02) — DEPLOYED (Netlify
@@ -17,7 +22,9 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
   documentación se publica encima sin cambios de código. WF-0.2 (119) no cambió el frontend: su commit (migración,
   pruebas, runner y STATUS) se publica sobre el mismo código. Bases anteriores: `dddedee` (WF-0 + PD-01), `95d69a3` (OP-01E),
   `3bdf4ce` (CLOSURE-1), `5f1632b` (OL-04), `c09d82a` (B3.6), `9a94881` (OL-03B), `cfce0f2` (OL-03A).
-- Base de datos: migraciones aplicadas hasta la **119** (111 el 2026-10-06T16:27Z, 112 el
+- Base de datos: migraciones aplicadas hasta la **121** (120 y 121 el 2026-10-09, por el dueño en el SQL Editor de Supabase, una vez
+  cada una; SHA-256 de 120 `a7cbfda218d2996bfb1931bdf659f0b53bc768f18ebc3b052914b2acd15850a3`, de 121
+  `ee2316afc519f9ddbc9e2f6984b286d828592916f983f2ebb220f8fb727b91e4`). Anteriores: hasta la 119 (111 el 2026-10-06T16:27Z, 112 el
   16:29:58Z, 113 el 17:51:58Z, 114 el 18:58:15Z, 115 el 2026-10-07T00:05:37Z, 116 el 2026-10-07T17:48:57Z,
   117 el 18:19:21Z, 118 el 18:19:56Z, 119 el 19:32:05Z, una vez cada una; se
   aplican con `supabase db query`; no hay tabla de historial: la "cabeza" se verifica por la presencia y
@@ -27,14 +34,24 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
   `45f027956dcae88dd93d0588692078995bedf48088a5b6a548273c02ff111fbb`; de 118:
   `b4d2a77b730b99b999548408b37f5b763cbe4e8520d4228291a26f0c64923a8e`; de 119:
   `cd499211b5d47eed71142401789d455a323a3007ab92cd72f3190127fc67f0ad`; 109–118 sin cambio.
-- Conteos tras 119 (cambian con cada fase; no son invariantes): 162 funciones · 85 policies ·
+- Conteos tras 121 (cambian con cada fase; no son invariantes): 170 funciones · 87 policies · 50 tablas · 62 triggers en
+  `public`; 92 funciones ejecutables por authenticated. Diff de 120: +8 funciones, +3 policies (`usuarios.admin_read`,
+  `bitacora_cambios.dueno_read` / `desde_disparador`), +2 tablas (`bitacora_cambios`, `usuarios_password_temporal`), +15 triggers,
+  3 columnas en `usuarios`, cuerpo de `erp_actor`, `fin_actor_permitido`, `fin_orden_operable` y `completar_venta_directa`, USING de 4
+  policies de Ventas. Diff de 121: −1 policy (`usuarios.admin_all`), sin INSERT/UPDATE/DELETE ni secuencia de `usuarios` para
+  authenticated. Estado de negocio idéntico antes y después (comparación de `estado_negocio.sql`). Tras 119: 162 funciones · 85 policies ·
   48 tablas · 46 secuencias · 1 vista · 47 triggers en `public` (7 en `ordenes`). Diff de 116: +14 funciones,
   +5 policies, +5 tablas, +5 secuencias, CHECK de rol con `'Empleado'` e índice `empleados_usuario_id_key`.
   Diff de 117: +1 función (`erp_lector_negocio`) y el USING de 24 policies (mismo nombre, comando, roles y tipo).
   Diff de 118: +17 funciones, +2 policies, +2 tablas, +2 secuencias, +2 triggers. Diff de 119: cuerpo de 5 funciones
   (mismo ACL) + `erp_exigir_no_empleado` (sin EXECUTE para authenticated); policies y grants sin cambio (87 funciones
   ejecutables por authenticated antes y después). Estado de negocio idéntico en cada paso.
-- Huellas (md5 de `pg_get_functiondef`): `completar_venta_directa` (109) `5825f5e3072a1d5a98961752a5eb5cc6` ·
+- Huellas tras 120 (md5; idénticas a la base local que pasó el gate): `completar_venta_directa` `63eaffba02340da67a660429bac1470e` ·
+  `erp_actor` `27277fcf645f05134275473c7892b769` · `fin_actor_permitido` `87a92520544d6b06fca4aa95bbecd7db` · `fin_orden_operable`
+  `ad5b88daba4e7ea6cbff1837c2c7f729` · `guardar_usuario` `2b32868497e95e5deaf91af26619ec97` · `confirmar_cambio_password`
+  `e7e488614bbc10b476caccc996b2d539` · `fijar_password_temporal` `a0d2b7c951921efd6caa45d958bb0c6e` · `erp_roles_activos`
+  `53c2999e3a7e19c781999d73ea052c68` · `erp_tiene_rol` `b65845d7ca3adf2607a19e766ed85a8c` · `erp_es_dueno` `6c45d12f133889e03d9d51321135fab2`.
+- Huellas anteriores (md5 de `pg_get_functiondef`): `completar_venta_directa` (109, sustituida por 120) `5825f5e3072a1d5a98961752a5eb5cc6` ·
   `ordenes_guard_entrega_directa` (110) `9eac14f606d8c0f0fb4a8851cc32b640` ·
   `reservar_operacion_cfdi` `da2ef2b708a3d459b1fb462092b3225f` · `reservar_complemento_cfdi` (113)
   `5849cb2725be1b15ac69b747574029d4` · `finalizar_operacion_cfdi` (113) `c59548b8c3e2b98e51795dd46c5a6729` ·
@@ -57,7 +74,7 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 - `idx_pagos_ref` (114): `CREATE UNIQUE INDEX idx_pagos_ref ON public.pagos USING btree (referencia)
   WHERE (referencia <> ''::text)` — LIVE; 0 referencias no vacías repetidas al activar.
 - Webhooks del link desplegados (digest Netlify): stripe `d50a7b654379` · mercadopago `c6ae953b0992`.
-- Centinelas: `error_log` max id 192 · auditoría max id 724 · OV-0086 md5
+- Centinelas (2026-10-09, tras 121): `error_log` max id 253 · auditoría max id 762 · `bitacora_cambios` 0 filas. Anteriores: `error_log` max id 192 · auditoría max id 724 · OV-0086 md5
   `c253d4337b2db7c286c08605f94cc8b9` · anon sin acceso a tablas ni funciones · EMP-5 99,000 @ 1 ·
   EMP-25 9,800 @ 2. Se revisan con `supabase/tests/prod/conteos.sql`.
 
@@ -84,6 +101,9 @@ diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUD
 | WF-0.1 aislamiento de lectura del Empleado (117) + PD-02 calendario operativo (118) | 089c521 | MIGRATIONS APPLIED ONCE (117 → 118 → Netlify) + DEPLOYED / TECHNICALLY VERIFIED |
 | WF-0.2 cierre de la superficie de API del Empleado (119) | 17c6b05 | MIGRATION APPLIED ONCE (sin cambio de frontend) / TECHNICALLY VERIFIED |
 | UI mobile-first: sin banner global de modo prueba (aviso solo en Facturación), cabecera con una campana "Avisos", "Mi espacio" en el menú, menú móvil oscuro con íconos, bienvenida por rol, emojis → SVG, Chofer sin encimados; corrige ciclo infinito de entregas en ChoferView | f7d5e66 | DEPLOYED / TECHNICALLY VERIFIED (solo UI; revisada con capturas WebKit iPhone 14 de los 7 roles con datos de ejemplo); QA del dueño en su iPhone PENDIENTE |
+
+| UI: sistema de diseño 2026 · bloque A (detalle de venta, avisos, ventas que esperan ruta, título único) · bloque B (guías) · favicon | 3aab478 · 7d36760 · bb0d15d · feb3721 | DEPLOYED (solo UI); QA del dueño en su iPhone PENDIENTE |
+| GER-1 Dueño, accesos por persona, contraseña temporal, usuarios por contrato y bitácora (120 + 121) | afad162 | MIGRATIONS APPLIED ONCE (120 → Dueño → Netlify → 121) + DEPLOYED / TECHNICALLY VERIFIED; usuarios del equipo PENDIENTES del dueño |
 
 **Clasificación final (2026-10-07):** **WF-0 = CLOSED PROD** · **PD-01 = CLOSED PROD / CONFIGURATION PENDING** (solo
 centro de trabajo real, geocerca, turnos reales y vínculos empleado ↔ usuario) · **PD-02 = CLOSED PROD / OWNER DATA
@@ -190,6 +210,29 @@ F-05 rastreo de ruta.
 Estados previos (sin cambio): DIRECT-SALE P0 contenido (109 + D1 + 110); INVOICING LIFECYCLE BYPASS
 contenido (OL-03A y 112); OL-03B, B3.6 y OL-04 DEPLOYED / TECHNICALLY VERIFIED. Reestructura de
 contexto: Fase 2 PENDING y sin autorizar.
+
+## Dueño, accesos y usuarios (GER-1, mig 120/121) — 2026-10-09
+**DEPLOYED / TECHNICALLY VERIFIED — ALTA DEL EQUIPO PENDIENTE DEL DUEÑO.** Detalle y decisiones cerradas: `docs/sistema/plataforma.md`.
+- **Auditoría GER-0 (solo lectura):** Admin cambiaba cualquier usuario por REST (rol y estatus), creaba y pagaba cuentas por pagar,
+  cambiaba salarios y precios, y nada de eso dejaba rastro del servidor. Diseño aceptado por el dueño: 4 capas (imposible para Admin ·
+  rastro inmutable · aprobación previa solo en salidas de dinero y faltantes grandes · revisión posterior).
+- **Activo:** Dueño = Admin + `es_dueno` (Santiago Mier, id 45, marcado por el dueño con SQL); accesos adicionales por persona (Ventas /
+  Almacén Bolsas) que solo asigna el Dueño; contraseña temporal con cambio obligatorio (sin autoridad en el servidor hasta cambiarla);
+  "Mi cuenta" para todos los roles; usuarios solo por `guardar_usuario` / `admin-create-user` / `admin-reset-password` (sin DML REST);
+  `bitacora_cambios` (escrituras REST directas en 14 tablas, antes/después, solo la lee el Dueño); Panel del dueño.
+- **Pendiente del dueño (datos, no software):** crear en Panel del dueño → Usuarios y accesos: Jessica Muñoz Gurrola (Admin),
+  Daniela Guadalupe Candia González (Admin) y María de Jesús Ibarra Fernández (Almacén Bolsas + acceso Ventas); correos
+  `nombre.apellido.rol@cubopolar.com`, contraseña temporal elegida por el dueño. Las tres existen como empleadas sin usuario.
+- **No incluido (PROPOSED, sin autorizar):** GER-2 aprobaciones del Dueño con umbrales (pago a proveedor > $5,000, devolución en efectivo,
+  cancelar venta cobrada / anular CxC, nómina por periodo, ajuste de inventario a la baja > 50 bolsas, diferencia de caja > $200, precio
+  público y precio especial > 10 % abajo); GER-3 cerrar el REST de cuentas por pagar, precios, salarios y asientos manuales.
+- **Residuales aceptables:** la temporal inicial es conocida (ventana hasta el primer ingreso); el acceso adicional de Ventas no factura;
+  el Chofer no muestra accesos adicionales; `service_role` / SQL de confianza tienen la autoridad del Dueño.
+- **Observación (sin tocar):** el usuario de Producción que estaba activo el 2026-10-09 temprano ya no lo está (activos: Admin 1, Chofer 1;
+  6 usuarios en total, antes 7). No es efecto de GER-1 (estado de negocio idéntico antes y después de 120 y 121).
+- Evidencia: runner local RESULTADO OK (paridad pre-120, H1 reproducido, 120 y 121 ×2, suites `120_ger1_dueno_accesos_test.sql` (59) y
+  `121_ger1_contencion_usuarios_test.sql` (7), 41 suites anteriores tras cada una, C120a/b, ensayo OP-03); `src/__tests__/ger1DuenoAccesos.test.jsx`.
+- Reversión: encabezados de 120 y 121 (121 primero: recrear `admin_all` y sus grants; después Netlify a `feb3721`; 120 al final).
 
 ## Go-live (puesta en operación) — 2026-10-06
 Go-Live Readiness (auditoría de solo lectura): **CONDITIONAL GO** · 3 GL-BLOCKERS · 16 tareas
