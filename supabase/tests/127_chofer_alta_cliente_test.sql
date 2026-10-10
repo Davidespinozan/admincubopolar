@@ -53,7 +53,7 @@ SELECT t127_assert((SELECT p.prosecdef AND array_to_string(p.proconfig, ';') = '
 
 \echo '── 127: alta por el Chofer'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t127_auth(1);
-INSERT INTO t127_ids VALUES ('a', crear_cliente_chofer('{"nombre":" Cliente T127 ","rfc":"ttt127010101ab1","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"fact@t127.mx","contacto":"Ana"}')::text);
+INSERT INTO t127_ids VALUES ('a', crear_cliente_chofer('{"nombre":" Cliente T127 ","rfc":"ttt127010ab1","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"fact@t127.mx","contacto":"Ana"}')::text);
 COMMIT;
 SELECT t127_assert((t127_j('a') ->> 'existente') = 'false' AND (t127_j('a') ->> 'rfc') = 'TTT127010AB1' AND (t127_j('a') ->> 'nombre') = 'Cliente T127',
   '127-02a el Chofer registra el cliente (nombre sin espacios, RFC en mayúsculas)');
