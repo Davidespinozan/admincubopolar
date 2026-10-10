@@ -1,4 +1,5 @@
 import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, FormInput, FormBtn, useConfirm, s, fmtDate, fmtMoney, useDebounce, useToast, reporteVentas, extraerTelefono, PAGE_SIZE, Paginator, normalizeStr } from './viewsCommon';
+import DatosTransferencia from '../ui/DatosTransferencia';
 import NuevaVentaModal from '../NuevaVentaModal';
 import EditarVentaModal from '../EditarVentaModal';
 import DevolucionModal from '../DevolucionModal';
@@ -455,7 +456,8 @@ export function OrdenesView({ data, actions, user }) {
             ))}
           </div>
           {pagoForm.metodo==="Transferencia SPEI" && (
-            <div className="mb-4">
+            <div className="mb-4 space-y-2">
+              <DatosTransferencia config={data.configEmpresa} total={pagoModal?.total} folio={s(pagoModal?.folio)} />
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Referencia SPEI</label>
               <input value={pagoForm.referencia} onChange={e=>setPagoForm(f=>({...f,referencia:e.target.value}))}
                 className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Últimos 6 dígitos"/>

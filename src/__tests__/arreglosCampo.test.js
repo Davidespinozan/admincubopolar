@@ -121,3 +121,63 @@ describe('Firma de carga y mapa de Rutas', () => {
     expect(src('../components/ui/MapaRuta.jsx')).toMatch(/relative isolate z-0/);
   });
 });
+
+// ── CLABE para transferencias (mig 132) y foto de evidencia con cámara o galería ──
+import { validarClabe, formatoClabe, datosBancarios, mensajeTransferencia, buildDatosBancarios } from '../data/ticketLogic';
+
+describe('Datos bancarios para transferencias', () => {
+  const CLABE = '002010077777777771';   // CLABE de ejemplo con dígito verificador correcto
+  it('valida los 18 números y el dígito verificador', () => {
+    expect(validarClabe(CLABE)).toBe(true);
+    expect(validarClabe('002 010 07777777777 1')).toBe(true);
+    expect(validarClabe('002010077777777772')).toBe(false);
+    expect(validarClabe('12345')).toBe(false);
+    expect(formatoClabe(CLABE)).toBe('002 010 07777777777 1');
+  });
+
+  it('el mensaje al cliente trae beneficiario, banco, CLABE, importe y concepto; sin CLABE no hay mensaje', () => {
+    const cfg = { razonSocial: 'Cubo Polar SA de CV', banco: 'Banamex', clabe: CLABE, beneficiario: '', cuentaBancaria: '' };
+    expect(mensajeTransferencia(cfg, { total: 1240.5, folio: 'OV-0101' })).toBe(
+      'Datos para tu transferencia:\nBeneficiario: Cubo Polar SA de CV\nBanco: Banamex\nCLABE: 002010077777777771\nImporte: $1,240.50\nConcepto: OV-0101\nAl terminar, envíanos por aquí tu comprobante. Gracias.');
+    expect(mensajeTransferencia({ banco: 'Banamex' }, { total: 10 })).toBeNull();
+    expect(datosBancarios(null)).toMatchObject({ completos: false, clabe: '' });
+    expect(datosBancarios({ clabe: CLABE, cuenta_bancaria: '123' })).toMatchObject({ completos: true, cuenta: '123' });
+  });
+
+  it('Ajustes: con algún dato la CLABE es obligatoria y válida; todo vacío borra', () => {
+    expect(buildDatosBancarios({ banco: ' Banamex ', clabe: '002 010 07777777777 1', beneficiario: '', cuentaBancaria: '' }).datos)
+      .toEqual({ banco: 'Banamex', clabe: CLABE, beneficiario: null, cuentaBancaria: null });
+    expect(buildDatosBancarios({ banco: 'Banamex', clabe: '123' }).error).toMatch(/18 números/);
+    expect(buildDatosBancarios({ banco: 'Banamex', clabe: '002010077777777772' }).error).toMatch(/no es válida/);
+    expect(buildDatosBancarios({ clabe: CLABE }).error).toMatch(/banco/);
+    expect(buildDatosBancarios({}).datos).toEqual({ banco: null, clabe: null, beneficiario: null, cuentaBancaria: null });
+  });
+
+  it('solo el Dueño cambia la cuenta: lo exige el servidor y la pantalla lo respeta', () => {
+    const sql = src('../../supabase/132_datos_bancarios.sql');
+    expect(sql).toMatch(/b4_escritura_api\(\) AND NOT erp_es_dueno\(\)/);
+    expect(sql).toMatch(/CHECK \(clabe IS NULL OR clabe ~ '\^\[0-9\]\{18\}\$'\)/);
+    const v = src('../components/views/ConfiguracionView.jsx');
+    expect(v).toMatch(/\{esDueno \? \(/);
+    expect(v).toMatch(/actions\.updateConfigEmpresa\?\.\(built\.datos\)/);
+  });
+
+  it('se ofrecen donde se cobra por transferencia: Chofer, Ventas y Admin', () => {
+    for (const f of ['../components/ChoferView.jsx', '../components/VentasStandaloneView.jsx', '../components/views/OrdenesView.jsx']) {
+      expect(src(f)).toMatch(/<DatosTransferencia config=\{data\.configEmpresa\}/);
+    }
+  });
+});
+
+describe('Foto de evidencia: cámara o galería', () => {
+  it('un solo control con las dos opciones, usado en todas las evidencias', () => {
+    const c = src('../components/ui/CapturaFoto.jsx');
+    expect(c).toMatch(/Abrir cámara/);
+    expect(c).toMatch(/Elegir foto/);
+    expect((c.match(/<input type="file"/g) || []).length).toBe(2);
+    expect((c.match(/capture="environment"/g) || []).length).toBe(1);
+    expect((src('../components/ChoferView.jsx').match(/<CapturaFoto /g) || []).length).toBe(3);
+    expect((src('../components/ProduccionStandaloneView.jsx').match(/<CapturaFoto /g) || []).length).toBe(2);
+    for (const f of ['../components/ChoferView.jsx', '../components/ProduccionStandaloneView.jsx']) expect(src(f)).not.toMatch(/type="file"/);
+  });
+});

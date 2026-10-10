@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import CapturaFoto from './ui/CapturaFoto';
 import { diaNegocio } from '../utils/fechas';
 import { resolverOperacion, claveProduccion } from '../data/produccionAtomicaLogic';
 import { MAQUINAS_PRODUCCION, SALIDAS_BARRA, DESTINOS_MITAD, seProduceSinEmpaque, skusProducibles, esPreparacion, esFilaDerivada, barrasUsadasFila, textoFilaDerivada, vistaPreviaPreparacion, vistaPreviaDesglose, clavePreparacion, claveDesglose } from '../data/preparacionBarraLogic';
@@ -1085,10 +1086,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
                     <button type="button" onClick={clearFotoMermaProd} className="mt-1 text-xs text-slate-400">Tomar otra</button>
                   </div>
                 ) : (
-                  <label className="flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-field border-2 border-dashed border-slate-300 py-4 text-[13px] font-semibold text-slate-500">
-                    <Icons.Camera /> Tomar foto de evidencia
-                    <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePickFile(clearFotoMermaProd, setFotoMermaProdFile, setFotoMermaProdPreview)} />
-                  </label>
+                  <CapturaFoto etiqueta="Foto de evidencia" onChange={handleImagePickFile(clearFotoMermaProd, setFotoMermaProdFile, setFotoMermaProdPreview)} />
                 )}
               </div>
             </Card>
@@ -1227,10 +1225,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
             {fotoMermaPreview ? (
               <div><img src={fotoMermaPreview} alt="Evidencia" className="h-32 w-full rounded-field border border-emerald-300 object-cover" /><button type="button" onClick={clearFotoMerma} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
             ) : (
-              <label className="flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-field border-2 border-dashed border-slate-300 py-4 text-[13px] font-semibold text-slate-500">
-                <Icons.Camera /> Tomar foto de evidencia
-                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePickFile(clearFotoMerma, setFotoMermaFile, setFotoMermaPreview)} />
-              </label>
+              <CapturaFoto etiqueta="Foto de evidencia" onChange={handleImagePickFile(clearFotoMerma, setFotoMermaFile, setFotoMermaPreview)} />
             )}
           </div>
         </div>

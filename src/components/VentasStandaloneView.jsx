@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import DatosTransferencia from './ui/DatosTransferencia';
 import { diaNegocio } from '../utils/fechas';
 import { s, fmtMoney, fmtDate, extraerTelefono } from '../utils/safe';
 import { resumenPendientes, resumenVentasHoy, resumenHistorial, textoDesglose } from '../data/ventasResumenLogic';
@@ -337,7 +338,8 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
             ))}
           </div>
           {pagoForm.metodo === "Transferencia SPEI" && (
-            <div className="mb-4">
+            <div className="mb-4 space-y-2">
+              <DatosTransferencia config={data.configEmpresa} total={pagoModal?.total} folio={s(pagoModal?.folio)} />
               <FormInput label="Referencia" value={pagoForm.referencia} onChange={e => setPagoForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Últimos 6 dígitos" />
             </div>
           )}

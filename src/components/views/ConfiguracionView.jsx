@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useState, FormInput, FormSelect, FormBtn, s, useToast } from './viewsCommon';
 import { validarRFC } from '../../utils/safe';
 import { REGIMENES_OPTIONS } from '../../data/sat/regimenesFiscales';
+import { buildDatosBancarios, datosBancarios, formatoClabe } from '../../data/ticketLogic';
 
 export function ConfiguracionView({ data, actions, user }) {
   const toast = useToast();
@@ -33,6 +34,30 @@ export function ConfiguracionView({ data, actions, user }) {
       logoUrl: s(cfg.logoUrl),
     });
   }, [data?.configEmpresa]);
+
+  // ── Datos bancarios para transferencias (mig 132): solo los cambia el Dueño ──
+  const esDueno = Boolean(user?.esDueno ?? user?.es_dueno);
+  const [bancoForm, setBancoForm] = useState({ banco: '', clabe: '', beneficiario: '', cuentaBancaria: '' });
+  const [bancoSaving, setBancoSaving] = useState(false);
+  const [bancoError, setBancoError] = useState('');
+  useEffect(() => {
+    const cfg = data?.configEmpresa;
+    if (!cfg) return;
+    setBancoForm({ banco: s(cfg.banco), clabe: s(cfg.clabe), beneficiario: s(cfg.beneficiario), cuentaBancaria: s(cfg.cuentaBancaria) });
+  }, [data?.configEmpresa]);
+  const guardarBanco = async () => {
+    if (bancoSaving) return;
+    const built = buildDatosBancarios(bancoForm);
+    if (built.error) { setBancoError(built.error); return; }
+    setBancoError('');
+    setBancoSaving(true);
+    try {
+      const r = await actions.updateConfigEmpresa?.(built.datos);
+      if (r?.error) { setBancoError(r.error); return; }
+      toast?.success('Datos bancarios guardados');
+    } finally { setBancoSaving(false); }
+  };
+  const bancoActual = datosBancarios(data?.configEmpresa);
 
   const guardarEmpresa = async () => {
     if (empresaSaving) return;
@@ -87,6 +112,38 @@ export function ConfiguracionView({ data, actions, user }) {
         <div className="flex justify-end mt-4">
           <FormBtn primary onClick={guardarEmpresa} loading={empresaSaving}>Guardar datos de la empresa</FormBtn>
         </div>
+      </div>
+    )}
+
+    {/* ── Datos para transferencias ── */}
+    {isAdmin && (
+      <div className="bg-white border border-slate-100 rounded-2xl p-5" data-testid="datos-bancarios">
+        <div className="mb-4">
+          <h2 className="text-lg font-bold text-slate-800">Datos para transferencias</h2>
+          <p className="text-xs text-slate-400">El vendedor y el chofer se los mandan al cliente por WhatsApp para que pague y regrese su comprobante. Solo el dueño puede cambiarlos.</p>
+        </div>
+        {esDueno ? (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FormInput label="Banco" value={bancoForm.banco} maxLength={60} onChange={e => setBancoForm(f => ({ ...f, banco: e.target.value }))} placeholder="BBVA" />
+              <FormInput label="CLABE (18 números)" inputMode="numeric" value={bancoForm.clabe} maxLength={22} onChange={e => setBancoForm(f => ({ ...f, clabe: e.target.value.replace(/[^0-9 ]/g, '') }))} placeholder="012180012345678901" />
+              <FormInput label="Beneficiario" value={bancoForm.beneficiario} maxLength={120} onChange={e => setBancoForm(f => ({ ...f, beneficiario: e.target.value }))} placeholder="Como aparece en la cuenta" hint="Vacío = se usa la razón social." />
+              <FormInput label="Número de cuenta (opcional)" inputMode="numeric" value={bancoForm.cuentaBancaria} maxLength={30} onChange={e => setBancoForm(f => ({ ...f, cuentaBancaria: e.target.value.replace(/\D/g, '') }))} />
+            </div>
+            {bancoError && <p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">{bancoError}</p>}
+            <div className="flex justify-end mt-4">
+              <FormBtn primary onClick={guardarBanco} loading={bancoSaving}>Guardar datos bancarios</FormBtn>
+            </div>
+          </>
+        ) : bancoActual.completos ? (
+          <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+            <div><dt className="text-xs text-slate-400">Banco</dt><dd className="font-semibold text-slate-800">{bancoActual.banco || '—'}</dd></div>
+            <div><dt className="text-xs text-slate-400">CLABE</dt><dd className="font-mono font-semibold text-slate-800">{formatoClabe(bancoActual.clabe)}</dd></div>
+            <div><dt className="text-xs text-slate-400">Beneficiario</dt><dd className="font-semibold text-slate-800">{bancoActual.beneficiario || '—'}</dd></div>
+          </dl>
+        ) : (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">Todavía no hay datos bancarios. Pídele al dueño que los capture aquí.</p>
+        )}
       </div>
     )}
 

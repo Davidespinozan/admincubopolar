@@ -126,7 +126,7 @@ describe('A4: Producción — presentación nueva, negocio idéntico', () => {
     expect(v).toMatch(/\{ k: "producir"[^}]*\}, \{ k: "cuartos"[^}]*\}, \{ k: "mermas"[^}]*\}, \{ k: "preparar"[^}]*\}/);
     expect(v).toMatch(/onClose=\{cerrarProd\}/);
     expect(v).toMatch(/const cerrarProd = \(\) => \{ setModal\(false\); clearFotoMermaProd\(\); \};/);
-    expect((v.match(/capture="environment"/g) || []).length).toBe(2);
+    expect((v.match(/<CapturaFoto /g) || []).length).toBe(2);   // cámara o galería (control compartido)
   });
 });
 
@@ -147,7 +147,7 @@ describe('A5: Chofer — modo enfoque con la identidad del producto; flujo, offl
     expect(v).toMatch(/encolarOffline\(TIPOS_MUTACION\.ENTREGA, \{\s*ordenId: entregaModal\.id,\s*metodoPago: cobroMetodo,\s*folioNota: folioNota \|\| null,\s*\}\)/);
     expect(v).toMatch(/supabase\.from\('chofer_ubicaciones'\)\.insert\(\{\s*ruta_id: miRutaActiva\.id,\s*chofer_id: user\.id,/);
     expect(v).toMatch(/const interval = setInterval\(enviarUbicacion, 30000\);/);
-    expect((v.match(/capture="environment"/g) || []).length).toBe(3);
+    expect((v.match(/<CapturaFoto /g) || []).length).toBe(3);   // cámara o galería (control compartido)
     expect(v).toMatch(/const validErr = validarCobroTransferencia\(\{ metodoPago: cobroMetodo, fotoTransf \}\);/);
     expect(v).toMatch(/const firmaBase64 = canvas\.toDataURL\('image\/png'\);/);
     expect(v).toMatch(/el\.getContext\('2d'\)\.scale\(2, 2\);/);

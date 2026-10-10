@@ -3776,6 +3776,11 @@ export function useSupaStore(userId, userName, userRol) {
           if (payload.correo           !== undefined) update.correo            = payload.correo || null;
           if (payload.regimenFiscal    !== undefined) update.regimen_fiscal    = payload.regimenFiscal || null;
           if (payload.logoUrl          !== undefined) update.logo_url          = payload.logoUrl || null;
+          // Mig 132: datos bancarios para transferencias. Solo los cambia el Dueño (el servidor lo exige).
+          if (payload.banco            !== undefined) update.banco             = payload.banco || null;
+          if (payload.clabe            !== undefined) update.clabe             = payload.clabe || null;
+          if (payload.beneficiario     !== undefined) update.beneficiario      = payload.beneficiario || null;
+          if (payload.cuentaBancaria   !== undefined) update.cuenta_bancaria   = payload.cuentaBancaria || null;
           if (Object.keys(update).length === 0) return { error: 'Nada que actualizar' };
           if (update.razon_social !== undefined && !update.razon_social) {
             return { error: 'Razón social requerida' };
@@ -3790,10 +3795,12 @@ export function useSupaStore(userId, userName, userRol) {
             .update(update)
             .eq('id', 1);
           if (error) {
-            t()?.error('Error al actualizar configuración de empresa');
-            return { error: error.message || 'Error al actualizar configuración de empresa' };
+            const msg = /Solo el dueño/i.test(error.message || '') ? 'Solo el dueño puede cambiar los datos bancarios'
+              : 'Error al actualizar configuración de empresa';
+            t()?.error(msg);
+            return { error: msg };
           }
-          await log('Editar', 'Configuración Empresa', `Razon social: ${update.razon_social || '(sin cambio)'}`);
+          await log('Editar', 'Configuración Empresa', update.clabe !== undefined ? 'Datos bancarios para transferencias' : `Razon social: ${update.razon_social || '(sin cambio)'}`);
           rf();
           return undefined;
         } catch (e) {

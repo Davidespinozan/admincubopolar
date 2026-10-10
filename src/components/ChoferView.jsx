@@ -1,4 +1,6 @@
 import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
+import DatosTransferencia from './ui/DatosTransferencia';
+import CapturaFoto from './ui/CapturaFoto';
 import { diaNegocio } from '../utils/fechas';
 import { s, n, fmtMoney, fmtDate, extraerTelefono } from '../utils/safe';
 import { resolverEntrega, etiquetaClienteSucursal } from '../data/sucursalLogic';
@@ -33,7 +35,6 @@ const MERMA_CAUSAS = ["Bolsa rota", "Hielo derretido", "Daño transporte", "Rech
 const CHOFER_SHELL = "min-h-dvh w-full text-slate-900";
 const CONTENIDO = "mx-auto w-full max-w-[640px] px-4 pt-4 md:max-w-3xl lg:max-w-5xl";
 const LABEL = "mb-1.5 block text-sm font-medium text-slate-700";
-const FOTO_LABEL = "flex min-h-[56px] w-full cursor-pointer items-center justify-center gap-2 rounded-field border-2 border-dashed py-3 text-[13px] font-semibold";
 
 // Igualdad de la lista de entregas por los campos que vienen de la base
 // (orden, folio, total, método y piezas); las locales se comparan por identidad.
@@ -1363,14 +1364,12 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             {PAGOS.map(m => <ChoiceButton key={m} active={cobroMetodo===m} onClick={() => setCobroMetodo(m)}>{m}</ChoiceButton>)}
           </div>
           {cobroMetodo==="Transferencia" && <div className="mb-4 space-y-2">
+            <DatosTransferencia config={data.configEmpresa} total={entregaModal.totalCalc} folio={s(entregaModal.folio)} telefono={extraerTelefono(entregaModal.contacto)} />
             <FormInput label="Referencia" value={cobroRef} onChange={e=>setCobroRef(e.target.value)} placeholder="Referencia (últimos 6 dígitos)" />
             {fotoTransf ? (
               <div><img src={fotoTransf} alt="Comprobante" className="h-32 w-full rounded-field border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoTransf(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
             ) : (
-              <label className={`${FOTO_LABEL} border-red-300 bg-red-50/50 text-red-600`}>
-                <Icons.Camera /> Foto del comprobante (obligatoria)
-                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePick(setFotoTransf)} />
-              </label>
+              <CapturaFoto etiqueta="Foto del comprobante (obligatoria)" obligatoria onChange={handleImagePick(setFotoTransf)} />
             )}
           </div>}
           {cobroMetodo==="QR / Link de pago" && !checkoutUrl && (
@@ -1402,10 +1401,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             {fotoEntrega ? (
               <div><img src={fotoEntrega} alt="Evidencia" className="h-32 w-full rounded-field border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoEntrega(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
             ) : (
-              <label className={`${FOTO_LABEL} border-slate-300 text-slate-500`}>
-                <Icons.Camera /> Foto de nota o entrega
-                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePick(setFotoEntrega)} />
-              </label>
+              <CapturaFoto etiqueta="Foto de nota o entrega" onChange={handleImagePick(setFotoEntrega)} />
             )}
           </div>
         </>)}
@@ -1582,10 +1578,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           {fotoMerma ? (
             <div className="mb-3"><img src={fotoMerma} alt="Evidencia" className="h-32 w-full rounded-field border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoMerma(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
           ) : (
-            <label className={`${FOTO_LABEL} border-slate-300 text-slate-500`}>
-              <Icons.Camera /> Tomar foto de evidencia
-              <input type="file" accept="image/*" capture="environment" className="hidden" onChange={handleImagePick(setFotoMerma)} />
-            </label>
+            <CapturaFoto etiqueta="Foto de evidencia" onChange={handleImagePick(setFotoMerma)} />
           )}
         </div>
       </Modal>
