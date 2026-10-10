@@ -903,7 +903,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               guardandoProd ||
               !form.sku ||
               !form.cantidad || n(form.cantidad) <= 0 ||
-              !bolsaSku ||
+              (!bolsaSku && !seProduceSinEmpaque(form.sku)) ||
               n(form.cantidad) > stockBolsa ||
               (form.conMerma && (
                 !form.mermaCantidad || n(form.mermaCantidad) <= 0 ||
