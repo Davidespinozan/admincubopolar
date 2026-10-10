@@ -107,9 +107,10 @@ ROLLBACK;
 \echo '── 127: el Chofer sigue sin escritura REST en clientes'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t127_auth(1);
 SELECT t127_err($q$INSERT INTO clientes (nombre, rfc) VALUES ('REST T127', 'TTT127010AB5')$q$, '127-06a INSERT directo del Chofer rechazado', '42501|P0001');
-SELECT t127_err($q$UPDATE clientes SET nombre = 'Cambiado T127' WHERE rfc = 'TTT127010AB1'$q$, '127-06b UPDATE directo del Chofer no cambia nada', '42501|P0001');
+-- 127-06b: el UPDATE directo del Chofer no da error (RLS lo deja en 0 filas); 127-06c comprueba que nada cambió.
+UPDATE clientes SET nombre = 'Cambiado T127' WHERE rfc = 'TTT127010AB1';
 ROLLBACK;
-SELECT t127_assert((SELECT nombre = 'Cliente T127' FROM clientes WHERE rfc = 'TTT127010AB1'), '127-06c el cliente conserva su nombre');
+SELECT t127_assert((SELECT nombre = 'Cliente T127' FROM clientes WHERE rfc = 'TTT127010AB1'), '127-06b/c el UPDATE directo del Chofer no cambió nada: el cliente conserva su nombre');
 
 BEGIN; SELECT t127_limpiar(); COMMIT;
 DROP TABLE t127_ids;
