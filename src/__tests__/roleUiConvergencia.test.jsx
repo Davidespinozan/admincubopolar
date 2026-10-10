@@ -137,7 +137,7 @@ describe('A5: Chofer — modo enfoque con la identidad del producto; flujo, offl
     for (const st of ['"cargar"', '"esperando-firma"', '"cargada"', '"ruta"', '"cierre"']) expect(v).toMatch(new RegExp(`if \\(step === ${st}\\)`));
     expect((v.match(/data-testid="chofer-shell"/g) || []).length).toBe(5);
     expect((v.match(/<RoleHeader /g) || []).length).toBe(5);
-    expect((v.match(/<Modal open=/g) || []).length).toBe(6);
+    expect((v.match(/<Modal open=/g) || []).length).toBe(8);   // + mapa de la parada y ticket de la entrega
     expect(v).not.toMatch(/bg-\[#07131a\]|rounded-t-\[30px\]|fixed inset-0|setToast|useBodyScrollLock|function Toast/);
     expect(v).toMatch(/fixed bottom-0 left-1\/2 z-40/);   // barra de acciones fija en ruta
     expect(v).toMatch(/<BannerColaOffline online=\{online\} cola=\{colaOffline\} sincronizando=\{sincronizando\} onSincronizar=\{sincronizarCola\} \/>/);

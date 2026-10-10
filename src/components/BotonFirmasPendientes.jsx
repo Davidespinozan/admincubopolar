@@ -1,5 +1,6 @@
 import { Icons } from './ui/Icons';
 import { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { s, n } from '../utils/safe';
 import { resolverOperacion, claveCarga } from '../data/stockContratosLogic';
 import { useToast } from './views/viewsCommon';
@@ -313,10 +314,13 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
         </div>
       )}
 
-      {/* Modal de firma */}
-      {rutaSeleccionada && (
-        <div className="fixed inset-0 z-[95] flex items-end justify-center bg-ink/40 animate-fadeIn md:items-center md:p-5" onClick={() => !firmando && setRutaSeleccionada(null)}>
-          <div className="w-full max-w-md rounded-t-panel bg-white p-5 shadow-sheet animate-sheet-in md:rounded-panel md:shadow-pop" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 20px)" }} onClick={e => e.stopPropagation()}>
+      {/* Modal de firma. Va en un portal a <body>: este botón vive dentro de la
+          cabecera (sticky, con su propio apilado) y ahí la barra inferior del
+          celular tapaba los botones de la hoja. Con alto máximo y scroll propio,
+          Confirmar siempre queda a la vista. */}
+      {rutaSeleccionada && createPortal(
+        <div className="fixed inset-0 z-[95] flex items-end justify-center bg-ink/40 animate-fadeIn md:items-center md:p-5" data-testid="hoja-firma-carga" onClick={() => !firmando && setRutaSeleccionada(null)}>
+          <div className="max-h-[94dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-panel bg-white p-5 shadow-sheet animate-sheet-in md:rounded-panel md:shadow-pop" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 20px)" }} onClick={e => e.stopPropagation()}>
             <p className="erp-kicker text-slate-500">Firma de Producción</p>
             <h3 className="font-display mb-1 text-[17px] font-bold text-ink">{s(rutaSeleccionada.folio)}</h3>
             <p className="mb-3 text-[13px] text-slate-500">
@@ -324,7 +328,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
             </p>
 
             {/* Resumen de carga */}
-            <div className="mb-3 max-h-40 overflow-y-auto rounded-field bg-slate-50 p-3 sm:max-h-32">
+            <div className="mb-3 max-h-28 overflow-y-auto rounded-field bg-slate-50 p-3">
               <p className="erp-kicker mb-2 text-slate-500">Carga reportada</p>
               {(() => {
                 const cargaReal = (rutaSeleccionada.carga_real && typeof rutaSeleccionada.carga_real === 'object') ? rutaSeleccionada.carga_real : {};
@@ -346,7 +350,9 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
             <p className="mb-2 text-[13px] font-medium text-slate-700">Dibuja tu firma</p>
             <canvas
               ref={el => {
-                if (el && !ctxRef.current) {
+                // Un lienzo NUEVO (al reabrir la hoja) se prepara otra vez: antes se seguía
+                // dibujando en el anterior, ya fuera de pantalla.
+                if (el && canvasRef.current !== el) {
                   canvasRef.current = el;
                   el.width = el.offsetWidth * 2;
                   el.height = el.offsetHeight * 2;
@@ -360,7 +366,7 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
                   ctxRef.current = ctx;
                 }
               }}
-              className="h-48 w-full touch-none rounded-card border-2 border-slate-300 bg-white sm:h-40"
+              className="h-40 w-full touch-none rounded-card border-2 border-slate-300 bg-white"
               onMouseDown={e => {
                 const rect = e.currentTarget.getBoundingClientRect();
                 ctxRef.current.beginPath();
@@ -408,7 +414,8 @@ export default function BotonFirmasPendientes({ user, data, actions, mostrarBann
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

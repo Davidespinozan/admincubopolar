@@ -568,8 +568,8 @@ export function RutasView({ data, actions }) {
   const ordenGrupos = ['En progreso', 'Programada', 'Completada', 'Cerrada'];
 
   const exportBtns = <>
-    <button onClick={() => reporteRutas(data.rutas, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
-    <button onClick={() => reporteRutas(data.rutas, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
+    <button onClick={() => reporteRutas(data.rutas, 'excel', data.ordenes)} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
+    <button onClick={() => reporteRutas(data.rutas, 'pdf', data.ordenes)} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
   </>;
 
   return (<div>
@@ -584,9 +584,9 @@ export function RutasView({ data, actions }) {
     {ordenesSinRuta.length > 0 && (
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 flex items-center justify-between">
         <p className="text-xs text-amber-700 font-semibold">{ordenesSinRuta.length} órdenes sin asignar a ruta</p>
-        <button
+        <button type="button" data-testid="toggle-mapa-pedidos"
           onClick={() => setMapaVisible(v => !v)}
-          className="text-xs font-semibold text-amber-700 underline"
+          className="min-h-[44px] flex-shrink-0 rounded-field border border-amber-300 bg-white px-3 text-xs font-semibold text-amber-800"
         >
           {mapaVisible ? 'Ocultar mapa' : 'Ver mapa de pedidos'}
         </button>
@@ -612,6 +612,12 @@ export function RutasView({ data, actions }) {
         });
       return (
         <div className="mb-5">
+          {/* El mapa siempre trae su propio botón para cerrarlo (el aviso de arriba desaparece al asignar la última orden). */}
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-slate-700">Mapa de pedidos</p>
+            <button type="button" data-testid="ocultar-mapa-pedidos" onClick={() => setMapaVisible(false)}
+              className="min-h-[44px] rounded-field border border-line bg-white px-3 text-sm font-semibold text-slate-700">Ocultar mapa</button>
+          </div>
           <Suspense fallback={<div className="h-48 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-center text-sm text-slate-400">Cargando mapa…</div>}>
             <MapaPedidos ordenes={ordenesParaMapa} choferUbicaciones={(() => {
               const ubicaciones = data.choferUbicaciones || [];

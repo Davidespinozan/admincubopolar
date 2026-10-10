@@ -166,7 +166,7 @@ export default function MapaPedidos({ ordenes = [], choferUbicaciones = [] }) {
   }
 
   return (
-    <div className="relative rounded-2xl overflow-hidden border border-slate-200 shadow-sm" style={{ height: 360 }}>
+    <div className="relative isolate z-0 rounded-2xl overflow-hidden border border-slate-200 shadow-sm" style={{ height: 360 }}>
       <div ref={mapRef} style={{ height: '100%', width: '100%' }} />
 
       {loading && (

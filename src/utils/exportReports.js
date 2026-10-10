@@ -3,6 +3,7 @@
  * CuboPolar ERP
  */
 import * as XLSX from 'xlsx';
+import { resumenEconomicoRuta, ordenEntregada } from '../data/rutasLogic';
 import { diaNegocio } from './fechas';
 import { mermasActivas } from '../data/mermasLogic';
 import jsPDF from 'jspdf';
@@ -388,7 +389,7 @@ export function reporteClientes(clientes, formato = 'excel') {
 /**
  * Reporte de rutas del día
  */
-export function reporteRutas(rutas, formato = 'excel') {
+export function reporteRutas(rutas, formato = 'excel', ordenes = []) {
   const columns = [
     { key: 'fecha', header: 'Fecha' },
     { key: 'nombre', header: 'Ruta' },
@@ -405,8 +406,8 @@ export function reporteRutas(rutas, formato = 'excel') {
     chofer: r.choferNombre || r.chofer_nombre || '',
     vehiculo: r.vehiculo || '',
     estatus: r.estatus || '',
-    totalCobrado: typeof r.totalCobrado === 'number' ? r.totalCobrado : parseFloat(r.total_cobrado) || 0,
-    totalCredito: typeof r.totalCredito === 'number' ? r.totalCredito : parseFloat(r.total_credito) || 0,
+    totalCobrado: resumenEconomicoRuta(r, ordenes).cobrado,
+    totalCredito: resumenEconomicoRuta(r, ordenes).credito,
   }));
 
   if (formato === 'pdf') {
@@ -612,7 +613,7 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, us
   // Calcular vendido por SKU desde las órdenes entregadas
   const vendidoPorSku = {};
   for (const o of rutaOrdenes) {
-    if (s(o.estatus).toLowerCase() !== 'entregada') continue;
+    if (!ordenEntregada(o)) continue;
     if (Array.isArray(o.preciosSnapshot) && o.preciosSnapshot.length > 0) {
       for (const ln of o.preciosSnapshot) {
         const sku = s(ln.sku);
@@ -719,9 +720,10 @@ export function reporteRutaDiaria(ruta, ordenes, mermas, productos, clientes, us
   }
 
   // ── RESUMEN ECONÓMICO ──
-  const totalCobrado = n(ruta.total_cobrado || ruta.totalCobrado);
-  const totalCredito = n(ruta.total_credito || ruta.totalCredito);
-  const totalGeneral = totalCobrado + totalCredito;
+  const economico = resumenEconomicoRuta(ruta, ordenes);
+  const totalCobrado = economico.cobrado;
+  const totalCredito = economico.credito;
+  const totalGeneral = economico.total;
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);

@@ -55,7 +55,11 @@ export const createHandler = ({
   if (event.httpMethod === 'GET') {
     if (!secret) return html(501, paginaError('Notas no disponibles', 'Esta función no está configurada todavía.'));
     const params = event.queryStringParameters || {};
-    const ordenId = String(params.o || '').trim();
+    // El link público es /nota/:id?t=… (redirect 200 de netlify.toml). En ese
+    // rewrite la función recibe el ?t= original pero NO el ?o= del destino: el
+    // id se toma de la ruta (igual que billing-pay con /pagar/:id).
+    const dePath = /\/nota\/(\d+)/.exec(String(event.path || event.rawUrl || ''));
+    const ordenId = String(params.o || (dePath ? dePath[1] : '') || '').trim();
     const token = String(params.t || '').trim();
     if (!ordenId || !/^\d+$/.test(ordenId)) return html(400, paginaError('Link inválido', 'A este link le falta información.'));
     if (!verificarRecibo(ordenId, token, secret)) {

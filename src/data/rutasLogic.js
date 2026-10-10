@@ -126,6 +126,39 @@ export function calcTotalesCobro(cobros = []) {
   return { totalEfectivo, totalTransferencia, totalCredito, totalCobrado };
 }
 
+/** ¿La orden ya salió a la calle? (entregada o ya facturada). */
+export const ordenEntregada = (o) => ['entregada', 'facturada'].includes(String(o?.estatus ?? '').trim().toLowerCase());
+
+/**
+ * Resumen económico de una ruta, calculado de SUS órdenes entregadas (incluye
+ * la venta exprés, que al cierre ya es una orden de la ruta).
+ * `rutas.total_cobrado` / `total_credito` dejaron de escribirse con el cierre
+ * canónico (087): leerlas daba $0 aunque hubiera cobros. Solo se usan como
+ * respaldo de rutas antiguas sin órdenes cargadas.
+ * Crédito = método de pago o tipo de cobro "Crédito"; lo demás es cobrado.
+ * @returns {{ cobrado: number, credito: number, total: number, entregas: number, porMetodo: Object<string, number> }}
+ */
+export function resumenEconomicoRuta(ruta, ordenes = []) {
+  const propias = (ordenes || []).filter(o => ruta?.id != null && String(o.rutaId ?? o.ruta_id) === String(ruta.id) && ordenEntregada(o));
+  let cobrado = 0;
+  let credito = 0;
+  const porMetodo = {};
+  for (const o of propias) {
+    const monto = Number(o.total) || 0;
+    const metodo = String(o.metodoPago ?? o.metodo_pago ?? '').trim();
+    const esCredito = /cr[eé]dito/i.test(metodo) || /^cr[eé]dito$/i.test(String(o.tipoCobro ?? o.tipo_cobro ?? '').trim());
+    if (esCredito) credito = centavos(credito + monto);
+    else cobrado = centavos(cobrado + monto);
+    const clave = esCredito ? 'Crédito' : (metodo || 'Sin método');
+    porMetodo[clave] = centavos((porMetodo[clave] || 0) + monto);
+  }
+  if (propias.length === 0) {
+    cobrado = Number(ruta?.totalCobrado ?? ruta?.total_cobrado) || 0;
+    credito = Number(ruta?.totalCredito ?? ruta?.total_credito) || 0;
+  }
+  return { cobrado, credito, total: centavos(cobrado + credito), entregas: propias.length, porMetodo };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers para confirmarCargaRuta / firmarCarga / solicitarFirmaCarga
 //

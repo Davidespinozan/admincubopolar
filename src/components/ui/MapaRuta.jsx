@@ -229,7 +229,7 @@ export default function MapaRuta({ paradas = [], onEditarCliente }) {
   }, [paradas]);
 
   return (
-    <div className="relative rounded-[22px] overflow-hidden border border-slate-200/80 shadow-[0_12px_32px_rgba(8,20,27,0.12)]" style={{ height: 340 }}>
+    <div className="relative isolate z-0 rounded-[22px] overflow-hidden border border-slate-200/80 shadow-[0_12px_32px_rgba(8,20,27,0.12)]" style={{ height: 340 }}>
       <div ref={mapRef} style={{ height: '100%', width: '100%' }} />
 
       {/* Spinner mientras carga */}

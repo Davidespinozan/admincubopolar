@@ -6,10 +6,10 @@ import { validarVentaExpressFactura, validarClienteNuevoChofer } from '../data/v
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
-import { abrirNavegacion } from '../utils/navegacion';
 import { compressImage } from '../utils/compressImage';
 import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
 import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
+import { mensajeTicket, enlaceWhatsApp, urlMapaParada, urlNavegacionParada } from '../data/ticketLogic';
 import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas } from '../data/colaOfflineLogic';
 import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from '../data/stockContratosLogic';
 import { useColaOffline } from '../data/useColaOffline';
@@ -634,6 +634,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       folio: s(entregaModal.folio),
       folioNota: folioNota || null,
       cliente: entregaModal.clienteNombre,
+      contacto: entregaModal.contacto || null,
       items: entregaModal.items,
       total: entregaModal.totalCalc,
       pago: cobroMetodo,
@@ -669,38 +670,51 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       }
       setEntregas(prev => [...prev, entrega]);
       showToast("Entregado a " + entrega.cliente);
+      const contactoCliente = entregaModal.contacto;
       setEntregaModal(null);
       setFotoTransf(null);
+      // Al terminar: ticket listo para mandárselo al cliente.
+      abrirTicket(entrega, contactoCliente);
     } finally {
       setConfirmandoEntrega(false);
     }
   };
 
-  // Tanda 28: genera el link público firmado de la nota y lo comparte
-  // (share sheet nativo o copia al portapapeles). Requiere conexión y
-  // RECIBO_SECRET configurado en Netlify (si falta → aviso, no error).
-  const [compartiendoNota, setCompartiendoNota] = useState(false);
-  const compartirNota = async (e) => {
-    if (compartiendoNota || !e.ordenId) return;
-    setCompartiendoNota(true);
+  // Ticket de la entrega: la nota pública firmada (netlify/functions/recibo).
+  // Se abre sola al terminar de entregar y desde "Entregadas". El link se pide
+  // al abrir; los botones (WhatsApp, compartir, copiar) son toques directos del
+  // chofer, así el teléfono no bloquea el compartir. Si algo falla, dice por qué.
+  const [ticket, setTicket] = useState(null);   // { entrega, contacto, url, error, cargando }
+  const abrirTicket = async (entrega, contacto) => {
+    if (!entrega?.ordenId) return;
+    setTicket({ entrega, contacto: contacto || null, url: null, error: null, cargando: true });
     try {
-      const r = await backendPost('recibo', { ordenId: e.ordenId });
-      const url = window.location.origin + r.url;
-      if (navigator.share) {
-        await navigator.share({ title: `Nota ${s(e.folio)}`, url });
-      } else {
-        await navigator.clipboard.writeText(url);
-        showToast('Link de la nota copiado');
-      }
+      const r = await backendPost('recibo', { ordenId: entrega.ordenId });
+      setTicket(t => (t && t.entrega.ordenId === entrega.ordenId ? { ...t, url: window.location.origin + r.url, cargando: false } : t));
     } catch (err) {
-      if (err?.name === 'AbortError') return; // canceló el share sheet
-      showToast(err?.status === 501
-        ? 'Notas públicas sin configurar — avisa al admin'
-        : 'No se pudo generar la nota', 'error');
-    } finally {
-      setCompartiendoNota(false);
+      const motivo = err?.status === 501 ? 'Los tickets no están configurados todavía. Avisa a administración.'
+        : err?.status === 403 ? 'Esta venta no es de tu ruta: el ticket lo comparte administración.'
+        : err?.status === 401 ? 'Tu sesión venció. Cierra sesión, vuelve a entrar e inténtalo otra vez.'
+        : !navigator.onLine ? 'Sin señal. El ticket se puede enviar al recuperar la conexión, desde "Entregadas".'
+        : `No se pudo generar el ticket${err?.message ? ` (${String(err.message).slice(0, 120)})` : ''}. Inténtalo otra vez.`;
+      setTicket(t => (t && t.entrega.ordenId === entrega.ordenId ? { ...t, error: motivo, cargando: false } : t));
     }
   };
+  const compartirTicket = async () => {
+    if (!ticket?.url) return;
+    try {
+      if (navigator.share) await navigator.share({ title: `Ticket ${s(ticket.entrega.folio)}`, url: ticket.url });
+      else { await navigator.clipboard.writeText(ticket.url); showToast('Link del ticket copiado'); }
+    } catch (err) {
+      if (err?.name !== 'AbortError') showToast('No se pudo compartir. Usa WhatsApp o copia el link.', 'info');
+    }
+  };
+  const copiarTicket = async () => {
+    try { await navigator.clipboard.writeText(ticket.url); showToast('Link del ticket copiado'); }
+    catch { showToast('Mantén presionado el link para copiarlo', 'info'); }
+  };
+  // Mapa de una parada dentro de la app (sin salir).
+  const [mapaParada, setMapaParada] = useState(null);
 
   const abrirNoEntrega = (orden) => {
     setNoEntregaModal(orden);
@@ -1056,7 +1070,8 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 
           <canvas
             ref={el => {
-              if (el && !firmaContextRef.current) {
+              // Un lienzo nuevo (al reabrir) se prepara otra vez.
+              if (el && firmaCanvasRef.current !== el) {
                 firmaCanvasRef.current = el;
                 el.width = el.offsetWidth * 2;
                 el.height = el.offsetHeight * 2;
@@ -1258,20 +1273,13 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
               <div className="mb-3 flex flex-wrap gap-1">
                 {o.items.map((it, i) => <span key={i} className="rounded-lg bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{it.cant}× {it.sku} · ${it.precio}</span>)}
               </div>
-              {/* Botón de navegación */}
-              {(o.latitud && o.longitud) ? (
-                <button type="button" onClick={() => abrirNavegacion(o.latitud, o.longitud)}
+              {/* Mapa de la parada: se abre dentro de la app */}
+              {urlMapaParada(o) && (
+                <button type="button" onClick={() => setMapaParada(o)} data-testid="ver-mapa-parada"
                   className="mb-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[14px] bg-blue-600 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98]">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
-                  Navegar
+                  <Icons.MapPin /> Ver en el mapa
                 </button>
-              ) : o.direccion ? (
-                <button type="button" onClick={() => window.location.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(o.direccion)}`}
-                  className="mb-2 flex min-h-[44px] w-full items-center justify-center gap-2 rounded-[14px] bg-blue-500/80 py-2.5 text-sm font-semibold text-white transition-transform active:scale-[0.98]">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
-                  Buscar dirección
-                </button>
-              ) : null}
+              )}
               <FormBtn primary className="w-full" onClick={() => { setEntregaModal(o); setCobroMetodo(o.esCredito ? "Crédito" : "Efectivo"); setCobroRef(""); setFolioNota(""); setFotoEntrega(null); setCheckoutUrl(null); setShortUrl(null); }}>
                 Entregar y cobrar
               </FormBtn>
@@ -1288,7 +1296,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
               <div className="flex items-center justify-between">
                 <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="ml-1 text-[10px] text-slate-400">Nota: {e.folioNota}</span>}<span className="ml-2 text-sm font-semibold text-slate-700">{s(e.cliente)}</span>{e.express && <span className="ml-1 rounded bg-emerald-200 px-1.5 py-0.5 text-[10px] text-emerald-800">Exprés</span>}{e.factura && <span className="ml-1 rounded bg-violet-200 px-1.5 py-0.5 text-[10px] text-violet-800">Factura</span>}</div>
                 <div className="flex items-center gap-2 text-right">{e.fotoEntrega && <span className="text-emerald-500 [&>svg]:h-3.5 [&>svg]:w-3.5"><Icons.Camera /></span>}<div><p className="text-sm font-bold">{fmtMoney(e.total)}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div>{online && e.ordenId && (
-                  <button type="button" onClick={() => compartirNota(e)} disabled={compartiendoNota} className="flex min-h-[36px] flex-shrink-0 items-center rounded-lg border border-emerald-300 bg-white px-2.5 py-2 text-xs font-bold text-emerald-700 disabled:opacity-50" title="Compartir nota" aria-label={`Compartir nota ${s(e.folio)}`}>Nota</button>
+                  <button type="button" onClick={() => abrirTicket(e, e.contacto)} className="flex min-h-[40px] flex-shrink-0 items-center rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-700" title="Enviar ticket" aria-label={`Enviar ticket ${s(e.folio)}`}>Ticket</button>
                 )}</div>
               </div>
             </Card>
@@ -1401,6 +1409,61 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             )}
           </div>
         </>)}
+      </Modal>
+
+      {/* Mapa de la parada, dentro de la app */}
+      <Modal open={!!mapaParada} onClose={() => setMapaParada(null)} kicker="Entrega" title={mapaParada ? s(mapaParada.clienteNombre) : ''} wide
+        footer={<>
+          {mapaParada && urlNavegacionParada(mapaParada) && (
+            <a href={urlNavegacionParada(mapaParada)} target="_blank" rel="noopener noreferrer"
+              className="inline-flex min-h-[48px] flex-1 items-center justify-center rounded-field border border-line bg-white px-4 text-sm font-semibold text-ink">Navegar paso a paso</a>
+          )}
+          <FormBtn primary onClick={() => setMapaParada(null)}>Cerrar</FormBtn>
+        </>}>
+        {mapaParada && (
+          <div className="space-y-3" data-testid="mapa-parada">
+            {mapaParada.direccion && <p className="flex items-start gap-1.5 text-sm text-slate-700"><span className="mt-0.5 flex-shrink-0 text-slate-500"><Icons.MapPin /></span>{mapaParada.direccion}</p>}
+            {mapaParada.referencia && <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{mapaParada.referencia}</p>}
+            <iframe title="Mapa de la entrega" src={urlMapaParada(mapaParada)} loading="lazy" referrerPolicy="no-referrer-when-downgrade"
+              className="h-[52dvh] w-full rounded-card border border-line" />
+            <p className="text-xs text-slate-500">“Navegar paso a paso” abre la app de mapas del teléfono para las indicaciones con voz.</p>
+          </div>
+        )}
+      </Modal>
+
+      {/* Ticket de la entrega para el cliente */}
+      <Modal open={!!ticket} onClose={() => setTicket(null)} kicker="Entregado" title={ticket ? s(ticket.entrega.cliente) : ''} safeBottom
+        footer={<FormBtn ghost className="flex-1" onClick={() => setTicket(null)}>Cerrar</FormBtn>}>
+        {ticket && (
+          <div className="space-y-3" data-testid="ticket-entrega">
+            <div className="rounded-card border border-emerald-200 bg-emerald-50 p-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-emerald-700">Venta #{s(ticket.entrega.folio)}</p>
+              <p className="font-display text-2xl font-bold text-emerald-900">{fmtMoney(ticket.entrega.total)}</p>
+              <p className="text-sm text-emerald-800">{s(ticket.entrega.pago)}{ticket.entrega.hora ? ` · ${ticket.entrega.hora}` : ''}</p>
+            </div>
+            {ticket.cargando && <p className="text-sm text-slate-500">Preparando el ticket…</p>}
+            {ticket.error && (
+              <div className="rounded-card border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="alert">
+                <p>{ticket.error}</p>
+                <button type="button" onClick={() => abrirTicket(ticket.entrega, ticket.contacto)} className="mt-2 min-h-[40px] rounded-field border border-amber-300 bg-white px-3 text-sm font-semibold text-amber-900">Reintentar</button>
+              </div>
+            )}
+            {ticket.url && (() => {
+              const msg = mensajeTicket({ empresa: data.configEmpresa?.razonSocial, cliente: ticket.entrega.cliente, folio: ticket.entrega.folio, total: ticket.entrega.total, pago: ticket.entrega.pago, url: ticket.url });
+              return (
+                <>
+                  <a href={enlaceWhatsApp(extraerTelefono(ticket.contacto), msg)} target="_blank" rel="noopener noreferrer"
+                    className="flex min-h-[52px] w-full items-center justify-center rounded-field bg-emerald-600 px-5 text-base font-semibold text-white">Enviar ticket por WhatsApp</a>
+                  <div className="grid grid-cols-2 gap-2">
+                    <FormBtn onClick={compartirTicket}>Compartir</FormBtn>
+                    <FormBtn onClick={copiarTicket}>Copiar link</FormBtn>
+                  </div>
+                  <a href={ticket.url} target="_blank" rel="noopener noreferrer" className="block break-all rounded-field border border-line bg-slate-50 p-2 text-xs text-slate-600">{ticket.url}</a>
+                </>
+              );
+            })()}
+          </div>
+        )}
       </Modal>
 
       {/* Modal venta express */}

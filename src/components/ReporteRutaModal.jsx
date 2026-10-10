@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { resumenEconomicoRuta, ordenEntregada } from '../data/rutasLogic';
 import { mermasActivas } from '../data/mermasLogic';
 import { Modal, FormBtn, useToast, Icons, s, n, fmtMoney } from './views/viewsCommon';
 import { reporteRutaDiaria } from '../utils/exportReports';
@@ -40,7 +41,7 @@ export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
   const vendidoPorSku = useMemo(() => {
     const acc = {};
     for (const o of rutaOrdenes) {
-      if (s(o.estatus).toLowerCase() !== 'entregada') continue;
+      if (!ordenEntregada(o)) continue;
       if (Array.isArray(o.preciosSnapshot) && o.preciosSnapshot.length > 0) {
         for (const ln of o.preciosSnapshot) {
           const sku = s(ln.sku);
@@ -73,9 +74,11 @@ export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
     return acc;
   }, [mermasRuta]);
 
-  const totalCobrado = n(ruta.total_cobrado || ruta.totalCobrado);
-  const totalCredito = n(ruta.total_credito || ruta.totalCredito);
-  const totalGeneral = totalCobrado + totalCredito;
+  // De las órdenes entregadas de la ruta (las columnas de `rutas` ya no se escriben al cerrar).
+  const economico = useMemo(() => resumenEconomicoRuta(ruta, ordenes), [ruta, ordenes]);
+  const totalCobrado = economico.cobrado;
+  const totalCredito = economico.credito;
+  const totalGeneral = economico.total;
 
   const usarBalance = Array.isArray(balance) && balance.length > 0;
   const balancePorSku = usarBalance ? Object.fromEntries(balance.map(b => [b.sku, b])) : {};
@@ -143,6 +146,11 @@ export default function ReporteRutaModal({ ruta, data, actions, onClose }) {
               <p className="text-xl font-extrabold text-white">{fmtMoney(totalGeneral)}</p>
             </div>
           </div>
+          {Object.keys(economico.porMetodo).length > 0 && (
+            <p className="mt-2 text-xs text-slate-500" data-testid="resumen-por-metodo">
+              {economico.entregas} entrega{economico.entregas === 1 ? '' : 's'} · {Object.entries(economico.porMetodo).map(([k, v]) => `${k} ${fmtMoney(v)}`).join(' · ')}
+            </p>
+          )}
         </div>
 
         {/* Carga y movimiento */}
