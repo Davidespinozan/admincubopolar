@@ -140,7 +140,7 @@ describe('A5: Chofer — modo enfoque con la identidad del producto; flujo, offl
     expect((v.match(/<Modal open=/g) || []).length).toBe(8);   // + mapa de la parada y ticket de la entrega
     expect(v).not.toMatch(/bg-\[#07131a\]|rounded-t-\[30px\]|fixed inset-0|setToast|useBodyScrollLock|function Toast/);
     expect(v).toMatch(/fixed bottom-0 left-1\/2 z-40/);   // barra de acciones fija en ruta
-    expect(v).toMatch(/<BannerColaOffline online=\{online\} cola=\{colaOffline\} sincronizando=\{sincronizando\} onSincronizar=\{sincronizarCola\} \/>/);
+    expect(v).toMatch(/<BannerColaOffline online=\{online\} cola=\{colaOffline\} sincronizando=\{sincronizando\} onSincronizar=\{sincronizarCola\} onReintentar=\{reintentarFallidasCola\} onQuitar=\{descartarDeCola\} \/>/);
   });
   it('cola offline, GPS, fotos y firma: código idéntico', () => {
     expect(v).toMatch(/useColaOffline\(\{ rutaId: miRutaActiva\?\.id, ejecutores: ejecutoresOffline, avisar: showToast \}\)/);

@@ -8,12 +8,14 @@
 // derivados para la UI. La parte con efectos (localStorage, listeners
 // online, ejecución contra supaStore) vive en useColaOffline.js.
 //
-// Política de reintentos: FIFO estricto. Un fallo detiene la pasada
-// (probable red intermitente) y se reintenta después. Tras MAX_INTENTOS
-// fallos la mutación se considera "fallida" (probable error de negocio,
-// p.ej. la orden fue cancelada por admin mientras el chofer estaba sin
-// señal): deja de bloquear a las demás y la UI la muestra para que el
-// chofer la reporte al admin.
+// Política de reintentos: FIFO estricto. Un fallo detiene la pasada y se
+// reintenta después. Un fallo de RED (sin respuesta del servidor) no cuenta
+// como intento: con mala señal la operación espera lo que haga falta. Solo
+// los RECHAZOS del servidor cuentan; tras MAX_INTENTOS la mutación queda
+// "fallida" (p.ej. la orden fue cancelada por admin mientras el chofer estaba
+// sin señal): deja de bloquear a las demás, guarda el motivo y NO se pierde:
+// el chofer la ve con su motivo, puede reintentarla o quitarla, y la ruta no
+// se cierra mientras exista.
 
 export const TIPOS_MUTACION = {
   ENTREGA: 'entrega',
@@ -34,6 +36,8 @@ export interface Mutacion {
   payload: MutacionPayload;
   creadaEn: number;
   intentos: number;
+  /** Motivo del último rechazo del servidor (para mostrarlo al chofer). */
+  ultimoError?: string;
 }
 
 const TIPOS_VALIDOS = new Set<string>(Object.values(TIPOS_MUTACION));
@@ -88,9 +92,36 @@ export function quitar(cola: Mutacion[] | null | undefined, id: string): Mutacio
   return (cola || []).filter((m) => m.id !== id);
 }
 
-/** Cola con intentos+1 en la mutación indicada. */
-export function marcarIntento(cola: Mutacion[] | null | undefined, id: string): Mutacion[] {
-  return (cola || []).map((m) => (m.id === id ? { ...m, intentos: (m.intentos || 0) + 1 } : m));
+/** Cola con intentos+1 en la mutación indicada (y el motivo del rechazo, si se conoce). */
+export function marcarIntento(cola: Mutacion[] | null | undefined, id: string, motivo?: string): Mutacion[] {
+  return (cola || []).map((m) =>
+    m.id === id ? { ...m, intentos: (m.intentos || 0) + 1, ...(motivo ? { ultimoError: String(motivo).slice(0, 200) } : {}) } : m
+  );
+}
+
+/** Texto del error que devolvió un ejecutor ({ error }, Error, error de Supabase o texto). */
+export function textoError(err: unknown): string {
+  if (!err) return '';
+  if (typeof err === 'string') return err;
+  const e = err as { error?: unknown; message?: unknown };
+  if (typeof e.error === 'string') return e.error;
+  if (e.error && typeof (e.error as { message?: unknown }).message === 'string') return (e.error as { message: string }).message;
+  if (typeof e.message === 'string') return e.message;
+  return 'Error desconocido';
+}
+
+/**
+ * ¿El fallo fue de RED (no hubo respuesta del servidor)? Entonces no cuenta como intento:
+ * antes, cinco intentos con mala señal dejaban la operación como fallida para siempre.
+ */
+export function esFalloDeRed(err: unknown, enLinea: boolean = true): boolean {
+  if (!enLinea) return true;
+  return /Failed to fetch|NetworkError|Load failed|network|fetch failed|timeout|timed out|ERR_INTERNET|conexi[oó]n/i.test(textoError(err));
+}
+
+/** Vuelve a poner en espera las fallidas (todas, o solo la indicada): intentos a 0. */
+export function reactivar(cola: Mutacion[] | null | undefined, id?: string): Mutacion[] {
+  return (cola || []).map((m) => ((m.intentos || 0) >= MAX_INTENTOS && (!id || m.id === id) ? { ...m, intentos: 0 } : m));
 }
 
 /** Mutaciones que aún deben reintentarse (intentos < MAX_INTENTOS). */

@@ -14,8 +14,12 @@ import {
   MAX_INTENTOS,
   claveColaRuta,
   encolar,
+  esFalloDeRed,
   marcarIntento,
+  mutacionesFallidas,
   mutacionesPendientes,
+  reactivar,
+  textoError,
   parseCola,
   quitar,
   siguientePendiente,
@@ -73,10 +77,11 @@ export function useColaOffline({ rutaId, ejecutores, avisar }) {
     [escribir]
   );
 
-  // Una pasada FIFO: éxito → sale de la cola; fallo → intento+1 y la
-  // pasada se detiene (probable red intermitente), salvo que la
-  // mutación agote MAX_INTENTOS — entonces se salta (fallida) y se
-  // continúa con la siguiente para no bloquear la fila.
+  // Una pasada FIFO: éxito → sale de la cola. Fallo de RED → no cuenta como
+  // intento y la pasada se detiene (se reintenta después). RECHAZO del
+  // servidor → intento+1 con su motivo y la pasada se detiene, salvo que la
+  // mutación agote MAX_INTENTOS — entonces queda fallida (visible, con
+  // motivo) y se continúa con la siguiente para no bloquear la fila.
   const sincronizar = useCallback(async () => {
     if (sincronizandoRef.current) return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
@@ -96,10 +101,12 @@ export function useColaOffline({ rutaId, ejecutores, avisar }) {
           err = { error: e?.message || 'Error inesperado' };
         }
         if (err) {
-          escribir(marcarIntento(colaRef.current, m.id));
+          const enLinea = typeof navigator === 'undefined' ? true : navigator.onLine;
+          if (esFalloDeRed(err, enLinea)) break; // sin respuesta del servidor: esperar, no gastar intentos
+          escribir(marcarIntento(colaRef.current, m.id, textoError(err)));
           const actualizada = colaRef.current.find((x) => x.id === m.id);
           if (actualizada && actualizada.intentos >= MAX_INTENTOS) {
-            avisarRef.current?.('Una operación no se pudo sincronizar — repórtala al admin');
+            avisarRef.current?.('El servidor rechazó una operación — revísala en el aviso de arriba');
             continue; // fallida definitiva: no bloquear a las demás
           }
           cursor = m.id; // reintentable: parar la pasada aquí
@@ -122,6 +129,19 @@ export function useColaOffline({ rutaId, ejecutores, avisar }) {
   // Lectura síncrona post-sincronizar (el estado `cola` del closure
   // queda stale tras un await; cerrarRuta necesita el valor real).
   const pendientesActuales = useCallback(() => mutacionesPendientes(colaRef.current), []);
+
+  const fallidasActuales = useCallback(() => mutacionesFallidas(colaRef.current), []);
+
+  // Fallidas: nada se pierde en silencio. Se reintentan (todas o una) o el chofer quita
+  // una que ya resolvió con Administración.
+  const reintentarFallidas = useCallback(
+    (id) => {
+      escribir(reactivar(colaRef.current, id));
+      return sincronizar();
+    },
+    [escribir, sincronizar]
+  );
+  const descartar = useCallback((id) => escribir(quitar(colaRef.current, id)), [escribir]);
 
   const limpiar = useCallback(() => {
     colaRef.current = [];
@@ -153,5 +173,5 @@ export function useColaOffline({ rutaId, ejecutores, avisar }) {
     return () => clearInterval(iv);
   }, [online, cola, sincronizar]);
 
-  return { cola, online, sincronizando, agregar, sincronizar, pendientesActuales, limpiar };
+  return { cola, online, sincronizando, agregar, sincronizar, pendientesActuales, fallidasActuales, reintentarFallidas, descartar, limpiar };
 }

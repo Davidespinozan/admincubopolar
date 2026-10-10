@@ -14,7 +14,7 @@ import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
 import { mensajeTicket, enlaceWhatsApp, urlMapaParada, urlNavegacionParada } from '../data/ticketLogic';
 import { evidenciasPendientes, estadoFotosEntrega } from '../data/evidenciaLogic';
 import { rutaActivaDelChofer, motivoSinCredito, mezclarEntregas } from '../data/choferRutaLogic';
-import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas } from '../data/colaOfflineLogic';
+import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas, descripcionMutacion } from '../data/colaOfflineLogic';
 import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from '../data/stockContratosLogic';
 import { useColaOffline } from '../data/useColaOffline';
 import { conteoInicial, diferenciasConteo, totalesBalance, mensajeNoEntrega } from '../data/inventarioRutaLogic';
@@ -206,6 +206,9 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     agregar: encolarOffline,
     sincronizar: sincronizarCola,
     pendientesActuales: pendientesCola,
+    fallidasActuales: fallidasCola,
+    reintentarFallidas: reintentarFallidasCola,
+    descartar: descartarDeCola,
     limpiar: limpiarCola,
   } = useColaOffline({ rutaId: miRutaActiva?.id, ejecutores: ejecutoresOffline, avisar: showToast });
 
@@ -943,6 +946,11 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         return;
       }
     }
+    // Una operación que el servidor rechazó no se pierde al cerrar: primero se resuelve.
+    if (fallidasCola().length > 0) {
+      showToast('Hay operaciones que el servidor rechazó. Revísalas en el aviso rojo (reintentar o quitar) antes de cerrar.', 'error');
+      return;
+    }
     setPreparandoCierre(true);
     try {
       const res = await actions.prepararCierreRuta?.({
@@ -1232,7 +1240,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
   // ═══ STEP 2: RUTA ═══
   if (step === "ruta") return (
     <div className={CHOFER_SHELL} data-testid="chofer-shell" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 150px)" }}>
-      <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
+      <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} onReintentar={reintentarFallidasCola} onQuitar={descartarDeCola} />
       <RoleHeader compact kicker="Chofer" title="En ruta" subtitle={saludo} accent="cyan"
         right={<div className="text-right"><p className="font-display text-lg font-bold text-white">{fmtMoney(totalCobrado)}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>}>
         <div className="mb-3 flex flex-wrap gap-2">
@@ -1696,7 +1704,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 
     return (
       <div className={CHOFER_SHELL} data-testid="chofer-shell">
-        <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} />
+        <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} onReintentar={reintentarFallidasCola} onQuitar={descartarDeCola} />
         <RoleHeader compact kicker="Chofer · Paso 3 de 3" title="Cierre de ruta" subtitle={`${saludo} · ${fmtDate(new Date())}`} accent="cyan"
           right={!rutaCerrada && <button type="button" onClick={() => setStep("ruta")} className="inline-flex min-h-[44px] items-center rounded-[13px] border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white">← Volver</button>}>{barraPersonal}</RoleHeader>
         <div className={`${CONTENIDO} space-y-4`}>
@@ -1792,28 +1800,50 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 // Tanda 22: estado de la cola offline. Sin conexión → aviso de que las
 // operaciones se guardan en el teléfono; con pendientes y conexión →
 // contador + botón de sincronización manual; fallidas → alerta roja.
-function BannerColaOffline({ online, cola, sincronizando, onSincronizar }) {
+function BannerColaOffline({ online, cola, sincronizando, onSincronizar, onReintentar, onQuitar }) {
   const pendientes = mutacionesPendientes(cola).length;
-  const fallidas = mutacionesFallidas(cola).length;
-  if (online && pendientes === 0 && fallidas === 0) return null;
+  const fallidas = mutacionesFallidas(cola);
+  if (online && pendientes === 0 && fallidas.length === 0) return null;
   return (
-    <div className={`flex items-center justify-between gap-2 px-4 py-2.5 text-xs font-semibold ${!online ? 'border-b border-amber-200 bg-amber-100 text-amber-800' : 'border-b border-cyan-200 bg-cyan-50 text-cyan-800'}`} role="status" aria-live="polite">
-      <span>
-        {!online
-          ? `Sin conexión — tus operaciones se guardan en el teléfono${pendientes > 0 ? ` (${pendientes} en espera)` : ''}`
-          : `${pendientes} ${pendientes === 1 ? 'operación pendiente' : 'operaciones pendientes'} de sincronizar`}
-        {fallidas > 0 && <span className="ml-2 inline-flex items-center gap-1 font-bold text-red-700"><Icons.AlertTriangle /> {fallidas} sin poder sincronizar — avisa al admin</span>}
-      </span>
-      {online && pendientes > 0 && (
-        <button
-          type="button"
-          onClick={onSincronizar}
-          disabled={sincronizando}
-          className="min-h-[32px] flex-shrink-0 rounded-lg bg-cyan-700 px-3 py-1.5 font-bold text-white disabled:opacity-50"
-        >
-          {sincronizando ? 'Sincronizando…' : 'Sincronizar'}
-        </button>
+    <>
+      {(!online || pendientes > 0) && (
+        <div className={`flex items-center justify-between gap-2 px-4 py-2.5 text-xs font-semibold ${!online ? 'border-b border-amber-200 bg-amber-100 text-amber-800' : 'border-b border-cyan-200 bg-cyan-50 text-cyan-800'}`} role="status" aria-live="polite">
+          <span>
+            {!online
+              ? `Sin conexión — tus operaciones se guardan en el teléfono${pendientes > 0 ? ` (${pendientes} en espera)` : ''}`
+              : `${pendientes} ${pendientes === 1 ? 'operación pendiente' : 'operaciones pendientes'} de sincronizar`}
+          </span>
+          {online && pendientes > 0 && (
+            <button
+              type="button"
+              onClick={onSincronizar}
+              disabled={sincronizando}
+              className="min-h-[32px] flex-shrink-0 rounded-lg bg-cyan-700 px-3 py-1.5 font-bold text-white disabled:opacity-50"
+            >
+              {sincronizando ? 'Sincronizando…' : 'Sincronizar'}
+            </button>
+          )}
+        </div>
       )}
-    </div>
+      {/* Rechazadas por el servidor: no se pierden. Se ven con su motivo y se resuelven aquí. */}
+      {fallidas.length > 0 && (
+        <div className="border-b border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-800" role="alert" data-testid="cola-fallidas">
+          <p className="flex items-center gap-1 font-bold"><Icons.AlertTriangle /> {fallidas.length === 1 ? 'El servidor rechazó 1 operación' : `El servidor rechazó ${fallidas.length} operaciones`} — avisa a Administración</p>
+          <ul className="mt-1.5 space-y-1.5">
+            {fallidas.map(f => (
+              <li key={f.id} className="rounded-lg border border-red-200 bg-white p-2">
+                <p className="font-semibold">{descripcionMutacion(f)}</p>
+                {f.ultimoError && <p className="mt-0.5 text-red-700">Motivo: {f.ultimoError}</p>}
+                <div className="mt-1.5 flex gap-2">
+                  <button type="button" disabled={sincronizando || !online} onClick={() => onReintentar?.(f.id)} className="min-h-[36px] rounded-lg bg-red-700 px-3 font-bold text-white disabled:opacity-50">Reintentar</button>
+                  <button type="button" disabled={sincronizando} onClick={() => onQuitar?.(f.id)} className="min-h-[36px] rounded-lg border border-red-300 bg-white px-3 font-bold text-red-700 disabled:opacity-50">Quitar (ya lo resolví)</button>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5">La ruta no se puede cerrar mientras haya operaciones rechazadas.</p>
+        </div>
+      )}
+    </>
   );
 }

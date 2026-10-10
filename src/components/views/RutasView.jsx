@@ -320,7 +320,6 @@ export function RutasView({ data, actions }) {
           choferId: Number(form.choferId),
           ayudanteId: form.ayudanteId ? Number(form.ayudanteId) : null,
           camionId: form.camionId ? Number(form.camionId) : null,
-          estatus: form.estatus,
           carga: cargaTotal,
           cargaAutorizada,
           extraAutorizado,
@@ -865,7 +864,7 @@ export function RutasView({ data, actions }) {
               )}
             </div>
           </div>
-          {editingRuta && <FormSelect label="Estatus" options={["Programada","En progreso","Completada","Cerrada","Cancelada"]} value={form.estatus} onChange={e=>setForm({...form,estatus:e.target.value})} />}
+          {/* El estatus ya no se cambia a mano: avanza con Cargar, Iniciar, Cerrar o Cancelar ruta. */}
         </div>
       )}
 

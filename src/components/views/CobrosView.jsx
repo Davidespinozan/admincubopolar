@@ -1,5 +1,7 @@
 import { useState, useMemo, Modal, FormInput, FormSelect, FormBtn, EmptyState, s, n, fmtDate, fmtMoney, fmtPct, useToast, PageHeader, KpiTile, SegmentedTabs } from './viewsCommon';
+import { useEffect } from 'react';
 import { diaNegocio } from '../../utils/fechas';
+import { pagosEnRevision } from '../../data/pagosRevisionLogic';
 
 export function CobrosView({ data, actions }) {
   const toast = useToast();
@@ -8,6 +10,19 @@ export function CobrosView({ data, actions }) {
   const [form, setForm] = useState({ monto: '', metodo: 'Efectivo', referencia: '' });
   const [errors, setErrors] = useState({});
   const [savingCobro, setSavingCobro] = useState(false);
+
+  // Pagos por link cobrados por el proveedor que el sistema NO registró (no cuadraban con la
+  // venta). Antes no se veían en ninguna parte. Se leen al abrir; si el rol no puede, no hay tarjeta.
+  const [intentsRevision, setIntentsRevision] = useState([]);
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      const r = await actions.pagosLinkEnRevision?.();
+      if (vivo && r?.data) setIntentsRevision(r.data);
+    })();
+    return () => { vivo = false; };
+  }, [actions]);
+  const enRevision = useMemo(() => pagosEnRevision(intentsRevision, data.ordenes), [intentsRevision, data.ordenes]);
 
   const cxcPendientes = useMemo(() =>
     (data.cuentasPorCobrar || []).filter(c => c.estatus !== 'Pagada'),
@@ -65,6 +80,25 @@ export function CobrosView({ data, actions }) {
       <KpiTile label="Por cobrar" value={fmtMoney(totalPendiente)} hint={`${cxcPendientes.length} ${cxcPendientes.length === 1 ? 'cuenta pendiente' : 'cuentas pendientes'}`} tone="warning" />
       <KpiTile label="Cobrado hoy" value={fmtMoney(totalCobradoHoy)} tone="success" />
     </div>
+    {enRevision.length > 0 && (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-4" role="alert" data-testid="pagos-en-revision">
+        <p className="text-sm font-bold text-red-800">{enRevision.length === 1 ? '1 pago por link necesita revisión' : `${enRevision.length} pagos por link necesitan revisión`}</p>
+        <p className="mt-0.5 text-xs text-red-700">El cliente SÍ pagó, pero el sistema no registró el cobro porque no cuadraba con la venta. Hay que resolverlos a mano.</p>
+        <ul className="mt-2 space-y-2">
+          {enRevision.map(p => (
+            <li key={p.id} className="rounded-lg border border-red-200 bg-white p-3 text-sm">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="font-semibold text-slate-800">{p.folio}{p.cliente ? ` · ${p.cliente}` : ''}</p>
+                <p className="font-bold text-slate-900">{fmtMoney(p.monto, { decimals: 2 })}</p>
+              </div>
+              <p className="mt-1 text-xs text-slate-600">{p.motivo}{p.totalVenta != null ? ` Total de la venta: ${fmtMoney(p.totalVenta, { decimals: 2 })}.` : ''}</p>
+              <p className="mt-1 text-xs text-slate-600"><span className="font-semibold">Qué hacer:</span> {p.queHacer}</p>
+              <p className="mt-1 break-all text-[11px] text-slate-400">{p.proveedor} · {p.referencia}{p.fecha ? ` · ${fmtDate(p.fecha)}` : ''}</p>
+            </li>
+          ))}
+        </ul>
+      </div>
+    )}
     <SegmentedTabs value={tab} onChange={setTab} items={[{ k: 'pendientes', l: `Pendientes (${cxcPendientes.length})` }, { k: 'pagos', l: 'Pagos recientes' }]} />
 
     {tab === 'pendientes' && (

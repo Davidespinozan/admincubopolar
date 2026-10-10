@@ -1786,6 +1786,18 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         return { data: filas };
       },
 
+      // Pagos por link que el proveedor cobró y el sistema no registró (status review:*).
+      // Solo lectura; la policy de 090 los deja ver a Admin y Facturación.
+      pagosLinkEnRevision: async () => {
+        const guard = requireRol(['Admin', 'Facturación']);
+        if (guard) return guard;
+        const { data, error } = await supabase.from('payment_intents')
+          .select('id, orden_id, provider, provider_reference, status, amount, currency, created_at, updated_at')
+          .like('status', 'review:%').order('updated_at', { ascending: false }).limit(100);
+        if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
+        return { data: data || [] };
+      },
+
       // PD-01.1 (mig 131): avisos de asistencia al celular (configuración de Admin).
       avisosAsistencia: async () => {
         const guard = requireAdmin();
@@ -2429,7 +2441,8 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         if (r.chofer_id !== undefined) update.chofer_id = r.chofer_id;
         if (r.ayudanteId !== undefined) update.ayudante_id = r.ayudanteId || null;
         if (r.camionId   !== undefined) update.camion_id   = r.camionId || null;
-        if (r.estatus   !== undefined) update.estatus   = r.estatus;
+        // El estatus NO se edita aquí: una ruta puesta a mano en "Completada" o "Cerrada" quedaba
+        // atorada (sin cierre de caja ni devolución del camión). Avanza solo por sus flujos.
         if (r.carga     !== undefined) update.carga     = r.carga;
         if (r.cargaAutorizada !== undefined) update.carga_autorizada = r.cargaAutorizada;
         if (r.extraAutorizado !== undefined) update.extra_autorizado = r.extraAutorizado;

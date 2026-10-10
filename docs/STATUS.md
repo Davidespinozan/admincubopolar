@@ -354,6 +354,20 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## Tanda 4 de correcciones de la revisión profunda — 2026-10-10 — COMMITTED / LOCAL-VALIDATED (deploy PENDIENTE; sin migración)
+**Estado: en git local (rama `tanda4-arreglos`). Solo frontend; sin SQL ni funciones de Netlify.** Autorizada por el dueño ("dale con la
+tanda 4", 2026-10-10).
+- **Cola sin señal del chofer:** un fallo de RED ya no gasta intentos (antes, 5 intentos con mala señal dejaban la operación fallida para
+  siempre y se borraba al cerrar la ruta). Solo cuentan los rechazos del servidor; la rechazada guarda su motivo, se ve en un aviso rojo
+  con "Reintentar" y "Quitar (ya lo resolví)", y la ruta NO se cierra mientras exista.
+- **Rutas:** el estatus ya no se edita a mano en "Editar ruta" (una ruta puesta en "Completada" o "Cerrada" quedaba atorada, sin cierre
+  de caja ni devolución del camión); `updateRuta` ya no escribe `estatus`. Avanza solo por Cargar / Iniciar / Cerrar / Cancelar.
+- **Pagos por link en revisión:** Por cobrar muestra (Admin y Facturación; policy `payment_intents_read_fin` de 090) los pagos que el
+  proveedor cobró y el webhook dejó en `payment_intents` como `review:*` sin registrar (importe distinto, venta cancelada…), con motivo y
+  qué hacer. Solo lectura; se resuelven a mano. Producción hoy: 0 filas (verificado en solo lectura).
+- **No incluido (decisión del contador):** forma de pago SAT de un cobro por link (hoy 99 "por definir"); motivo 01 de cancelación de CFDI.
+- **Validación:** `src/__tests__/tanda4Arreglos.test.js`; Vitest 1,692 en 4 zonas; lint, typecheck, build, `diff --check`.
+
 ## Tanda 3 de correcciones de la revisión profunda (mig 136) — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED
 **136 aplicada por el dueño en el SQL Editor (2026-10-10) y verificada en solo lectura: md5 de `mi_asistencia` `575bf117fc9ec695bdf43aa066c0022b`, `registrar_asistencia_manual` `b24a8507a4f22915542471b89b63b6cc`, `asistencia_generar_avisos` `4421305a267c4dc6e465bb596b9fe672`, `nomina_asistencia_semana` `626c3193c0cf972f2d11d721ea92e69d` y `cerrar_ruta_financiero` `9b80d0e98779c21a547c5010a109059a` IDÉNTICOS a la base local; SECURITY DEFINER y permisos iguales (anon nada); 209 funciones; 0 asistencias. Frontend y funciones `8d5dba2` DEPLOYED (push autorizado por el dueño; Netlify `6aca8ac2c3af350008b6cd33`, ready 2026-10-10T18:58:42Z); bundle vivo verificado (`registrar_asistencia_manual`, "Facturar a público en general", "CP fiscal", "Tu usuario está dado de baja", "Capturar asistencia"). Sin cierre del dueño. No verificable desde aquí: timbrado real, avisos en un teléfono real.** Autorizada por el
 dueño ("dale", 2026-10-10). Orden de activación: 136 (aditiva, compatible con el frontend desplegado) → verificación de solo lectura → push.
