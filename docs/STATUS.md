@@ -186,7 +186,8 @@ OL-05, CLOSURE-2 ni otra auditoría pendientes).
 
 **Fase en curso: MULTISUCURSAL (mig 123 + correcciones 124 y 125) — MIGRATIONS APPLIED TO PRODUCTION (por el dueño; 123 el
 2026-10-09 ~23:51Z con el nombre `122_multisucursal.sql`, 124 y 125 el 2026-10-10) / VERIFIED (md5 y llaves idénticos a la base
-local) / frontend IMPLEMENTED LOCALLY (sin commit, sin deploy).** Ver su sección abajo. Siguiente paso autorizado: ninguno (commit, push y deploy requieren autorización del dueño).
+local) / frontend DEPLOYED (commit `6c52cb3`, push del dueño 2026-10-10; bundle vivo verificado: `Fusionar un cliente existente`,
+`Nueva sucursal`, `guardar_sucursal`, `toda la cadena`). Pendiente: fusionar LEVIN (12) y VENEGAS (4) desde la pantalla (Admin).** Ver su sección abajo. Siguiente paso autorizado: ninguno (commit, push y deploy requieren autorización del dueño).
 
 | Severidad | Cuenta |
 |---|---|
@@ -291,9 +292,8 @@ clasificador de permisos de la sesión bloqueó `supabase db query` contra produ
   `121_ger1_contencion_usuarios_test.sql` (7), 41 suites anteriores tras cada una, C120a/b, ensayo OP-03); `src/__tests__/ger1DuenoAccesos.test.jsx`.
 - Reversión: encabezados de 120 y 121 (121 primero: recrear `admin_all` y sus grants; después Netlify a `feb3721`; 120 al final).
 
-## Multisucursal por cliente (mig 123) — 2026-10-09 — MIGRATION APPLIED TO PRODUCTION / FRONTEND IMPLEMENTED LOCALLY
-**La migración está en producción; el frontend no (sin commit, sin deploy; el frontend desplegado es compatible: la sucursal es
-opcional y sin ella los contratos usan la principal).** El dueño pegó el SQL en Supabase el 2026-10-09 (~23:51Z) con el nombre
+## Multisucursal por cliente (mig 123) — 2026-10-09 — DEPLOYED / TECHNICALLY VERIFIED (fusión de LEVIN y VENEGAS pendiente)
+**Migraciones y frontend en producción** (commit `6c52cb3`). El trabajo en curso de otra sesión (alta de cliente por el chofer, 127) quedó fuera de ese commit. El dueño pegó el SQL en Supabase el 2026-10-09 (~23:51Z) con el nombre
 `122_multisucursal.sql`, junto con `122_zona_negocio_durango.sql` de otra sesión, ANTES de que el gate local terminara (la única
 falla del gate en ese momento era una aserción mal escrita de la suite, no la migración). Verificado en solo lectura después:
 tabla `sucursales` con 217 filas = 217 principales (0 clientes vigentes sin principal; 18 con domicilio), `ordenes.sucursal_id` y
