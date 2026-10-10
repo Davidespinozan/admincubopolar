@@ -354,7 +354,9 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Evidencias de la venta: fotos del Chofer en el sistema (mig 134) — 2026-10-10 — MIGRATION APPLIED TO PRODUCTION / VALIDATED (frontend pendiente de deploy)
+## Evidencias de la venta: fotos del Chofer en el sistema (mig 134) — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED
+**Frontend `e9f554b` DEPLOYED (push autorizado por el dueño; Netlify `6ac9dd2e4c12830008654351`, ready 2026-10-10T06:38:10Z); bundle vivo verificado
+(`registrar_evidencia_orden`, "Fotos de la venta", `orden_evidencias`). Sin cierre del dueño; la subida desde un teléfono en ruta NO está verificada.**
 **134 aplicada por el dueño en el SQL Editor (2026-10-10; SHA-256 `70e4aeb2dbb4c653e81efe94edce3b4b0a3d7229f02eb997aee1509196a54a0d`) y verificada en solo
 lectura: md5 y permisos de `registrar_evidencia_orden` (`937fb9f2…`), `erp_foto_merma_en_uso` (`34c27b00…`) y la guarda, RLS, policy, grants, CHECK,
 llaves y trigger de `orden_evidencias` idénticos a la base local (la única diferencia es que Postgres 18 local lista los NOT NULL como
