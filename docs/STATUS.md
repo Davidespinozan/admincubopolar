@@ -354,8 +354,10 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Arreglos de campo (2026-10-09): venta de barra contra la barra entera (133), datos bancarios (132) y correcciones de Chofer/Rutas — MIGRATIONS APPLIED TO PRODUCTION / VALIDATED (frontend pendiente de deploy)
-**132 y 133 aplicadas por el dueño en el SQL Editor (2026-10-10, un solo pegado; SHA-256 de 132 `88fa96f5a6ce444e7b5efb9b960ffc30b3362336075bec06525d9cdee26374c5`,
+## Arreglos de campo (2026-10-09): venta de barra contra la barra entera (133), datos bancarios (132) y correcciones de Chofer/Rutas — DEPLOYED / TECHNICALLY VERIFIED
+**Frontend `67a63fc` DEPLOYED (push autorizado por el dueño; Netlify `6ac9d96d8f025200089f111e`, ready 2026-10-10T06:22:10Z); bundle vivo verificado
+(52 archivos js: "Enviar ticket por WhatsApp", "Datos para transferencias", "Abrir cámara", `ocultar-mapa-pedidos`, "No hay barra suficiente");
+`/nota/1?t=x` responde 403 (firma inválida) en vez del 400 anterior: el id ya llega por la ruta. Sin cierre del dueño.** 132 y 133 aplicadas por el dueño en el SQL Editor (2026-10-10, un solo pegado; SHA-256 de 132 `88fa96f5a6ce444e7b5efb9b960ffc30b3362336075bec06525d9cdee26374c5`,
 de 133 `354ed14588f0829ed56bd834d0934114b0f42c19f3120be58261fd8c1e9c2c3d`) y verificadas en solo lectura: md5, EXECUTE y SECURITY DEFINER de
 `crear_orden` (`55716866…`), `completar_venta_directa` (`87acbd90…`), `barra_exigir_disponible`, `barra_surtir_cuarto` y la guarda bancaria,
 columnas, CHECK y triggers de `configuracion_empresa` IDÉNTICOS a la base local que pasó las suites; sin cambio: `partir_barra`,
