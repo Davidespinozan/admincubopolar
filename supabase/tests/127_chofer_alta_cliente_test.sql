@@ -55,7 +55,7 @@ SELECT t127_assert((SELECT p.prosecdef AND array_to_string(p.proconfig, ';') = '
 BEGIN; SET LOCAL ROLE authenticated; SELECT t127_auth(1);
 INSERT INTO t127_ids VALUES ('a', crear_cliente_chofer('{"nombre":" Cliente T127 ","rfc":"ttt127010101ab1","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"fact@t127.mx","contacto":"Ana"}')::text);
 COMMIT;
-SELECT t127_assert((t127_j('a') ->> 'existente') = 'false' AND (t127_j('a') ->> 'rfc') = 'TTT127010101AB1' AND (t127_j('a') ->> 'nombre') = 'Cliente T127',
+SELECT t127_assert((t127_j('a') ->> 'existente') = 'false' AND (t127_j('a') ->> 'rfc') = 'TTT127010AB1' AND (t127_j('a') ->> 'nombre') = 'Cliente T127',
   '127-02a el Chofer registra el cliente (nombre sin espacios, RFC en mayúsculas)');
 SELECT t127_assert((SELECT estatus = 'Activo' AND saldo = 0 AND NOT credito_autorizado AND limite_credito = 0 AND regimen = '601' AND uso_cfdi = 'G03'
                            AND cp = '34000' AND correo = 'fact@t127.mx' AND contacto = 'Ana'
@@ -68,48 +68,48 @@ SELECT t127_assert((SELECT count(*) FROM auditoria WHERE accion = 'Crear cliente
 
 \echo '── 127: idempotencia por RFC'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t127_auth(1);
-INSERT INTO t127_ids VALUES ('b', crear_cliente_chofer('{"nombre":"Otro nombre T127","rfc":"TTT127010101AB1","regimen":"612","uso_cfdi":"S01","cp":"34100","correo":"otro@t127.mx"}')::text);
+INSERT INTO t127_ids VALUES ('b', crear_cliente_chofer('{"nombre":"Otro nombre T127","rfc":"TTT127010AB1","regimen":"612","uso_cfdi":"S01","cp":"34100","correo":"otro@t127.mx"}')::text);
 COMMIT;
 SELECT t127_assert((t127_j('b') ->> 'existente') = 'true' AND (t127_j('b') ->> 'id') = (t127_j('a') ->> 'id'),
   '127-03a el mismo RFC devuelve el cliente existente');
-SELECT t127_assert((SELECT count(*) = 1 AND bool_and(nombre = 'Cliente T127' AND regimen = '601' AND cp = '34000') FROM clientes WHERE rfc = 'TTT127010101AB1'),
+SELECT t127_assert((SELECT count(*) = 1 AND bool_and(nombre = 'Cliente T127' AND regimen = '601' AND cp = '34000') FROM clientes WHERE rfc = 'TTT127010AB1'),
   '127-03b no se crea otro cliente ni se modifican los datos del existente');
 SELECT t127_assert((SELECT count(*) FROM auditoria WHERE accion = 'Crear cliente (chofer)' AND detalle LIKE '%T127%') = 1,
   '127-03c el reintento no duplica la auditoría');
 
 \echo '── 127: validaciones'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t127_auth(1);
-SELECT t127_err($q$SELECT crear_cliente_chofer('{"rfc":"TTT127010101AB2","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-04a sin nombre', '22023');
+SELECT t127_err($q$SELECT crear_cliente_chofer('{"rfc":"TTT127010AB2","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-04a sin nombre', '22023');
 SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"X T127","rfc":"XAXX010101000","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-04b RFC genérico rechazado', '22023');
 SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"X T127","rfc":"ABC","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-04c RFC mal formado', '22023');
-SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"X T127","rfc":"TTT127010101AB3","regimen":"Sin obligaciones","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-04d régimen que no es código SAT', '22023');
-SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"X T127","rfc":"TTT127010101AB3","regimen":"601","uso_cfdi":"","cp":"34000","correo":"a@b.mx"}')$q$, '127-04e sin uso de CFDI', '22023');
-SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"X T127","rfc":"TTT127010101AB3","regimen":"601","uso_cfdi":"G03","cp":"340","correo":"a@b.mx"}')$q$, '127-04f código postal inválido', '22023');
-SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"X T127","rfc":"TTT127010101AB3","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"sin-arroba"}')$q$, '127-04g correo inválido', '22023');
+SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"X T127","rfc":"TTT127010AB3","regimen":"Sin obligaciones","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-04d régimen que no es código SAT', '22023');
+SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"X T127","rfc":"TTT127010AB3","regimen":"601","uso_cfdi":"","cp":"34000","correo":"a@b.mx"}')$q$, '127-04e sin uso de CFDI', '22023');
+SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"X T127","rfc":"TTT127010AB3","regimen":"601","uso_cfdi":"G03","cp":"340","correo":"a@b.mx"}')$q$, '127-04f código postal inválido', '22023');
+SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"X T127","rfc":"TTT127010AB3","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"sin-arroba"}')$q$, '127-04g correo inválido', '22023');
 SELECT t127_err($q$SELECT crear_cliente_chofer(NULL)$q$, '127-04h sin datos', '22023');
 ROLLBACK;
 SELECT t127_assert((SELECT count(*) FROM clientes WHERE rfc LIKE 'TTT127%') = 1, '127-04i ninguna validación fallida dejó un cliente');
 
 \echo '── 127: quién puede'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t127_auth(2);
-SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"V T127","rfc":"TTT127010101AB4","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-05a Ventas no usa el contrato del Chofer', '42501');
+SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"V T127","rfc":"TTT127010AB4","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-05a Ventas no usa el contrato del Chofer', '42501');
 ROLLBACK;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t127_auth(3);
-SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"E T127","rfc":"TTT127010101AB4","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-05b el Empleado no puede', '42501');
+SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"E T127","rfc":"TTT127010AB4","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-05b el Empleado no puede', '42501');
 ROLLBACK;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t127_auth(4);
-SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"B T127","rfc":"TTT127010101AB4","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-05c un Chofer inactivo no puede', '42501');
+SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"B T127","rfc":"TTT127010AB4","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-05c un Chofer inactivo no puede', '42501');
 ROLLBACK;
 BEGIN; SET LOCAL ROLE anon;
-SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"A T127","rfc":"TTT127010101AB4","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-05d anon sin acceso', '42501');
+SELECT t127_err($q$SELECT crear_cliente_chofer('{"nombre":"A T127","rfc":"TTT127010AB4","regimen":"601","uso_cfdi":"G03","cp":"34000","correo":"a@b.mx"}')$q$, '127-05d anon sin acceso', '42501');
 ROLLBACK;
 
 \echo '── 127: el Chofer sigue sin escritura REST en clientes'
 BEGIN; SET LOCAL ROLE authenticated; SELECT t127_auth(1);
-SELECT t127_err($q$INSERT INTO clientes (nombre, rfc) VALUES ('REST T127', 'TTT127010101AB5')$q$, '127-06a INSERT directo del Chofer rechazado', '42501|P0001');
-SELECT t127_err($q$UPDATE clientes SET nombre = 'Cambiado T127' WHERE rfc = 'TTT127010101AB1'$q$, '127-06b UPDATE directo del Chofer no cambia nada', '42501|P0001');
+SELECT t127_err($q$INSERT INTO clientes (nombre, rfc) VALUES ('REST T127', 'TTT127010AB5')$q$, '127-06a INSERT directo del Chofer rechazado', '42501|P0001');
+SELECT t127_err($q$UPDATE clientes SET nombre = 'Cambiado T127' WHERE rfc = 'TTT127010AB1'$q$, '127-06b UPDATE directo del Chofer no cambia nada', '42501|P0001');
 ROLLBACK;
-SELECT t127_assert((SELECT nombre = 'Cliente T127' FROM clientes WHERE rfc = 'TTT127010101AB1'), '127-06c el cliente conserva su nombre');
+SELECT t127_assert((SELECT nombre = 'Cliente T127' FROM clientes WHERE rfc = 'TTT127010AB1'), '127-06c el cliente conserva su nombre');
 
 BEGIN; SELECT t127_limpiar(); COMMIT;
 DROP TABLE t127_ids;
