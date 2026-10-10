@@ -354,8 +354,8 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Tanda 3 de correcciones de la revisión profunda (mig 136) — 2026-10-10 — COMMITTED / LOCAL-VALIDATED (migración y deploy PENDIENTES)
-**Estado: en git local (rama `tanda3-arreglos`). 136 NO aplicada en producción; frontend y funciones NO desplegados.** Autorizada por el
+## Tanda 3 de correcciones de la revisión profunda (mig 136) — 2026-10-10 — MIGRATION APPLIED TO PRODUCTION / VALIDATED (deploy PENDIENTE)
+**136 aplicada por el dueño en el SQL Editor (2026-10-10) y verificada en solo lectura: md5 de `mi_asistencia` `575bf117fc9ec695bdf43aa066c0022b`, `registrar_asistencia_manual` `b24a8507a4f22915542471b89b63b6cc`, `asistencia_generar_avisos` `4421305a267c4dc6e465bb596b9fe672`, `nomina_asistencia_semana` `626c3193c0cf972f2d11d721ea92e69d` y `cerrar_ruta_financiero` `9b80d0e98779c21a547c5010a109059a` IDÉNTICOS a la base local; SECURITY DEFINER y permisos iguales (anon nada); 209 funciones; 0 asistencias. Frontend y funciones de Netlify NO desplegados (falta el push).** Autorizada por el
 dueño ("dale", 2026-10-10). Orden de activación: 136 (aditiva, compatible con el frontend desplegado) → verificación de solo lectura → push.
 - **136** (`136_correcciones_tanda3.sql`, SHA-256 `76c145d6479f4ebf1e9c9e6fad0459d2aba192021a05e4bb07c235692c10b9eb`; idempotente, mismas firmas y permisos, una función nueva):
   (1) `mi_asistencia` — al terminar el turno conserva la entrada y la salida del día (antes "Fuera de horario" en blanco), y una salida
