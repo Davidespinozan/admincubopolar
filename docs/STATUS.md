@@ -354,7 +354,7 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Conceptos de nómina (NOM-1, mig 128) — 2026-10-09 — MIGRATION APPLIED TO PRODUCTION / VALIDATED (frontend pendiente de deploy)
+## Conceptos de nómina (NOM-1, mig 128) — 2026-10-09 — DEPLOYED / TECHNICALLY VERIFIED
 **Migración 128 aplicada por el dueño en el SQL Editor (2026-10-10, antes de 01:32Z; SHA-256
 `c2c814012aaad9b5f1d2692be5a1b109ede0fc58f243ed7b96061eef760594d5`) y verificada en solo lectura a las 01:32Z:** tablas
 `nomina_conceptos`, `nomina_concepto_empleados` y `nomina_recibo_lineas` (RLS activa, policy `admin_read` = `erp_rol_activo() = 'Admin'`,
@@ -363,8 +363,10 @@ suites (entre ellas `guardar_concepto_nomina` `81a069c27d74bfc7ed1bb7247e5c4df9`
 `bd8d67c86c3b2caced7191207bc191cc`, `aplicar_conceptos_nomina` `897b3ddcb3debc220b98a8c9b66f4e28`, `generar_recibos_nomina`
 `ab1723f5b1d0c63082469ad31e73588b`, `editar_recibo_nomina` `ff72121e92018ceea6aade9ed5ec6a12`); sin cambio: `pagar_nomina`
 `c4504312dd00137c00d570e4bb66ed1d`, `nomina_recalcular_periodo`, `nomina_recibos_guard`, `nomina_periodos_guard`. 0 periodos y 0 recibos
-antes y después. Conteos a esa hora (incluyen fases de otras sesiones): 196 funciones · 91 policies · 54 tablas. El frontend desplegado
-no usa todavía los contratos nuevos. Tarjeta: `docs/sistema/nomina.md`.
+antes y después. Conteos a esa hora (incluyen fases de otras sesiones): 196 funciones · 91 policies · 54 tablas. Frontend `f9b5607` DEPLOYED (push autorizado por el dueño; Netlify
+`6ac9962f5490440008be2f6e`, ready 2026-10-10T01:35:12Z, `commit_ref` = `f9b5607`); bundle vivo verificado (50 archivos js):
+`guardar_recibo_nomina`, `guardar_concepto_nomina`, `aplicar_conceptos_nomina`, `nomina_acumulados`, 1 archivo cada una. Sin cierre
+del dueño registrado. Sin corrida completa del runner sobre la base con 127 y 129 (fase validada con sus suites 128 y 100 directas). Tarjeta: `docs/sistema/nomina.md`.
 - **Pedido del dueño:** que Admin dé de alta los bonos, comisiones y descuentos y a quién aplican (ejemplo: puntualidad $200 por
   semana), en vez de teclearlos persona por persona cada semana. Diseño delegado ("que quede lo mejor posible").
 - **Qué agrega:** catálogo `nomina_conceptos` (monto fijo o % del salario diario; todos / un área / personas; monto propio y tope
@@ -375,7 +377,7 @@ no usa todavía los contratos nuevos. Tarjeta: `docs/sistema/nomina.md`.
 - **Producción antes de 128 (solo lectura, 2026-10-09):** 0 periodos y 0 recibos (tras la limpieza de datos del dueño); md5 de
   `generar_recibos_nomina` `f829cbdd…` y `editar_recibo_nomina` `7a4bbab5…` = base local (paridad en el runner).
 - **Activación:** 1) aplicar 128 (aditiva, compatible con el frontend desplegado) ✔ → 2) verificación de
-  solo lectura ✔ → 3) push del frontend (pendiente de autorización) → 4) bundle vivo. Sin migración de contención: las tablas nuevas nacen sin DML por API.
+  solo lectura ✔ → 3) push del frontend ✔ → 4) bundle vivo ✔. Sin migración de contención: las tablas nuevas nacen sin DML por API.
 - **No incluye:** comisiones calculadas con ventas, puntualidad automática con el reloj checador, reverso de un periodo pagado,
   recibo imprimible.
 
