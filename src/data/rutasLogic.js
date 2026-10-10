@@ -146,7 +146,9 @@ export function resumenEconomicoRuta(ruta, ordenes = []) {
   for (const o of propias) {
     const monto = Number(o.total) || 0;
     const metodo = String(o.metodoPago ?? o.metodo_pago ?? '').trim();
-    const esCredito = /cr[eé]dito/i.test(metodo) || /^cr[eé]dito$/i.test(String(o.tipoCobro ?? o.tipo_cobro ?? '').trim());
+    // Manda cómo se COBRÓ (método de la entrega). El tipo de cobro con que se levantó la venta
+    // solo decide cuando no hay método: una venta "a crédito" que el chofer cobró en efectivo es cobrada.
+    const esCredito = metodo ? /cr[eé]dito/i.test(metodo) : /^cr[eé]dito$/i.test(String(o.tipoCobro ?? o.tipo_cobro ?? '').trim());
     if (esCredito) credito = centavos(credito + monto);
     else cobrado = centavos(cobrado + monto);
     const clave = esCredito ? 'Crédito' : (metodo || 'Sin método');

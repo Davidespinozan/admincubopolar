@@ -354,6 +354,30 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## Revisión profunda con agentes (2026-10-10) y tanda 1 de correcciones (mig 135) — IMPLEMENTED LOCALLY / MIGRATION PENDING
+**Auditoría de solo lectura** de ventas, rutas y chofer, producción y almacén, cobros, facturación, nómina, asistencia, permisos y el
+frontend compartido: ~45 hallazgos, ningún daño en datos (aún sin operación real). Se corrigen en tres tandas; **135 NO está aplicada**.
+- **Tanda 1 (este cambio).** Servidor, 135: (a) comisiones — lo entregado en OTRA semana en borrador ya no se lo lleva la semana nueva;
+  (b) recalcular — si lo ganado baja, el descuento se recorta a lo disponible en vez de abortar la semana por neto negativo, y un renglón
+  que fue automático se recalcula al quitarle la regla; (c) `completar_venta_directa` bloquea bolsa → cuarto (como Producción; evitaba un
+  posible deadlock); (d) `orden_evidencias` la leen Admin o quien subió. Frontend: Chofer — ruta activa por `rutaActivaDelChofer` (la ya
+  empezada manda aunque cambie el día o le creen otra; una Programada se ve desde su fecha), el estado en memoria se reinicia al cambiar
+  de ruta (antes las entregas y ventas exprés de una ruta se enviaban en el cierre de otra), crédito validado ANTES de marcar la entrega,
+  venta exprés sin "link de pago" y con crédito validado, importe = total registrado de la venta (precio por sucursal), el segundo envío
+  del cierre financiero reutiliza las entregas del primero, las fotos sobreviven al refresco y se reintentan al minuto; Rutas — las
+  órdenes traen `rutaId` (toda ruta decía "0 órdenes"), editar conserva carga autorizada y extra; resumen del cierre — manda cómo se
+  cobró; Nómina — Pagar recalcula también con conceptos automáticos creados después; Facturación — "Ver PDF" abre la pestaña en el toque.
+- **Validación local:** runner completo hasta 134 en verde sobre el `main` actual (primera corrida completa con 127–134; la única falla fue
+  una re-corrida de la suite 072 que yo había añadido y que no es re-corrible tras 103/106: quitada). 135 ×2; suite
+  `135_correcciones_tanda1_test.sql` (10); tras 135: 100, 109, 115, 128, 129, 130, 133, 134 OK. Vitest 1,642 en 4 zonas; lint, typecheck, build.
+- **Pendiente (tandas 2 y 3, PROPOSED):** "Cancelar orden" de una Asignada no cancela; accesos adicionales bloqueados en el cliente
+  (`requireRol` solo ve el rol principal); Ventas solo ve clientes a los que ya vendió; "Cobro registrado" aunque falle; Dashboard "Hecho
+  hoy" en 0; exportación de Movimientos vacía; "Qué necesitas producir" resta dos veces la carga en ruta; editar monto de CxP no hace nada;
+  link de pago viejo cobrado sin registro; `cerrar_ruta_financiero` no comprueba que la orden sea de la ruta; timbrado que cae a público
+  en general sin avisar; clientes con régimen 616 / uso G03 por omisión; CP fiscal = CP de entrega; suscripción push que sobrevive al
+  cierre de sesión; reloj checador (día "fuera de horario" tras la salida, entrada perdida sin corrección); usuario Inactivo entra;
+  alta de usuario y restablecer contraseña sin rastro; lecturas sin paginar (`orden_lineas`).
+
 ## Factura oficial: enviar por correo y ver / descargar PDF y XML — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED (sin migración)
 **Frontend y funciones `7307240` DEPLOYED (push autorizado por el dueño; Netlify `6ac9e2d50d227c0008b14651`, ready 2026-10-10T07:02:19Z); bundle vivo
 verificado y las dos funciones responden 401 sin sesión. Un envío o descarga real NO está verificado.** Pedido del dueño: que la factura se mande por correo y se pueda ver, como en su otro sistema.

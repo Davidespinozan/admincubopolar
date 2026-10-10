@@ -368,8 +368,12 @@ export function RutasView({ data, actions }) {
     setEditingRuta(ruta);
     // Parsear carga existente a objeto por producto
     const cargaObj = (ruta.carga && typeof ruta.carga === 'object') ? ruta.carga : {};
-    const extraObj = (ruta.extraAutorizado && typeof ruta.extraAutorizado === 'object') ? ruta.extraAutorizado : {};
-    const cargaAutObj = (ruta.cargaAutorizada && typeof ruta.cargaAutorizada === 'object') ? ruta.cargaAutorizada : cargaObj;
+    // La fila llega en snake_case: leer solo camelCase hacía que al editar una ruta se
+    // perdieran la carga autorizada y el extra (se guardaban la carga de las órdenes y {}).
+    const extraGuardado = ruta.extraAutorizado ?? ruta.extra_autorizado;
+    const cargaAutGuardada = ruta.cargaAutorizada ?? ruta.carga_autorizada;
+    const extraObj = (extraGuardado && typeof extraGuardado === 'object') ? extraGuardado : {};
+    const cargaAutObj = (cargaAutGuardada && typeof cargaAutGuardada === 'object') ? cargaAutGuardada : cargaObj;
     // Restaurar órdenes ya asignadas a esta ruta
     const ordenesAsig = (data.ordenes || [])
       .filter(o => String(o.rutaId || o.ruta_id) === String(ruta.id))

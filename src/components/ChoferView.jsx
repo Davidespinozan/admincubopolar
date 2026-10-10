@@ -13,6 +13,7 @@ import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
 import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
 import { mensajeTicket, enlaceWhatsApp, urlMapaParada, urlNavegacionParada } from '../data/ticketLogic';
 import { evidenciasPendientes, estadoFotosEntrega } from '../data/evidenciaLogic';
+import { rutaActivaDelChofer, motivoSinCredito, mezclarEntregas } from '../data/choferRutaLogic';
 import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas } from '../data/colaOfflineLogic';
 import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from '../data/stockContratosLogic';
 import { useColaOffline } from '../data/useColaOffline';
@@ -174,19 +175,11 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 
   // ── MI RUTA ACTIVA (asignada por administración) ──
   const isAdminPreview = user?.rol === 'Admin';
-  const miRutaActiva = useMemo(() => {
-    const hoyStr = diaNegocio();
-    return (data.rutas || []).find(r => {
-      const estatus = s(r.estatus).toLowerCase();
-      const estaActiva = estatus === 'programada' || estatus === 'en progreso' || estatus === 'en_progreso' || estatus === 'pendiente firma' || estatus === 'cargada';
-      const esFechaHoy = !r.fecha || s(r.fecha).startsWith(hoyStr);
-      if (!estaActiva || !esFechaHoy) return false;
-      // Admin preview: mostrar primera ruta activa (sin filtrar por chofer)
-      if (isAdminPreview) return true;
-      const choferId = r.choferId || r.chofer_id;
-      return choferId && (String(choferId) === String(user?.id) || s(r.choferNombre) === s(user?.nombre));
-    }) || null;
-  }, [data.rutas, user, isAdminPreview]);
+  // La ruta del chofer: la ya empezada manda (aunque cambie el día o le creen otra) y
+  // una Programada se ve desde su fecha. Regla en choferRutaLogic.
+  const miRutaActiva = useMemo(
+    () => rutaActivaDelChofer(data.rutas, user, diaNegocio(), { esAdmin: isAdminPreview }),
+    [data.rutas, user?.id, user?.nombre, isAdminPreview]);
 
   // ── COLA OFFLINE (Tanda 22) ──
   // Sin señal, entrega/no-entrega/merma se encolan en localStorage y se
@@ -283,7 +276,9 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           if (match) {
             const cant = parseInt(match[1]);
             const sku = match[2];
-            const precio = getPrice(o.clienteId || o.cliente_id, sku);
+            // El precio es el de la VENTA (línea guardada); el de hoy solo si la venta no trae líneas.
+            const linea = (o.preciosSnapshot || []).find(l => s(l.sku) === sku);
+            const precio = linea && Number.isFinite(Number(linea.unitPrice)) ? n(linea.unitPrice) : getPrice(o.clienteId || o.cliente_id, sku);
             items.push({ sku, cant, precio });
           }
         });
@@ -295,11 +290,29 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       const longitud = entrega.longitud ?? undefined;
       const esCredito = s(o.tipo_cobro || o.tipoCobro) === 'Credito';
       const nombreComercial = s(cli?.nombre_comercial || cli?.nombreComercial || '');
-      return { ...o, clienteNombre, items, totalCalc: total || n(o.total), entregada,
+      // Se cobra el total de la venta tal como quedó registrada (precio por sucursal incluido).
+      return { ...o, clienteNombre, items, totalCalc: n(o.total) || total, entregada,
         latitud, longitud, direccion, referencia, esCredito,
         contacto, nombreComercial };
     });
   }, [misOrdenes, data.clientes, data.sucursales, entregas, getPrice]);
+
+  // Cambio de ruta SIN recargar la app (cerró una y le asignaron otra): lo que hay en
+  // memoria es de la ruta anterior y no debe pasar a la nueva. Antes las entregas y ventas
+  // exprés de la primera se enviaban en el cierre de la segunda (ventas y cobros duplicados).
+  // Va antes de los efectos que cargan y guardan por ruta.
+  const [rutaDeEntregas, setRutaDeEntregas] = useState(null);
+  const ultimaRutaRef = useRef(null);
+  useEffect(() => {
+    const id = miRutaActiva?.id ?? null;
+    if (id == null) return;   // sin ruta activa (p. ej. recién cerrada): se conserva la pantalla de cierre
+    if (ultimaRutaRef.current != null && ultimaRutaRef.current !== id) {
+      setEntregas([]); setMermas([]); setRutaDeEntregas(null);
+      setStepOverride(null); setRutaCerrada(false); setBalanceCierre(null); setConteoForm({}); setFaltanteCierre(null);
+      setEntregaModal(null); setVentaModal(false); setMermaModal(false); setTicket(null);
+    }
+    ultimaRutaRef.current = id;
+  }, [miRutaActiva?.id]);
 
   // Sync entregas from DB on load (so reloads don't lose delivered orders)
   useEffect(() => {
@@ -316,12 +329,10 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       }));
     if (dbEntregas.length > 0) {
       setEntregas(prev => {
-        // Merge: keep local entries not in DB, add DB entries.
-        // Tanda 22 fix: las ventas exprés no tienen ordenId — el filtro
-        // anterior (e.ordenId && ...) las descartaba en cada refresh.
-        const dbIds = new Set(dbEntregas.map(e => String(e.ordenId)));
-        const localOnly = prev.filter(e => !e.ordenId || !dbIds.has(String(e.ordenId)));
-        const merged = [...dbEntregas, ...localOnly];
+        // El servidor manda en total y forma de pago; el teléfono conserva fotos, referencia,
+        // contacto y hora (antes la entrada del servidor REEMPLAZABA la local y la foto por
+        // subir se perdía). Las ventas exprés (sin ordenId) se quedan como están.
+        const merged = mezclarEntregas(prev, dbEntregas);
         // Sin cambios → mismo estado. Antes devolvía siempre un arreglo nuevo:
         // ordenesConDetalle depende de `entregas`, así que con una orden ya
         // Entregada el efecto se re-disparaba sin fin (Maximum update depth).
@@ -339,17 +350,22 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     if (!miRutaActiva?.id) return;
     const clave = 'entregas_ruta_' + miRutaActiva.id;
     const saved = localStorage.getItem(clave);
-    if (!saved) return;
+    if (!saved) { setRutaDeEntregas(miRutaActiva.id); return; }
     try {
       const arr = JSON.parse(saved);
       if (!Array.isArray(arr) || arr.length === 0) return;
       setEntregas(prev => {
         const vistos = new Set(prev.map(e => String(e.ordenId ?? e.id)));
         const nuevos = arr.filter(e => e && !vistos.has(String(e.ordenId ?? e.id)));
-        return [...prev, ...nuevos];
+        // Lo guardado en el teléfono completa a lo que ya llegó del servidor (fotos por subir).
+        const guardadas = new Map(arr.filter(e => e && e.ordenId).map(e => [String(e.ordenId), e]));
+        const completadas = prev.map(e => (e.ordenId && guardadas.has(String(e.ordenId)) ? mezclarEntregas([guardadas.get(String(e.ordenId))], [e])[0] : e));
+        return [...completadas, ...nuevos];
       });
+      setRutaDeEntregas(miRutaActiva.id);
     } catch {
       localStorage.removeItem(clave);
+      setRutaDeEntregas(miRutaActiva.id);
     }
   }, [miRutaActiva?.id]);
 
@@ -357,7 +373,9 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     // Solo persistir cuando hay algo — evita que el mount inicial (con
     // estado vacío) pise lo guardado antes de que cargue el effect de
     // arriba. Al cerrar ruta se hace removeItem explícito.
-    if (!miRutaActiva?.id || entregas.length === 0) return;
+    // Solo cuando las entregas en memoria SON de esta ruta: al cambiar de ruta este efecto
+    // corre todavía con las de la anterior y las guardaba bajo la clave de la nueva.
+    if (!miRutaActiva?.id || entregas.length === 0 || rutaDeEntregas !== miRutaActiva.id) return;
     const clave = 'entregas_ruta_' + miRutaActiva.id;
     try {
       localStorage.setItem(clave, JSON.stringify(entregas));
@@ -370,7 +388,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         ));
       } catch { /* sin espacio ni para eso: la copia en memoria sigue viva */ }
     }
-  }, [entregas, miRutaActiva?.id]);
+  }, [entregas, miRutaActiva?.id, rutaDeEntregas]);
 
   // Load mermas from localStorage on mount (persist across reloads)
   useEffect(() => {
@@ -608,6 +626,13 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       showToast(validErr.error, 'error');
       return;
     }
+    // Fiado: se revisa ANTES de marcar la entrega. Si el servidor lo rechaza después, la venta
+    // quedaba Entregada sin cobro ni deuda y bloqueaba el cierre de la ruta.
+    if (cobroMetodo === "Crédito") {
+      const cli = (data.clientes || []).find(c => String(c.id) === String(entregaModal.clienteId ?? entregaModal.cliente_id));
+      const sinCredito = motivoSinCredito(cli, entregaModal.totalCalc);
+      if (sinCredito) { showToast(sinCredito, 'error'); return; }
+    }
     // QR / Link de pago → generate checkout
     if (cobroMetodo === "QR / Link de pago") {
       if (!online) {
@@ -720,18 +745,22 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
   // recuperar la conexión y al reabrir la app; cada foto se intenta una vez por
   // sesión de conexión y, ya subida, se marca en la entrega para no repetir.
   const subiendoEvidencias = useRef(new Set());
+  const [reintentoFotos, setReintentoFotos] = useState(0);
   useEffect(() => { if (online) subiendoEvidencias.current.clear(); }, [online]);
   useEffect(() => {
     if (!online || typeof actions.subirEvidenciaOrden !== 'function') return;
     for (const p of evidenciasPendientes(entregas)) {
       if (subiendoEvidencias.current.has(p.clave)) continue;
       subiendoEvidencias.current.add(p.clave);
+      // Si falla (mala señal), se reintenta al minuto: antes solo se reintentaba al perder y
+      // recuperar la conexión, y con señal débil eso no pasa.
+      const reintentar = () => setTimeout(() => { subiendoEvidencias.current.delete(p.clave); setReintentoFotos(k => k + 1); }, 60_000);
       actions.subirEvidenciaOrden(p).then(r => {
-        if (r?.error) { console.warn('[evidencia]', p.clave, r.error); return; }
+        if (r?.error) { console.warn('[evidencia]', p.clave, r.error); reintentar(); return; }
         setEntregas(prev => prev.map(e => (Number(e.ordenId) === p.ordenId ? { ...e, [p.marca]: true } : e)));
-      }).catch(err => console.warn('[evidencia]', p.clave, err?.message));
+      }).catch(err => { console.warn('[evidencia]', p.clave, err?.message); reintentar(); });
     }
-  }, [entregas, online, actions]);
+  }, [entregas, online, actions, reintentoFotos]);
 
   // Mapa de una parada dentro de la app (sin salir).
   const [mapaParada, setMapaParada] = useState(null);
@@ -811,6 +840,8 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 
     const errFactura = validarVentaExpressFactura({ factura: vForm.factura, cliente: clienteExpressSel });
     if (errFactura) { showToast(errFactura.error); return; }
+    // Una venta exprés inválida aborta TODO el cierre de la ruta y no se puede quitar: se valida aquí.
+    if (vForm.pago === "QR / Link de pago") { showToast('La venta rápida no tiene link de pago: elige efectivo, transferencia o tarjeta.', 'error'); return; }
 
     const sku = vForm.sku || s(productos[0]?.sku);
     // Check available inventory
@@ -822,6 +853,10 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     try {
       const precio = getPrice(vForm.clienteId || clienteExpressSel?.id || null, sku);
       const subtotal = n(vForm.cant) * precio;
+      if (vForm.pago === "Crédito") {
+        const sinCredito = motivoSinCredito(clienteExpressSel || (data.clientes || []).find(c => String(c.id) === String(vForm.clienteId)), subtotal);
+        if (sinCredito) { showToast(sinCredito, 'error'); return; }
+      }
       const total = subtotal; // Hielo: IVA tasa 0%
       const venta = {
         id: Date.now(), folio: "EX-" + String(Date.now()).slice(-4),
@@ -918,6 +953,9 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       });
       if (!res) return;
       if (res.mermasRegistradas) marcarMermasRegistradas(res.mermasRegistradas);
+      // Ventas y cobros ya quedaron registrados: las ventas exprés ahora son órdenes del
+      // servidor (llegan con la recarga). Se quitan las copias locales para no contarlas dos veces.
+      if (res.financiero) setEntregas(prev => prev.filter(e => e.ordenId));
       if (res.error) {
         showToast('No se pudo preparar el cierre: ' + res.error, 'error');
         return;
@@ -1574,7 +1612,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             </Card>
           )}
           <div><label className={LABEL}>Pago</label>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">{PAGOS.map(m => <ChoiceButton key={m} active={vForm.pago===m} onClick={() => setVForm(f=>({...f,pago:m}))} className="text-[11px]">{m==="QR / Link de pago"?"QR/Link":m}</ChoiceButton>)}</div>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">{PAGOS.filter(m => m !== "QR / Link de pago").map(m => <ChoiceButton key={m} active={vForm.pago===m} onClick={() => setVForm(f=>({...f,pago:m}))} className="text-[11px]">{m==="QR / Link de pago"?"QR/Link":m}</ChoiceButton>)}</div>
           </div>
 
         </div>

@@ -361,11 +361,16 @@ export function useSupaStore(userId, userName, userRol) {
         return {
           ...o,
           clienteId: o.cliente_id,
+          // Las vistas de Rutas y Ventas leen estos dos en camelCase; sin ellos toda ruta
+          // mostraba "0 órdenes" y la etiqueta FACTURA nunca salía.
+          rutaId: o.ruta_id ?? null,
+          requiereFactura: !!o.requiere_factura,
           cliente: c?.nombre || '',
           // 123: sucursal de la orden (nombre solo si no es la principal).
           sucursalId: o.sucursal_id || null,
           sucursal: sc && !sc.es_principal ? sc.nombre : '',
-          productos: lines.map(l => `${l.cantidad}×${l.sku}`).join(', '),
+          // Sin líneas cargadas se conserva el texto guardado en la orden (no se deja vacío).
+          productos: lines.length ? lines.map(l => `${l.cantidad}×${l.sku}`).join(', ') : (o.productos || ''),
           ruta: r?.nombre || '—',
           usoCfdi: c?.uso_cfdi || 'G03',
           preciosSnapshot: lines.map(l => ({
@@ -2707,19 +2712,28 @@ export function useSupaStore(userId, userName, userRol) {
 
       // Factura oficial (PDF o XML) de un CFDI ya timbrado. `abrir`: se muestra en otra
       // pestaña (vista del PDF); si no, se descarga. No cambia nada en el servidor.
-      descargarFactura: async (ordenId, formato, { abrir = false } = {}) => {
+      // `ventana`: pestaña que la pantalla abrió EN EL TOQUE del usuario (el iPhone bloquea
+      // abrir una pestaña después de esperar al servidor); aquí solo se le pone el documento.
+      descargarFactura: async (ordenId, formato, { abrir = false, ventana = null } = {}) => {
         try {
           const r = await backendPost('billing-download-invoice', { ordenId, formato });
           const blob = base64ABlob(r?.base64, r?.contentType);
-          if (!blob) { t()?.error('La factura llegó vacía. Inténtalo otra vez.'); return { error: 'vacia' }; }
+          if (!blob) { try { ventana?.close(); } catch { /* noop */ } t()?.error('La factura llegó vacía. Inténtalo otra vez.'); return { error: 'vacia' }; }
           const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          if (abrir) { a.target = '_blank'; a.rel = 'noopener'; } else { a.download = r.filename || `factura.${formato}`; }
-          document.body.appendChild(a); a.click(); a.remove();
+          if (abrir && ventana && !ventana.closed) {
+            ventana.location.href = url;
+          } else {
+            // Sin pestaña (app instalada o bloqueada): se descarga el archivo, que siempre funciona.
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = r.filename || `factura.${formato}`;
+            document.body.appendChild(a); a.click(); a.remove();
+            if (abrir) t()?.info('La factura se descargó: ábrela desde tus descargas');
+          }
           setTimeout(() => URL.revokeObjectURL(url), 60_000);
           return { data: { filename: r.filename } };
         } catch (err) {
+          try { ventana?.close(); } catch { /* noop */ }
           const msg = mensajeErrorDocumento(err, formato === 'xml' ? 'descargar el XML' : 'abrir la factura');
           t()?.error(msg);
           return { error: msg };
@@ -3724,7 +3738,13 @@ export function useSupaStore(userId, userName, userRol) {
           // F4 (086): UN operacion_id por cierre financiero, persistido por
           // ruta; un reintento devuelve el resultado almacenado sin repetir
           // ventas exprés, pagos ni CxC.
-          const entregasPayload = normalizarEntregasCierre(entregas);
+          // El cierre financiero se registra UNA vez por ruta con las entregas de ese momento.
+          // Un segundo envío (p. ej. para registrar una merma después) debe mandar las MISMAS:
+          // tras el primero, las ventas exprés ya volvieron del servidor como órdenes y la lista
+          // del teléfono cambiaba, así que el servidor lo rechazaba ("cierre con otros datos").
+          const claveFin = `cierre_fin_entregas_${rutaId}`;
+          let entregasPayload = normalizarEntregasCierre(entregas);
+          try { const g = storage?.getItem(claveFin); if (g) entregasPayload = JSON.parse(g); } catch { /* guardado ilegible: se usa lo actual */ }
           const opCierre = resolverOperacionCierre(leerOperacionCierre(storage, rutaId), claveCierreFinanciero(rutaId, entregasPayload));
           guardarOperacionCierre(storage, rutaId, opCierre);
           const built = buildCerrarFinancieroArgs({
@@ -3737,6 +3757,7 @@ export function useSupaStore(userId, userName, userRol) {
           if (built.error) return { error: built.error };
           const { data: finData, error: finErr } = await supabase.rpc('cerrar_ruta_financiero', built.args);
           if (finErr) return { error: mensajeErrorCierreFinanciero(finErr) };
+          try { storage?.setItem(claveFin, JSON.stringify(entregasPayload)); } catch { /* sin espacio: el reintento usará lo actual */ }
           const finRes = interpretarCierreFinanciero(finData);
           if (finRes.replay) {
             await log('Cierre Ruta', 'Rutas', `Cierre financiero de la ruta ${rutaId} ya registrado (reintento): sin efectos repetidos`);
@@ -3756,7 +3777,7 @@ export function useSupaStore(userId, userName, userRol) {
           const bal = await actionsRef.current.obtenerBalanceRuta(rutaId);
           rf();
           if (bal.error) return { error: bal.error, financiero: true, mermasRegistradas };
-          return { balance: bal.data, mermasRegistradas };
+          return { balance: bal.data, mermasRegistradas, financiero: true };
         } catch (err) {
           console.error('[prepararCierreRuta] excepción:', err);
           return { error: err?.message || 'No se pudo preparar el cierre' };
@@ -3786,6 +3807,7 @@ export function useSupaStore(userId, userName, userRol) {
           borrarOperacion(storage, key);
           borrarOperacion(storage, claveStorageMermasRuta(rutaId));
           borrarOperacionCierre(storage, rutaId);
+          try { storage?.removeItem(`cierre_fin_entregas_${rutaId}`); } catch { /* noop */ }
           const dev = data?.devolucion && typeof data.devolucion === 'object' ? data.devolucion : {};
           const devTxt = Object.entries(dev).map(([sku, q]) => `${q}×${sku}`).join(', ') || '0';
           if (!data?.replay) {

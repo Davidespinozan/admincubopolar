@@ -7,7 +7,7 @@ import {
   clasesDeTipo, etiquetaClase, asignacionDe, montoConcepto, describirMonto, describirAlcance,
   lineasEditables, lineaManualNueva, lineaDeConcepto, conceptosParaAgregar, previewDesglose,
   formDeConcepto, personasDelForm, personaIncluida, avanceTope, recibosConFaltantes, AYUDA_CONCEPTOS,
-  BASES_COMISION, formasDeTipo, campoDeCalculo, esComision, recibosConAutomaticos,
+  BASES_COMISION, formasDeTipo, campoDeCalculo, esComision, esAutomatico, recibosConAutomaticos,
 } from '../../data/nominaLogic';
 
 // 100: nómina canónica. La semana es sábado → viernes (pago el viernes) en días
@@ -403,7 +403,9 @@ export function NominaView({ data, actions }) {
   const pagar = (p) => correr(async () => {
     let total = n(p.totalNeto);
     let nota = '';
-    if (recibosConAutomaticos(recibosDe(p.id), data.nominaReciboLineas, conceptos) > 0) {
+    // También cuando el concepto automático se creó DESPUÉS de generar los recibos (aún no
+    // hay renglones): si no, la semana se pagaba sin esas comisiones.
+    if (conceptos.some(c => c.activo !== false && esAutomatico(c)) || recibosConAutomaticos(recibosDe(p.id), data.nominaReciboLineas, conceptos) > 0) {
       const r = await actions.aplicarConceptosNomina(p.id, { silencioso: true });
       if (r?.error) return;
       const nuevo = n(r.data?.total_neto);

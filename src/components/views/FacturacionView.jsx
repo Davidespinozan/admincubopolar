@@ -52,7 +52,10 @@ export function FacturacionView({ data, actions }) {
   const bajarDocumento = async (o, formato) => {
     if (docOcupado) return;
     setDocOcupado(`${o.id}|${formato}`);
-    try { await actions.descargarFactura?.(o.id, formato, { abrir: formato === 'pdf' }); } finally { setDocOcupado(null); }
+    // La pestaña del PDF se abre en este mismo toque (después de esperar, el iPhone la bloquea).
+    let ventana = null;
+    if (formato === 'pdf') { try { ventana = window.open('', '_blank'); if (ventana) ventana.document.title = 'Abriendo factura…'; } catch { ventana = null; } }
+    try { await actions.descargarFactura?.(o.id, formato, { abrir: formato === 'pdf', ventana }); } finally { setDocOcupado(null); }
   };
   const abrirCorreo = (o) => {
     const cli = (data.clientes || []).find(c => String(c.id) === String(o.clienteId ?? o.cliente_id));
