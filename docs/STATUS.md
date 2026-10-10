@@ -354,8 +354,8 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Pedido sin existencia (mig 137) — 2026-10-10 — COMMITTED / LOCAL-VALIDATED (migración y deploy PENDIENTES)
-**Estado: en git local (rama `pedidos-sin-stock`). 137 NO aplicada en producción; frontend NO desplegado.** Pedido y autorizado por el
+## Pedido sin existencia (mig 137) — 2026-10-10 — MIGRATION APPLIED TO PRODUCTION / VALIDATED
+**137 aplicada en producción el 2026-10-10 desde esta sesión con `supabase db query --linked -f` (autorizada por el dueño: "DALE" tras revisar el SQL; esta vez el clasificador no la bloqueó), una vez; verificada en solo lectura: md5 de `crear_orden` `ef8e49a380d52f870aaccc1bf2ef323c` = base local, SECURITY DEFINER, `search_path` fijo, sin anon, una sola firma; `completar_venta_directa` sin cambio (`2107586c…`).** Pedido y autorizado por el
 dueño el 2026-10-10 ("me gusta, dale"). Orden de activación: 137 (compatible con el frontend desplegado: sin la bandera nada cambia) →
 verificación de solo lectura → push.
 - **Antes (auditado en solo lectura):** `crear_orden` (133) y la pantalla rechazaban TODA venta cuya cantidad superara la existencia del
