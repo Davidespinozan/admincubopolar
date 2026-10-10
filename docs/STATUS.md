@@ -354,8 +354,9 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Factura oficial: enviar por correo y ver / descargar PDF y XML — 2026-10-10 — IMPLEMENTED LOCALLY (sin migración)
-**No desplegado.** Pedido del dueño: que la factura se mande por correo y se pueda ver, como en su otro sistema.
+## Factura oficial: enviar por correo y ver / descargar PDF y XML — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED (sin migración)
+**Frontend y funciones `7307240` DEPLOYED (push autorizado por el dueño; Netlify `6ac9e2d50d227c0008b14651`, ready 2026-10-10T07:02:19Z); bundle vivo
+verificado y las dos funciones responden 401 sin sesión. Un envío o descarga real NO está verificado.** Pedido del dueño: que la factura se mande por correo y se pueda ver, como en su otro sistema.
 - **Netlify (2 funciones nuevas; Functions 19 → 21):** `billing-send-invoice` (POST `{ordenId, email?}`: Facturama envía el CFDI vigente al correo
   escrito o al del cliente; éxito solo con 2xx Y `success === true`; bitácora en `invoice_attempts` con provider `facturama-email`) y
   `billing-download-invoice` (POST `{ordenId, formato: pdf|xml}` → `{filename, contentType, base64}`; también de un CFDI cancelado). Misma
