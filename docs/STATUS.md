@@ -354,12 +354,15 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Nómina automática (NOM-2, mig 130) y avisos de asistencia (PD-01.1, mig 131) — 2026-10-09 — MIGRATIONS APPLIED TO PRODUCTION / VALIDATED (frontend pendiente de deploy)
+## Nómina automática (NOM-2, mig 130) y avisos de asistencia (PD-01.1, mig 131) — 2026-10-09 — DEPLOYED / TECHNICALLY VERIFIED
 **130 y 131 aplicadas por el dueño en el SQL Editor (2026-10-10 ~02:23Z, un solo pegado; SHA-256 de 130
 `544cbf1e018ff045272f21ed39b50b1c7b73e9c55b9bf44eb396c67399120b5b`, de 131 `3a7de3cc3ab80184a22ebb08e16da598e0ecfb0f3366f67bd25ecdcad1f95056`)
 y verificadas en solo lectura:** md5 de las 28 funciones `*nomina*` / `*avisos*`, sus EXECUTE, los CHECK de `nomina_conceptos`, RLS, policies y
 grants de las 3 tablas nuevas IDÉNTICOS a la base local que pasó las suites; `asistencia_avisos_config` con los valores por omisión;
-0 conceptos, 0 periodos, 0 renglones, 0 avisos. El frontend desplegado no usa todavía los contratos nuevos. Pedido del dueño (por medio de David,
+0 conceptos, 0 periodos, 0 renglones, 0 avisos. Frontend `74a4569` DEPLOYED (push autorizado por el dueño; Netlify
+`6ac9a22e4509ac000855e631`, ready 2026-10-10T02:26:27Z); bundle vivo verificado (50 archivos js: `guardar_avisos_asistencia`, `regla_asistencia`,
+`porcentaje_ventas`, "Actualizar cálculos"); Netlify Functions 19 con `cron-avisos-asistencia`. Sin cierre del dueño. La entrega real del
+push en teléfonos NO está verificada. Pedido del dueño (por medio de David,
 2026-10-09): avisos, comisiones y bono "lo más pro, siempre modificable"; diseño delegado.
 - **130 (aditiva):** comisiones calculadas con lo ENTREGADO (% del importe, $ por bolsa, $ por entrega; como vendedor, chofer o ayudante;
   opcional por producto), tabla `nomina_linea_ordenes` (una orden se comisiona una sola vez por concepto y persona), percepciones
@@ -377,7 +380,7 @@ grants de las 3 tablas nuevas IDÉNTICOS a la base local que pasó las suites; `
   re-corridas tras ambas: 100, 116, 117, 119, 120, 128 OK. Vitest 1,577 en UTC / Mazatlán / CDMX / Madrid; lint, typecheck y build limpios;
   capturas WebKit iPhone 14 de las pantallas nuevas. Fases integradas al runner (sin ejecutar completo).
 - **Activación:** 1) aplicar 130 y 131 (compatibles con el frontend desplegado) ✔ → 2) verificación de solo
-  lectura ✔ → 3) push del frontend (pendiente de autorización) → 4) bundle vivo y función programada en Netlify.
+  lectura ✔ → 3) push del frontend ✔ → 4) bundle vivo y función programada en Netlify.
 - **No verificable sin operación real:** la entrega del push en teléfonos (iPhone exige la app en la pantalla de inicio) y que las
   variables VAPID estén vigentes en Netlify (producción tiene 2 suscripciones registradas).
 
