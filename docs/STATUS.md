@@ -354,8 +354,9 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Tanda 2 de correcciones de la revisión profunda — 2026-10-10 — IMPLEMENTED LOCALLY (sin migración)
-**No desplegado.** Solo frontend y una función de Netlify.
+## Tanda 2 de correcciones de la revisión profunda — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED (sin migración)
+**Frontend y `billing-pay` `821f7b9` DEPLOYED (push autorizado por el dueño; Netlify `6aca84f055f2640008307847`, ready 2026-10-10T18:33:52Z); bundle
+vivo verificado; `/pagar/<inexistente>` responde 404.** Solo frontend y una función de Netlify.
 - **Ventas:** "Cancelar orden" de una Asignada ahora cancela (el contrato `cancelar_orden_asignada` solo desasigna; faltaba el segundo paso
   Creada → Cancelada; comprobado contra las guardas en la base local); renglones del mismo SKU se juntan antes de enviar; referencia de
   pago repetida con mensaje claro y el campo pide la referencia completa; editar exige fecha.
