@@ -181,3 +181,61 @@ describe('Foto de evidencia: cámara o galería', () => {
     for (const f of ['../components/ChoferView.jsx', '../components/ProduccionStandaloneView.jsx']) expect(src(f)).not.toMatch(/type="file"/);
   });
 });
+
+// ── Fotos del chofer guardadas en el sistema (mig 134) ──
+import { rutaEvidencia, dataUrlABlob, evidenciasPendientes, estadoFotosEntrega, yaExisteEnAlmacen, etiquetaEvidencia } from '../data/evidenciaLogic';
+
+describe('Evidencias de la venta: las fotos del chofer ya no se quedan en el teléfono', () => {
+  const FOTO = 'data:image/jpeg;base64,/9j/4AAQ';
+
+  it('la ruta del archivo es fija por usuario, venta y tipo (un reintento no duplica)', () => {
+    expect(rutaEvidencia('uid-1', 77, 'entrega')).toBe('uid-1/ordenes/77/entrega.jpg');
+    expect(rutaEvidencia('uid-1', '77', 'comprobante_pago')).toBe('uid-1/ordenes/77/comprobante_pago.jpg');
+    expect([rutaEvidencia('', 77, 'entrega'), rutaEvidencia('u', 0, 'entrega'), rutaEvidencia('u', 77, 'selfie'), rutaEvidencia('u', 'x', 'entrega')]).toEqual([null, null, null, null]);
+    expect(etiquetaEvidencia('comprobante_pago')).toBe('Comprobante de pago');
+  });
+
+  it('convierte la foto comprimida a archivo; lo que no es imagen se rechaza', () => {
+    const b = dataUrlABlob(FOTO);
+    expect(b.type).toBe('image/jpeg');
+    expect(b.size).toBe(6);
+    expect([dataUrlABlob(''), dataUrlABlob('data:text/html;base64,PGI+'), dataUrlABlob('https://x/y.jpg'), dataUrlABlob(null)]).toEqual([null, null, null, null]);
+  });
+
+  it('pendientes: solo entregas con venta y fotos que aún no se suben', () => {
+    const entregas = [
+      { ordenId: 1, foto: FOTO, fotoEntrega: FOTO, referencia: ' 123456 ' },
+      { ordenId: 2, foto: FOTO, fotoSubida: true, fotoEntrega: FOTO },
+      { ordenId: 3, foto: null, fotoEntrega: null },
+      { id: 'express-1', foto: FOTO },                      // venta exprés: aún no tiene orden
+      { ordenId: 4, fotoEntrega: FOTO, fotoEntregaSubida: true },
+    ];
+    expect(evidenciasPendientes(entregas).map(p => `${p.clave}:${p.marca}:${p.referencia}`)).toEqual([
+      '1|comprobante_pago:fotoSubida:123456', '1|entrega:fotoEntregaSubida:null', '2|entrega:fotoEntregaSubida:null']);
+    expect(entregas.map(estadoFotosEntrega)).toEqual(['pendientes', 'pendientes', null, 'pendientes', 'guardadas']);
+    expect(evidenciasPendientes(null)).toEqual([]);
+  });
+
+  it('"ya existe" en el almacenamiento no es un error: se sigue con el registro', () => {
+    expect([yaExisteEnAlmacen({ message: 'The resource already exists' }), yaExisteEnAlmacen({ statusCode: '409' }), yaExisteEnAlmacen({ message: 'network' }), yaExisteEnAlmacen(null)]).toEqual([true, true, false, false]);
+  });
+
+  it('el chofer las sube solo con señal; Admin las ve en el detalle; sin REST de escritura', () => {
+    const chofer = src('../components/ChoferView.jsx');
+    const store = src('../data/supaStore.js');
+    expect(chofer).toMatch(/for \(const p of evidenciasPendientes\(entregas\)\)/);
+    expect(chofer).toMatch(/if \(!online \|\| typeof actions\.subirEvidenciaOrden !== 'function'\) return;/);
+    expect(store).toMatch(/rpc\('registrar_evidencia_orden', \{ p_orden_id: Number\(ordenId\), p_tipo: tipo, p_foto_path: ruta, p_referencia: referencia \|\| null \}\)/);
+    expect(store).not.toMatch(/from\('orden_evidencias'\)\s*\.(insert|update|delete|upsert)\(/);
+    expect(src('../components/views/OrdenesView.jsx')).toMatch(/cargarEvidencias=\{actions\.evidenciasDeOrden\}/);
+    expect(src('../components/DetalleVentaModal.jsx')).toMatch(/\{cargarEvidencias && <EvidenciasOrden ordenId=\{orden\.id\} cargar=\{cargarEvidencias\} \/>\}/);
+  });
+
+  it('la migración: foto propia y de esa venta, inmutable, y protegida contra el borrado del archivo', () => {
+    const sql = src('../../supabase/134_evidencias_orden.sql');
+    expect(sql).toMatch(/v_path NOT LIKE auth\.uid\(\)::TEXT \|\| '\/ordenes\/' \|\| p_orden_id \|\| '\/%'/);
+    expect(sql).toMatch(/OR EXISTS \(SELECT 1 FROM orden_evidencias WHERE foto_path = p_name\)/);
+    expect(sql).toMatch(/CREATE TRIGGER trg_orden_evidencias_guard BEFORE UPDATE OR DELETE/);
+    expect(sql).toMatch(/tipo IN \('comprobante_pago', 'entrega'\)/);
+  });
+});

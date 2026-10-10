@@ -353,7 +353,7 @@ export function OrdenesView({ data, actions, user }) {
     </div>
 
     {ConfirmEl}
-    {detalle && <DetalleVentaModal orden={(data.ordenes || []).find(o => String(o.id) === String(detalle.id)) || detalle} data={data} onClose={() => setDetalle(null)} acciones={accionesDetalle((data.ordenes || []).find(o => String(o.id) === String(detalle.id)) || detalle)} />}
+    {detalle && <DetalleVentaModal orden={(data.ordenes || []).find(o => String(o.id) === String(detalle.id)) || detalle} data={data} onClose={() => setDetalle(null)} cargarEvidencias={actions.evidenciasDeOrden} acciones={accionesDetalle((data.ordenes || []).find(o => String(o.id) === String(detalle.id)) || detalle)} />}
 
     <EditarVentaModal
       open={!!editarOrden}

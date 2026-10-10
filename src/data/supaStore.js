@@ -11,6 +11,7 @@ import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpr
 import { buildActividadDatos, buildCompletarArgs, buildEditarOcurrenciaArgs, sumarDiasISO } from './calendarioLogic';
 import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs, esErrorDeRed, mensajeErrorLlamada, rolSinDatosNegocio } from './asistenciaLogic';
 import { buildGuardarAvisosArgs } from './avisosAsistenciaLogic';
+import { dataUrlABlob, rutaEvidencia, yaExisteEnAlmacen } from './evidenciaLogic';
 import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, buildAjusteCuartoArgs, buildMermaCuartoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
 import {
   normalizarEntregasCierre, claveCierreFinanciero, buildCerrarFinancieroArgs, interpretarCierreFinanciero,
@@ -1722,6 +1723,33 @@ export function useSupaStore(userId, userName, userRol) {
         const { data, error } = await supabase.rpc('config_asistencia');
         if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
         return { data };
+      },
+
+      // Mig 134: evidencias de una venta (comprobante de transferencia, foto de entrega).
+      // Sube la foto a la carpeta del propio usuario (<uid>/ordenes/<orden>/<tipo>.jpg) y la
+      // liga a la orden con el contrato. La ruta es fija: reintentar no duplica.
+      subirEvidenciaOrden: async ({ ordenId, tipo, dataUrl, referencia } = {}) => {
+        const blob = dataUrlABlob(dataUrl);
+        if (!blob) return { error: 'La foto no se pudo leer' };
+        const { data: ses } = await supabase.auth.getSession();
+        const ruta = rutaEvidencia(ses?.session?.user?.id, ordenId, tipo);
+        if (!ruta) return { error: 'No se pudo preparar la foto (sesión o venta inválida)' };
+        const { error: upErr } = await supabase.storage.from('mermas').upload(ruta, blob, { cacheControl: '3600', upsert: false, contentType: blob.type || 'image/jpeg' });
+        if (upErr && !yaExisteEnAlmacen(upErr)) return { error: mensajeErrorLlamada(upErr, enLinea()) };
+        const { data, error } = await supabase.rpc('registrar_evidencia_orden', { p_orden_id: Number(ordenId), p_tipo: tipo, p_foto_path: ruta, p_referencia: referencia || null });
+        if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
+        return { data };
+      },
+
+      // Evidencias de una venta con su enlace firmado (12 h). Solo las lee quien puede (RLS y policy del bucket).
+      evidenciasDeOrden: async (ordenId) => {
+        const { data, error } = await supabase.from('orden_evidencias').select('*').eq('orden_id', Number(ordenId)).order('id', { ascending: true });
+        if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
+        const filas = await Promise.all((data || []).map(async (f) => {
+          const { data: firmado } = await supabase.storage.from('mermas').createSignedUrl(f.foto_path, 60 * 60 * 12);
+          return { ...toCamel(f), url: firmado?.signedUrl || null };
+        }));
+        return { data: filas };
       },
 
       // PD-01.1 (mig 131): avisos de asistencia al celular (configuración de Admin).

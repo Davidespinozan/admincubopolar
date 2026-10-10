@@ -354,6 +354,21 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## Evidencias de la venta: fotos del Chofer en el sistema (mig 134) — 2026-10-10 — IMPLEMENTED LOCALLY / MIGRATION PENDING
+**134 NO está aplicada en producción y el frontend no está desplegado.** Cierra el hallazgo de la fase anterior: la foto del comprobante de
+transferencia y la de la entrega se quedaban en el teléfono del Chofer.
+- **134 (aditiva):** `orden_evidencias` (tipo `comprobante_pago` / `entrega`, ruta en el bucket privado `mermas`, referencia, quién la subió;
+  inmutable, sin DML por API; lectura Admin y Facturación o quien la subió) y `registrar_evidencia_orden` (Admin cualquier orden, Ventas las
+  suyas, Chofer las de su ruta; exige archivo existente en `<uid>/ordenes/<orden>/`; idempotente por ruta). `erp_foto_merma_en_uso` (119)
+  ahora también protege estas fotos del borrado (la policy de borrado del bucket la consulta; md5 antes `06f7fa1d…`). No toca orden, pagos ni CxC.
+- **Frontend:** el Chofer sube las fotos solo en cuanto hay señal (al entregar, al reconectar y al reabrir la app) y ve si ya quedaron
+  guardadas; Admin las ve en el detalle de la venta (Órdenes). Almacenamiento verificado en producción (solo lectura): bucket `mermas`
+  privado, 5 MB, JPEG/PNG/WebP/HEIC, con las 3 policies de 072.
+- **Validación local:** 134 ×2; suite `134_evidencias_orden_test.sql` (19); 117 y 119 OK tras 134. Vitest 1,609 en 4 zonas; lint, typecheck, build.
+- **No incluye:** adjuntar comprobante desde Ventas / Admin al cobrar (el contrato ya lo permite; falta la pantalla); fotos de la venta
+  exprés (no tiene orden hasta el cierre); fotos de entregas anteriores a este cambio (ya no están en los teléfonos).
+- **No verificable sin operación real:** la subida desde un teléfono en ruta.
+
 ## Arreglos de campo (2026-10-09): venta de barra contra la barra entera (133), datos bancarios (132) y correcciones de Chofer/Rutas — DEPLOYED / TECHNICALLY VERIFIED
 **Frontend `67a63fc` DEPLOYED (push autorizado por el dueño; Netlify `6ac9d96d8f025200089f111e`, ready 2026-10-10T06:22:10Z); bundle vivo verificado
 (52 archivos js: "Enviar ticket por WhatsApp", "Datos para transferencias", "Abrir cámara", `ocultar-mapa-pedidos`, "No hay barra suficiente");

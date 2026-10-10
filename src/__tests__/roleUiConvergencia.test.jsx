@@ -154,7 +154,7 @@ describe('A5: Chofer — modo enfoque con la identidad del producto; flujo, offl
     expect(v).toMatch(/const ordenesEnColaOffline = useMemo\(\(\) => ordenesBloqueadas\(colaOffline\), \[colaOffline\]\);/);
   });
   it('llamadas al store, argumentos y precondiciones de cierre idénticos', () => {
-    expect(new Set(v.match(/actions\.\w+/g))).toEqual(new Set(['actions.updateOrdenEstatus', 'actions.marcarNoEntregada', 'actions.solicitarFirmaCarga', 'actions.firmarCarga', 'actions.crearCheckoutPago', 'actions.updateRutaEstatus', 'actions.prepararCierreRuta', 'actions.finalizarInventarioRuta', 'actions.crearClienteChofer']));
+    expect(new Set(v.match(/actions\.\w+/g))).toEqual(new Set(['actions.subirEvidenciaOrden', 'actions.updateOrdenEstatus', 'actions.marcarNoEntregada', 'actions.solicitarFirmaCarga', 'actions.firmarCarga', 'actions.crearCheckoutPago', 'actions.updateRutaEstatus', 'actions.prepararCierreRuta', 'actions.finalizarInventarioRuta', 'actions.crearClienteChofer']));
     expect(v).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null \}\)/);
     expect(v).toMatch(/await actions\.solicitarFirmaCarga\?\.\(miRutaActiva\.id, cargaRealNum\);/);
     expect(v).toMatch(/await actions\.updateRutaEstatus\(miRutaActiva\.id, 'En progreso'\);/);

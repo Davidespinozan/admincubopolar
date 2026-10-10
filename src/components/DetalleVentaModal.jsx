@@ -4,6 +4,7 @@
 // decide la vista que la abre y llegan por `acciones` / `pie`, con los mismos
 // manejadores y permisos que ya tenía cada vista.
 import Modal from './ui/Modal';
+import EvidenciasOrden from './EvidenciasOrden';
 import { StatusBadge, SectionLabel } from './ui/Components';
 import { Icons } from './ui/Icons';
 import { s, n, fmtMoney, fmtDate } from '../utils/safe';
@@ -34,7 +35,7 @@ export function lineasDeVenta(orden, productos) {
   });
 }
 
-export default function DetalleVentaModal({ orden, data, onClose, acciones, pie }) {
+export default function DetalleVentaModal({ orden, data, onClose, acciones, pie, cargarEvidencias }) {
   if (!orden) return null;
   const id = String(orden.id);
   const lineas = lineasDeVenta(orden, data?.productos);
@@ -100,6 +101,8 @@ export default function DetalleVentaModal({ orden, data, onClose, acciones, pie 
             </div>
           )}
         </section>
+
+        {cargarEvidencias && <EvidenciasOrden ordenId={orden.id} cargar={cargarEvidencias} />}
 
         {acciones && acciones.length > 0 && (
           <section>

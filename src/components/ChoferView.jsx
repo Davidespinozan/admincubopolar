@@ -12,6 +12,7 @@ import { compressImage } from '../utils/compressImage';
 import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
 import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
 import { mensajeTicket, enlaceWhatsApp, urlMapaParada, urlNavegacionParada } from '../data/ticketLogic';
+import { evidenciasPendientes, estadoFotosEntrega } from '../data/evidenciaLogic';
 import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas } from '../data/colaOfflineLogic';
 import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from '../data/stockContratosLogic';
 import { useColaOffline } from '../data/useColaOffline';
@@ -714,6 +715,24 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     try { await navigator.clipboard.writeText(ticket.url); showToast('Link del ticket copiado'); }
     catch { showToast('Mantén presionado el link para copiarlo', 'info'); }
   };
+  // Mig 134: las fotos del comprobante y de la entrega se suben al sistema en
+  // cuanto hay señal (antes se quedaban en el teléfono). Corre al entregar, al
+  // recuperar la conexión y al reabrir la app; cada foto se intenta una vez por
+  // sesión de conexión y, ya subida, se marca en la entrega para no repetir.
+  const subiendoEvidencias = useRef(new Set());
+  useEffect(() => { if (online) subiendoEvidencias.current.clear(); }, [online]);
+  useEffect(() => {
+    if (!online || typeof actions.subirEvidenciaOrden !== 'function') return;
+    for (const p of evidenciasPendientes(entregas)) {
+      if (subiendoEvidencias.current.has(p.clave)) continue;
+      subiendoEvidencias.current.add(p.clave);
+      actions.subirEvidenciaOrden(p).then(r => {
+        if (r?.error) { console.warn('[evidencia]', p.clave, r.error); return; }
+        setEntregas(prev => prev.map(e => (Number(e.ordenId) === p.ordenId ? { ...e, [p.marca]: true } : e)));
+      }).catch(err => console.warn('[evidencia]', p.clave, err?.message));
+    }
+  }, [entregas, online, actions]);
+
   // Mapa de una parada dentro de la app (sin salir).
   const [mapaParada, setMapaParada] = useState(null);
 
@@ -1296,7 +1315,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             <Card key={e.ordenId || e.id} tone="success" padding="p-3" className="mb-2">
               <div className="flex items-center justify-between">
                 <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="ml-1 text-[10px] text-slate-400">Nota: {e.folioNota}</span>}<span className="ml-2 text-sm font-semibold text-slate-700">{s(e.cliente)}</span>{e.express && <span className="ml-1 rounded bg-emerald-200 px-1.5 py-0.5 text-[10px] text-emerald-800">Exprés</span>}{e.factura && <span className="ml-1 rounded bg-violet-200 px-1.5 py-0.5 text-[10px] text-violet-800">Factura</span>}</div>
-                <div className="flex items-center gap-2 text-right">{e.fotoEntrega && <span className="text-emerald-500 [&>svg]:h-3.5 [&>svg]:w-3.5"><Icons.Camera /></span>}<div><p className="text-sm font-bold">{fmtMoney(e.total)}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div>{online && e.ordenId && (
+                <div className="flex items-center gap-2 text-right">{estadoFotosEntrega(e) && <span data-testid="estado-fotos" title={estadoFotosEntrega(e) === 'guardadas' ? 'Fotos guardadas en el sistema' : 'Fotos por subir (se suben solas con señal)'} className={`[&>svg]:h-3.5 [&>svg]:w-3.5 ${estadoFotosEntrega(e) === 'guardadas' ? 'text-emerald-500' : 'text-amber-500'}`}><Icons.Camera /></span>}<div><p className="text-sm font-bold">{fmtMoney(e.total)}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div>{online && e.ordenId && (
                   <button type="button" onClick={() => abrirTicket(e, e.contacto)} className="flex min-h-[40px] flex-shrink-0 items-center rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-700" title="Enviar ticket" aria-label={`Enviar ticket ${s(e.folio)}`}>Ticket</button>
                 )}</div>
               </div>
