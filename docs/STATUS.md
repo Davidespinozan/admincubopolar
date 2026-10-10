@@ -354,6 +354,23 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## Tanda 2 de correcciones de la revisión profunda — 2026-10-10 — IMPLEMENTED LOCALLY (sin migración)
+**No desplegado.** Solo frontend y una función de Netlify.
+- **Ventas:** "Cancelar orden" de una Asignada ahora cancela (el contrato `cancelar_orden_asignada` solo desasigna; faltaba el segundo paso
+  Creada → Cancelada; comprobado contra las guardas en la base local); renglones del mismo SKU se juntan antes de enviar; referencia de
+  pago repetida con mensaje claro y el campo pide la referencia completa; editar exige fecha.
+- **Permisos:** `requireRol` del store reconoce los accesos adicionales (120), como `fin_actor_permitido`; los vendedores ven todo el
+  catálogo de clientes (sus órdenes y pagos siguen recortados). El recorte de clientes era un defecto, no una regla del dueño (F-04 sigue
+  siendo el MÓDULO de Clientes para Ventas).
+- **Cobros / finanzas:** Por cobrar solo dice "Cobro registrado" si el servidor aceptó; exportación de Movimientos con los datos correctos;
+  `/pagar/:id` (billing-pay) solo redirige si la venta sigue cobrable y el importe del link es lo pendiente (antes un link viejo cobraba
+  un importe que el sistema no registraba).
+- **Rutas / producción / inicio:** el cierre del chofer traduce "Transferencia SPEI" / "Tarjeta (terminal)" / "Crédito (fiado)"; "Qué
+  necesitas producir" resta solo rutas Programada y Pendiente firma; "Hecho hoy" usa el día de negocio.
+- **Carga de datos:** `clientes`, `sucursales` y `orden_lineas` se leen por páginas de 1,000 (tope de la API); `ordenes` trae `rutaId`.
+- **Descartado tras verificar:** "editar el monto de una CxP no hace nada" (el campo solo existe al crear).
+- **Validación:** `src/__tests__/tanda2Arreglos.test.js`; Vitest 1,654 en 4 zonas; lint, typecheck, build.
+
 ## Revisión profunda con agentes (2026-10-10) y tanda 1 de correcciones (mig 135) — DEPLOYED / TECHNICALLY VERIFIED
 **Auditoría de solo lectura** de ventas, rutas y chofer, producción y almacén, cobros, facturación, nómina, asistencia, permisos y el
 frontend compartido: ~45 hallazgos, ningún daño en datos (aún sin operación real). Se corrigen en tres tandas. **Tanda 1 en producción:** frontend `ddea3f2` (Netlify `6aca7b37f6bb2a00088ad869`, ready

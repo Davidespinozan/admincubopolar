@@ -59,6 +59,20 @@ import { buildGuardarUsuarioArgs, mensajeErrorUsuario } from './usuariosLogic';
 //   auditoria      → columna "usuario" texto (no "usuario_id")
 // ═══════════════════════════════════════════════════════════════
 
+// Lee una tabla COMPLETA por páginas. La API devuelve como máximo 1,000 filas por petición:
+// sin esto, al pasar de ese tope las filas del final simplemente no llegaban (p. ej. las líneas
+// de las ventas más nuevas → "la orden no tiene productos"). `crear` devuelve la consulta ya
+// ordenada; se corta en `maxPaginas` para no traer una tabla enorme de una vez.
+const filasPaginadas = async (crear, { pagina = 1000, maxPaginas = 10, operation = 'query' } = {}) => {
+  const out = [];
+  for (let i = 0; i < maxPaginas; i += 1) {
+    const filas = await safeRows(crear().range(i * pagina, i * pagina + pagina - 1), { operation });
+    out.push(...filas);
+    if (filas.length < pagina) break;
+  }
+  return out;
+};
+
 // Fetch helper — returns [] on error for queries, throws for critical mutations
 // Usage: safeRows(query) for reads | safeRows(query, { critical: true }) for writes
 const safeRows = async (query, options = {}) => {
@@ -118,7 +132,7 @@ const EMPTY = {
   configEmpresa: null,
 };
 
-export function useSupaStore(userId, userName, userRol) {
+export function useSupaStore(userId, userName, userRol, userAccesos) {
   const [data, setData] = useState(EMPTY);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -128,6 +142,9 @@ export function useSupaStore(userId, userName, userRol) {
   userNameRef.current = userName || '';
   const userRolRef = useRef(userRol || '');
   userRolRef.current = userRol || '';
+  // GER-1 (120): accesos adicionales que asigna el Dueño (p. ej. Almacén Bolsas + Ventas).
+  const userAccesosRef = useRef([]);
+  userAccesosRef.current = Array.isArray(userAccesos) ? userAccesos : [];
 
   const toast = useToast();
   const toastRef = useRef(toast);
@@ -318,11 +335,12 @@ export function useSupaStore(userId, userName, userRol) {
   const fetchCore = useCallback(async () => {
     try {
       const [cli, prod, pe, ord, ol, rut, cf, usr, umb, cxc, emp, cam, invAttempts, cfdiOps, pagosCxcRows, suc] = await Promise.all([
-        safeRows(supabase.from('clientes').select('*').order('id')),
+        filasPaginadas(() => supabase.from('clientes').select('*').order('id'), { operation: 'clientes' }),
         safeRows(supabase.from('productos').select('*').order('id')),
         safeRows(supabase.from('precios_esp').select('*').order('id')),
         safeRows(supabase.from('ordenes').select('*').order('id', { ascending: false })),
-        safeRows(supabase.from('orden_lineas').select('*').order('orden_id')),
+        // Las más nuevas primero: si algún día se corta, faltan las de ventas viejas, no las de hoy.
+        filasPaginadas(() => supabase.from('orden_lineas').select('*').order('orden_id', { ascending: false }).order('id'), { operation: 'orden_lineas' }),
         safeRows(supabase.from('rutas').select('*').order('id', { ascending: false })),
         safeRows(supabase.from('cuartos_frios').select('*')),
         safeRows(supabase.from('usuarios').select('*').order('id')),
@@ -336,7 +354,7 @@ export function useSupaStore(userId, userName, userRol) {
         // OL-04: pagos ligados a CxC (cualquier camino: cobro, webhook, cierre de ruta) para el estado de complementos.
         safeRows(supabase.from('pagos').select('id, orden_id, cxc_id, monto, fecha, metodo_pago, saldo_antes, saldo_despues').not('cxc_id', 'is', null).order('id', { ascending: false }).limit(500)),
         // 123: sucursales por cliente (solo lectura; se escriben por contrato).
-        safeRows(supabase.from('sucursales').select('*').order('id')),
+        filasPaginadas(() => supabase.from('sucursales').select('*').order('id'), { operation: 'sucursales' }),
       ]);
 
       // Configuracion de empresa (singleton id=1)
@@ -735,6 +753,9 @@ export function useSupaStore(userId, userName, userRol) {
     const requireRol = (rolesPermitidos) => {
       const rol = urol();
       if (Array.isArray(rolesPermitidos) && rolesPermitidos.includes(rol)) return null;
+      // El acceso adicional vale igual que en el servidor (fin_actor_permitido usa TODOS los
+      // roles del actor). Antes el menú mostraba Ventas y cada acción decía "tu rol no puede".
+      if (Array.isArray(rolesPermitidos) && userAccesosRef.current.some(a => rolesPermitidos.includes(a))) return null;
       const lista = Array.isArray(rolesPermitidos) ? rolesPermitidos.join(', ') : '';
       return {
         error: lista
@@ -1175,7 +1196,10 @@ export function useSupaStore(userId, userName, userRol) {
               return errOrd;
             }
             if (ord?.estatus === 'Asignada') {
+              // El contrato solo DESASIGNA (Asignada → Creada, sin ruta). Para cancelar de verdad
+              // hace falta el segundo paso: antes la orden quedaba Creada y la pantalla decía "cancelada".
               ({ error } = await supabase.rpc('cancelar_orden_asignada', { p_orden_id: id, p_usuario_id: uid() }));
+              if (!error) ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id).eq('estatus', 'Creada'));
             } else {
               ({ error } = await supabase.from('ordenes').update({ estatus: nuevoEst }).eq('id', id));
             }
@@ -1416,7 +1440,7 @@ export function useSupaStore(userId, userName, userRol) {
 
           // Audit
           await log('Cancelar', 'Órdenes',
-            `${s(orden.folio) || ordenId} — ${motivoTxt}${estatusActual === 'Asignada' ? ' (stock revertido)' : ''}`
+            `${s(orden.folio) || ordenId} — ${motivoTxt}${estatusActual === 'Asignada' ? ' (se quitó de la ruta)' : ''}`
           );
 
           rf();

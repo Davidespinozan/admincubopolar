@@ -14,6 +14,24 @@ import { s, centavos } from '../utils/safe';
  * @param {string} raw
  * @returns {{ qty: number, sku: string }[]}  — empty array if invalid
  */
+/**
+ * Junta los renglones del mismo SKU (suma cantidades; conserva el primer precio).
+ * El servidor rechaza una venta con el SKU repetido, y en la venta de barra dos renglones
+ * distintos ("entera · picada" y "media · picada") caen en el mismo SKU sin que el usuario lo vea.
+ * @param {{ sku: string, qty: number|string }[]} lineas
+ */
+export function unirLineasPorSku(lineas) {
+  const out = new Map();
+  for (const l of Array.isArray(lineas) ? lineas : []) {
+    const sku = s(l?.sku).trim();
+    const qty = Number(l?.qty);
+    if (!sku || !Number.isFinite(qty) || qty <= 0) continue;
+    if (out.has(sku)) out.get(sku).qty += qty;
+    else out.set(sku, { ...l, sku, qty });
+  }
+  return [...out.values()];
+}
+
 export function parseProductos(raw) {
   return s(raw)
     .split(',')

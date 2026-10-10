@@ -268,7 +268,9 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     for (const p of productosHielo) acc[s(p.sku)] = 0;
     const rutasActivas = (data.rutas || []).filter(r => {
       const est = s(r.estatus).toLowerCase();
-      return est === 'programada' || est === 'en progreso' || est === 'en_progreso';
+      // Solo lo que AÚN está en el cuarto: una ruta ya cargada o en progreso ya salió del
+      // inventario (confirmar_carga_ruta); restarla otra vez pedía producir de más.
+      return est === 'programada' || est === 'pendiente firma';
     });
     for (const ruta of rutasActivas) {
       const carga = ruta.carga_autorizada || ruta.cargaAutorizada || ruta.carga || {};

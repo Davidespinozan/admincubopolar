@@ -46,7 +46,7 @@ function App() {
   // GER-1 (mig 120): con contraseña temporal la cuenta no tiene autoridad en el
   // servidor; no se cargan datos hasta que la cambia (el store queda sin usuario).
   const bloqueadoPorPassword = debeCambiarPassword(user)
-  const { data, actions, loading, error } = useSupaStore(bloqueadoPorPassword ? undefined : user?.id, user?.nombre, user?.rol)
+  const { data, actions, loading, error } = useSupaStore(bloqueadoPorPassword ? undefined : user?.id, user?.nombre, user?.rol, user?.accesos_extra)
 
   // ── Detector de offline/online ──
   // Listener global para mostrar banner cuando se cae la red. NO implementa
@@ -238,11 +238,9 @@ function App() {
 
     if (actuaComoVentas) {
       const ordenesPropias = (data.ordenes || []).filter(o => matchOwner(o, usuarioActualId, authUserId, usuarioActual?.nombre))
-      const clienteIds = new Set(ordenesPropias.map(o => String(o.clienteId || o.cliente_id)).filter(Boolean))
-      const clientesPropios = (data.clientes || []).filter(c => {
-        if (matchOwner(c, usuarioActualId, authUserId, usuarioActual?.nombre)) return true
-        return clienteIds.has(String(c.id))
-      })
+      // Los CLIENTES no se recortan: un vendedor debe poder venderle a cualquier cliente del
+      // catálogo. Antes solo veía a los que ya les había vendido (uno nuevo no veía ninguno y
+      // el cliente recién creado desaparecía del selector). Sus órdenes y pagos sí son solo los suyos.
       // OL-02C.1: el pago es de la ORDEN (orden_id → vendedor); usuario_id es
       // quien lo registró. Se conserva lo que ya coincidía (matchOwner) y,
       // además, los pagos de SUS órdenes (webhook del link, Admin o chofer).
@@ -250,7 +248,6 @@ function App() {
       return {
         ...data,
         ordenes: ordenesPropias,
-        clientes: clientesPropios,
         pagos: pagosPropios,
       }
     }

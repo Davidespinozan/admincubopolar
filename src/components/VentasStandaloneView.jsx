@@ -340,7 +340,7 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
           {pagoForm.metodo === "Transferencia SPEI" && (
             <div className="mb-4 space-y-2">
               <DatosTransferencia config={data.configEmpresa} total={pagoModal?.total} folio={s(pagoModal?.folio)} />
-              <FormInput label="Referencia" value={pagoForm.referencia} onChange={e => setPagoForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Últimos 6 dígitos" />
+              <FormInput label="Referencia" value={pagoForm.referencia} onChange={e => setPagoForm(f => ({ ...f, referencia: e.target.value }))} placeholder="Referencia completa de la transferencia" />
             </div>
           )}
           </>)}

@@ -373,7 +373,7 @@ export function OrdenesView({ data, actions, user }) {
             <p className="font-bold mb-1">¿Cancelar orden {s(cancelarOrden.folio)}?</p>
             <p className="text-xs">
               {s(cancelarOrden.estatus) === 'Asignada'
-                ? 'El stock se regresará al cuarto frío de origen.'
+                ? 'La venta se quitará de su ruta y quedará cancelada.'
                 : 'No hay stock que regresar (la orden no fue asignada todavía).'}
             </p>
             <p className="text-xs mt-1">
@@ -460,7 +460,7 @@ export function OrdenesView({ data, actions, user }) {
               <DatosTransferencia config={data.configEmpresa} total={pagoModal?.total} folio={s(pagoModal?.folio)} />
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Referencia SPEI</label>
               <input value={pagoForm.referencia} onChange={e=>setPagoForm(f=>({...f,referencia:e.target.value}))}
-                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Últimos 6 dígitos"/>
+                className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="Referencia completa de la transferencia"/>
             </div>
           )}
           </>}

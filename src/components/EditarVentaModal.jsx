@@ -9,6 +9,7 @@
 // riesgo la creación normal. Este modal es plano y enfocado en edit.
 
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
+import { unirLineasPorSku } from '../data/ordenLogic';
 import { esDerivadoBarra, avisoFaltaBarra } from '../data/barraVentaLogic';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { Icons } from './ui/Icons';
@@ -226,6 +227,7 @@ export default function EditarVentaModal({
     const faltaBarra = avisoFaltaBarra(pedido, getStock);
     if (faltaBarra) { toast?.error(faltaBarra); return; }
 
+    if (!form.fecha) { toast?.error('Elige la fecha de la venta'); return; }
     const lineasValidas = lines.filter(l => l.sku && n(l.qty) > 0);
     if (lineasValidas.length === 0) {
       toast?.error('Agrega al menos un producto');
@@ -242,7 +244,7 @@ export default function EditarVentaModal({
         referenciaEntrega: s(form.referenciaEntrega),
         latitudEntrega: form.direccionTouched ? form.latitudEntrega : null,
         longitudEntrega: form.direccionTouched ? form.longitudEntrega : null,
-        lines: lineasValidas.map(l => ({ sku: l.sku, qty: n(l.qty), precio: n(l.precio) })),
+        lines: unirLineasPorSku(lineasValidas.map(l => ({ sku: l.sku, qty: n(l.qty), precio: n(l.precio) }))),
       };
       const result = await actions.updateOrden?.(orden.id, payload);
       if (result?.error) {

@@ -207,6 +207,8 @@ export function mensajeErrorVentaDirecta(error) {
   if (/Stock insuficiente de (EMP|.*-EMP|.*bolsa)/i.test(msg)) return 'No hay bolsas registradas para picar o triturar la barra. Registra la compra de bolsas (Almacén de bolsas) y vuelve a intentar.';
   if (/Stock insuficiente de barra/i.test(msg)) return `No hay barra suficiente en ese cuarto: ${msg.replace(/^Stock insuficiente de barra[^:]*:\s*/i, '')}. Elige otro cuarto o reparte.`;
   if (/Stock insuficiente/i.test(msg)) return `La existencia cambió: ${msg}. Revisa el origen.`;
+  if (/referencia_existente|referencia de pago .* ya está registrada/i.test(msg)) return 'Esa referencia de pago ya se usó en otro cobro. Escribe la referencia completa de ESTA transferencia (no solo los últimos dígitos).';
+  if (/ya_pagada/i.test(msg)) return 'Esta venta ya tiene su pago registrado. Actualiza la lista.';
   if (/no cubre el total/i.test(msg)) return 'El pago con link aún no cubre el total; todavía no se puede entregar.';
   return msg || 'No se pudo completar la venta';
 }

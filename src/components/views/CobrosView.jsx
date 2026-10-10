@@ -47,7 +47,10 @@ export function CobrosView({ data, actions }) {
     if (Object.keys(e).length) { setErrors(e); return; }
     setSavingCobro(true);
     try {
-      await actions.cobrarCxC(cobroModal.id, parseFloat(form.monto), form.metodo, form.referencia);
+      // La acción devuelve el error (no lanza): sin revisarlo, la pantalla decía "Cobro
+      // registrado" aunque el servidor lo hubiera rechazado (p. ej. referencia repetida).
+      const r = await actions.cobrarCxC(cobroModal.id, parseFloat(form.monto), form.metodo, form.referencia);
+      if (r?.error || r instanceof Error) return;
       toast?.success('Cobro registrado');
       setCobroModal(null);
     } catch (ex) { toast?.error('Error: ' + (ex?.message || '')); }

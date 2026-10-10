@@ -15,12 +15,21 @@ export { nuevoOperacionId, resolverOperacion };
 const txt = (v) => (v == null ? '' : String(v)).trim();
 const num = (v) => { const q = Number(v); return Number.isFinite(q) ? q : 0; };
 
+// El cierre de ruta solo acepta los nombres cortos. Si Administración cobró la orden desde
+// Órdenes ("Transferencia SPEI", "Tarjeta (terminal)", "Crédito (fiado)"), ese texto volvía en
+// el reporte del chofer y el servidor rechazaba TODO el cierre por "método de pago inválido".
+const METODOS_CIERRE = { 'transferencia spei': 'Transferencia', 'tarjeta (terminal)': 'Tarjeta', 'crédito (fiado)': 'Crédito', 'credito (fiado)': 'Crédito' };
+export function metodoDeCierre(pago) {
+  const t = txt(pago);
+  return METODOS_CIERRE[t.toLowerCase()] || t || null;
+}
+
 /** Payload de entregas exactamente como lo consume cerrar_ruta_financiero. */
 export function normalizarEntregasCierre(entregas) {
   return (Array.isArray(entregas) ? entregas : []).map(e => ({
     ordenId: e?.ordenId || null,
     express: Boolean(e?.express) || !e?.ordenId,
-    pago: txt(e?.pago) || null,
+    pago: metodoDeCierre(e?.pago),
     referencia: txt(e?.referencia) || null,
     clienteId: e?.clienteId || null,
     cliente: txt(e?.cliente) || null,
@@ -51,7 +60,7 @@ export function claveCierreFinanciero(rutaId, entregasPayload) {
       cliente_id: e?.clienteId ? Number(e.clienteId) : null,
       cliente: txt(e?.cliente) || null,
       factura: e?.factura === true,
-      pago: txt(e?.pago) || null,
+      pago: metodoDeCierre(e?.pago),
       ref: txt(e?.referencia) || null,
       items,
     };

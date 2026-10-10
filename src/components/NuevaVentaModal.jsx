@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
+import { unirLineasPorSku } from '../data/ordenLogic';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { Icons } from './ui/Icons';
 import { s, n, eqId, fmtMoney, validarRFC } from '../utils/safe';
@@ -168,7 +169,7 @@ export default function NuevaVentaModal({
   const totalCalc = subtotal; // IVA 0% (hielo)
 
   const productosStr = useMemo(
-    () => lines.filter(l => l.sku && l.qty > 0).map(l => `${l.qty}×${l.sku}`).join(', '),
+    () => unirLineasPorSku(lines).map(l => `${l.qty}×${l.sku}`).join(', '),
     [lines]
   );
 

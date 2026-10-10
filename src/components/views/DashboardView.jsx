@@ -21,23 +21,12 @@ import { textoSaludo, subtituloRol } from '../../data/saludoLogic';
 
 
 export default function DashboardView({ data, user, actions, onNavigate }) {
-  const hoy = new Date();
-  const y = hoy.getFullYear();
-  const m = hoy.getMonth();
-  const d = hoy.getDate();
 
-  const inicioDia = useMemo(() => new Date(y, m, d), [y, m, d]);
 
   const productosHielo = useMemo(
     () => (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado"),
     [data.productos]
   );
-
-  const parseFecha = (val) => {
-    if (!val) return null;
-    const dt = new Date(val);
-    return Number.isNaN(dt.getTime()) ? null : dt;
-  };
 
   const estatusPendientes = useMemo(() => new Set(["creada", "asignada", "pendiente", "en proceso", "en_proceso", "enprogreso"]), []);
   const pedidosPendPorSku = useMemo(() => {
@@ -87,22 +76,24 @@ export default function DashboardView({ data, user, actions, onNavigate }) {
     const acc = {};
     for (const p of productosHielo) acc[s(p.sku)] = 0;
     for (const pr of (data.produccion || [])) {
-      const dt = parseFecha(pr.fecha);
-      if (!dt) continue;
-      if (dt < inicioDia) continue;
+      // `produccion.fecha` es una FECHA (día de negocio): compararla como instante la leía en
+      // UTC y en Durango siempre caía "ayer", así que "Hecho hoy" marcaba 0.
+      if (!String(pr.fecha || '').startsWith(diaNegocio())) continue;
       if (esPreparacion(pr)) continue;   // OP-01D: preparar desde barra no es producción de máquina
       const sku = s(pr.sku);
       acc[sku] = (acc[sku] || 0) + n(pr.cantidad);
     }
     return acc;
-  }, [data.produccion, productosHielo, inicioDia]);
+  }, [data.produccion, productosHielo]);
 
   const reservadoEnRutasPorSku = useMemo(() => {
     const acc = {};
     for (const p of productosHielo) acc[s(p.sku)] = 0;
     const rutasActivas = (data.rutas || []).filter(r => {
       const est = s(r.estatus).toLowerCase();
-      return est === 'programada' || est === 'en progreso' || est === 'en_progreso';
+      // Solo lo que AÚN está en el cuarto: una ruta ya cargada o en progreso ya salió del
+      // inventario (confirmar_carga_ruta); restarla otra vez pedía producir de más.
+      return est === 'programada' || est === 'pendiente firma';
     });
     for (const ruta of rutasActivas) {
       const carga = ruta.carga_autorizada || ruta.cargaAutorizada || ruta.carga || {};

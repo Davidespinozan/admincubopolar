@@ -1422,7 +1422,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           </div>
           {cobroMetodo==="Transferencia" && <div className="mb-4 space-y-2">
             <DatosTransferencia config={data.configEmpresa} total={entregaModal.totalCalc} folio={s(entregaModal.folio)} telefono={extraerTelefono(entregaModal.contacto)} />
-            <FormInput label="Referencia" value={cobroRef} onChange={e=>setCobroRef(e.target.value)} placeholder="Referencia (últimos 6 dígitos)" />
+            <FormInput label="Referencia" value={cobroRef} onChange={e=>setCobroRef(e.target.value)} placeholder="Referencia completa de la transferencia" />
             {fotoTransf ? (
               <div><img src={fotoTransf} alt="Comprobante" className="h-32 w-full rounded-field border border-emerald-300 object-cover" /><button type="button" onClick={() => setFotoTransf(null)} className="mt-1 text-xs text-slate-400">Tomar otra</button></div>
             ) : (

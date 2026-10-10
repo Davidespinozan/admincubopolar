@@ -88,12 +88,18 @@ export function ContabilidadView({ data, actions }) {
   };
 
   const todos = [...cont.ingresos.map(i => ({ ...i, _tipo: "Ingreso" })), ...cont.egresos.map(e => ({ ...e, _tipo: "Egreso" }))].sort((a, b) => (b.id || 0) - (a.id || 0));
+  // La exportación espera { contabilidad, cxc, cxp }: antes recibía { ingresos, egresos } y salía vacía.
+  const datosExport = {
+    contabilidad: todos.map(m => ({ ...m, tipo: m._tipo })),
+    cxc: (data.cuentasPorCobrar || []).map(c => ({ ...c, monto: c.saldoPendiente ?? c.saldo_pendiente ?? c.monto })),
+    cxp: (data.cuentasPorPagar || []).map(c => ({ ...c, monto: c.saldoPendiente ?? c.saldo_pendiente ?? c.monto })),
+  };
 
   return (<div className="space-y-3">
     {ConfirmEl}
     <PageHeader title="Movimientos" subtitle="Ingresos y gastos del mes" extraButtons={<>
-      <button onClick={() => reporteFinanciero(cont, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-field border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
-      <button onClick={() => reporteFinanciero(cont, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-field border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
+      <button onClick={() => reporteFinanciero(datosExport, 'excel')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-field border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
+      <button onClick={() => reporteFinanciero(datosExport, 'pdf')} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-field border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
     </>} />
     <div className="grid grid-cols-2 gap-2">
       <FormBtn success onClick={() => openNew("Ingreso")}><Icons.Plus /> Ingreso</FormBtn>
