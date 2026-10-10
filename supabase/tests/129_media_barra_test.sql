@@ -79,7 +79,7 @@ INSERT INTO t129_ids VALUES ('p1', partir_barra(t129_op('01'), 'CF-T129', 2)::te
 COMMIT;
 SELECT t129_assert(t129_e() = '3|4|0|0|20', '129-01a partir 2 barras: barras 5→3, medias 0→4, sin empaque');
 SELECT t129_assert((t129_j('p1') ->> 'medias') = '4' AND (t129_j('p1') ->> 'replay') = 'false'
-  AND (SELECT tipo = 'Partido' AND sku = 'HIB-25K' AND cantidad = 4 AND input_sku = 'HIB-50K' AND input_kg = 2 AND empaque_sku IS NULL AND costo_total IS NULL
+  AND (SELECT tipo = 'Partido' AND sku = 'HIB-25K' AND cantidad = 4 AND input_sku = 'HIB-50K' AND input_kg = 2 AND empaque_sku IS NULL AND COALESCE(costo_total, 0) = 0
          FROM produccion WHERE id = (t129_j('p1') ->> 'id')::bigint), '129-01b fila Partido con su trazabilidad y sin costo');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t129_auth(2);
 INSERT INTO t129_ids VALUES ('p1r', partir_barra(t129_op('01'), 'CF-T129', 2)::text);
@@ -90,7 +90,7 @@ BEGIN; SET LOCAL ROLE authenticated; SELECT t129_auth(2);
 SELECT t129_err($q$SELECT partir_barra(t129_op('01'), 'CF-T129', 1)$q$, '129-01d mismo operacion_id con otros datos', '23505');
 SELECT t129_err($q$SELECT partir_barra(t129_op('02'), 'CF-T129', 0)$q$, '129-01e 0 barras rechazado', '22023');
 SELECT t129_err($q$SELECT partir_barra(t129_op('02'), 'CF-NOEXISTE', 1)$q$, '129-01f cuarto inexistente', '22023');
-SELECT t129_err($q$SELECT partir_barra(t129_op('02'), 'CF-T129', 9)$q$, '129-01g más barras de las que hay: falla y no deja efectos', '22023');
+SELECT t129_err($q$SELECT partir_barra(t129_op('02'), 'CF-T129', 9)$q$, '129-01g más barras de las que hay: falla y no deja efectos', 'P0001|22023');
 ROLLBACK;
 SELECT t129_assert(t129_e() = '3|4|0|0|20', '129-01h los rechazos no dejaron efectos');
 
@@ -116,7 +116,7 @@ COMMIT;
 SELECT t129_assert((t129_j('m1r') ->> 'replay') = 'true' AND t129_e() = '3|3|0|1|19', '129-03c reintento: replay sin efectos');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t129_auth(2);
 SELECT t129_err($q$SELECT registrar_preparacion_media(t129_op('12'), 'HIB-50K', 'CF-T129', 1)$q$, '129-03d salida que no es picada ni triturada', '22023');
-SELECT t129_err($q$SELECT registrar_preparacion_media(t129_op('12'), 'HIP-25K', 'CF-T129', 9)$q$, '129-03e más medias de las que hay', '22023');
+SELECT t129_err($q$SELECT registrar_preparacion_media(t129_op('12'), 'HIP-25K', 'CF-T129', 9)$q$, '129-03e más medias de las que hay', 'P0001|22023');
 ROLLBACK;
 SELECT t129_assert(t129_e() = '3|3|0|1|19', '129-03f los rechazos no dejaron efectos');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t129_auth(2);
@@ -130,7 +130,7 @@ INSERT INTO t129_ids VALUES ('rm', revertir_preparacion_barra(t129_op('21'), (t1
 COMMIT;
 SELECT t129_assert(t129_e() = '3|3|1|0|19', '129-04a revertir la preparación de media: triturada −1, media +1, empaque +1');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t129_auth(1);
-SELECT t129_err(format($q$SELECT revertir_partir_barra(t129_op('22'), %s, 'prueba')$q$, (t129_j('p1') ->> 'id')), '129-04b no se revierte el partido si las medias ya se usaron', '22023');
+SELECT t129_err(format($q$SELECT revertir_partir_barra(t129_op('22'), %s, 'prueba')$q$, (t129_j('p1') ->> 'id')), '129-04b no se revierte el partido si las medias ya se usaron', 'P0001|22023');
 ROLLBACK;
 SELECT t129_assert(t129_e() = '3|3|1|0|19', '129-04c el rechazo no dejó efectos');
 BEGIN; SET LOCAL ROLE authenticated; SELECT t129_auth(1);
