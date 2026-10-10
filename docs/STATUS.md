@@ -354,9 +354,12 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Revisión profunda con agentes (2026-10-10) y tanda 1 de correcciones (mig 135) — IMPLEMENTED LOCALLY / MIGRATION PENDING
+## Revisión profunda con agentes (2026-10-10) y tanda 1 de correcciones (mig 135) — DEPLOYED / TECHNICALLY VERIFIED
 **Auditoría de solo lectura** de ventas, rutas y chofer, producción y almacén, cobros, facturación, nómina, asistencia, permisos y el
-frontend compartido: ~45 hallazgos, ningún daño en datos (aún sin operación real). Se corrigen en tres tandas; **135 NO está aplicada**.
+frontend compartido: ~45 hallazgos, ningún daño en datos (aún sin operación real). Se corrigen en tres tandas. **Tanda 1 en producción:** frontend `ddea3f2` (Netlify `6aca7b37f6bb2a00088ad869`, ready
+2026-10-10T17:52:22Z; bundle vivo verificado) y 135 aplicada por el dueño en el SQL Editor (SHA-256 `d8aad35f9a9602da43650b3061ff613116932f2579b02f5dd86b38fea27cc0ec`),
+verificada en solo lectura: md5 de `nomina_comision_linea`, `nomina_proponer_recibo` y `completar_venta_directa` (`2107586c…`) y la policy
+`evidencias_read` idénticos a la base local; sin cambio `crear_orden`, `pagar_nomina`, `aplicar_conceptos_nomina`. Sin cierre del dueño.
 - **Tanda 1 (este cambio).** Servidor, 135: (a) comisiones — lo entregado en OTRA semana en borrador ya no se lo lleva la semana nueva;
   (b) recalcular — si lo ganado baja, el descuento se recorta a lo disponible en vez de abortar la semana por neto negativo, y un renglón
   que fue automático se recalcula al quitarle la regla; (c) `completar_venta_directa` bloquea bolsa → cuarto (como Producción; evitaba un
