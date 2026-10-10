@@ -85,6 +85,16 @@ export function InventarioView({ data, actions }) {
     });
   }, [data.cuartosFrios]);
 
+  // Orden manual (mig 126): las flechas solo aparecen cuando la columna `orden` ya existe.
+  const puedeOrdenar = data.cuartosFrios.length > 0 && data.cuartosFrios.every(c => 'orden' in c);
+  const moverCuarto = async (idx, dir) => {
+    const ids = data.cuartosFrios.map(c => c.id);
+    const j = idx + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[idx], ids[j]] = [ids[j], ids[idx]];
+    await actions.ordenarCuartosFrios(ids);
+  };
+
   const abrirAjuste = (prod) => {
     setAjusteModal(prod);
     setAjusteForm({ existencia: String(n(prod.stock)), motivo: "" });
@@ -199,7 +209,7 @@ export function InventarioView({ data, actions }) {
         }} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-field border border-line bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Icons.Swap /> Traspaso</button>} />
     <div className="grid gap-3 mb-4 sm:grid-cols-3 sm:gap-4 sm:mb-6">
       {totalStockByCF.length === 0 ? <EmptyState message="Sin cuartos fríos" /> :
-      totalStockByCF.map(cf=><div key={cf.id} className="min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 snap-start">
+      totalStockByCF.map((cf,idx)=><div key={cf.id} className="min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 snap-start">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2 cursor-pointer" onClick={()=>{setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad_tarimas:String(n(cf.capacidad_tarimas) || '')});setCfModal(cf)}}>
             <h3 className="text-sm font-bold text-slate-700">{s(cf.nombre)}</h3>
@@ -260,6 +270,15 @@ export function InventarioView({ data, actions }) {
           <span className="text-slate-400">Total</span>
           <span className="font-extrabold text-slate-800">{cf.total.toLocaleString()} bolsas</span>
         </div>
+        {puedeOrdenar && totalStockByCF.length > 1 && (
+          <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+            <span>Posición {idx + 1} de {totalStockByCF.length}</span>
+            <div className="flex gap-1">
+              <button aria-label="Mover cuarto antes" disabled={idx === 0} onClick={()=>moverCuarto(idx, -1)} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-30"><Icons.ChevronLeft /></button>
+              <button aria-label="Mover cuarto después" disabled={idx === totalStockByCF.length - 1} onClick={()=>moverCuarto(idx, 1)} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center rounded-lg text-slate-500 hover:bg-slate-50 disabled:opacity-30"><Icons.ChevronRight /></button>
+            </div>
+          </div>
+        )}
       </div>)}
     </div>
     <div className="bg-white border border-slate-100 rounded-2xl p-5 mb-6">

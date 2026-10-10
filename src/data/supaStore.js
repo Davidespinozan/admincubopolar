@@ -415,7 +415,12 @@ export function useSupaStore(userId, userName, userRol) {
 
       // ── Map cuartos_frios (id: TEXT, stock: JSONB)
       // Normalize: coerce temp/capacidad to numbers and keep only "Producto Terminado" in stock
-      const cuartosFrios = (cf || []).map(q => {
+      // Orden manual (`orden`, mig 126); sin él, por número del id (CF-1, CF-2…).
+      const numCuarto = (q) => { const m = String(q?.id || '').match(/(\d+)/); return m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER; };
+      const cuartosOrdenados = [...(cf || [])].sort((a, b) =>
+        ((a.orden ?? Number.MAX_SAFE_INTEGER) - (b.orden ?? Number.MAX_SAFE_INTEGER))
+        || (numCuarto(a) - numCuarto(b)) || String(a.id).localeCompare(String(b.id)));
+      const cuartosFrios = cuartosOrdenados.map(q => {
         const stockObj = (q.stock && typeof q.stock === 'object') ? q.stock : {};
         // Build a filtered stock object containing only Producto Terminado SKUs
         const stockFiltered = {};
@@ -1868,6 +1873,18 @@ export function useSupaStore(userId, userName, userRol) {
         const { error } = await supabase.from('cuartos_frios').update(update).eq('id', id);
         if (error) { t()?.error('Error al actualizar cuarto frío'); return error; }
         log('Editar', 'Cuartos Fríos', `ID ${id}`);
+        rf();
+      },
+
+      // Orden manual de las tarjetas: recibe los ids en el orden deseado y numera 1..N.
+      ordenarCuartosFrios: async (ids) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        for (let i = 0; i < ids.length; i++) {
+          const { error } = await supabase.from('cuartos_frios').update({ orden: i + 1 }).eq('id', ids[i]);
+          if (error) { t()?.error('No se pudo guardar el orden de los cuartos'); rf(); return error; }
+        }
+        log('Editar', 'Cuartos Fríos', `Orden: ${ids.join(', ')}`);
         rf();
       },
 
