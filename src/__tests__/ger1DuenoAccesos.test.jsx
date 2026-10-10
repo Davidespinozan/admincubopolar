@@ -12,7 +12,7 @@ import {
   permisosSobreUsuario, validarCambioPassword, validarPasswordTemporal, correoSugerido, buildGuardarUsuarioArgs,
   mensajeErrorUsuario, describirCambio, debeCambiarPassword,
 } from '../data/usuariosLogic';
-import { navParaUsuario, navParaRol, idsModulos, idsVistas, bottomNavParaRol, normalizarVista, MODULO_DUENO, MODULO_MI_CUENTA } from '../data/navRolLogic';
+import { navParaUsuario, navParaRol, idsModulos, idsVistas, bottomNavParaRol, normalizarVista, MODULO_USUARIOS, MODULO_MI_CUENTA } from '../data/navRolLogic';
 import { createHandler as crearUsuario } from '../../netlify/functions/admin-create-user/index.js';
 import { createHandler as restablecer } from '../../netlify/functions/admin-reset-password/index.js';
 import { canAccessOrden } from '../../netlify/functions/_lib/auth.js';
@@ -111,9 +111,10 @@ describe('contraseñas', () => {
 describe('menú por persona', () => {
   it('María (Almacén + Ventas): los dos espacios juntos, con barra inferior y los filtros de Ventas', () => {
     const nav = navParaUsuario(MARIA);
-    expect([...idsModulos(nav)]).toEqual(['bolsas-almacen', 'ventas']);
-    expect(nav.inicio).toBe('bolsas-almacen');
-    expect(bottomNavParaRol(nav).items.map(i => i.id)).toEqual(['bolsas-almacen', 'ventas']);
+    expect([...idsModulos(nav)]).toEqual(['dashboard', 'bandeja', 'bolsas-almacen', 'ventas']);
+    expect(nav.inicio).toBe('dashboard');   // su Resumen, con las cifras de los dos espacios
+    expect(bottomNavParaRol(nav).items.map(i => i.id)).toEqual(['dashboard', 'bandeja', 'bolsas-almacen', 'ventas']);
+    expect(bottomNavParaRol(nav).mas).toBe(false);
     expect(normalizarVista(nav, 'ventas-hoy')).toBe('ventas-hoy');
     expect(normalizarVista(nav, 'ventas-cobrar')).toBe('ventas');
     expect(normalizarVista(nav, 'cobros')).toBeNull();           // nada de back office
@@ -124,19 +125,25 @@ describe('menú por persona', () => {
     expect(navParaUsuario({ rol: 'Almacén Bolsas', accesos_extra: ['Admin', 'Inventado'] })).toBe(navParaRol('Almacén Bolsas'));
     expect(navParaUsuario(ADMIN)).toBe(navParaRol('Admin'));
   });
-  it('Dueño: todo lo de Admin más su panel; Admin no lo tiene', () => {
-    const nav = navParaUsuario(DUENO);
-    expect(nav.areas[0].items).toEqual([MODULO_DUENO]);
-    expect(idsModulos(nav).has('dueno')).toBe(true);
-    expect([...idsModulos(nav)].filter(id => id !== 'dueno')).toEqual([...idsModulos(navParaRol('Admin'))]);
-    expect(idsModulos(navParaUsuario(ADMIN)).has('dueno')).toBe(false);
+  it('Dueño: el mismo menú de Admin (sin panel aparte); lo suyo vive en Usuarios y en Auditoría', () => {
+    expect(navParaUsuario(DUENO)).toBe(navParaRol('Admin'));
+    expect(idsModulos(navParaUsuario(DUENO)).has('dueno')).toBe(false);
+    expect(normalizarVista(navParaUsuario(DUENO), 'dueno')).toBe('auditoria');     // el enlace viejo abre Auditoría
+    expect(MODULO_USUARIOS).toEqual({ id: 'usuarios', label: 'Usuarios', icon: 'Users' });
+    expect(idsModulos(navParaRol('Admin')).has('usuarios')).toBe(true);
+    for (const rol of ['Facturación', 'Sin asignar', 'Ventas']) expect(idsModulos(navParaRol(rol)).has('usuarios'), rol).toBe(false);
+    // La bitácora es una pestaña de Auditoría que solo ve el Dueño (RLS dueno_read la protege de verdad).
+    const aud = src('../components/views/AuditoriaView.jsx');
+    expect(aud).toMatch(/const dueno = esDueno\(user\);/);
+    expect(aud).toMatch(/\{dueno && tab === 'cambios' \? <BitacoraCambios actions=\{actions\} \/> : \(/);
   });
   it('el shell usa el menú de la persona y ofrece "Mi cuenta" a todos (también al Chofer)', () => {
     const shell = src('../components/CuboPolarERP.jsx');
     // App SIEMPRE manda rolVista (el propio o el de "Ver como"): solo si difiere del propio se usa el menú puro del rol.
     expect(shell).toMatch(/const viendoComo = !!rolVista && rolVista !== user\?\.rol;/);
     expect(src('../App.jsx')).toMatch(/rolVista=\{effectiveRole\}/);
-    expect(shell).toMatch(/case MODULO_DUENO\.id: return <DuenoView \{\.\.\.vp\} \/>;/);
+    expect(shell).toMatch(/case MODULO_USUARIOS\.id: return <UsuariosView \{\.\.\.vp\} \/>;/);
+    expect(shell).not.toMatch(/DuenoView|MODULO_DUENO/);
     expect(shell).toMatch(/case MODULO_MI_CUENTA\.id: return <MiCuentaView user=\{user\} actions=\{actions\} \/>;/);
     expect(shell).toMatch(/MODULO_MI_CUENTA,\s*\]\.filter\(Boolean\)/);
     expect(src('../components/ChoferView.jsx')).toMatch(/data-testid="chofer-mi-cuenta"/);
@@ -235,7 +242,9 @@ describe('bitácora y contención', () => {
     expect(store).not.toMatch(/from\('usuarios'\)\.(insert|update|delete)\(/);
     expect(store).toMatch(/supabase\.rpc\('guardar_usuario', buildGuardarUsuarioArgs\(u, \{ incluirAccesos \}\)\)/);
     expect(store).toMatch(/backendPost\('admin-reset-password'/);
-    expect(src('../components/views/ConfiguracionView.jsx')).toMatch(/<UsuariosPanel data=\{data\} actions=\{actions\} user=\{user\} \/>/);
+    // 2026-10-09: Usuarios es su propio módulo (Sistema → Usuarios); Ajustes queda para los datos de la empresa.
+    expect(src('../components/views/UsuariosView.jsx')).toMatch(/<UsuariosPanel data=\{data\} actions=\{actions\} user=\{user\} \/>/);
+    expect(src('../components/views/ConfiguracionView.jsx')).not.toMatch(/UsuariosPanel/);
     expect(src('../components/views/ConfiguracionView.jsx')).not.toMatch(/deleteUsuario|updateUsuario/);
   });
   it('las migraciones: 120 aditiva y 121 solo quita la escritura REST de usuarios', () => {

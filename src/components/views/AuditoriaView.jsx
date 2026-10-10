@@ -1,7 +1,12 @@
-import { useState, useMemo, Icons, DataTable, PageHeader, s, fmtDateTime, useDebounce, PAGE_SIZE, Paginator, KpiTile } from './viewsCommon';
+import { useState, useMemo, Icons, DataTable, PageHeader, s, fmtDateTime, useDebounce, PAGE_SIZE, Paginator, KpiTile, SegmentedTabs } from './viewsCommon';
+import BitacoraCambios from '../BitacoraCambios';
+import { esDueno } from '../../data/usuariosLogic';
 import { diaNegocio } from '../../utils/fechas';
 
-export function AuditoriaView({ data }) {
+export function AuditoriaView({ data, actions, user }) {
+  // GER-1: el Dueño ve además los cambios sensibles (antes "Panel del dueño").
+  const dueno = esDueno(user);
+  const [tab, setTab] = useState('acciones');
   const [filterUsr, setFilterUsr] = useState("");
   const [filterMod, setFilterMod] = useState("");
   const [search, setSearch] = useState("");
@@ -32,6 +37,8 @@ export function AuditoriaView({ data }) {
 
   return (<div>
     <PageHeader title="Auditoría" subtitle="Historial de acciones" />
+    {dueno && <SegmentedTabs className="mb-4" value={tab} onChange={setTab} items={[{ k: 'acciones', l: 'Acciones' }, { k: 'cambios', l: 'Cambios sensibles' }]} />}
+    {dueno && tab === 'cambios' ? <BitacoraCambios actions={actions} /> : (<>
 
     {/* Estadísticas */}
     <div className="grid grid-cols-3 gap-3 mb-4">
@@ -52,5 +59,6 @@ export function AuditoriaView({ data }) {
       ]} data={paginated} />
       <Paginator page={page} total={filtered.length} onPage={setPage} />
     </div>
+    </>)}
   </div>);
 }

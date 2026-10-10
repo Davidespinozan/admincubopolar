@@ -72,7 +72,8 @@ describe('096: caja por contrato del servidor', () => {
     expect(m).toMatch(/operacionId: op\.id/);
   });
   it('bandeja y exportes usan el día de negocio', () => {
-    expect(src('../components/views/BandejaView.jsx')).toMatch(/construirBandeja\(data, diaNegocio\(\)\)/);
+    // 2026-10-09: la bandeja es de todos los roles (construirBandejaUsuario), con el día de negocio.
+    expect(src('../components/views/BandejaView.jsx')).toMatch(/construirBandejaUsuario\(user, data, diaNegocio\(\), personales\)/);
     expect(src('../utils/exportReports.js')).not.toMatch(/new Date\(\)\.toISOString\(\)\.slice\(0, 10\)/);
     expect(src('../components/views/CuentasPorPagarView.jsx')).not.toMatch(/new Date\(s\(p\.fecha\)\)/);
     expect(src('../components/views/MermasView.jsx')).not.toMatch(/new Date\(s\(borrarModal\.fecha\)\)/);

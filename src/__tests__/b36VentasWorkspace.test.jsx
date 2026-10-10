@@ -111,9 +111,10 @@ describe('B3.6 espacio de trabajo renderizado', () => {
 });
 
 describe('B3.6 navegación del rol', () => {
-  it('Ventas: un destino en el menú; sin barra inferior; los demás roles igual', () => {
-    expect(itemsModulos(navParaRol('Ventas')).map(i => i.label)).toEqual(['Ventas']);
-    expect(bottomNavParaRol(navParaRol('Ventas'))).toBeNull();
+  it('Ventas: Inicio (Resumen, Mi bandeja) + UN destino de trabajo; los tres en la barra inferior', () => {
+    // 2026-10-09: todos los roles tienen Resumen y Mi bandeja; Ventas sigue siendo un solo espacio de trabajo.
+    expect(itemsModulos(navParaRol('Ventas')).map(i => i.label)).toEqual(['Resumen', 'Mi bandeja', 'Ventas']);
+    expect(bottomNavParaRol(navParaRol('Ventas')).items.map(i => i.id)).toEqual(['dashboard', 'bandeja', 'ventas']);
     expect(bottomNavParaRol(navParaRol('Producción')).items).toHaveLength(4);
     expect(bottomNavParaRol(navParaRol('Admin')).items.map(i => i.id)).toEqual(['dashboard', 'bandeja', 'ordenes', 'cobros']);
     expect(idsModulos(navParaRol('Admin')).has('ordenes')).toBe(true);   // la vista de Ventas de Admin no cambia

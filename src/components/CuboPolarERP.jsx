@@ -10,12 +10,11 @@ import BusquedaGlobal from './ui/BusquedaGlobal';
 import AvisosPush from './ui/AvisosPush';
 import { logErrorToDb } from '../utils/errorLog';
 import { traducirError } from '../utils/errorMessages';
-import { textoSaludo, subtituloRol } from '../data/saludoLogic';
 import { etiquetaRol } from '../data/usuariosLogic';
 import RecordatorioAsistencia from './RecordatorioAsistencia';
-import { construirBandeja, contarUrgentes } from '../data/bandejaLogic';
+import { construirBandejaUsuario, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
-import { navParaRol, navParaUsuario, MODULO_MI_CUENTA, MODULO_DUENO, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
+import { navParaRol, navParaUsuario, MODULO_MI_CUENTA, MODULO_USUARIOS, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
   MODULO_ASISTENCIA, MODULO_MI_ASISTENCIA, MODULO_CALENDARIO, MODULO_MIS_ACTIVIDADES, idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas } from '../data/navRolLogic';
 import { BottomNav, PageHeader, Card, ListRow, IconButton, StatusBadge, Chips } from './ui/Components';
 import { ViewSkeleton, EmptyState } from './ui/Skeleton';
@@ -47,7 +46,9 @@ const AsistenciaView      = lazy(() => import('./views/AsistenciaView.jsx').then
 const MiAsistenciaView    = lazy(() => import('./MiAsistenciaView'));
 const CalendarioView      = lazy(() => import('./views/CalendarioView.jsx').then(m => ({ default: m.CalendarioView })));
 // GER-1 (mig 120): panel del dueño y "Mi cuenta" (contraseña propia).
-const DuenoView           = lazy(() => import('./views/DuenoView.jsx').then(m => ({ default: m.DuenoView })));
+const UsuariosView        = lazy(() => import('./views/UsuariosView.jsx').then(m => ({ default: m.UsuariosView })));
+// Resumen de los roles de campo (el back office conserva su Dashboard).
+const ResumenRolView      = lazy(() => import('./views/ResumenRolView.jsx').then(m => ({ default: m.ResumenRolView })));
 const MiCuentaView        = lazy(() => import('./CambiarPassword.jsx').then(m => ({ default: m.MiCuentaView })));
 // Fase B: las vistas por rol son contenido del shell compartido (lazy, como antes en App.jsx).
 const ChoferView                = lazy(() => import('./ChoferView'));
@@ -180,6 +181,8 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   const viendoComo = !!rolVista && rolVista !== user?.rol;
   const nav = useMemo(() => (viendoComo ? navParaRol(rolVista) : navParaUsuario(user)), [viendoComo, rolVista, user]);
   const IDS_MODULOS = useMemo(() => idsModulos(nav), [nav]);
+  // Back office = el menú incluye las Ventas de Admin (Admin, Facturación, Sin asignar).
+  const esBackOffice = IDS_MODULOS.has('ordenes');
   const ALL_ITEMS = useMemo(() => itemsModulos(nav), [nav]);
   // B3: navegación inferior en móvil, derivada del mismo modelo que el sidebar.
   const bottomNav = useMemo(() => bottomNavParaRol(nav), [nav]);
@@ -266,12 +269,16 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   const notifRecientes = useMemo(() => (data.notificaciones || []).slice(0, 30), [data.notificaciones]);
 
   const vp = useMemo(() => ({ data, actions, user }), [data, actions, user]);
+  // Persona para Resumen y Mi bandeja: en "Ver como" se muestra lo del rol elegido (sin accesos ni dueño).
+  const usuarioVista = useMemo(() => (viendoComo
+    ? { ...(usuarioRol || user), rol: rolVista, accesos_extra: [], es_dueno: false }
+    : (usuarioRol || user)), [viendoComo, usuarioRol, user, rolVista]);
 
   // Tanda 24: badge de "Mi bandeja" en el menú — solo cuenta urgentes
   // (prioridad alta) para que el número signifique "atiende ahora".
   const urgentesBandeja = useMemo(
-    () => contarUrgentes(construirBandeja(data, diaNegocio())),
-    [data]
+    () => contarUrgentes(construirBandejaUsuario(usuarioVista, data, diaNegocio())),
+    [data, usuarioVista]
   );
   // Alertas = condiciones en vivo (no se "leen"); se pueden ocultar por hoy.
   const [alertasOcultas, setAlertasOcultas] = useState(() => leerOcultas(diaNegocio()));
@@ -307,8 +314,11 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
 
   const renderView = () => {
     switch (view) {
-      case 'dashboard': return <DashboardView data={data} user={user} actions={actions} onNavigate={go} />;
-      case 'bandeja': return <BandejaView data={data} user={user} onNavigate={go} />;
+      // Inicio de TODOS los roles: el back office (tiene el módulo de Ventas de Admin) ve su Dashboard; los demás, el Resumen de su rol.
+      case 'dashboard': return esBackOffice
+        ? <DashboardView data={data} user={user} actions={actions} onNavigate={go} />
+        : <ResumenRolView data={data} user={usuarioVista} actions={actions} nav={nav} onNavigate={go} />;
+      case 'bandeja': return <BandejaView data={data} user={usuarioVista} actions={actions} onNavigate={go} />;
       case 'clientes': return <ClientesView {...vp} />;
       case 'productos': return <ProductosView {...vp} />;
       case 'bolsas': return <AlmacenBolsasView {...vp} />;
@@ -320,7 +330,8 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       case 'rutas': return <RutasView {...vp} />;
       case 'facturacion': return <FacturacionView {...vp} />;
       case 'conciliacion': return <ConciliacionView {...vp} />;
-      case 'auditoria': return <AuditoriaView data={data} />;
+      case 'auditoria': return <AuditoriaView {...vp} />;
+      case MODULO_USUARIOS.id: return <UsuariosView {...vp} />;
       case 'nomina': return <NominaView {...vp} />;
       case 'contabilidad': return <ContabilidadView {...vp} />;
       case 'cobros': return <CobrosView {...vp} />;
@@ -337,7 +348,6 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       case MODULO_CALENDARIO.id: return <CalendarioView {...vp} />;
       case MODULO_MIS_ACTIVIDADES.id: return <CalendarioView {...vp} personal />;
       case MODULO_MI_CUENTA.id: return <MiCuentaView user={user} actions={actions} />;
-      case MODULO_DUENO.id: return <DuenoView {...vp} />;
       // Fase B: vistas por rol como contenido del shell (misma lógica, misma autorización).
       // B3.6: un solo módulo Ventas; el filtro interno sale del hash (ventas / ventas-hoy / ventas-todas).
       case 'ventas': case 'ventas-hoy': case 'ventas-todas':
@@ -346,7 +356,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
         return <ProduccionStandaloneView embedded tab={tabDesdeModulo(view)} onTab={t => go(moduloDesdeTab('Producción', t))} user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;
       case MODULO_BOLSAS.id:
         return <BolsasView embedded user={usuarioRol || user} data={data} actions={actions} onLogout={onLogout} />;
-      default: return IDS_MODULOS.has('dashboard') ? <DashboardView data={data} actions={actions} /> : null;
+      default: return null;
     }
   };
 
@@ -712,13 +722,6 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
           {/* Recordatorio de asistencia en la pantalla de inicio de TODOS los roles (si hay algo que marcar). */}
           {view === nav.inicio && view !== MODULO_MI_ASISTENCIA.id && !viendoComo && (
             <RecordatorioAsistencia className="mb-4" actions={actions} onIr={() => go(MODULO_MI_ASISTENCIA.id)} />
-          )}
-          {/* Bienvenida en la pantalla de inicio de cada rol (el Resumen de Admin trae la suya). */}
-          {view === nav.inicio && view !== 'dashboard' && (
-            <div className="relative mb-4" data-testid="saludo-rol">
-              <p className="font-display text-[1.65rem] font-bold leading-tight text-ink">{textoSaludo((usuarioRol || user)?.nombre)}</p>
-              <p className="mt-0.5 text-[15px] text-slate-500">{subtituloRol(rol)}</p>
-            </div>
           )}
           <div key={view} className="relative animate-view-in"><ChunkErrorBoundary><Suspense fallback={<ViewSkeleton />}>{renderView()}</Suspense></ChunkErrorBoundary></div>
         </div>

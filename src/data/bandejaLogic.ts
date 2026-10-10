@@ -255,3 +255,129 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
 export function contarUrgentes(tareas: TareaBandeja[] | null | undefined): number {
   return (tareas || []).filter(t => t.prioridad === 'alta').length;
 }
+
+// ─── Mi bandeja para TODOS los roles (2026-10-09) ───────────────────────────
+// Admin (y back office) conserva su bandeja de negocio (construirBandeja); los
+// roles de campo ven lo que les toca a ellos. Todos suman lo personal:
+// asistencia por marcar y actividades asignadas. El alcance de los datos ya
+// viene recortado por rol (App: scopedData) y por el servidor (RLS).
+
+interface UsuarioBandeja { id?: unknown; rol?: string; accesos_extra?: unknown; accesosExtra?: unknown }
+interface PersonalesBandeja {
+  /** Resultado de recordatorioAsistencia(mi_asistencia) o null. */
+  asistencia?: { clave: string; titulo: string; detalle: string } | null;
+  /** Ocurrencias abiertas asignadas a la persona (calendario, solo mías). */
+  actividades?: Fila[];
+}
+const ROLES_BACKOFFICE = ['Admin', 'Facturación', 'Sin asignar'];
+const rolesDeUsuario = (u: UsuarioBandeja | null | undefined): string[] => {
+  const extra = (u?.accesosExtra ?? u?.accesos_extra) as unknown;
+  return [String(u?.rol || ''), ...(Array.isArray(extra) ? extra.map(String) : [])].filter(Boolean);
+};
+
+/** Pendientes personales: asistencia y actividades asignadas. */
+export function tareasPersonales(p: PersonalesBandeja | null | undefined): TareaBandeja[] {
+  const tareas: TareaBandeja[] = [];
+  const a = p?.asistencia;
+  if (a && a.clave !== 'salida') {
+    tareas.push({ id: 'mi-asistencia-' + a.clave, prioridad: a.clave === 'entrada' ? 'alta' : 'media', icono: 'Clock',
+      titulo: a.titulo, detalle: a.detalle, modulo: 'mi-asistencia', count: 1 });
+  }
+  const acts = p?.actividades || [];
+  const vencidas = acts.filter(x => String(x.estado || '') === 'vencida');
+  const pendientes = acts.filter(x => String(x.estado || '') === 'pendiente');
+  if (vencidas.length > 0) {
+    tareas.push({ id: 'mis-actividades-vencidas', prioridad: 'alta', icono: 'Calendar',
+      titulo: plural(vencidas.length, 'actividad tuya vencida', 'actividades tuyas vencidas'),
+      detalle: vencidas.slice(0, 2).map(x => String(x.titulo || '')).filter(Boolean).join(' · ') || 'Pasaron su fecha límite sin completarse.',
+      modulo: 'mis-actividades', count: vencidas.length });
+  }
+  if (pendientes.length > 0) {
+    tareas.push({ id: 'mis-actividades-pendientes', prioridad: 'media', icono: 'Calendar',
+      titulo: plural(pendientes.length, 'actividad por hacer', 'actividades por hacer'),
+      detalle: pendientes.slice(0, 2).map(x => String(x.titulo || '')).filter(Boolean).join(' · ') || 'Están dentro de su ventana.',
+      modulo: 'mis-actividades', count: pendientes.length });
+  }
+  return tareas;
+}
+
+/** Pendientes de Ventas (rol o acceso adicional): sus ventas sin cobrar/entregar. */
+export function tareasVentas(d: DataBandeja, hoy: string): TareaBandeja[] {
+  const tareas: TareaBandeja[] = [];
+  const creadas = (d.ordenes || []).filter(o => String(o.estatus || '') === 'Creada');
+  const viejas = creadas.filter(o => String(o.fecha || '').slice(0, 10) < hoy);
+  const deHoy = creadas.filter(o => !viejas.includes(o));
+  if (viejas.length > 0) {
+    tareas.push({ id: 'ventas-atrasadas', prioridad: 'alta', icono: 'ShoppingCart',
+      titulo: plural(viejas.length, 'venta de días anteriores sin entregar', 'ventas de días anteriores sin entregar'),
+      detalle: 'Cóbrala y entrégala, mándala a ruta o pide que la cancelen.', modulo: 'ventas', count: viejas.length });
+  }
+  if (deHoy.length > 0) {
+    tareas.push({ id: 'ventas-por-cobrar', prioridad: 'media', icono: 'DollarSign',
+      titulo: plural(deHoy.length, 'venta por cobrar o entregar', 'ventas por cobrar o entregar'),
+      detalle: 'Cóbrala en mostrador o mándala a ruta.', modulo: 'ventas', count: deHoy.length });
+  }
+  return tareas;
+}
+
+/** Pendientes de Producción: firmas de carga, lo que falta producir y stock crítico. */
+export function tareasProduccion(d: DataBandeja): TareaBandeja[] {
+  const tareas: TareaBandeja[] = [];
+  const firmas = (d.rutas || []).filter(r => String(r.estatus || '').trim() === 'Pendiente firma');
+  if (firmas.length > 0) {
+    tareas.push({ id: 'firmas', prioridad: 'alta', icono: 'Pen',
+      titulo: plural(firmas.length, 'carga espera tu firma', 'cargas esperan tu firma'),
+      detalle: 'El chofer no puede salir hasta que firmes su carga.', modulo: 'prod-producir', count: firmas.length });
+  }
+  const producir = (d.alertas || []).filter(a => String(a.id || '').startsWith('prod-min-'));
+  if (producir.length > 0) {
+    tareas.push({ id: 'por-producir', prioridad: 'media', icono: 'Factory',
+      titulo: plural(producir.length, 'producto por producir', 'productos por producir'),
+      detalle: 'Hay pedidos o mínimos que el stock no cubre.', modulo: 'prod-producir', count: producir.length });
+  }
+  return tareas;
+}
+
+/** Pendientes de Almacén de Bolsas: empaques sin existencia o bajo mínimo. */
+export function tareasAlmacen(d: DataBandeja & { productos?: Fila[] }): TareaBandeja[] {
+  const tareas: TareaBandeja[] = [];
+  const empaques = (d.productos || []).filter(p => String(p.tipo || '') === 'Empaque');
+  const sin = empaques.filter(p => Number(p.stock || 0) <= 0);
+  const bajo = empaques.filter(p => Number(p.stock || 0) > 0 && Number(p.stock_minimo ?? p.stockMinimo ?? 0) > 0 && Number(p.stock) <= Number(p.stock_minimo ?? p.stockMinimo));
+  if (sin.length > 0) {
+    tareas.push({ id: 'bolsas-sin-existencia', prioridad: 'alta', icono: 'Box',
+      titulo: plural(sin.length, 'tipo de bolsa sin existencia', 'tipos de bolsa sin existencia'),
+      detalle: sin.slice(0, 3).map(p => String(p.nombre || p.sku || '')).join(' · ') + '. Sin bolsas no se puede producir.',
+      modulo: 'bolsas-almacen', count: sin.length });
+  }
+  if (bajo.length > 0) {
+    tareas.push({ id: 'bolsas-bajas', prioridad: 'media', icono: 'Box',
+      titulo: plural(bajo.length, 'tipo de bolsa bajo el mínimo', 'tipos de bolsa bajo el mínimo'),
+      detalle: bajo.slice(0, 3).map(p => String(p.nombre || p.sku || '')).join(' · '), modulo: 'bolsas-almacen', count: bajo.length });
+  }
+  return tareas;
+}
+
+/**
+ * Bandeja de una persona: lo de su rol (y accesos) + lo personal, urgentes primero.
+ * Back office: la bandeja de negocio de siempre + lo personal.
+ */
+export function construirBandejaUsuario(usuario: UsuarioBandeja | null | undefined, data: DataBandeja | null | undefined,
+  hoy: string, personales?: PersonalesBandeja | null): TareaBandeja[] {
+  const d = (data || {}) as DataBandeja & { productos?: Fila[] };
+  const roles = rolesDeUsuario(usuario);
+  let tareas: TareaBandeja[] = [];
+  if (roles.some(r => ROLES_BACKOFFICE.includes(r))) {
+    tareas = construirBandeja(d, hoy);
+    // En back office las actividades de todos ya salen como "actividades vencidas": lo personal suma solo la asistencia.
+    tareas = [...tareasPersonales({ asistencia: personales?.asistencia }), ...tareas];
+  } else {
+    if (roles.includes('Ventas')) tareas.push(...tareasVentas(d, hoy));
+    if (roles.includes('Producción')) tareas.push(...tareasProduccion(d));
+    if (roles.includes('Almacén Bolsas')) tareas.push(...tareasAlmacen(d));
+    tareas.push(...tareasPersonales(personales));
+  }
+  const vistos = new Set<string>();
+  tareas = tareas.filter(t => (vistos.has(t.id) ? false : (vistos.add(t.id), true)));
+  return [...tareas.filter(t => t.prioridad === 'alta'), ...tareas.filter(t => t.prioridad === 'media')];
+}

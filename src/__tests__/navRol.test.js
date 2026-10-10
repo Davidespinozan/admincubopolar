@@ -14,17 +14,21 @@ import { viewDesdeHash } from '../data/navegacionShellLogic';
 
 const src = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
 
-const ADMIN_25 = [
-  'dashboard', 'bandeja', 'produccion', 'inventario', 'mermas', 'comodatos', 'rutas', 'bolsas',
-  'ordenes', 'clientes', 'leads', 'precios', 'productos',
-  'contabilidad', 'cobros', 'proveedores', 'devoluciones', 'costos', 'facturacion', 'conciliacion', 'nomina',
-  'empleados', 'kardex', 'auditoria', 'configuracion',
+// MENÚ 2026-10-09: "Inicio" (Resumen + Mi bandeja) es de todos los roles; cada módulo vive en el
+// área de su tema y "Sistema" reúne Usuarios, Auditoría y Ajustes. Los ids no cambiaron.
+const ADMIN_28 = [
+  'dashboard', 'bandeja',
+  'produccion', 'inventario', 'bolsas', 'mermas', 'rutas', 'kardex',
+  'ordenes', 'clientes', 'precios', 'productos', 'leads', 'comodatos',
+  'cobros', 'proveedores', 'contabilidad', 'costos', 'conciliacion', 'devoluciones', 'facturacion',
+  'empleados', 'asistencia', 'nomina', 'calendario',
+  'usuarios', 'auditoria', 'configuracion',
 ];
-// WF-0 + PD-01: Admin suma "Asistencia" (área Equipo, tras Empleados); PD-02: "Calendario"
-// (área Operación, tras Mi bandeja). Facturación y Sin asignar no.
-const insertarTras = (lista, tras, id) => [...lista.slice(0, lista.indexOf(tras) + 1), id, ...lista.slice(lista.indexOf(tras) + 1)];
-const ADMIN_27 = insertarTras(insertarTras(ADMIN_25, 'empleados', 'asistencia'), 'bandeja', 'calendario');
-const modulosAdmin = (rol) => (rol === 'Admin' ? ADMIN_27 : ADMIN_25);
+// Facturación y Sin asignar: lo mismo sin Asistencia, Calendario ni Usuarios (solo de Admin).
+const SOLO_ADMIN = ['asistencia', 'calendario', 'usuarios'];
+const ADMIN_25 = ADMIN_28.filter(id => !SOLO_ADMIN.includes(id));
+const INICIO = ['dashboard', 'bandeja'];
+const modulosAdmin = (rol) => (rol === 'Admin' ? ADMIN_28 : ADMIN_25);
 
 describe('matriz de navegación por rol', () => {
   it('todo rol válido tiene navegación y un módulo inicial dentro de su menú', () => {
@@ -36,7 +40,8 @@ describe('matriz de navegación por rol', () => {
     }
     expect(navParaRol('Rol inexistente')).toBe(NAV_ROLES['Sin asignar']);
   });
-  it('Admin, Facturación y Sin asignar: sus 25 módulos de siempre; Admin además Asistencia y Calendario', () => {
+  it('Admin, Facturación y Sin asignar: sus 25 módulos de siempre; Admin además Asistencia, Calendario y Usuarios', () => {
+    expect(ADMIN_25).toHaveLength(25);
     for (const rol of ['Admin', 'Facturación', 'Sin asignar']) {
       const nav = navParaRol(rol);
       expect(nav.modo).toBe('completo');
@@ -48,22 +53,31 @@ describe('matriz de navegación por rol', () => {
     expect(navParaRol('Admin').chrome.verComo).toBe(true);
     expect(navParaRol('Facturación').chrome.verComo).toBe(false);
     expect(navParaRol('Sin asignar').chrome.verComo).toBe(false);
-    expect(AREAS_ADMIN.map(a => a.id)).toEqual(['operacion', 'comercial', 'finanzas', 'equipo']);
-    expect(AREAS_BACKOFFICE.map(a => a.id)).toEqual(['operacion', 'comercial', 'finanzas', 'equipo']);
-    expect(areaDeModulo(navParaRol('Admin'), MODULO_ASISTENCIA.id).id).toBe('equipo');
-    expect(areaDeModulo(navParaRol('Admin'), MODULO_CALENDARIO.id).id).toBe('operacion');
+    expect(AREAS_ADMIN.map(a => a.id)).toEqual(['inicio', 'operacion', 'comercial', 'finanzas', 'equipo', 'sistema']);
+    expect(AREAS_BACKOFFICE.map(a => a.id)).toEqual(['inicio', 'operacion', 'comercial', 'finanzas', 'equipo', 'sistema']);
+    // Cada módulo en el área de su tema.
+    const area = (id) => areaDeModulo(navParaRol('Admin'), id).id;
+    expect(area(MODULO_ASISTENCIA.id)).toBe('equipo');
+    expect(area(MODULO_CALENDARIO.id)).toBe('equipo');
+    expect(area('nomina')).toBe('equipo');
+    expect(area('kardex')).toBe('operacion');
+    expect(area('comodatos')).toBe('comercial');
+    expect(['usuarios', 'auditoria', 'configuracion'].map(area)).toEqual(['sistema', 'sistema', 'sistema']);
+    // El "Panel del dueño" ya no existe: su hash abre Auditoría (donde vive la bitácora del Dueño).
+    expect(idsModulos(navParaRol('Admin')).has('dueno')).toBe(false);
+    expect(normalizarVista(navParaRol('Admin'), 'dueno')).toBe('auditoria');
   });
-  it('WF-0 + PD-02: Empleado = solo "Mi asistencia" y "Mis actividades"; nunca cae al back office de respaldo', () => {
+  it('WF-0 + PD-02: Empleado = Inicio + "Mi asistencia" y "Mis actividades"; nunca cae al back office de respaldo', () => {
     const nav = navParaRol('Empleado');
     expect(nav).toBe(NAV_ROLES.Empleado);
     expect(nav).not.toBe(NAV_ROLES['Sin asignar']);
     expect(nav.modo).toBe('completo');
-    expect([...idsModulos(nav)]).toEqual([MODULO_MI_ASISTENCIA.id, MODULO_MIS_ACTIVIDADES.id]);
+    expect([...idsModulos(nav)]).toEqual([...INICIO, MODULO_MI_ASISTENCIA.id, MODULO_MIS_ACTIVIDADES.id]);
     // GER-1 (120): además, la vista "Mi cuenta" (cambiar su propia contraseña).
-    expect([...idsVistas(nav)]).toEqual([MODULO_MI_ASISTENCIA.id, MODULO_MIS_ACTIVIDADES.id, 'mi-cuenta']);
-    expect(nav.inicio).toBe('mi-asistencia');
+    expect([...idsVistas(nav)]).toEqual([...INICIO, MODULO_MI_ASISTENCIA.id, MODULO_MIS_ACTIVIDADES.id, 'mi-cuenta']);
+    expect(nav.inicio).toBe('dashboard');   // su Resumen (asistencia y actividades), no el Dashboard de Admin
     expect(Object.values(nav.chrome).some(Boolean)).toBe(false);   // sin búsqueda, alertas, notificaciones, firmas, Ver como
-    for (const id of [...ADMIN_27, 'ventas', 'prod-producir', 'bolsas-almacen', 'chofer-ruta']) {
+    for (const id of [...ADMIN_28.filter(x => !INICIO.includes(x)), 'ventas', 'prod-producir', 'bolsas-almacen', 'chofer-ruta']) {
       expect(normalizarVista(nav, id), id).toBeNull();
     }
   });
@@ -81,15 +95,20 @@ describe('matriz de navegación por rol', () => {
       expect(idsModulos(nav).has('calendario'), rol).toBe(rol === 'Admin');
     }
   });
-  it('Ventas: UN módulo (B3.6); Producción: sus cuatro; Bolsas: uno; Chofer: enfoque', () => {
-    expect([...idsModulos(navParaRol('Ventas'))]).toEqual(['ventas']);
-    expect(itemsModulos(navParaRol('Ventas'))).toEqual([MODULO_VENTAS]);
+  it('Inicio (Resumen + Mi bandeja) en todos; Ventas: UN módulo (B3.6); Producción: sus cuatro; Bolsas: uno; Chofer: enfoque', () => {
+    expect([...idsModulos(navParaRol('Ventas'))]).toEqual([...INICIO, 'ventas']);
+    expect(itemsModulos(navParaRol('Ventas')).filter(i => !INICIO.includes(i.id))).toEqual([MODULO_VENTAS]);
     expect(MODULO_VENTAS).toEqual({ id: 'ventas', label: 'Ventas', icon: 'ShoppingCart' });
-    expect(navParaRol('Ventas').inicio).toBe('ventas');               // = filtro Pendientes
-    expect([...idsModulos(navParaRol('Producción'))]).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-preparar']);
-    expect(navParaRol('Producción').inicio).toBe('prod-producir');   // = pestaña "producir", la de siempre
+    expect([...idsModulos(navParaRol('Producción'))]).toEqual([...INICIO, 'prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-preparar']);
     expect(navParaRol('Producción').chrome.firmas).toBe(true);
-    expect([...idsModulos(navParaRol('Almacén Bolsas'))]).toEqual([MODULO_BOLSAS.id]);
+    expect([...idsModulos(navParaRol('Almacén Bolsas'))]).toEqual([...INICIO, MODULO_BOLSAS.id]);
+    // Todos los roles con menú empiezan en su Resumen y tienen Mi bandeja.
+    for (const rol of ['Admin', 'Facturación', 'Sin asignar', 'Ventas', 'Producción', 'Almacén Bolsas', 'Empleado']) {
+      const nav = navParaRol(rol);
+      expect(nav.inicio, rol).toBe('dashboard');
+      expect(nav.areas[0].id, rol).toBe('inicio');
+      expect(nav.areas[0].items.map(i => [i.id, i.label]), rol).toEqual([['dashboard', 'Resumen'], ['bandeja', 'Mi bandeja']]);
+    }
     expect(navParaRol('Chofer').modo).toBe('enfoque');
     expect([...idsModulos(navParaRol('Chofer'))]).toEqual([MODULO_CHOFER.id]);
     for (const rol of ['Ventas', 'Producción', 'Almacén Bolsas', 'Chofer']) {
@@ -101,7 +120,7 @@ describe('matriz de navegación por rol', () => {
     const todos = Object.values(NAV_ROLES).flatMap(n => [...idsModulos(n)]);
     const admin = new Set(ADMIN_25);
     for (const n of [MODULO_VENTAS, ...MODULOS_PRODUCCION, MODULO_BOLSAS, MODULO_CHOFER]) expect(admin.has(n.id), n.id).toBe(false);
-    for (const id of [...idsVistas(navParaRol('Ventas'))]) expect(admin.has(id), id).toBe(false);
+    for (const id of [...idsVistas(navParaRol('Ventas'))].filter(x => !INICIO.includes(x))) expect(admin.has(id), id).toBe(false);
     for (const nav of Object.values(NAV_ROLES)) expect(new Set([...idsModulos(nav)]).size).toBe(idsModulos(nav).size);
     expect(todos.length).toBeGreaterThan(0);
   });
@@ -128,7 +147,7 @@ describe('matriz de navegación por rol', () => {
     expect(abre('#/ventas-todas')).toEqual(['ventas-todas', 'ventas', 'todas']);
     expect(abre('#/ventas')).toEqual(['ventas', 'ventas', 'pendientes']);
     expect(abre('#/cobros')).toEqual([null, null, null]);                          // un hash de Admin no abre nada en Ventas
-    expect([...idsVistas(v)].sort()).toEqual(['mi-asistencia', 'mi-cuenta', 'mis-actividades', 'ventas', 'ventas-cobrar', 'ventas-hoy', 'ventas-todas']);
+    expect([...idsVistas(v)].sort()).toEqual(['bandeja', 'dashboard', 'mi-asistencia', 'mi-cuenta', 'mis-actividades', 'ventas', 'ventas-cobrar', 'ventas-hoy', 'ventas-todas']);
   });
   it('B3.6: los demás roles no tienen vistas ni alias extra (mismo ruteo de siempre)', () => {
     for (const rol of ['Admin', 'Facturación', 'Sin asignar', 'Producción', 'Almacén Bolsas', 'Chofer']) {
@@ -136,7 +155,8 @@ describe('matriz de navegación por rol', () => {
       // OP-01D: Producción conserva el hash heredado '#/prod-trans' como alias de "Preparar barra".
       // PD-01: todos suman la vista "mi-asistencia" (botón de la cabecera, sin entrada de menú).
       // GER-1: y la vista "mi-cuenta" (contraseña propia).
-      const extra = ['mi-asistencia', 'mis-actividades', 'mi-cuenta', ...(rol === 'Producción' ? ['prod-trans'] : [])];
+      // 2026-10-09: Admin conserva '#/dueno' como alias de Auditoría.
+      const extra = ['mi-asistencia', 'mis-actividades', 'mi-cuenta', ...(rol === 'Producción' ? ['prod-trans'] : []), ...(rol === 'Admin' ? ['dueno'] : [])];
       expect([...idsVistas(nav)], rol).toEqual([...idsModulos(nav), ...extra]);
       for (const id of idsModulos(nav)) { expect(normalizarVista(nav, id)).toBe(id); expect(moduloDeVista(nav, id)).toBe(id); }
       expect(normalizarVista(nav, 'ventas-hoy'), rol).toBeNull();
@@ -148,9 +168,9 @@ describe('matriz de navegación por rol', () => {
     expect(areaDeModulo(navParaRol('Admin'), 'cobros').id).toBe('finanzas');
     expect(areaDeModulo(navParaRol('Ventas'), moduloDeVista(navParaRol('Ventas'), 'ventas-hoy')).id).toBe('ventas');
     expect(areaDeModulo(navParaRol('Ventas'), 'cobros')).toBeNull();
-    expect(itemsModulos(navParaRol('Producción')).map(i => i.id)).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-preparar']);
-    expect(areasExpandidasInicial(navParaRol('Admin'))).toEqual({ operacion: true, comercial: true, finanzas: false, equipo: false });
-    expect(areasExpandidasInicial(navParaRol('Ventas'))).toEqual({ ventas: true });
+    expect(itemsModulos(navParaRol('Producción')).map(i => i.id)).toEqual([...INICIO, 'prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-preparar']);
+    expect(areasExpandidasInicial(navParaRol('Admin'))).toEqual({ inicio: true, operacion: true, comercial: true, finanzas: false, equipo: false, sistema: false });
+    expect(areasExpandidasInicial(navParaRol('Ventas'))).toEqual({ inicio: true, ventas: true });
     // Un hash de Admin no abre nada en el menú de Ventas (cae al inicio del rol).
     expect(viewDesdeHash('#/cobros', idsModulos(navParaRol('Ventas')))).toBeNull();
     expect(viewDesdeHash('#/ventas-hoy', idsVistas(navParaRol('Ventas')))).toBe('ventas-hoy');
@@ -197,7 +217,11 @@ describe('B: shell compartido y ruteo', () => {
     expect((shell.match(/<Icons\.Bell \/>/g) || []).length).toBe(2);   // botón Avisos + ícono de cada notificación
     expect(shell).toMatch(/data-testid="boton-avisos"/);
     expect(shell).not.toMatch(/ModoPruebaBanner/);
-    expect(shell).toMatch(/view === nav\.inicio && view !== 'dashboard' && \(/);
+    // 2026-10-09: el inicio de TODOS es 'dashboard': back office → su Dashboard; los demás → el Resumen de su rol (con su saludo).
+    expect(shell).toMatch(/const esBackOffice = IDS_MODULOS\.has\('ordenes'\);/);
+    expect(shell).toMatch(/case 'dashboard': return esBackOffice\s*\? <DashboardView data=\{data\} user=\{user\} actions=\{actions\} onNavigate=\{go\} \/>\s*: <ResumenRolView data=\{data\} user=\{usuarioVista\} actions=\{actions\} nav=\{nav\} onNavigate=\{go\} \/>;/);
+    expect(shell).toMatch(/case 'bandeja': return <BandejaView data=\{data\} user=\{usuarioVista\} actions=\{actions\} onNavigate=\{go\} \/>;/);
+    expect(src('../components/views/ResumenRolView.jsx')).toMatch(/data-testid="saludo-rol"/);
     expect(shell).toMatch(/case 'ventas': case 'ventas-hoy': case 'ventas-todas':\s*return <VentasStandaloneView embedded filtro=\{filtroVentasDesdeVista\(view\)\} onFiltro=\{f => go\(vistaDesdeFiltroVentas\(f\)\)\} user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
     expect(shell).toMatch(/<ProduccionStandaloneView embedded tab=\{tabDesdeModulo\(view\)\} onTab=\{t => go\(moduloDesdeTab\('Producción', t\)\)\} user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
     expect(shell).toMatch(/<BolsasView embedded user=\{usuarioRol \|\| user\} data=\{data\} actions=\{actions\} onLogout=\{onLogout\} \/>/);
@@ -211,7 +235,8 @@ describe('B: shell compartido y ruteo', () => {
     expect(shell).toMatch(/data-testid="dashboard-shell"/);
   });
   it('los 25 módulos de Admin siguen renderizando las mismas vistas', () => {
-    for (const id of ADMIN_25) expect(shell, id).toMatch(new RegExp(`case '${id}': return <`));
+    for (const id of ADMIN_25) expect(shell, id).toMatch(new RegExp(`case '${id}': return (esBackOffice\\s*\\? )?<`));
+    expect(shell).toMatch(/case MODULO_USUARIOS\.id: return <UsuariosView \{\.\.\.vp\} \/>;/);
   });
   it('las vistas por rol aceptan el modo embebido y conservan su testid de smoke', () => {
     expect(src('../components/VentasStandaloneView.jsx')).toMatch(/embedded = false, filtro: filtroProp, onFiltro/);
@@ -224,16 +249,22 @@ describe('B: shell compartido y ruteo', () => {
 
 describe('B3: navegación inferior móvil derivada del mismo modelo', async () => {
   const { bottomNavParaRol, PRINCIPALES_MOVIL_ADMIN, MAX_DESTINOS_MOVIL } = await import('../data/navRolLogic');
-  it('Ventas (B3.6): un solo módulo → sin barra inferior (los filtros viven dentro del espacio de trabajo); Producción: 4 con etiqueta móvil corta; sin "Más"', () => {
-    expect(bottomNavParaRol(navParaRol('Ventas'))).toBeNull();
-    const p = bottomNavParaRol(navParaRol('Producción'));
-    expect(p.mas).toBe(false);
-    expect(p.items.map(i => i.id)).toEqual(['prod-producir', 'prod-cuartos', 'prod-mermas', 'prod-preparar']);
-    expect(p.items.map(i => i.label)).toEqual(['Producción', 'Congeladores', 'Mermas', 'Preparar']);
+  it('Ventas y Almacén: Resumen, Mi bandeja y su módulo en la barra (sin "Más"); Producción: 4 primeros + "Más"', () => {
+    const v = bottomNavParaRol(navParaRol('Ventas'));
+    expect(v.mas).toBe(false);
+    expect(v.items.map(i => i.id)).toEqual(['dashboard', 'bandeja', 'ventas']);
+    const a = bottomNavParaRol(navParaRol('Almacén Bolsas'));
+    expect(a.mas).toBe(false);
+    expect(a.items.map(i => i.id)).toEqual(['dashboard', 'bandeja', 'bolsas-almacen']);
+    const p = bottomNavParaRol(navParaRol('Producción'));   // 6 módulos: caben 4 + "Más" (Mermas y Preparar quedan en el menú)
+    expect(p.mas).toBe(true);
+    expect(p.items.map(i => i.id)).toEqual(['dashboard', 'bandeja', 'prod-producir', 'prod-cuartos']);
+    expect(p.items.map(i => i.label)).toEqual(['Resumen', 'Mi bandeja', 'Producción', 'Congeladores']);
     expect(p.items.every(i => i.icon)).toBe(true);
+    const e = bottomNavParaRol(navParaRol('Empleado'));
+    expect(e.items.map(i => i.id)).toEqual(['dashboard', 'bandeja', 'mi-asistencia', 'mis-actividades']);
   });
-  it('un solo módulo (Almacén Bolsas) y modo enfoque (Chofer): sin barra inferior', () => {
-    expect(bottomNavParaRol(navParaRol('Almacén Bolsas'))).toBeNull();
+  it('modo enfoque (Chofer): sin barra inferior', () => {
     expect(bottomNavParaRol(navParaRol('Chofer'))).toBeNull();
     expect(bottomNavParaRol(null)).toBeNull();
   });
@@ -246,8 +277,8 @@ describe('B3: navegación inferior móvil derivada del mismo modelo', async () =
       expect([...idsModulos(navParaRol(rol))], rol).toEqual(modulosAdmin(rol));   // alcance intacto (+ Asistencia en Admin)
     }
     expect(PRINCIPALES_MOVIL_ADMIN).toEqual(['dashboard', 'bandeja', 'ordenes', 'cobros']);
-    // uno por área de trabajo: Operación (resumen, bandeja), Comercial (ventas), Finanzas (por cobrar)
-    expect(PRINCIPALES_MOVIL_ADMIN.map(id => areaDeModulo(navParaRol('Admin'), id).id)).toEqual(['operacion', 'operacion', 'comercial', 'finanzas']);
+    // Inicio (resumen, bandeja), Comercial (ventas) y Finanzas (por cobrar)
+    expect(PRINCIPALES_MOVIL_ADMIN.map(id => areaDeModulo(navParaRol('Admin'), id).id)).toEqual(['inicio', 'inicio', 'comercial', 'finanzas']);
   });
   it('los ids de la barra son siempre ids válidos del menú del rol (mismo mecanismo de navegación)', () => {
     for (const rol of ROLES_VALIDOS) {

@@ -31,54 +31,69 @@ export const MODULO_MIS_ACTIVIDADES = { id: "mis-actividades", label: "Mis activ
 // GER-1 (mig 120): "Mi cuenta" (cambiar la contraseña propia) es una vista de
 // TODOS los roles; "Panel del dueño" es el módulo del Dueño (Admin + es_dueno).
 export const MODULO_MI_CUENTA = { id: "mi-cuenta", label: "Mi cuenta", icon: "Lock" };
-export const MODULO_DUENO = { id: "dueno", label: "Panel del dueño", icon: "Shield" };
+// El "Panel del dueño" se retiró (2026-10-09): Usuarios es un módulo de Sistema y los
+// cambios sensibles son una pestaña de Auditoría que solo ve el Dueño. '#/dueno' abre Auditoría.
+export const ALIAS_DUENO = { dueno: "auditoria" };
 const VISTA_MI_ASISTENCIA = {
   [MODULO_MI_ASISTENCIA.id]: MODULO_MI_ASISTENCIA.id,
   [MODULO_MIS_ACTIVIDADES.id]: MODULO_MIS_ACTIVIDADES.id,
   [MODULO_MI_CUENTA.id]: MODULO_MI_CUENTA.id,
 };
-const SOLO_ADMIN = new Set([MODULO_ASISTENCIA.id, MODULO_CALENDARIO.id]);
+const SOLO_ADMIN = new Set([MODULO_ASISTENCIA.id, MODULO_CALENDARIO.id, "usuarios"]);
+
+// MENÚ 2026-10-09 (reorganización pedida por el dueño): "Inicio" (Resumen + Mi
+// bandeja) es de TODOS los roles; cada módulo vive en el área de su tema
+// (Kardex en Operación, Nómina y Calendario en Equipo, Comodatos en Comercial)
+// y "Sistema" reúne Usuarios, Auditoría y Ajustes. Los ids no cambian.
+export const MODULO_RESUMEN = { id: "dashboard", label: "Resumen", icon: "Dashboard" };
+export const MODULO_BANDEJA = { id: "bandeja", label: "Mi bandeja", icon: "ClipboardCheck" };
+export const MODULO_USUARIOS = { id: "usuarios", label: "Usuarios", icon: "Users" };
+export const AREA_INICIO = { id: "inicio", label: "Inicio", icon: "Dashboard", color: "blue", items: [MODULO_RESUMEN, MODULO_BANDEJA] };
 
 export const AREAS_ADMIN = [
+  AREA_INICIO,
   { id: "operacion", label: "Operación", icon: "Factory", color: "blue",
     items: [
-      { id: "dashboard", label: "Resumen", icon: "Dashboard" },
-      { id: "bandeja", label: "Mi bandeja", icon: "ClipboardCheck" },
-      MODULO_CALENDARIO,
       { id: "produccion", label: "Producción", icon: "Factory" },
       { id: "inventario", label: "Congeladores", icon: "Warehouse" },
-      { id: "mermas", label: "Mermas", icon: "AlertTriangle" },
-      { id: "comodatos", label: "Comodatos", icon: "Truck" },
-      { id: "rutas", label: "Rutas", icon: "Truck" },
       { id: "bolsas", label: "Insumos", icon: "Box" },
+      { id: "mermas", label: "Mermas", icon: "AlertTriangle" },
+      { id: "rutas", label: "Rutas", icon: "Truck" },
+      { id: "kardex", label: "Kardex", icon: "ClipboardCheck" },
     ]
   },
   { id: "comercial", label: "Comercial", icon: "ShoppingCart", color: "emerald",
     items: [
       { id: "ordenes", label: "Ventas", icon: "ShoppingCart" },
       { id: "clientes", label: "Clientes", icon: "Users" },
-      { id: "leads", label: "Leads", icon: "UserCheck" },
       { id: "precios", label: "Precios", icon: "DollarSign" },
       { id: "productos", label: "Catálogo", icon: "Package" },
+      { id: "leads", label: "Leads", icon: "UserCheck" },
+      { id: "comodatos", label: "Comodatos", icon: "Truck" },
     ]
   },
   { id: "finanzas", label: "Finanzas", icon: "Wallet", color: "amber",
     items: [
-      { id: "contabilidad", label: "Movimientos", icon: "Calculator" },
       { id: "cobros", label: "Por cobrar", icon: "DollarSign" },
       { id: "proveedores", label: "Por pagar", icon: "CreditCard" },
-      { id: "devoluciones", label: "Devoluciones", icon: "Truck" },
+      { id: "contabilidad", label: "Movimientos", icon: "Calculator" },
       { id: "costos", label: "Costos", icon: "Receipt" },
-      { id: "facturacion", label: "Facturación", icon: "FileText" },
       { id: "conciliacion", label: "Cortes", icon: "ClipboardCheck" },
-      { id: "nomina", label: "Nómina", icon: "Wallet" },
+      { id: "devoluciones", label: "Devoluciones", icon: "Truck" },
+      { id: "facturacion", label: "Facturación", icon: "FileText" },
     ]
   },
   { id: "equipo", label: "Equipo", icon: "Users", color: "purple",
     items: [
       { id: "empleados", label: "Empleados", icon: "UserCheck" },
       MODULO_ASISTENCIA,
-      { id: "kardex", label: "Kardex", icon: "ClipboardCheck" },
+      { id: "nomina", label: "Nómina", icon: "Wallet" },
+      MODULO_CALENDARIO,
+    ]
+  },
+  { id: "sistema", label: "Sistema", icon: "Settings", color: "slate",
+    items: [
+      MODULO_USUARIOS,
       { id: "auditoria", label: "Auditoría", icon: "Shield" },
       { id: "configuracion", label: "Ajustes", icon: "Settings" },
     ]
@@ -86,7 +101,7 @@ export const AREAS_ADMIN = [
 ];
 
 // Facturación y Sin asignar: los mismos 25 módulos de siempre (Asistencia y Calendario son solo de Admin).
-export const AREAS_BACKOFFICE = AREAS_ADMIN.map(a => ({ ...a, items: a.items.filter(i => !SOLO_ADMIN.has(i.id)) }));
+export const AREAS_BACKOFFICE = AREAS_ADMIN.map(a => ({ ...a, items: a.items.filter(i => !SOLO_ADMIN.has(i.id)) })).filter(a => a.items.length > 0);
 
 // B3.6: Ventas — un módulo y sus filtros internos (no son módulos del menú).
 export const MODULO_VENTAS = { id: "ventas", label: "Ventas", icon: "ShoppingCart" };
@@ -124,33 +139,33 @@ const CHROME_CAMPO = { busqueda: false, firmas: false, alertas: false, notificac
 const CHROME_EMPLEADO = { ...CHROME_CAMPO, miAsistencia: false, misActividades: false };
 
 export const NAV_ROLES = {
-  Admin: { modo: "completo", areas: AREAS_ADMIN, inicio: "dashboard", chrome: CHROME_ADMIN, persistirAreas: true, vistas: VISTA_MI_ASISTENCIA },
+  Admin: { modo: "completo", areas: AREAS_ADMIN, inicio: "dashboard", chrome: CHROME_ADMIN, persistirAreas: true, vistas: VISTA_MI_ASISTENCIA, alias: ALIAS_DUENO },
   "Facturación": { modo: "completo", areas: AREAS_BACKOFFICE, inicio: "dashboard", chrome: CHROME_BACKOFFICE, persistirAreas: true, vistas: VISTA_MI_ASISTENCIA },
   "Sin asignar": { modo: "completo", areas: AREAS_BACKOFFICE, inicio: "dashboard", chrome: CHROME_BACKOFFICE, persistirAreas: true, vistas: VISTA_MI_ASISTENCIA },
   Ventas: {
-    modo: "completo", inicio: MODULO_VENTAS.id, chrome: CHROME_CAMPO, persistirAreas: false,
-    areas: [{ id: "ventas", label: "Ventas", icon: "ShoppingCart", color: "emerald", items: [MODULO_VENTAS] }],
+    modo: "completo", inicio: MODULO_RESUMEN.id, chrome: CHROME_CAMPO, persistirAreas: false,
+    areas: [AREA_INICIO, { id: "ventas", label: "Ventas", icon: "ShoppingCart", color: "emerald", items: [MODULO_VENTAS] }],
     // vistas que no son entradas del menú → módulo dueño (los filtros con hash propio)
     vistas: { "ventas-hoy": MODULO_VENTAS.id, "ventas-todas": MODULO_VENTAS.id, ...VISTA_MI_ASISTENCIA },
     alias: ALIAS_VISTAS_VENTAS,
   },
   "Producción": {
-    modo: "completo", inicio: "prod-producir", chrome: { ...CHROME_CAMPO, firmas: true }, persistirAreas: false,
-    areas: [{ id: "planta", label: "Planta", icon: "Factory", color: "blue", items: MODULOS_PRODUCCION }],
+    modo: "completo", inicio: MODULO_RESUMEN.id, chrome: { ...CHROME_CAMPO, firmas: true }, persistirAreas: false,
+    areas: [AREA_INICIO, { id: "planta", label: "Planta", icon: "Factory", color: "blue", items: MODULOS_PRODUCCION }],
     // Hash heredado de la pestaña de Transformación → la de preparar.
     alias: { "prod-trans": "prod-preparar" },
     vistas: VISTA_MI_ASISTENCIA,
   },
   "Almacén Bolsas": {
-    modo: "completo", inicio: MODULO_BOLSAS.id, chrome: CHROME_CAMPO, persistirAreas: false,
-    areas: [{ id: "almacen", label: "Almacén", icon: "Box", color: "amber", items: [MODULO_BOLSAS] }],
+    modo: "completo", inicio: MODULO_RESUMEN.id, chrome: CHROME_CAMPO, persistirAreas: false,
+    areas: [AREA_INICIO, { id: "almacen", label: "Almacén", icon: "Box", color: "amber", items: [MODULO_BOLSAS] }],
     vistas: VISTA_MI_ASISTENCIA,
   },
   Chofer: { modo: "enfoque", inicio: MODULO_CHOFER.id, chrome: CHROME_CAMPO, persistirAreas: false, areas: [{ id: "ruta", label: "Ruta", icon: "Truck", color: "blue", items: [MODULO_CHOFER] }], vistas: VISTA_MI_ASISTENCIA },
   // WF-0: rol mínimo. Solo "Mi asistencia" y "Mis actividades": sin back office, sin datos de negocio, sin "Ver como".
   Empleado: {
-    modo: "completo", inicio: MODULO_MI_ASISTENCIA.id, chrome: CHROME_EMPLEADO, persistirAreas: false,
-    areas: [{ id: "personal", label: "Personal", icon: "Clock", color: "purple", items: [MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES] }],
+    modo: "completo", inicio: MODULO_RESUMEN.id, chrome: CHROME_EMPLEADO, persistirAreas: false,
+    areas: [AREA_INICIO, { id: "personal", label: "Personal", icon: "Clock", color: "purple", items: [MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES] }],
     vistas: { [MODULO_MI_CUENTA.id]: MODULO_MI_CUENTA.id },
   },
 };
@@ -163,7 +178,7 @@ export function navParaRol(rol) {
 
 /**
  * GER-1: navegación de una PERSONA. Parte de la de su rol principal y:
- *   · Dueño (Admin + es_dueno): suma el área "Dueño" con su panel;
+ *   · Dueño (Admin + es_dueno): el mismo menú de Admin;
  *   · accesos adicionales (Ventas / Almacén Bolsas): suma las áreas, vistas y
  *     alias de esos roles (María: Almacén de Bolsas + Ventas en el mismo menú).
  * Admin ya tiene todo; el modo enfoque (Chofer) no admite accesos en pantalla.
@@ -172,12 +187,10 @@ export function navParaRol(rol) {
 export function navParaUsuario(usuario) {
   const rol = usuario?.rol;
   const base = navParaRol(rol);
-  const dueno = !!(usuario && (usuario.esDueno ?? usuario.es_dueno));
   const extras = Array.isArray(usuario?.accesosExtra ?? usuario?.accesos_extra) ? (usuario.accesosExtra ?? usuario.accesos_extra) : [];
-  if (rol === "Admin") {
-    if (!dueno) return base;
-    return { ...base, areas: [{ id: "dueno", label: "Dueño", icon: "Shield", color: "purple", items: [MODULO_DUENO] }, ...base.areas] };
-  }
+  // Admin y Dueño comparten menú: lo propio del Dueño (bitácora, accesos, crear Admin) vive
+  // dentro de Auditoría y Usuarios, y lo decide el servidor.
+  if (rol === "Admin") return base;
   if (base.modo !== "completo") return base;
   let nav = base;
   const ya = idsModulos(base);
@@ -266,7 +279,10 @@ export function bottomNavParaRol(nav) {
   const aMovil = (i) => ({ id: i.id, label: i.labelMovil || i.label, icon: i.icon });
   if (todos.length < MAX_DESTINOS_MOVIL) return { items: todos.map(aMovil), mas: false };
   const ids = new Set(todos.map(i => i.id));
-  const principales = PRINCIPALES_MOVIL_ADMIN.filter(id => ids.has(id)).map(id => todos.find(i => i.id === id)).map(aMovil);
+  // Back office: los 4 de uso diario. Un rol de campo con más de 4 módulos: los 4 primeros de su menú.
+  const delAdmin = PRINCIPALES_MOVIL_ADMIN.filter(id => ids.has(id));
+  const elegidos = delAdmin.length === PRINCIPALES_MOVIL_ADMIN.length ? delAdmin : todos.slice(0, 4).map(i => i.id);
+  const principales = elegidos.map(id => todos.find(i => i.id === id)).map(aMovil);
   return { items: principales, mas: principales.length < todos.length };
 }
 
@@ -274,6 +290,6 @@ export function bottomNavParaRol(nav) {
 export function areasExpandidasInicial(nav) {
   const out = {};
   for (const a of nav?.areas || []) out[a.id] = true;
-  if (nav?.persistirAreas) return { operacion: true, comercial: true, finanzas: false, equipo: false };
+  if (nav?.persistirAreas) return { inicio: true, operacion: true, comercial: true, finanzas: false, equipo: false, sistema: false };
   return out;
 }

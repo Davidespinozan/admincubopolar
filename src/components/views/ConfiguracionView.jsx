@@ -1,6 +1,5 @@
 import { useEffect } from 'react';
 import { useState, FormInput, FormSelect, FormBtn, s, useToast } from './viewsCommon';
-import UsuariosPanel from '../UsuariosPanel';
 import { validarRFC } from '../../utils/safe';
 import { REGIMENES_OPTIONS } from '../../data/sat/regimenesFiscales';
 
@@ -91,7 +90,5 @@ export function ConfiguracionView({ data, actions, user }) {
       </div>
     )}
 
-    {/* GER-1 (mig 120/121): usuarios por contrato; el alcance de cada quien lo decide el servidor. */}
-    {isAdmin && <UsuariosPanel data={data} actions={actions} user={user} />}
   </div>);
 }

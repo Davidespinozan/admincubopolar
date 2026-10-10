@@ -1,17 +1,13 @@
-// DuenoView — "Panel del dueño" (GER-1, mig 120/121). Solo el Dueño (Admin +
-// es_dueno) lo ve; la bitácora la protege RLS (dueno_read), no esta pantalla.
-//   · Para revisar: cambios sensibles hechos directo por la app (precios,
-//     salarios, cuentas por pagar, clientes, usuarios…) con antes → después y
-//     quién. La escribe la base de datos; nadie la puede editar ni borrar.
-//   · Usuarios y accesos: roles, accesos adicionales y contraseñas temporales.
-// No es una pantalla de operación: el dueño revisa, no captura.
+// BitacoraCambios — "Cambios sensibles" (GER-1, mig 120). Pestaña de Auditoría
+// que solo ve el Dueño: cada cambio hecho directo desde la app en precios,
+// salarios, cuentas por pagar, clientes, ventas o usuarios, con antes →
+// después y quién. La escribe la base de datos (nadie la edita ni la borra) y
+// la protege RLS (dueno_read), no esta pantalla.
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Card, SegmentedTabs, Chips, Guia, KpiTile } from '../ui/Components';
-import { EmptyState, ViewSkeleton } from '../ui/Skeleton';
-import UsuariosPanel from '../UsuariosPanel';
-import { describirCambio, esDueno, debeCambiarPassword } from '../../data/usuariosLogic';
-import { ZONA_NEGOCIO } from '../../utils/fechas';
-import { diaNegocio } from '../../utils/fechas';
+import { Card, Chips, Guia } from './ui/Components';
+import { EmptyState, ViewSkeleton } from './ui/Skeleton';
+import { describirCambio } from '../data/usuariosLogic';
+import { ZONA_NEGOCIO } from '../utils/fechas';
 
 const fecha = (iso) => {
   if (!iso) return '';
@@ -19,12 +15,8 @@ const fecha = (iso) => {
     return new Date(iso).toLocaleString('es-MX', { timeZone: ZONA_NEGOCIO, day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
   } catch { return ''; }
 };
-const diaDe = (iso) => {
-  try { return new Date(iso).toLocaleDateString('en-CA', { timeZone: ZONA_NEGOCIO }); } catch { return ''; }
-};
 
-export function DuenoView({ data, actions, user }) {
-  const [tab, setTab] = useState('revisar');
+export default function BitacoraCambios({ actions }) {
   const [filas, setFilas] = useState(null);
   const [error, setError] = useState(null);
   const [filtro, setFiltro] = useState('importantes');
@@ -37,37 +29,13 @@ export function DuenoView({ data, actions, user }) {
   }, [actions]);
   useEffect(() => { cargar(); }, [cargar]);
 
-  const hoy = diaNegocio();
-  const resumen = useMemo(() => {
-    const f = filas || [];
-    const usuarios = (data?.usuarios || []).filter(u => !u.is_test_account);
-    return {
-      hoy: f.filter(x => diaDe(x.at) === hoy).length,
-      importantesHoy: f.filter(x => x.importante && diaDe(x.at) === hoy).length,
-      activos: usuarios.filter(u => u.estatus === 'Activo').length,
-      temporales: usuarios.filter(debeCambiarPassword).length,
-    };
-  }, [filas, data?.usuarios, hoy]);
-
   const modulos = useMemo(() => [...new Set((filas || []).map(x => x.modulo))].sort(), [filas]);
   const visibles = useMemo(() => (filas || []).filter(x =>
     filtro === 'todos' ? true : filtro === 'importantes' ? x.importante : x.modulo === filtro), [filas, filtro]);
 
-  if (!esDueno(user)) {
-    return <Card><EmptyState icon="Lock" message="Solo para el Dueño" hint="Este panel no está disponible para tu usuario." /></Card>;
-  }
-
   return (
-    <div className="space-y-4" data-testid="panel-dueno">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiTile label="Cambios sensibles hoy" value={resumen.importantesHoy} hint={`${resumen.hoy} cambios en total`} tone={resumen.importantesHoy > 0 ? 'warning' : undefined} />
-        <KpiTile label="Usuarios activos" value={resumen.activos} hint={resumen.temporales > 0 ? `${resumen.temporales} con contraseña temporal` : 'todos con contraseña propia'} />
-      </div>
-
-      <SegmentedTabs value={tab} onChange={setTab} items={[{ k: 'revisar', l: 'Para revisar' }, { k: 'usuarios', l: 'Usuarios y accesos' }]} />
-
-      {tab === 'revisar' && (
-        <div className="space-y-3">
+    <div data-testid="bitacora-cambios">
+      <div className="space-y-3">
           <Guia testid="guia-dueno" titulo="Qué es esto">
             Cada cambio de precio, salario, cuenta por pagar, cliente, venta o usuario que alguien hace desde la app queda aquí con el
             valor anterior y el nuevo. Lo registra el servidor: nadie puede editarlo ni borrarlo, y solo tú lo ves.
@@ -104,9 +72,6 @@ export function DuenoView({ data, actions, user }) {
             </Card>
           )}
         </div>
-      )}
-
-      {tab === 'usuarios' && <UsuariosPanel data={data} actions={actions} user={user} />}
     </div>
   );
 }
