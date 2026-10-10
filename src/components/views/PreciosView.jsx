@@ -1,14 +1,22 @@
 import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, s, n, eqId, fmtMoney, fmtPct, useToast, useConfirm, Icons, normalizeStr } from './viewsCommon';
 import { traducirError } from '../../utils/errorMessages';
 import { filtrarPreciosEsp } from '../../data/mejorasMenoresLogic';
+import { sucursalesDeCliente } from '../../data/sucursalLogic';
 
 export function PreciosView({ data, actions }) {
   const toast = useToast();
   const [askConfirm, ConfirmEl] = useConfirm();
   const [modal, setModal] = useState(false); // false | "new" | <preciosEsp obj>
   const [errors, setErrors] = useState({});
-  const [form, setForm] = useState({clienteId:"",sku:"",precio:""});
+  const [form, setForm] = useState({clienteId:"",sucursalId:"",sku:"",precio:""});
   const [saving, setSaving] = useState(false);
+
+  // 123: precio por sucursal (opcional). Vacío = toda la cadena (todas las sucursales del cliente).
+  const sucursalesForm = useMemo(() => sucursalesDeCliente(data.sucursales, form.clienteId), [data.sucursales, form.clienteId]);
+  const sucursalOptions = useMemo(() => [
+    { value: '', label: 'Todas las sucursales (precio del cliente)' },
+    ...sucursalesForm.map(x => ({ value: String(x.id), label: (x.esPrincipal ?? x.es_principal) ? `${s(x.nombre)} (principal)` : s(x.nombre) })),
+  ], [sucursalesForm]);
 
   // Tanda 6 🟡-6: filtros de precios especiales para listas con 50+ entradas.
   const [search, setSearch] = useState('');
@@ -17,7 +25,7 @@ export function PreciosView({ data, actions }) {
   const [soloDescuentoMayor, setSoloDescuentoMayor] = useState(false);
 
   const openNew = () => {
-    setForm({ clienteId: "", sku: "", precio: "" });
+    setForm({ clienteId: "", sucursalId: "", sku: "", precio: "" });
     setErrors({});
     setModal("new");
   };
@@ -25,6 +33,7 @@ export function PreciosView({ data, actions }) {
   const openEdit = (p) => {
     setForm({
       clienteId: String(p.clienteId || p.cliente_id || ""),
+      sucursalId: String(p.sucursalId || p.sucursal_id || ""),
       sku: s(p.sku),
       precio: String(n(p.precio)),
     });
@@ -95,7 +104,7 @@ export function PreciosView({ data, actions }) {
       let err;
       if (modal === "new") {
         const cli = data.clientes.find(c => eqId(c.id, form.clienteId));
-        err = await actions.addPrecioEsp({clienteId:form.clienteId,clienteNom:s(cli?.nombre),sku:form.sku,precio:form.precio});
+        err = await actions.addPrecioEsp({clienteId:form.clienteId,sucursalId:form.sucursalId||null,clienteNom:s(cli?.nombre),sku:form.sku,precio:form.precio});
       } else {
         err = await actions.updatePrecioEsp(modal.id, { precio: form.precio });
       }
@@ -104,7 +113,7 @@ export function PreciosView({ data, actions }) {
         return;
       }
       toast?.success(modal === "new" ? "Precio especial creado" : "Precio actualizado");
-      setModal(false); setForm({clienteId:"",sku:"",precio:""}); setErrors({});
+      setModal(false); setForm({clienteId:"",sucursalId:"",sku:"",precio:""}); setErrors({});
     } finally {
       setSaving(false);
     }
@@ -155,13 +164,16 @@ export function PreciosView({ data, actions }) {
           : preciosFiltered.length === 0
           ? <EmptyState message="Sin resultados con los filtros aplicados" hint="Ajusta búsqueda o quita filtros" />
           : preciosFiltered.map(p=>{const base=precioBaseMap[p.sku]||0;const desc=base>0?Math.round(((base-n(p.precio))/base)*100):0;
-          return<div key={p.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2"><div className="flex items-center justify-between gap-2"><div className="min-w-0"><span className="text-sm font-semibold text-slate-700 truncate block">{s(p.clienteNom)}</span><span className="text-xs text-slate-400">{s(p.sku)}</span></div><div className="flex items-center gap-2 flex-shrink-0"><span className="text-sm font-bold text-blue-600">{fmtMoney(p.precio, { decimals: 2 })}</span>{desc>0&&<span className="text-xs text-emerald-600">{"-" + fmtPct(desc, 100)}</span>}<button onClick={()=>openEdit(p)} title="Editar precio" aria-label="Editar precio especial" className="text-slate-500 hover:text-blue-600 p-2 min-w-[40px] min-h-[40px] flex items-center justify-center"><Icons.Edit /></button><button onClick={()=>askConfirm('Eliminar precio especial', `¿Seguro que quieres eliminar el precio especial de ${s(p.clienteNom || 'este cliente')} para ${s(p.sku)}?`, async () => { await actions.deletePrecioEsp(p.id); }, true)} className="text-red-400 hover:text-red-600 p-2 min-w-[40px] min-h-[40px] flex items-center justify-center" title="Eliminar" aria-label="Eliminar precio especial"><Icons.Trash /></button></div></div></div>})}
+          return<div key={p.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 mb-2"><div className="flex items-center justify-between gap-2"><div className="min-w-0"><span className="text-sm font-semibold text-slate-700 truncate block">{s(p.clienteNom)}{p.sucursalNom ? <span className="text-slate-400 font-normal"> · {s(p.sucursalNom)}</span> : null}</span><span className="text-xs text-slate-400">{s(p.sku)}{p.sucursalId ? '' : ' · toda la cadena'}</span></div><div className="flex items-center gap-2 flex-shrink-0"><span className="text-sm font-bold text-blue-600">{fmtMoney(p.precio, { decimals: 2 })}</span>{desc>0&&<span className="text-xs text-emerald-600">{"-" + fmtPct(desc, 100)}</span>}<button onClick={()=>openEdit(p)} title="Editar precio" aria-label="Editar precio especial" className="text-slate-500 hover:text-blue-600 p-2 min-w-[40px] min-h-[40px] flex items-center justify-center"><Icons.Edit /></button><button onClick={()=>askConfirm('Eliminar precio especial', `¿Seguro que quieres eliminar el precio especial de ${s(p.clienteNom || 'este cliente')} para ${s(p.sku)}?`, async () => { await actions.deletePrecioEsp(p.id); }, true)} className="text-red-400 hover:text-red-600 p-2 min-w-[40px] min-h-[40px] flex items-center justify-center" title="Eliminar" aria-label="Eliminar precio especial"><Icons.Trash /></button></div></div></div>})}
         <button onClick={openNew} className="mt-3 w-full py-2.5 border border-dashed border-slate-300 rounded-xl text-xs font-semibold text-slate-400 hover:border-blue-400 hover:text-blue-500 flex items-center justify-center gap-1 min-h-[44px]"><Icons.Plus /> Agregar</button>
       </div>
     </div>
     <Modal open={!!modal} onClose={()=>setModal(false)} title={modal === "new" ? "Nuevo precio especial" : "Editar precio especial"}>
       <div className="space-y-3">
-        <FormSelect label="Cliente *" options={clienteOptions} value={form.clienteId} onChange={e=>setForm({...form,clienteId:e.target.value})} error={errors.clienteId} disabled={modal !== "new"} />
+        <FormSelect label="Cliente *" options={clienteOptions} value={form.clienteId} onChange={e=>setForm({...form,clienteId:e.target.value,sucursalId:""})} error={errors.clienteId} disabled={modal !== "new"} />
+        {(sucursalesForm.length > 1 || form.sucursalId) && (
+          <FormSelect label="Sucursal" options={sucursalOptions} value={form.sucursalId} onChange={e=>setForm({...form,sucursalId:e.target.value})} disabled={modal !== "new"} />
+        )}
         <FormSelect label="Producto *" options={prodOptions} value={form.sku} onChange={e=>setForm({...form,sku:e.target.value})} error={errors.sku} disabled={modal !== "new"} />
         {modal !== "new" && (
           <p className="text-xs text-slate-500 -mt-2">

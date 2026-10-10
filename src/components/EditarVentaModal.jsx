@@ -9,12 +9,12 @@
 // riesgo la creación normal. Este modal es plano y enfocado en edit.
 
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
-import Modal, { FormInput, FormBtn } from './ui/Modal';
+import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { Icons } from './ui/Icons';
 import { s, n, eqId, fmtMoney } from '../utils/safe';
 import { stockDisponiblePorSku, stockDisponibleParaEdicion } from '../utils/stock';
-import { precioParaCliente } from '../data/mejorasMenoresLogic';
 import { placeSelectionToEntrega } from '../data/direccionLogic';
+import { sucursalesDeCliente, precioParaSucursal, resolverEntrega } from '../data/sucursalLogic';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 
@@ -30,6 +30,7 @@ export default function EditarVentaModal({
   const [form, setForm] = useState({
     fecha: '',
     folioNota: '',
+    sucursalId: '', // 123
     direccionEntrega: '',
     referenciaEntrega: '',
     latitudEntrega: null,
@@ -87,9 +88,14 @@ export default function EditarVentaModal({
     return map;
   }, [orden]);
 
+  // 123: sucursal → cliente → lista (espejo de precio_canonico del servidor).
   const getPrice = useCallback(
-    (cId, sku) => precioParaCliente(cId, sku, data?.productos || [], data?.preciosEsp || []),
+    (cId, sku, sId) => precioParaSucursal(data?.preciosEsp, data?.productos, cId, sId ?? null, sku),
     [data?.preciosEsp, data?.productos]
+  );
+  const sucursalesCliente = useMemo(
+    () => sucursalesDeCliente(data?.sucursales, cliente?.id),
+    [data?.sucursales, cliente]
   );
 
   // Para EDITAR: stock disponible = lo que hay físicamente en cuartos
@@ -103,9 +109,11 @@ export default function EditarVentaModal({
   useEffect(() => {
     if (!open || !orden) return;
 
+    const sucId = orden.sucursalId ?? orden.sucursal_id ?? null;
     setForm({
       fecha: s(orden.fecha) || '',
       folioNota: s(orden.folio_nota || orden.folioNota) || '',
+      sucursalId: sucId ? String(sucId) : '',
       direccionEntrega: s(orden.direccion_entrega || orden.direccionEntrega) || '',
       referenciaEntrega: s(orden.referencia_entrega || orden.referenciaEntrega) || '',
       latitudEntrega: orden.latitud_entrega ?? orden.latitudEntrega ?? null,
@@ -123,7 +131,7 @@ export default function EditarVentaModal({
       setLines(snap.map(l => ({
         sku: s(l.sku),
         qty: n(l.qty),
-        precio: getPrice(cId, s(l.sku)),
+        precio: getPrice(cId, s(l.sku), sucId),
         precioOriginal: n(l.unitPrice),
       })));
     } else {
@@ -135,7 +143,7 @@ export default function EditarVentaModal({
           if (m) {
             const qty = parseInt(m[1], 10);
             const sku = m[2];
-            const precioActual = getPrice(cId, sku);
+            const precioActual = getPrice(cId, sku, sucId);
             items.push({ sku, qty, precio: precioActual, precioOriginal: precioActual });
           }
         });
@@ -144,10 +152,19 @@ export default function EditarVentaModal({
     }
   }, [open, orden, getPrice]);
 
+  // 123: la dirección heredada es la de la sucursal de la orden (principal si no tiene).
   const direccionCliente = useMemo(() => {
     if (!cliente) return '';
-    return [s(cliente.calle), s(cliente.colonia), s(cliente.ciudad)].filter(Boolean).join(', ');
-  }, [cliente]);
+    return resolverEntrega({ clienteId: cliente.id, sucursalId: form.sucursalId || null }, data?.sucursales, data?.clientes).direccion;
+  }, [cliente, form.sucursalId, data?.sucursales, data?.clientes]);
+
+  // Cambiar de sucursal reprecia las líneas y vuelve a heredar su dirección (el servidor hace lo mismo).
+  const handleSucursalChange = (sId) => {
+    const cId = cliente?.id;
+    setForm(f => ({ ...f, sucursalId: sId, direccionEntrega: '', latitudEntrega: null, longitudEntrega: null, direccionTouched: false }));
+    setEditandoDireccion(false);
+    setLines(prev => prev.map(l => ({ ...l, precio: l.sku ? getPrice(cId, l.sku, sId || null) : l.precio })));
+  };
 
   const direccionEfectiva = form.direccionTouched && form.direccionEntrega
     ? form.direccionEntrega
@@ -165,7 +182,7 @@ export default function EditarVentaModal({
     const u = { ...l, [field]: val };
     if (field === 'sku') {
       const cId = orden?.clienteId || orden?.cliente_id;
-      const precio = getPrice(cId, val);
+      const precio = getPrice(cId, val, form.sucursalId || null);
       u.precio = precio;
       // SKU recien agregado por el usuario: precioOriginal coincide con precio actual.
       u.precioOriginal = precio;
@@ -214,6 +231,7 @@ export default function EditarVentaModal({
       const payload = {
         fecha: form.fecha,
         folioNota: form.folioNota || null,
+        sucursalId: form.sucursalId || null, // 123 (el cliente no cambia: el store lo lee de la orden)
         direccionEntrega: form.direccionTouched ? s(form.direccionEntrega) : '',
         referenciaEntrega: s(form.referenciaEntrega),
         latitudEntrega: form.direccionTouched ? form.latitudEntrega : null,
@@ -252,6 +270,20 @@ export default function EditarVentaModal({
               </div>
             </div>
             <p className="text-[10px] text-slate-400 mt-1">No se pueden cambiar cliente ni tipo de cobro. Si necesitas cambiarlos, cancela y crea una nueva orden.</p>
+            {/* 122: sucursal (solo si el cliente tiene más de una) */}
+            {sucursalesCliente.length > 1 && (
+              <div className="mt-3">
+                <FormSelect
+                  label="Sucursal"
+                  options={sucursalesCliente.map(x => ({
+                    value: String(x.id),
+                    label: (x.esPrincipal ?? x.es_principal) ? `${s(x.nombre)} (principal)` : s(x.nombre),
+                  }))}
+                  value={form.sucursalId}
+                  onChange={e => handleSucursalChange(e.target.value)}
+                />
+              </div>
+            )}
           </div>
 
           {/* Fecha + folio nota */}

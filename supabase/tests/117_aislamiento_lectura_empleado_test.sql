@@ -109,9 +109,10 @@ SELECT t117_assert((SELECT bool_and(prosecdef AND array_to_string(proconfig, ';'
                        AND NOT has_function_privilege('anon', oid, 'EXECUTE') AND NOT has_function_privilege('public', oid, 'EXECUTE'))
                     FROM pg_proc WHERE oid = 'public.erp_lector_negocio()'::regprocedure),
   '117-00a erp_lector_negocio: SECURITY DEFINER, search_path fijo, sin anon/PUBLIC');
-SELECT t117_assert((SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND cmd = 'SELECT' AND qual = 'erp_lector_negocio()') = 24
+SELECT t117_assert((SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND cmd = 'SELECT' AND qual = 'erp_lector_negocio()')
+                   = 24 + (CASE WHEN to_regclass('public.sucursales') IS NOT NULL THEN 1 ELSE 0 END) -- 123: sucursales lee con la misma regla
                AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND cmd = 'SELECT' AND qual = 'erp_es_activo()') = 0,
-  '117-00b las 24 policies de lectura amplia usan erp_lector_negocio(); ninguna SELECT queda con erp_es_activo()');
+  '117-00b las 24 policies de lectura amplia (25 con sucursales, desde 123) usan erp_lector_negocio(); ninguna SELECT queda con erp_es_activo()');
 SELECT t117_assert((SELECT bool_and(roles = '{authenticated}' AND permissive = 'PERMISSIVE') FROM pg_policies WHERE qual = 'erp_lector_negocio()'),
   '117-00c mismas policies: permisivas, solo authenticated');
 SELECT t117_assert((SELECT bool_and(value::bigint > 0) FROM jsonb_each_text((SELECT v::jsonb FROM t117_ids WHERE k = 'total'))),

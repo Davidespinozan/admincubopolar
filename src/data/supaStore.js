@@ -32,6 +32,8 @@ import {
   claveStorageMermasRuta, claveStorageCierreInventario, leerOperacion, guardarOperacion, borrarOperacion,
 } from './inventarioRutaLogic';
 import { geocodeDireccion, buildDireccion } from '../utils/geocoding';
+import { formatDireccion } from './direccionLogic';
+import { preciosParaLineas } from './sucursalLogic';
 import { traducirError } from '../utils/errorMessages';
 import { TABLAS_CORE_RT, TABLAS_SLICE_RT } from './realtimeLogic';
 import { complementoPendienteOrden } from './complementoLogic';
@@ -290,7 +292,7 @@ export function useSupaStore(userId, userName, userRol) {
   // + invoice_attempts. Cambia una → se recargan juntas.
   const fetchCore = useCallback(async () => {
     try {
-      const [cli, prod, pe, ord, ol, rut, cf, usr, umb, cxc, emp, cam, invAttempts, cfdiOps, pagosCxcRows] = await Promise.all([
+      const [cli, prod, pe, ord, ol, rut, cf, usr, umb, cxc, emp, cam, invAttempts, cfdiOps, pagosCxcRows, suc] = await Promise.all([
         safeRows(supabase.from('clientes').select('*').order('id')),
         safeRows(supabase.from('productos').select('*').order('id')),
         safeRows(supabase.from('precios_esp').select('*').order('id')),
@@ -308,6 +310,8 @@ export function useSupaStore(userId, userName, userRol) {
         safeRows(supabase.from('cfdi_operaciones').select('id, orden_id, tipo, generacion, estado, pago_id, relacionado_uuid, parcialidad, cfdi_uuid, proveedor_id, cfdi_metodo_pago, lease_hasta, updated_at').order('created_at', { ascending: false }).limit(500)),
         // OL-04: pagos ligados a CxC (cualquier camino: cobro, webhook, cierre de ruta) para el estado de complementos.
         safeRows(supabase.from('pagos').select('id, orden_id, cxc_id, monto, fecha, metodo_pago, saldo_antes, saldo_despues').not('cxc_id', 'is', null).order('id', { ascending: false }).limit(500)),
+        // 123: sucursales por cliente (solo lectura; se escriben por contrato).
+        safeRows(supabase.from('sucursales').select('*').order('id')),
       ]);
 
       // Configuracion de empresa (singleton id=1)
@@ -328,10 +332,14 @@ export function useSupaStore(userId, userName, userRol) {
         const c = clientes.find(x => x.id === o.cliente_id);
         const r = rutas.find(x => x.id === o.ruta_id);
         const lines = ordenLineas.filter(l => l.orden_id === o.id);
+        const sc = o.sucursal_id ? (suc || []).find(x => x.id === o.sucursal_id) : null;
         return {
           ...o,
           clienteId: o.cliente_id,
           cliente: c?.nombre || '',
+          // 123: sucursal de la orden (nombre solo si no es la principal).
+          sucursalId: o.sucursal_id || null,
+          sucursal: sc && !sc.es_principal ? sc.nombre : '',
           productos: lines.map(l => `${l.cantidad}×${l.sku}`).join(', '),
           ruta: r?.nombre || '—',
           usoCfdi: c?.uso_cfdi || 'G03',
@@ -367,9 +375,15 @@ export function useSupaStore(userId, userName, userRol) {
       }));
 
       // ── Map precios especiales ──
+      // ── Map sucursales (123): nombre del cliente y dirección formateada ──
+      const sucursales = (suc || []).map(x => {
+        const c = clientes.find(y => y.id === x.cliente_id);
+        return { ...x, clienteId: x.cliente_id, clienteNom: c?.nombre || '', esPrincipal: !!x.es_principal, direccion: formatDireccion(x) };
+      });
       const preciosEsp = (pe || []).map(p => {
         const c = clientes.find(x => x.id === p.cliente_id);
-        return { ...p, clienteId: p.cliente_id, clienteNom: c?.nombre || '', precio: Number(p.precio) };
+        const sc = p.sucursal_id ? sucursales.find(x => x.id === p.sucursal_id) : null;
+        return { ...p, clienteId: p.cliente_id, clienteNom: c?.nombre || '', sucursalId: p.sucursal_id || null, sucursalNom: sc?.nombre || '', precio: Number(p.precio) };
       });
 
       // ── Map rutas ──
@@ -534,6 +548,7 @@ export function useSupaStore(userId, userName, userRol) {
       setData(prev => ({
         ...prev,
         clientes: clientesMapped,
+        sucursales,
         productos: productos.map(p => ({ ...p, stock: Number(p.stock), precio: Number(p.precio) })),
         preciosEsp,
         ordenes,
@@ -955,11 +970,40 @@ export function useSupaStore(userId, userName, userRol) {
         const guard = requireRol(['Admin']);
         if (guard) { t()?.error(guard.error); return guard; }
         const { error } = await supabase.from('precios_esp').insert({
-          cliente_id: p.clienteId, sku: p.sku, precio: Number(p.precio),
+          cliente_id: p.clienteId, sucursal_id: p.sucursalId || null, sku: p.sku, precio: Number(p.precio),
         });
-        if (error) { t()?.error('Error al guardar precio especial'); return error; }
-        log('Crear', 'Precios Especiales', `${p.sku} — $${p.precio}`);
+        if (error) {
+          const msg = error.code === '23505' ? 'Ese cliente (o sucursal) ya tiene precio especial para ese producto' : 'Error al guardar precio especial';
+          t()?.error(msg); return { ...error, error: msg };
+        }
+        log('Crear', 'Precios Especiales', `${p.sku} — $${p.precio}${p.sucursalId ? ' (sucursal)' : ''}`);
         rf();
+      },
+
+      // ── SUCURSALES (123): solo por contrato ──
+      guardarSucursal: async (id, clienteId, datos) => {
+        const guard = requireRol(['Admin', 'Ventas']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        const { data, error } = await supabase.rpc('guardar_sucursal', { p_id: id || null, p_cliente_id: Number(clienteId), p_datos: datos || {} });
+        if (error) {
+          const msg = String(error.message || 'No se pudo guardar la sucursal').replace(/^guardar_sucursal: /, '');
+          t()?.error(msg); return { error: msg, code: error.code };
+        }
+        rf();
+        return data || {};
+      },
+      fusionarClienteEnSucursal: async (origenId, destinoId, nombreSucursal) => {
+        const guard = requireRol(['Admin']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        const { data, error } = await supabase.rpc('fusionar_cliente_en_sucursal', {
+          p_origen: Number(origenId), p_destino: Number(destinoId), p_nombre_sucursal: nombreSucursal || null,
+        });
+        if (error) {
+          const msg = String(error.message || 'No se pudo fusionar').replace(/^fusionar_cliente_en_sucursal: /, '');
+          t()?.error(msg); return { error: msg, code: error.code };
+        }
+        rf();
+        return data || {};
       },
 
       deletePrecioEsp: async (id) => {
@@ -1022,6 +1066,7 @@ export function useSupaStore(userId, userName, userRol) {
           const { data, error } = await supabase.rpc('crear_orden', {
             p_orden: {
               cliente_id: o.clienteId || null,
+              sucursal_id: o.sucursalId || null, // 123: sin ella, el servidor usa la principal
               cliente_nombre: s(o.cliente) || null,
               tipo_cobro: o.tipoCobro || 'Contado',
               metodo_pago: o.metodoPago || 'Efectivo',
@@ -1396,7 +1441,7 @@ export function useSupaStore(userId, userName, userRol) {
 
           const { data: ord, error: errOrd } = await supabase
             .from('ordenes')
-            .select('estatus, ruta_id')
+            .select('estatus, ruta_id, cliente_id, sucursal_id')
             .eq('id', ordenId)
             .single();
           if (errOrd || !ord) {
@@ -1440,11 +1485,13 @@ export function useSupaStore(userId, userName, userRol) {
             const itemsErr = validateItems(items);
             if (itemsErr) return { error: itemsErr };
 
-            const [{ data: prods }, { data: pes }] = await Promise.all([
+            const [{ data: prods }, { data: pesRaw }] = await Promise.all([
               supabase.from('productos').select('sku, precio, stock'),
-              supabase.from('precios_esp').select('sku, precio').eq('cliente_id', resto.clienteId || resto.cliente_id || null),
+              supabase.from('precios_esp').select('sku, precio, sucursal_id').eq('cliente_id', resto.clienteId || resto.cliente_id || ord.cliente_id || null),
             ]);
-            const built = buildLineas(items, prods || [], pes || []);
+            // 123: precio de la sucursal de la orden sobre el del cliente (el servidor reprecia igual).
+            const pes = preciosParaLineas(pesRaw || [], resto.sucursalId ?? resto.sucursal_id ?? ord.sucursal_id ?? null);
+            const built = buildLineas(items, prods || [], pes);
             if (built.error) return { error: built.error };
             totalNuevo = built.total;
             lineasNuevas = built.lineas;

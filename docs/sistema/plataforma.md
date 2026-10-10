@@ -66,6 +66,8 @@ No es una lista de funciones: es el patrón que toda mutación de negocio sigue.
 ## Security / mutation boundary
 - `anon`: nada. `authenticated`: lectura según policies y solo el DML que el frontend usa
   (mapa en 090, reducido por 091, 094, 097, 099, 101, 103 y 105; la suite `090-07` lo verifica).
+- `sucursales` (123, IMPLEMENTED LOCALLY): sin DML REST; lectura `erp_lector_negocio`; escritura solo por `guardar_sucursal`
+  (Admin / Ventas, también por acceso adicional) y `fusionar_cliente_en_sucursal` (Admin). `ordenes.sucursal_id` inmutable por REST.
 - Sin DML REST para nadie: `pagos`, `cuentas_por_cobrar`, `cierres_diarios`, `pagos_proveedores`,
   `nomina_*`, `devoluciones`, `inventario_mov`, `mermas`, `stock_operaciones`, `costos_empaque_historial`.
 - Admin por REST conserva catálogo y metadatos (productos, clientes, precios, cuartos sin existencia,

@@ -356,6 +356,8 @@ export function buildUpdateFieldsOrden(payload, lineasNuevas = null, totalNuevo 
   const update = {};
   if (payload.cliente !== undefined) update.cliente_nombre = payload.cliente;
   if (payload.clienteId !== undefined) update.cliente_id = payload.clienteId || null;
+  // 123: sucursal elegida (el servidor valida que sea del cliente y reprecia).
+  if (payload.sucursalId !== undefined) update.sucursal_id = payload.sucursalId || null;
   if (payload.fecha !== undefined) update.fecha = payload.fecha;
   if (payload.tipoCobro !== undefined) update.tipo_cobro = payload.tipoCobro;
   if (payload.folioNota !== undefined) update.folio_nota = payload.folioNota || null;
@@ -392,6 +394,7 @@ export function buildOrdenPayload(o, ctx) {
   return {
     folio: ctx.folio,
     cliente_id: o.clienteId || null,
+    sucursal_id: o.sucursalId || null, // 123
     cliente_nombre: ctx.clienteNombre,
     productos: ctx.productosStr,
     fecha: o.fecha || null, // 098: sin fecha elegida → el servidor usa fin_hoy()

@@ -22,6 +22,9 @@
 
 export const TABLAS_CORE_RT = [
   'clientes',
+  // 123: las sucursales se mapean junto con los clientes (nombre del cliente,
+  // dirección formateada) y las leen órdenes, rutas y precios.
+  'sucursales',
   'productos',
   'ordenes',
   'rutas',

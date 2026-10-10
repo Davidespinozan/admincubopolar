@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, fmtDate, fmtMoney, useDebounce, useToast, reporteRutas, normalizeStr } from './viewsCommon';
 import { conteoInicial, diferenciasConteo } from '../../data/inventarioRutaLogic';
+import { resolverEntrega, etiquetaClienteSucursal } from '../../data/sucursalLogic';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 const ReporteRutaModal = lazy(() => import('../ReporteRutaModal'));
 
@@ -159,10 +160,11 @@ export function RutasView({ data, actions }) {
   const ordenesConInfo = useMemo(() => {
     return ordenesDisponibles.map(o => {
       const cli = (data.clientes || []).find(c => String(c.id) === String(o.clienteId || o.cliente_id));
-      const dir = cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '';
-      return { ...o, clienteNombre: s(o.cliente || o.cliente_nombre || cli?.nombre), dir };
+      // 123: dirección efectiva orden → sucursal → cliente (antes ignoraba la dirección propia de la orden).
+      const entrega = resolverEntrega(o, data.sucursales, data.clientes);
+      return { ...o, clienteNombre: etiquetaClienteSucursal(s(o.cliente || o.cliente_nombre || cli?.nombre), entrega.sucursal), dir: entrega.direccion };
     });
-  }, [ordenesDisponibles, data.clientes]);
+  }, [ordenesDisponibles, data.clientes, data.sucursales]);
 
   const ordenesFiltradas = useMemo(() => {
     // Normaliza diacríticos: "fernandez" matchea "Fernández"; "neveria" → "Nevería".
@@ -599,12 +601,13 @@ export function RutasView({ data, actions }) {
         })
         .map(o => {
           const cli = (data.clientes || []).find(c => String(c.id) === String(o.clienteId || o.cliente_id));
+          const entrega = resolverEntrega(o, data.sucursales, data.clientes); // 123
           return {
             ...o,
-            clienteNombre: s(o.cliente || o.cliente_nombre || cli?.nombre),
-            dir: cli ? [s(cli.calle), s(cli.colonia), s(cli.ciudad)].filter(Boolean).join(', ') : '',
-            latitud: cli?.latitud,
-            longitud: cli?.longitud,
+            clienteNombre: etiquetaClienteSucursal(s(o.cliente || o.cliente_nombre || cli?.nombre), entrega.sucursal),
+            dir: entrega.direccion,
+            latitud: entrega.latitud ?? undefined,
+            longitud: entrega.longitud ?? undefined,
           };
         });
       return (

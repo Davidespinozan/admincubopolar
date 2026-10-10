@@ -104,7 +104,10 @@ SELECT t88_assert(to_regprocedure('public.cerrar_ruta_completa(bigint,jsonb)') I
 SELECT t88_assert((SELECT count(*) = 0 FROM pg_policies WHERE schemaname = 'public' AND policyname IN ('egreso_operativo_insert', 'costos_historial_produccion_insert', 'cxp_insert_compra', 'almacen_update', 'almacen_write')), '088-02 sin Egreso genérico, sin costos_historial de Producción, sin CxP genérica, sin policies del rol muerto Almacén');
 SELECT t88_assert((SELECT count(*) = 0 FROM pg_policies WHERE schemaname = 'public' AND (coalesce(qual, '') || coalesce(with_check, '')) ~ '''(Almacén|Bolsas)''::text'), '088-03 ningún literal de rol muerto (Almacén, Bolsas) en policies');
 SELECT t88_assert((SELECT count(*) = 0 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname !~ '^t[0-9]*_' AND pg_get_functiondef(p.oid) ~ '''(Almacén|Bolsas)''') , '088-04 ningún literal de rol muerto en funciones');
-SELECT t88_assert((SELECT count(*) = 1 FROM pg_constraint WHERE conname = 'precios_esp_cliente_sku_key') AND (SELECT convalidated FROM pg_constraint WHERE conname = 'usuarios_rol_check'), '088-05 precios_esp único por cliente+SKU; CHECK de roles validado');
+-- 122: la unicidad por cliente+SKU pasa de constraint a índice único parcial (sin sucursal) con el mismo nombre.
+SELECT t88_assert(((SELECT count(*) = 1 FROM pg_constraint WHERE conname = 'precios_esp_cliente_sku_key')
+                   OR (SELECT count(*) = 1 FROM pg_indexes WHERE indexname = 'precios_esp_cliente_sku_key' AND indexdef LIKE 'CREATE UNIQUE INDEX%'))
+                  AND (SELECT convalidated FROM pg_constraint WHERE conname = 'usuarios_rol_check'), '088-05 precios_esp único por cliente+SKU (constraint, o índice único parcial desde 122); CHECK de roles validado');
 SELECT t88_assert((SELECT bool_and(NOT has_function_privilege('authenticated', oid, 'EXECUTE') AND NOT has_function_privilege('anon', oid, 'EXECUTE')) FROM pg_proc
   WHERE oid IN ('public.precio_canonico(bigint,text)'::regprocedure, 'public.lineas_canonicas(bigint,jsonb)'::regprocedure, 'public.fin_validar_credito(bigint,numeric)'::regprocedure,
                 'public.fin_actor_id(bigint)'::regprocedure, 'public.fin_orden_operable(bigint)'::regprocedure, 'public.productos_stock_interno(jsonb)'::regprocedure)), '088-06 primitivas internas sin EXECUTE de API');

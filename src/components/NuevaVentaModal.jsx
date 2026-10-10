@@ -3,6 +3,7 @@ import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { Icons } from './ui/Icons';
 import { s, n, eqId, fmtMoney, validarRFC } from '../utils/safe';
 import { validateDireccion, placeSelectionToEntrega } from '../data/direccionLogic';
+import { sucursalesDeCliente, sucursalPrincipal, precioParaSucursal, resolverEntrega } from '../data/sucursalLogic';
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
 import { stockDisponiblePorSku } from '../utils/stock';
 
@@ -86,11 +87,12 @@ export default function NuevaVentaModal({
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     clienteId: clienteIdInicial || '',
+    sucursalId: '', // 123: vacío = principal del cliente (la decide el servidor)
     fecha: '',
+    canal: 'domicilio', // 'mostrador' = se vende, cobra y entrega ahí mismo
     tipoCobro: 'Contado',
     folioNota: '',
     requiereFactura: false,
-    recibido: '',
     direccionEntrega: '',
     referenciaEntrega: '',
     latitudEntrega: null,
@@ -121,14 +123,20 @@ export default function NuevaVentaModal({
     [data?.cuartosFrios]
   );
 
-  const getPrice = useCallback((cId, sku) => {
-    if (cId) {
-      const esp = (data?.preciosEsp || []).find(p => eqId(p.clienteId, cId) && p.sku === sku);
-      if (esp) return n(esp.precio);
-    }
-    const prod = (data?.productos || []).find(p => p.sku === sku);
-    return prod ? n(prod.precio) : 0;
-  }, [data?.preciosEsp, data?.productos]);
+  // 123: sucursal → cliente → lista (espejo de precio_canonico del servidor).
+  const getPrice = useCallback((cId, sku, sId) => {
+    const sucId = sId !== undefined ? sId : (sucursalPrincipal(data?.sucursales, cId)?.id ?? null);
+    return precioParaSucursal(data?.preciosEsp, data?.productos, cId, sucId, sku);
+  }, [data?.preciosEsp, data?.productos, data?.sucursales]);
+
+  const sucursalesCliente = useMemo(
+    () => sucursalesDeCliente(data?.sucursales, form.clienteId),
+    [data?.sucursales, form.clienteId]
+  );
+  const sucursalSeleccionada = useMemo(
+    () => sucursalesCliente.find(x => eqId(x.id, form.sucursalId)) || sucursalesCliente.find(x => x.esPrincipal ?? x.es_principal) || null,
+    [sucursalesCliente, form.sucursalId]
+  );
 
   const getStock = useCallback((sku) => {
     if (!sku) return 0;
@@ -140,12 +148,11 @@ export default function NuevaVentaModal({
     [data?.clientes, form.clienteId]
   );
 
+  // 123: la dirección heredada es la de la sucursal elegida (principal si no se eligió).
   const direccionCliente = useMemo(() => {
     if (!clienteSeleccionado) return '';
-    return [s(clienteSeleccionado.calle), s(clienteSeleccionado.colonia), s(clienteSeleccionado.ciudad)]
-      .filter(Boolean)
-      .join(', ');
-  }, [clienteSeleccionado]);
+    return resolverEntrega({ clienteId: clienteSeleccionado.id, sucursalId: sucursalSeleccionada?.id ?? null }, data?.sucursales, data?.clientes).direccion;
+  }, [clienteSeleccionado, sucursalSeleccionada, data?.sucursales, data?.clientes]);
 
   const direccionEfectiva = form.direccionTouched && form.direccionEntrega
     ? form.direccionEntrega
@@ -169,10 +176,10 @@ export default function NuevaVentaModal({
     setForm({
       clienteId: clienteIdInicial || '',
       fecha: '',
+      canal: 'domicilio',
       tipoCobro: 'Contado',
       folioNota: '',
       requiereFactura: false,
-      recibido: '',
       direccionEntrega: '',
       referenciaEntrega: '',
       latitudEntrega: null,
@@ -198,21 +205,29 @@ export default function NuevaVentaModal({
   const handleClientChange = (cId) => {
     const cli = (data?.clientes || []).find(c => String(c.id) === String(cId));
     const tipoCobro = cli?.credito_autorizado ? 'Credito' : 'Contado';
+    const principal = sucursalPrincipal(data?.sucursales, cId);
     setForm(f => ({
       ...f,
       clienteId: cId,
+      sucursalId: principal ? String(principal.id) : '',
       tipoCobro,
       requiereFactura: ft.toggleFactura ? (f.requiereFactura && !!cli?.rfc && cli.rfc !== 'XAXX010101000') : f.requiereFactura,
     }));
-    setLines(prev => prev.map(l => ({ ...l, precio: getPrice(cId, l.sku) })));
+    setLines(prev => prev.map(l => ({ ...l, precio: getPrice(cId, l.sku, principal?.id ?? null) })));
     setNuevoCliente(false);
+  };
+
+  // 123: cambiar de sucursal reprecia las líneas (precio de sucursal → cliente → lista).
+  const handleSucursalChange = (sId) => {
+    setForm(f => ({ ...f, sucursalId: sId }));
+    setLines(prev => prev.map(l => ({ ...l, precio: getPrice(form.clienteId, l.sku, sId || null) })));
   };
 
   const addLine = () => setLines(prev => [...prev, { sku: '', qty: 1, precio: 0 }]);
   const updateLine = (idx, field, val) => setLines(prev => prev.map((l, i) => {
     if (i !== idx) return l;
     const u = { ...l, [field]: val };
-    if (field === 'sku') u.precio = getPrice(form.clienteId, val);
+    if (field === 'sku') u.precio = getPrice(form.clienteId, val, form.sucursalId || null);
     return u;
   }));
   const removeLine = (idx) => setLines(prev => prev.filter((_, i) => i !== idx));
@@ -323,6 +338,7 @@ export default function NuevaVentaModal({
       const payload = {
         cliente: s(cli?.nombre),
         clienteId: form.clienteId,
+        sucursalId: form.sucursalId || null, // 123
         fecha: form.fecha || null, // 098: sin fecha elegida → crear_orden usa fin_hoy()
         productos: productosStr,
         total: totalCalc,
@@ -341,16 +357,17 @@ export default function NuevaVentaModal({
         toast?.error?.(result.error || result.message || 'No se pudo crear la orden');
         return;
       }
-      onSuccess?.(result?.orden || null);
+      onSuccess?.(result?.orden || null, { mostrador });
     } finally {
       setSaving(false);
     }
   };
 
-  const recibido = n(form.recibido);
-  const cambio = recibido - totalCalc;
 
   // ── Sub-views por paso ─────────────────────────────────────────
+
+  const mostrador = form.canal === 'mostrador';
+  const ultimoPaso = 3;
 
   const wizardHeader = (
     <div className="flex items-center gap-2 mb-5">
@@ -369,7 +386,7 @@ export default function NuevaVentaModal({
             </p>
             <p className="text-[10px] text-slate-400">{num === 3 ? 'Opcional' : 'Requerido'}</p>
           </div>
-          {num < 3 && <div className={`h-0.5 flex-1 ${step > num ? 'bg-emerald-500' : 'bg-slate-200'}`} />}
+          {num < ultimoPaso && <div className={`h-0.5 flex-1 ${step > num ? 'bg-emerald-500' : 'bg-slate-200'}`} />}
         </div>
       ))}
     </div>
@@ -393,6 +410,22 @@ export default function NuevaVentaModal({
 
   const stepCliente = (
     <div className="space-y-3">
+      <div>
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">¿Cómo se entrega?</label>
+        <div className="grid grid-cols-2 gap-2">
+          {[['domicilio', 'A domicilio', 'Sale con el chofer'], ['mostrador', 'Mostrador', 'Se cobra y entrega ahora']].map(([k, t, d]) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setForm(f => ({ ...f, canal: k }))}
+              className={`rounded-xl border-2 p-3 text-left transition-colors ${form.canal === k ? 'border-emerald-500 bg-emerald-50' : 'border-slate-200 bg-white'}`}
+            >
+              <span className={`block text-sm font-bold ${form.canal === k ? 'text-emerald-800' : 'text-slate-700'}`}>{t}</span>
+              <span className="block text-xs text-slate-500">{d}</span>
+            </button>
+          ))}
+        </div>
+      </div>
       <p className="text-sm text-slate-500 mb-2">¿A quién le estás vendiendo?</p>
 
       {!nuevoCliente && (
@@ -402,6 +435,19 @@ export default function NuevaVentaModal({
           value={form.clienteId}
           onChange={e => handleClientChange(e.target.value)}
           error={errors.clienteId}
+        />
+      )}
+
+      {/* 122: sucursal solo cuando el cliente tiene más de una */}
+      {!nuevoCliente && sucursalesCliente.length > 1 && (
+        <FormSelect
+          label="Sucursal *"
+          options={sucursalesCliente.map(x => ({
+            value: String(x.id),
+            label: (x.esPrincipal ?? x.es_principal) ? `${s(x.nombre)} (principal)` : s(x.nombre),
+          }))}
+          value={form.sucursalId || String(sucursalSeleccionada?.id || '')}
+          onChange={e => handleSucursalChange(e.target.value)}
         />
       )}
 
@@ -727,29 +773,6 @@ export default function NuevaVentaModal({
         />
       </div>
 
-      {ft.calculadoraCambio && form.tipoCobro === 'Contado' && (
-        <div className="bg-emerald-50 rounded-xl p-4 border border-emerald-200">
-          <p className="text-xs font-bold text-emerald-700 uppercase mb-2">Calculadora de cambio</p>
-          <FormInput
-            label="¿Cuánto recibió?"
-            type="number"
-            min="0"
-            step="0.01"
-            value={form.recibido}
-            onChange={e => setForm(f => ({ ...f, recibido: e.target.value }))}
-            placeholder="0"
-          />
-          {form.recibido !== '' && Number.isFinite(recibido) && (
-            <div className="mt-2 flex justify-between items-baseline">
-              <span className="text-sm text-slate-600">Cambio</span>
-              <span className={`text-2xl font-extrabold ${cambio < 0 ? 'text-red-600' : 'text-emerald-700'}`}>
-                {cambio < 0 ? `Falta ${fmtMoney(Math.abs(cambio))}` : fmtMoney(cambio)}
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
       <div className="bg-slate-50 rounded-xl p-4 mt-2">
         <h4 className="text-sm font-semibold text-slate-700 mb-3">Resumen</h4>
         <div className="space-y-2 text-sm">
@@ -808,10 +831,10 @@ export default function NuevaVentaModal({
         {ft.wizard && step > 1
           ? <FormBtn size="lg" className="flex-1" onClick={prevStep}><Icons.ChevronLeft /> Atrás</FormBtn>
           : <FormBtn size="lg" className="flex-1" onClick={handleClose}>Cancelar</FormBtn>}
-        {ft.wizard && step < 3 && <FormBtn primary size="lg" className="flex-[2]" onClick={nextStep}>Siguiente <Icons.ChevronRight /></FormBtn>}
-        {(!ft.wizard || step === 3) && (
+        {ft.wizard && step < ultimoPaso && <FormBtn primary size="lg" className="flex-[2]" onClick={nextStep}>Siguiente <Icons.ChevronRight /></FormBtn>}
+        {(!ft.wizard || step === ultimoPaso) && (
           <FormBtn primary size="lg" className="flex-[2]" onClick={save} loading={saving} disabled={excedeCredito}>
-            {form.requiereFactura ? 'Crear venta con factura' : 'Crear venta'}
+            {mostrador ? 'Crear y cobrar' : form.requiereFactura ? 'Crear venta con factura' : 'Crear venta'}
           </FormBtn>
         )}
       </div>

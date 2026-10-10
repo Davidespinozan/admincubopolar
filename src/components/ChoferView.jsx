@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { diaNegocio } from '../utils/fechas';
-import { s, n, fmtMoney, fmtDate, extraerTelefono, formatDireccion } from '../utils/safe';
+import { s, n, fmtMoney, fmtDate, extraerTelefono } from '../utils/safe';
+import { resolverEntrega, etiquetaClienteSucursal } from '../data/sucursalLogic';
 import { validarVentaExpressFactura } from '../data/ventaExpressLogic';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
@@ -259,7 +260,9 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
   const ordenesConDetalle = useMemo(() => {
     return misOrdenes.map(o => {
       const cli = data.clientes.find(c => String(c.id) === String(o.clienteId));
-      const clienteNombre = cli ? s(cli.nombre) : s(o.cliente);
+      // 123: dirección efectiva orden → sucursal → cliente, compartida con Rutas y Ventas.
+      const entrega = resolverEntrega(o, data.sucursales, data.clientes);
+      const clienteNombre = etiquetaClienteSucursal(cli ? s(cli.nombre) : s(o.cliente), entrega.sucursal);
       // Parse productos string "25×HC-25K, 10×HC-5K" into items
       const items = [];
       const prodStr = s(o.productos);
@@ -276,25 +279,16 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       }
       const total = items.reduce((s, it) => s + it.cant * it.precio, 0);
       const entregada = s(o.estatus) === 'Entregada' || entregas.some(e => String(e.ordenId) === String(o.id));
-      const direccionCustom = s(o.direccion_entrega || o.direccionEntrega || '');
-      // Mig 056: usar formatDireccion para obtener "Calle 123 Int. 4, Colonia, Ciudad..."
-      // con número exterior/interior. Fallback a la dirección custom de la orden.
-      const direccionCliente = cli ? formatDireccion(cli) : '';
-      const direccion = direccionCustom || direccionCliente;
-      const referencia = s(o.referencia_entrega || o.referenciaEntrega || '');
-      // Coords: si la orden trae custom (lat/lng_entrega), úsalas; fallback al cliente.
-      const ordLat = o.latitud_entrega ?? o.latitudEntrega;
-      const ordLng = o.longitud_entrega ?? o.longitudEntrega;
-      const latitud = (ordLat !== null && ordLat !== undefined && ordLat !== '') ? Number(ordLat) : cli?.latitud;
-      const longitud = (ordLng !== null && ordLng !== undefined && ordLng !== '') ? Number(ordLng) : cli?.longitud;
+      const { direccion, referencia, contacto } = entrega;
+      const latitud = entrega.latitud ?? undefined;
+      const longitud = entrega.longitud ?? undefined;
       const esCredito = s(o.tipo_cobro || o.tipoCobro) === 'Credito';
-      const contacto = s(cli?.contacto || '');
       const nombreComercial = s(cli?.nombre_comercial || cli?.nombreComercial || '');
       return { ...o, clienteNombre, items, totalCalc: total || n(o.total), entregada,
         latitud, longitud, direccion, referencia, esCredito,
         contacto, nombreComercial };
     });
-  }, [misOrdenes, data.clientes, entregas, getPrice]);
+  }, [misOrdenes, data.clientes, data.sucursales, entregas, getPrice]);
 
   // Sync entregas from DB on load (so reloads don't lose delivered orders)
   useEffect(() => {

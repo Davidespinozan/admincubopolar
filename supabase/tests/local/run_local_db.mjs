@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_') && !f.startsWith('123_') && !f.startsWith('124_') && !f.startsWith('125_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -4609,6 +4609,172 @@ for (const [etq, f] of [...SUITES_122, ['111', '111_operaciones_cfdi_test.sql']]
 // Concurrencia de asistencia (116) con la zona nueva: mismas carreras, sin cambio de resultado.
 await conc116();
 console.log('  Zona del negocio = Durango (America/Monterrey) tras 122: PASS');
+// ═══ 123 — MULTISUCURSAL (en producción se aplicó con el nombre 122_multisucursal.sql; el 122 del repo es la zona de negocio): sucursales por cliente, orden con sucursal, precio por sucursal, fusión de clientes ═══
+{
+  // Paridad con producción (md5 leídos en solo lectura el 2026-10-09; 088 vigente).
+  const PROD123 = { precio_canonico: '3f5a0664498e77519b501a219a3bd578', lineas_canonicas: 'fa1dd9ee536ba52636e3dd77d57d7114',
+    crear_orden: '0e5d1274d4ffe03a296d23a81f6fef67', update_orden_atomic: 'cbc3beba5e3e8fa6d4060a0c32064929' };
+  const loc = Object.fromEntries((await c.query(`SELECT p.proname, md5(pg_get_functiondef(p.oid)) AS m FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = ANY($1)`, [Object.keys(PROD123)])).rows.map(r => [r.proname, r.m]));
+  const sinTabla = (await c.query(`SELECT to_regclass('public.sucursales') IS NULL AS s`)).rows[0].s;
+  const okP = sinTabla && Object.entries(PROD123).every(([k, v]) => loc[k] === v);
+  console.log(`  MULTISUCURSAL_PARITY_CHECK[pre-123 == producción ANTES de aplicarla (2026-10-09): sin sucursales, contratos de 088 (una sola firma)]: ${okP ? 'PASS' : 'FAIL'} ${JSON.stringify(loc)}`);
+  if (!okP) process.exit(1);
+}
+const SUITES_123 = [...SUITES_122, ['122', '122_zona_negocio_test.sql']];
+async function conc123() {
+  console.log('── 123 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    DELETE FROM orden_lineas WHERE orden_id IN (SELECT id FROM ordenes WHERE cliente_id BETWEEN 12380 AND 12389);
+    DELETE FROM cuentas_por_cobrar WHERE cliente_id BETWEEN 12380 AND 12389;
+    DELETE FROM ordenes WHERE cliente_id BETWEEN 12380 AND 12389;
+    DELETE FROM precios_esp WHERE cliente_id BETWEEN 12380 AND 12389;
+    DELETE FROM sucursales WHERE cliente_id BETWEEN 12380 AND 12389 OR origen_cliente_id BETWEEN 12380 AND 12389;
+    DELETE FROM auditoria WHERE detalle LIKE '%C123%';
+    DELETE FROM clientes WHERE id BETWEEN 12380 AND 12389;
+    UPDATE cuartos_frios SET stock = stock - 'C123-A' WHERE stock ? 'C123-A';
+    DELETE FROM productos WHERE sku = 'C123-A'; COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN;
+    INSERT INTO productos (sku, nombre, tipo, precio, stock, costo_unitario) VALUES ('C123-A', 'Hielo C123', 'Producto Terminado', 10, 0, 0);
+    UPDATE cuartos_frios SET stock = stock || '{"C123-A": 1000}'::jsonb WHERE id = (SELECT id FROM cuartos_frios ORDER BY id LIMIT 1);
+    INSERT INTO clientes (id, nombre, rfc, saldo, credito_autorizado, limite_credito, calle, colonia) VALUES
+      (12380, 'Cadena C123', 'XAXX010101000', 0, true, 100, 'Matriz', 'Centro'),
+      (12381, 'Sucursal Origen C123', 'XAXX010101000', 15, false, 0, 'Jardines 5', 'Jardines'),
+      (12382, 'Destino B C123', 'XAXX010101000', 0, false, 0, 'Otra', 'Otra');
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  // C123a: crédito por cadena. Dos ventas a crédito simultáneas en sucursales distintas de la misma cadena (límite 100):
+  // 90 + 20 → una sola pasa (fin_validar_credito bloquea al cliente).
+  const sucA = (await c.query(`SELECT guardar_sucursal(NULL, 12380, '{"nombre":"Norte C123"}') ->> 'id' AS id`)).rows[0].id;
+  const sucB = (await c.query(`SELECT guardar_sucursal(NULL, 12380, '{"nombre":"Sur C123"}') ->> 'id' AS id`)).rows[0].id;
+  await a.query('BEGIN'); await b.query('BEGIN');
+  const pa = a.query(`SELECT crear_orden($1, '[{"sku":"C123-A","cantidad":9}]') AS r`, [JSON.stringify({ cliente_id: 12380, sucursal_id: Number(sucA), tipo_cobro: 'Credito' })])
+    .then(() => 'ok', e => e.message);
+  await sleep(150);
+  let doneB = false;
+  const pb = b.query(`SELECT crear_orden($1, '[{"sku":"C123-A","cantidad":2}]') AS r`, [JSON.stringify({ cliente_id: 12380, sucursal_id: Number(sucB), tipo_cobro: 'Credito' })])
+    .then(() => 'ok', e => e.message).finally(() => { doneB = true; });
+  await sleep(300);
+  const esperaB = !doneB;
+  const ra = await pa; await a.query(ra === 'ok' ? 'COMMIT' : 'ROLLBACK');
+  const rb = await pb; await b.query(rb === 'ok' ? 'COMMIT' : 'ROLLBACK');
+  // Ambas se crean (crear_orden no abre CxC: el crédito se consume al entregar); lo que se verifica es la serialización
+  // por cliente y que las dos órdenes quedaron con su sucursal y el precio de cadena.
+  const ords = (await c.query(`SELECT count(*)::int AS n, count(DISTINCT sucursal_id)::int AS s FROM ordenes WHERE cliente_id = 12380`)).rows[0];
+  ok(ra === 'ok' && rb === 'ok' && esperaB && ords.n === 2 && ords.s === 2,
+    `C123a dos ventas a crédito simultáneas de la misma cadena en sucursales distintas se serializan por cliente (espera=${esperaB}, a=${ra}, b=${rb}, órdenes=${ords.n}/${ords.s} sucursales)`);
+  // C123b: fusión y venta simultáneas sobre el origen: la venta espera y, si gana la fusión, queda reapuntada al destino.
+  await c.query(`INSERT INTO precios_esp (cliente_id, sku, precio) VALUES (12381, 'C123-A', 7)`);
+  await a.query('BEGIN'); await b.query('BEGIN');
+  const pf = a.query(`SELECT fusionar_cliente_en_sucursal(12381, 12380, 'Jardines C123') AS r`).then(r => r.rows[0].r, e => ({ error: e.message }));
+  await sleep(150);
+  let doneV = false;
+  const pv = b.query(`SELECT crear_orden('{"cliente_id": 12381}', '[{"sku":"C123-A","cantidad":1}]') AS r`).then(r => r.rows[0].r, e => ({ error: e.message })).finally(() => { doneV = true; });
+  await sleep(300);
+  const rf = await pf; await a.query(rf.error ? 'ROLLBACK' : 'COMMIT');
+  const rv = await pv; await b.query(rv.error ? 'ROLLBACK' : 'COMMIT');
+  const fin = (await c.query(`SELECT (SELECT fusionado_en FROM clientes WHERE id = 12381) AS fus,
+      (SELECT count(*)::int FROM ordenes WHERE cliente_id = 12381) AS huerfanas,
+      (SELECT count(*)::int FROM ordenes WHERE cliente_id = 12380 AND sucursal_id = $1) AS en_destino,
+      (SELECT precio_canonico(12380, $1, 'C123-A')) AS precio`, [rf.sucursal_id || null])).rows[0];
+  // La venta sobre el origen (sin bloqueo del cliente en crear_orden a contado) puede ganar o perder la carrera; en ambos
+  // casos NO quedan órdenes huérfanas en el origen y el precio del origen vive en la sucursal nueva.
+  ok(!rf.error && String(fin.fus) === '12380' && fin.huerfanas === 0 && Number(fin.precio) === 7,
+    `C123b fusión y venta simultáneas: sin órdenes huérfanas en el origen (en destino=${fin.en_destino}, venta=${rv.error ? 'rechazada: ' + rv.error.slice(0, 60) : 'ok'}), precio del origen (7) ahora de la sucursal`);
+  // C123c: dos fusiones del mismo origen a destinos distintos: una gana, la otra falla (ya fusionado).
+  await c.query(`INSERT INTO clientes (id, nombre, rfc, calle, colonia) VALUES (12383, 'Origen 2 C123', 'XAXX010101000', 'X', 'Y')`);
+  await a.query('BEGIN'); await b.query('BEGIN');
+  const f1 = a.query(`SELECT fusionar_cliente_en_sucursal(12383, 12380, 'Dos A') AS r`).then(() => 'ok', e => e.message);
+  await sleep(150);
+  const f2 = b.query(`SELECT fusionar_cliente_en_sucursal(12383, 12382, 'Dos B') AS r`).then(() => 'ok', e => e.message);
+  const r1 = await f1; await a.query(r1 === 'ok' ? 'COMMIT' : 'ROLLBACK');
+  const r2 = await f2; await b.query(r2 === 'ok' ? 'COMMIT' : 'ROLLBACK');
+  const dos = (await c.query(`SELECT count(*)::int AS n FROM sucursales WHERE origen_cliente_id = 12383`)).rows[0].n;
+  ok((r1 === 'ok') !== (r2 === 'ok') && dos === 1, `C123c dos fusiones del mismo origen: una sola gana (a=${r1}, b=${r2.slice(0, 70)}, sucursales=${dos})`);
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  await c.query(`DELETE FROM clientes WHERE id = 12383`);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (123 concurrencia)'); process.exit(1); }
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 123 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '123_multisucursal.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 123 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 123)'); process.exit(1); }
+{
+  // Paridad DESPUÉS de aplicar: producción ya tiene 123 (aplicada por el dueño el 2026-10-09 ~23:51Z con el nombre
+  // 122_multisucursal.sql); md5 leídos en solo lectura. fin_hoy() no se compara (122 zona de negocio la redefine).
+  const PROD123_POST = {
+    'clientes_sync_sucursal_principal()': '9f8e9962a4af8ea608c4e9f0f911abb7',
+    'crear_orden(p_orden jsonb, p_items jsonb)': 'a090f0c65458869304593bdfdaf0347b',
+    'fusionar_cliente_en_sucursal(p_origen bigint, p_destino bigint, p_nombre_sucursal text)': 'ebf67710b03d2a9db87f4ca1e91be40c',
+    'guardar_sucursal(p_id bigint, p_cliente_id bigint, p_datos jsonb)': '7fc4e3d2921327da3af9e74227b3f5d8',
+    'lineas_canonicas(p_cliente_id bigint, p_items jsonb)': 'fdffaf02bbe6433f46c68cb90575ab71',
+    'lineas_canonicas(p_cliente_id bigint, p_sucursal_id bigint, p_items jsonb)': '1a84a57e4334218972341dcc76e00c28',
+    'ordenes_guard_sucursal()': '534b55d8afdaaab53108afb019fe1e63',
+    'precio_canonico(p_cliente_id bigint, p_sku text)': '8abfb80795800b08d7001cc284207ac6',
+    'precio_canonico(p_cliente_id bigint, p_sucursal_id bigint, p_sku text)': 'c549682fbc47f9a3bb3be82e62a3b80f',
+    'precios_esp_guard_sucursal()': '15123835a324131d817d9ae65b60e92d',
+    'sucursal_con_domicilio(s sucursales)': '3ca296b8aabed90bbbfddf1b9f9d0356',
+    'sucursal_direccion_texto(s sucursales)': '22e97e884178021d084e099a69e1ef90',
+    'sucursal_para_orden(p_cliente_id bigint, p_sucursal_id bigint, p_contrato text)': '0e79ca089fb613cdb31f465ee3da8b39',
+    'sucursales_guard()': 'eb491212e17db7f05fa9beaf2aa58579',
+    'update_orden_atomic(p_orden_id bigint, p_update_fields jsonb, p_lineas jsonb)': '49edcf4504cc068b66ef9f922c0f09e1',
+  };
+  const loc = Object.fromEntries((await c.query(`SELECT p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS f, md5(pg_get_functiondef(p.oid)) AS m
+      FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname = ANY($1)`,
+    [[...new Set(Object.keys(PROD123_POST).map(k => k.split('(')[0]))]])).rows.map(r => [r.f, r.m]));
+  const dif = Object.entries(PROD123_POST).filter(([k, v]) => loc[k] !== v).map(([k]) => k);
+  console.log(`  MULTISUCURSAL_PROD_CHECK[local tras 123 == producción (15 definiciones)]: ${dif.length ? 'FAIL ' + JSON.stringify(dif) : 'PASS'}`);
+  if (dif.length) process.exit(1);
+}
+// 124: corrección de update_orden_atomic (cambio de cliente); va antes de la suite 123, que la exige (123-05d).
+for (const k of [1, 2]) {
+  console.log(`── aplicar 124 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '124_multisucursal_cambio_cliente.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+{
+  // 124 solo cambia el cuerpo de update_orden_atomic: misma firma, ACL, SECURITY DEFINER y search_path.
+  const f = (await c.query(`SELECT prosecdef, array_to_string(proconfig, ';') AS cfg, has_function_privilege('authenticated', oid, 'EXECUTE') AS auth,
+      has_function_privilege('anon', oid, 'EXECUTE') AS anon FROM pg_proc WHERE oid = 'public.update_orden_atomic(bigint,jsonb,jsonb)'::regprocedure`)).rows[0];
+  const ok = f.prosecdef && f.cfg === 'search_path=public, pg_temp' && f.auth && !f.anon;
+  console.log(`  MULTISUCURSAL_124[update_orden_atomic: SECURITY DEFINER, search_path fijo, authenticated sí, anon no]: ${ok ? 'PASS' : 'FAIL ' + JSON.stringify(f)}`);
+  if (!ok) process.exit(1);
+}
+if (!(await rlsCheck('tras 124 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 124)'); process.exit(1); }
+// 125: borrar un cliente sin historia borra su sucursal principal (ON DELETE CASCADE); sin ella, DELETE de clientes fallaba siempre.
+for (const k of [1, 2]) {
+  console.log(`── aplicar 125 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '125_multisucursal_borrado_cliente.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+{
+  const fk = (await c.query(`SELECT conname, confdeltype FROM pg_constraint WHERE conrelid = 'public.sucursales'::regclass AND contype = 'f' ORDER BY 1`)).rows;
+  const m = Object.fromEntries(fk.map(r => [r.conname, r.confdeltype]));
+  const ok = m.sucursales_cliente_id_fkey === 'c' && m.sucursales_origen_cliente_id_fkey === 'n' && fk.length === 2;
+  console.log(`  MULTISUCURSAL_125[sucursales.cliente_id ON DELETE CASCADE, origen_cliente_id SET NULL]: ${ok ? 'PASS' : 'FAIL ' + JSON.stringify(m)}`);
+  if (!ok) process.exit(1);
+}
+if (!(await rlsCheck('tras 125 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 125)'); process.exit(1); }
+console.log('── PRUEBAS 123 (con 124 y 125)');
+{
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests/123_multisucursal_test.sql'), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log('RESULTADO: FALLÓ (123)'); process.exit(1); }
+}
+await conc123();
+await reruns090('123', ['072']);
+for (const [etq, f] of [...SUITES_123, ['111', '111_operaciones_cfdi_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 123)`); process.exit(1); }
+  console.log(`  ${etq} tras 123: PASS`);
+}
+console.log('  MULTISUCURSAL (sucursales, orden con sucursal, precio por sucursal, fusión) tras 123: PASS');
 
 // ═══ OP-03 — ensayo operativo de punta a punta (Día 0; producción, barra, mostrador, ruta, mermas, reverso) ═══
 // Va al final (tras 116): deja sus funciones auxiliares op3_*, que 090-04 marcaría en una re-corrida posterior.
@@ -4691,7 +4857,10 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   'erp_exigir_no_empleado',
   // 120 (GER-1)
   'erp_roles_activos', 'erp_tiene_rol', 'erp_es_dueno', 'guardar_usuario', 'fijar_password_temporal', 'confirmar_cambio_password',
-  'bitacora_actor'];
+  'bitacora_actor',
+  // 123 (multisucursal)
+  'clientes_sync_sucursal_principal', 'sucursales_guard', 'ordenes_guard_sucursal', 'precios_esp_guard_sucursal',
+  'sucursal_para_orden', 'guardar_sucursal', 'fusionar_cliente_en_sucursal'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

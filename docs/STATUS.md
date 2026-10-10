@@ -181,9 +181,12 @@ del dueño ("CLOSED IN PRODUCTION") no está registrado para las fases de Role U
 ## Trabajo actual
 **ETAPA CUBOPOLAR: CLOSED IN PRODUCTION (2026-10-06).** Auditoría final de cierre COMPLETA (solo
 lectura): P0 = 0; su único MUST-FIX (R-01, producción sin `idx_pagos_ref`) quedó cerrado por
-CLOSURE-1. Ninguna fase de implementación en curso. Siguiente paso autorizado: ninguno. El trabajo
-posterior es desarrollo normal de producto o backlog aceptado cuando el dueño lo priorice (no hay
+CLOSURE-1. El trabajo posterior es desarrollo normal de producto o backlog aceptado cuando el dueño lo priorice (no hay
 OL-05, CLOSURE-2 ni otra auditoría pendientes).
+
+**Fase en curso: MULTISUCURSAL (mig 123 + correcciones 124 y 125) — MIGRATIONS APPLIED TO PRODUCTION (por el dueño; 123 el
+2026-10-09 ~23:51Z con el nombre `122_multisucursal.sql`, 124 y 125 el 2026-10-10) / VERIFIED (md5 y llaves idénticos a la base
+local) / frontend IMPLEMENTED LOCALLY (sin commit, sin deploy).** Ver su sección abajo. Siguiente paso autorizado: ninguno (commit, push y deploy requieren autorización del dueño).
 
 | Severidad | Cuenta |
 |---|---|
@@ -287,6 +290,66 @@ clasificador de permisos de la sesión bloqueó `supabase db query` contra produ
 - Evidencia: runner local RESULTADO OK (paridad pre-120, H1 reproducido, 120 y 121 ×2, suites `120_ger1_dueno_accesos_test.sql` (59) y
   `121_ger1_contencion_usuarios_test.sql` (7), 41 suites anteriores tras cada una, C120a/b, ensayo OP-03); `src/__tests__/ger1DuenoAccesos.test.jsx`.
 - Reversión: encabezados de 120 y 121 (121 primero: recrear `admin_all` y sus grants; después Netlify a `feb3721`; 120 al final).
+
+## Multisucursal por cliente (mig 123) — 2026-10-09 — MIGRATION APPLIED TO PRODUCTION / FRONTEND IMPLEMENTED LOCALLY
+**La migración está en producción; el frontend no (sin commit, sin deploy; el frontend desplegado es compatible: la sucursal es
+opcional y sin ella los contratos usan la principal).** El dueño pegó el SQL en Supabase el 2026-10-09 (~23:51Z) con el nombre
+`122_multisucursal.sql`, junto con `122_zona_negocio_durango.sql` de otra sesión, ANTES de que el gate local terminara (la única
+falla del gate en ese momento era una aserción mal escrita de la suite, no la migración). Verificado en solo lectura después:
+tabla `sucursales` con 217 filas = 217 principales (0 clientes vigentes sin principal; 18 con domicilio), `ordenes.sucursal_id` y
+`precios_esp.sucursal_id`, 4 índices únicos (sin la constraint vieja), 5 disparadores, 1 policy de lectura, authenticated solo
+SELECT, anon nada, realtime activo; 181 funciones · 51 tablas; md5 de las 15 definiciones de 123 en producción IDÉNTICOS a la
+base local del gate (el runner lo comprueba en `MULTISUCURSAL_PROD_CHECK`). Ya existe 1 orden con sucursal (principal), creada
+por el frontend anterior a través de `crear_orden`. Autorizada por el dueño (por medio de David) el 2026-10-09 tras la auditoría
+de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 12 y VENEGAS 4 cargados como clientes separados).
+- **Decisiones del dueño:** crédito, límite, saldo y CxC **por cadena (cliente)**; precio especial **por sucursal** (respaldo: precio del
+  cliente; al final, lista); factura siempre a la razón social del cliente; LEVIN y VENEGAS se fusionan como sucursales. Por omisión
+  (sin objeción): sucursales las crean Admin y Ventas; fusionar, solo Admin; la venta exprés del chofer sigue por cliente (sin sucursal).
+- **Modelo (123, aditiva e idempotente; 122 es la zona de negocio Durango de otra sesión):** `sucursales` (una **principal** por cliente = domicilio del cliente; backfill de las 217 y
+  sincronía clientes → principal por disparador; sin DML REST: lectura `erp_lector_negocio` y contrato `guardar_sucursal`);
+  `ordenes.sucursal_id` (debe ser del cliente; inmutable por REST; `crear_orden` / `update_orden_atomic` la aceptan, sin ella usan la
+  principal, y **copian** la dirección y coordenadas de la sucursal a la orden cuando no viene dirección propia);
+  `precios_esp.sucursal_id` (NULL = cadena; únicos por (cliente, sku) sin sucursal y por (sucursal, sku); `precio_canonico(cliente,
+  sucursal, sku)`; las firmas de 088 siguen y equivalen a "sin sucursal": 112 no cambia); `clientes.fusionado_en`;
+  `fusionar_cliente_en_sucursal(origen, destino, nombre)` (Admin: la principal del origen pasa a sucursal del destino; órdenes, CxC,
+  pagos, devoluciones, comodatos y precios se **reapuntan** sin reescribir montos ni la foto del nombre; saldo sumado al destino; origen
+  Inactivo; reintento = misma respuesta; RFC nominativo distinto → rechazo; CFDI sin resolver → rechazo). `crear_orden` bloquea al
+  cliente (FOR UPDATE) y rechaza un cliente fusionado: una fusión y una venta simultáneas no dejan órdenes huérfanas.
+- **Frontend:** `src/data/sucursalLogic.js` (sucursal → cliente → lista; `resolverEntrega` orden → sucursal → cliente, compartida por
+  Chofer, Rutas y Ventas — corrige que Rutas ignoraba la dirección propia de la orden); Clientes → Sucursales (`SucursalesModal`: alta,
+  edición, desactivar, fusionar para Admin); selector de sucursal en Nueva venta y Editar venta solo si el cliente tiene más de una;
+  Precios especiales por sucursal; "Cliente · Sucursal" en Chofer, Rutas y Detalle; realtime de `sucursales` en el núcleo.
+- **Evidencia local:** suite `123_multisucursal_test.sql` (catálogo, principal y sincronía, contrato, precio, crear/editar orden, crédito
+  por cadena, REST, fusión e idempotencia); runner: paridad pre-123 con producción (md5 de `precio_canonico`, `lineas_canonicas`,
+  `crear_orden`, `update_orden_atomic`), 123 ×2, RLS, C123a–c (crédito por cadena simultáneo, fusión + venta, dos fusiones), suites
+  anteriores; 088-05 consciente de 123 (constraint → índice único parcial). Vitest `src/__tests__/multisucursal.test.js`; lint,
+  typecheck y build en verde; 2,977 tests en 4 zonas (los 3 archivos `.claude/worktrees/zona-durango/e2e/*.spec.js` de otro
+  árbol de trabajo no son de esta fase). **Gate SQL: RESULTADO OK (2026-10-10)** con 122 (zona) + 123 + 124 + 125: suite 123 (75
+  comprobaciones), C123a–c, `MULTISUCURSAL_PROD_CHECK` (md5 local = producción), 117-00b y 090-04 conscientes de sucursales,
+  `UNQUALIFIED_RESOLUTION` PASS y las 42 suites anteriores tras 123. LOCAL-VALIDATED.
+- **124 (`124_multisucursal_cambio_cliente.sql`) — MIGRATION APPLIED TO PRODUCTION (dueño, 2026-10-10) / VERIFIED (md5 de
+  `update_orden_atomic` en producción `443fcb9caf68aa44f1c3f595103ad63d` = base local; SECURITY DEFINER, `search_path` fijo, ACL igual):** solo redefine
+  `update_orden_atomic` (misma firma y ACL). Defecto de 123 hallado por la suite (123-05d), no por producción: al editar una orden
+  cambiando `cliente_id`, el UPDATE escribía el cliente nuevo con la sucursal del anterior y la guarda lo rechazaba. El frontend
+  desplegado no cambia el cliente al editar, así que ninguna orden quedó afectada. Hasta aplicar 124, producción rechaza (no
+  corrompe) ese caso. Se aplica con `supabase db query --linked -f supabase/124_multisucursal_cambio_cliente.sql` tras
+  autorización del dueño; el runner la aplica ×2 antes de la suite 123.
+- **125 (`125_multisucursal_borrado_cliente.sql`) — MIGRATION APPLIED TO PRODUCTION (dueño, 2026-10-10) / VERIFIED (llaves
+  `sucursales_cliente_id_fkey` ON DELETE CASCADE y `sucursales_origen_cliente_id_fkey` ON DELETE SET NULL; 217 clientes / 217
+  principales intactos):** `sucursales.cliente_id`
+  pasa a ON DELETE CASCADE y `origen_cliente_id` a ON DELETE SET NULL. Defecto de 123 que destapó el gate (re-corrida de la suite
+  088 tras 123): como todo cliente tiene principal, **DELETE de un cliente fallaba siempre** (23503), también sin historia; en la
+  app "Eliminar permanentemente" de Clientes respondía "Usa Desactivar" para todos. Con 125, borrar un cliente sin historia borra
+  su principal; la historia sigue protegida (órdenes → sucursal, y órdenes/pagos/CxC/comodatos → cliente). Se aplica con
+  `supabase db query --linked -f supabase/125_multisucursal_borrado_cliente.sql`; el runner la aplica ×2 (`MULTISUCURSAL_125`) y la
+  suite 123 la exige (123-01g).
+- **No incluido:** sucursal en la venta exprés del chofer (precio del cliente); crédito/precio por sucursal con límite propio;
+  `rutas.clientes_asignados` no se reescribe en la fusión (solo cuenta clientes); 2 líneas de la bitácora de REST no aplican
+  (sucursales no tienen REST).
+- Nota: el archivo `123_multisucursal.sql` del repositorio lleva dos `REVOKE` explícitos (`sucursal_direccion_texto`,
+  `sucursal_con_domicilio`) añadidos tras el gate local; en producción esas funciones ya estaban sin EXECUTE para `anon` y
+  `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
+- Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
 ## Go-live (puesta en operación) — 2026-10-06
 Go-Live Readiness (auditoría de solo lectura): **CONDITIONAL GO** · 3 GL-BLOCKERS · 16 tareas

@@ -2,12 +2,25 @@ import { useState, useMemo, Icons, StatusBadge, DataTable, PageHeader, Modal, Fo
 import DireccionForm from '../ui/DireccionForm';
 import { validarRFC, normalizeStr, formatDireccion, validateDireccion } from '../../utils/safe';
 import { REGIMENES_OPTIONS } from '../../data/sat/regimenesFiscales';
+import SucursalesModal from '../SucursalesModal';
 
-export function ClientesView({ data, actions }) {
+export function ClientesView({ data, actions, user }) {
   const toast = useToast();
   const [askConfirm, ConfirmEl] = useConfirm();
   const [saving, setSaving] = useState(false);
   const [modal, setModal] = useState(null);
+  // 123: cliente cuyas sucursales se están viendo (null = cerrado).
+  const [sucursalesDe, setSucursalesDe] = useState(null);
+  const esAdmin = s(user?.rol) === 'Admin';
+  const sucursalesPorCliente = useMemo(() => {
+    const m = {};
+    for (const x of (data?.sucursales || [])) {
+      if (s(x.estatus) === 'Inactiva') continue;
+      const k = String(x.clienteId ?? x.cliente_id ?? '');
+      if (k) m[k] = (m[k] || 0) + 1;
+    }
+    return m;
+  }, [data?.sucursales]);
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState("");
   const [filterEstatus, setFilterEstatus] = useState("Activos"); // Activos | Inactivos | Todos
@@ -249,6 +262,10 @@ export function ClientesView({ data, actions }) {
                 ><Icons.AlertTriangle /> Sin nº ext.</span>
               )}
               {row.nombre_comercial && <span className="block text-xs text-slate-400">{s(row.nombre_comercial)}</span>}
+              {(sucursalesPorCliente[String(row.id)] || 0) > 1 && (
+                <span className="block text-[11px] font-semibold text-blue-700">{sucursalesPorCliente[String(row.id)]} sucursales</span>
+              )}
+              {row.fusionado_en && <span className="block text-[11px] text-slate-400">Fusionado como sucursal de otro cliente</span>}
             </div>
           );
         }},
@@ -268,6 +285,16 @@ export function ClientesView({ data, actions }) {
           const puedeEliminar = puedeEliminarCliente(row.id);
           const movs = clientesConHistorico[String(row.id)] || 0;
           return <div className="flex gap-1 justify-end" onClick={(e)=>e.stopPropagation()}>
+            {!row.fusionado_en && (
+              <button
+                onClick={()=>setSucursalesDe(row)}
+                aria-label="Sucursales"
+                title={`Sucursales (${sucursalesPorCliente[String(row.id)] || 1})`}
+                className="p-2 min-w-[40px] min-h-[40px] flex items-center justify-center rounded-lg text-slate-500 hover:text-blue-600 hover:bg-slate-100 transition-colors"
+              >
+                <Icons.MapPin />
+              </button>
+            )}
             <button
               onClick={()=>openEdit(row)}
               aria-label="Editar cliente"
@@ -404,6 +431,11 @@ export function ClientesView({ data, actions }) {
             const puedeEliminar = puedeEliminarCliente(modal.id);
             return (
               <div className="border-t border-slate-200 pt-4 mt-6 space-y-2">
+                {!modal.fusionado_en && (
+                  <button onClick={() => { setSucursalesDe(modal); setModal(null); }} className="w-full px-4 py-2.5 text-sm font-bold rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition-colors">
+                    <span className="inline-flex items-center justify-center gap-1.5"><Icons.MapPin /> Sucursales ({sucursalesPorCliente[String(modal.id)] || 1})</span>
+                  </button>
+                )}
                 <button onClick={() => askConfirm(
                     esActivo ? "Desactivar cliente" : "Activar cliente",
                     esActivo
@@ -463,5 +495,14 @@ export function ClientesView({ data, actions }) {
         </div>
       </div>
     </Modal>
+    <SucursalesModal
+      open={!!sucursalesDe}
+      onClose={() => setSucursalesDe(null)}
+      cliente={sucursalesDe ? ((data?.clientes || []).find(c => String(c.id) === String(sucursalesDe.id)) || sucursalesDe) : null}
+      data={data}
+      actions={actions}
+      toast={toast}
+      esAdmin={esAdmin}
+    />
   </div>);
 }

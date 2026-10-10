@@ -27,6 +27,10 @@ en el pago. Todo cobro, saldo y cierre se escribe por contrato, una sola vez por
 - Devolución: `registrar_devolucion` (Admin). Reporte: `reporte_financiero`.
 
 ## Closed decisions
+- **Multisucursal (123, IMPLEMENTED LOCALLY 2026-10-09; decisión del dueño):** el dinero es del cliente (cadena): crédito, límite,
+  saldo, CxC, pagos y factura siguen con llave `cliente_id`. La sucursal solo decide dónde se entrega y el precio: `precio_canonico
+  (cliente, sucursal, sku)` = sucursal → cliente → lista (las firmas de 088 equivalen a "sin sucursal"). Fusionar un cliente en
+  sucursal reapunta su historia (sin reescribir montos) y suma su saldo al destino.
 - **Resultados ≠ efectivo (093, 096).** El costo de producción y las mermas no son salida de
   dinero; la compra y el pago a proveedor no son gasto. Por qué: antes se sumaban y contaban doble.
 - **Ingreso al entregar, efectivo al pagar (093).** Por qué: una venta a crédito no es dinero recibido.

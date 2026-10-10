@@ -80,6 +80,7 @@ export default function DetalleVentaModal({ orden, data, onClose, acciones, pie 
           {(orden.tipoCobro || orden.tipo_cobro) && <Fila etiqueta="Tipo de cobro">{s(orden.tipoCobro || orden.tipo_cobro)}</Fila>}
           {(orden.metodoPago || orden.metodo_pago) && <Fila etiqueta="Método">{s(orden.metodoPago || orden.metodo_pago)}</Fila>}
           {(orden.folioNota || orden.folio_nota) && <Fila etiqueta="Nota">{s(orden.folioNota || orden.folio_nota)}</Fila>}
+          {orden.sucursal && <Fila etiqueta="Sucursal">{s(orden.sucursal)}</Fila>}
           {(orden.direccionEntrega || orden.direccion_entrega) && <Fila etiqueta="Dirección">{s(orden.direccionEntrega || orden.direccion_entrega)}</Fila>}
           {motivoNoEntrega && <Fila etiqueta="No entregada">{motivoNoEntrega}</Fila>}
         </section>
