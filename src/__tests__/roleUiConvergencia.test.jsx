@@ -103,7 +103,7 @@ describe('A4: Producción — presentación nueva, negocio idéntico', () => {
     expect(v).toMatch(/await actions\.prepararDesdeBarra\(\{ \.\.\.datos, operacionId: op\.id \}\)/);
     expect(v).toMatch(/await actions\.traspasoEntreUbicaciones\(\{ \.\.\.tForm, operacionId: op\.id \}\)/);
     expect(v).toMatch(/await actions\.sacarDeCuartoFrio\(sacarModal\.cfId, sacarForm\.sku, sacarForm\.cantidad, mot\.motivo, \{ operacionId: op\.id \}\)/);
-    expect(new Set(v.match(/actions\.\w+/g))).toEqual(new Set(['actions.producirYCongelar', 'actions.registrarMermaCuarto', 'actions.prepararDesdeBarra', 'actions.traspasoEntreUbicaciones', 'actions.sacarDeCuartoFrio']));
+    expect(new Set(v.match(/actions\.\w+/g))).toEqual(new Set(['actions.producirYCongelar', 'actions.registrarMermaCuarto', 'actions.prepararDesdeBarra', 'actions.desglosarBarra', 'actions.traspasoEntreUbicaciones', 'actions.sacarDeCuartoFrio']));
     expect(v).toMatch(/supabase\.storage\s*\.from\('mermas'\)\s*\.upload\(filePath, fotoMermaFile/);
     expect(v).toMatch(/await supabase\.storage\.from\('mermas'\)\.remove\(\[filePath\]\);/);
   });
@@ -254,7 +254,7 @@ describe('B3.2: cada módulo de Producción abre con SU resumen (solo presentaci
   const cuartos = bloque('{tab === "cuartos" && (<>', '{tab === "preparar" && (<>');
   const prep = bloque('{tab === "preparar" && (<>', '{tab === "mermas" && (<>');
   const mermas = bloque('{tab === "mermas" && (<>', '<div className="h-8" />');
-  const ACCIONES = ['actions.producirYCongelar', 'actions.registrarMermaCuarto', 'actions.prepararDesdeBarra', 'actions.traspasoEntreUbicaciones', 'actions.sacarDeCuartoFrio'];
+  const ACCIONES = ['actions.producirYCongelar', 'actions.registrarMermaCuarto', 'actions.prepararDesdeBarra', 'actions.desglosarBarra', 'actions.traspasoEntreUbicaciones', 'actions.sacarDeCuartoFrio'];
 
   it('Producción conserva su resumen general (Producido hoy · En congeladores · Merma hoy) con la misma derivación', () => {
     expect(v).toMatch(/const kpis = \[\s*\{ label: "Producido hoy", value: totalHoy\.toLocaleString\(\) \},\s*\{ label: "En congeladores", value: totalEnCuartos\.toLocaleString\(\) \},\s*\{ label: "Merma hoy", value: mermaHoy \},\s*\];/);

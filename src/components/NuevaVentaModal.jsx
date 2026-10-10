@@ -7,7 +7,7 @@ import { sucursalesDeCliente, sucursalPrincipal, precioParaSucursal, resolverEnt
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
 import { stockDisponiblePorSku } from '../utils/stock';
 import { BARRA_SKU } from '../data/preparacionBarraLogic';
-import { productosParaVenta, barraPorOmision, resolverBarra, resumenBarra, faltaPreparado } from '../data/barraVentaLogic';
+import { productosParaVenta, hayMediaBarra, barraPorOmision, resolverBarra, resumenBarra, faltaPreparado } from '../data/barraVentaLogic';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 const DireccionForm = lazy(() => import('./ui/DireccionForm'));
@@ -236,14 +236,15 @@ export default function NuevaVentaModal({
     return u;
   }));
   // La venta captura la barra (entera o media) y su entrega; la línea real es la de la bolsa preparada.
+  const hayMedia = hayMediaBarra(data?.productos);
   const aplicarBarra = (l, barra) => {
-    const r = resolverBarra(barra);
+    const r = resolverBarra(barra, { hayMedia });
     return { ...l, barra, sku: r.sku || '', qty: r.sku ? r.qty : barra.cant, precio: r.sku ? getPrice(form.clienteId, r.sku, form.sucursalId || null) : 0 };
   };
   const updateBarra = (idx, patch) => setLines(prev => prev.map((l, i) => {
     if (i !== idx || !l.barra) return l;
     const b = { ...l.barra, ...patch };
-    if (b.medida === 'media' && b.entrega === 'sin') b.entrega = 'picada'; // la media barra sin preparar aún no existe
+    if (b.medida === 'media' && b.entrega === 'sin' && !hayMedia) b.entrega = 'picada'; // sin la migración 129 la media barra sin preparar no existe
     return aplicarBarra(l, b);
   }));
   const removeLine = (idx) => setLines(prev => prev.filter((_, i) => i !== idx));
@@ -318,7 +319,7 @@ export default function NuevaVentaModal({
       } else {
         for (const l of lines) {
           if (l.barra) {
-            const r = resolverBarra(l.barra);
+            const r = resolverBarra(l.barra, { hayMedia });
             const falta = r.bloqueo || faltaPreparado(r, getStock);
             if (falta) { e.productos = falta; break; }
           }
@@ -695,7 +696,7 @@ export default function NuevaVentaModal({
               </div>
               <div className="grid grid-cols-3 gap-2">
                 {[['sin', 'Sin preparar'], ['picada', 'Picada'], ['triturada', 'Triturada']].map(([k, t]) => {
-                  const off = k === 'sin' && l.barra.medida === 'media';
+                  const off = k === 'sin' && l.barra.medida === 'media' && !hayMedia;
                   return (
                     <button key={k} type="button" disabled={off} onClick={() => updateBarra(i, { entrega: k })}
                       className={`min-h-[40px] rounded-xl border-2 text-xs font-semibold ${off ? 'border-slate-100 bg-slate-50 text-slate-300' : l.barra.entrega === k ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}>{t}</button>
@@ -704,7 +705,7 @@ export default function NuevaVentaModal({
               </div>
               <p className="text-[11px] text-slate-500 ml-1">
                 {resumenBarra(l.barra)}
-                {' · '}Preparado: {getStock('HIP-25K')} picada · {getStock('HIT-25K')} triturada
+                {' · '}Preparado: {getStock('HIP-25K')} picada · {getStock('HIT-25K')} triturada{hayMedia ? ` · ${getStock('HIB-25K')} medias` : ''}
                 {l.barra.medida === 'media' ? ' · La otra mitad la decide Producción' : ''}
               </p>
             </div>
