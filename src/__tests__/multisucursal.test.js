@@ -1,7 +1,8 @@
 // multisucursal.test.js — 123: lógica pura de sucursales por cliente.
 import { describe, it, expect } from 'vitest';
 import {
-  sucursalesDeCliente, sucursalPrincipal, clienteConVariasSucursales, precioParaSucursal,
+  sucursalesDeCliente,
+  clientesVigentes, sucursalPrincipal, clienteConVariasSucursales, precioParaSucursal,
   preciosParaLineas, resolverEntrega, etiquetaClienteSucursal, buildSucursalPayload, validarSucursal,
 } from '../data/sucursalLogic';
 import { buildUpdateFieldsOrden, buildOrdenPayload } from '../data/ordenLogic';
@@ -123,5 +124,19 @@ describe('orden con sucursal (ordenLogic) y realtime', () => {
   });
   it('sucursales es tabla de núcleo del realtime', () => {
     expect(grupoParaTabla('sucursales')).toBe('core');
+  });
+});
+
+describe('clientesVigentes (selector de precio especial)', () => {
+  const clientes = [
+    { id: 115, nombre: 'LEVIN', tipo: 'Comercial', estatus: 'Activo', fusionado_en: null },
+    { id: 109, nombre: 'LEVIN JARDINES', tipo: 'Comercial', estatus: 'Inactivo', fusionado_en: 115 },
+    { id: 7, nombre: 'Cerrado', tipo: 'Comercial', estatus: 'Inactivo', fusionado_en: null },
+    { id: 1, nombre: 'Público en general', tipo: 'General', estatus: 'Activo' },
+    { id: 8, nombre: 'Camel', tipo: 'Comercial', estatus: 'Activo', fusionadoEn: null },
+  ];
+  it('excluye General, Inactivos y fusionados como sucursal', () => {
+    expect(clientesVigentes(clientes).map(c => c.id)).toEqual([115, 8]);
+    expect(clientesVigentes(null)).toEqual([]);
   });
 });

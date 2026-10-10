@@ -26,6 +26,18 @@ export function sucursalesDeCliente(sucursales, clienteId, { incluirInactivas = 
     });
 }
 
+/**
+ * Clientes a los que se les puede asignar algo nuevo (precio especial, venta):
+ * excluye el tipo General, los Inactivos y los fusionados como sucursal de otro
+ * cliente (123: el absorbido conserva su fila con `fusionado_en`, pero ya no es
+ * un cliente; sus precios se capturan por sucursal en el cliente destino).
+ */
+export function clientesVigentes(clientes) {
+  return (clientes || []).filter(c =>
+    c && c.tipo !== 'General' && s(c.estatus) !== 'Inactivo' && !(c.fusionadoEn ?? c.fusionado_en)
+  );
+}
+
 /** Sucursal principal del cliente (o null). */
 export function sucursalPrincipal(sucursales, clienteId) {
   return sucursalesDeCliente(sucursales, clienteId, { incluirInactivas: true })
