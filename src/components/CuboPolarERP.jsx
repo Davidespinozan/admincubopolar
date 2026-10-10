@@ -253,7 +253,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
   }, [view, nav]);
 
   const toggleArea = (areaId) => {
-    setAreasExpandidas(prev => ({ ...prev, [areaId]: !prev[areaId] }));
+    setAreasExpandidas(prev => ({ ...prev, [areaId]: !(prev[areaId] ?? areaId === 'mi-espacio') }));
   };
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
 
@@ -408,8 +408,9 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
         </div>
 
         <nav className="flex-1 overflow-y-auto px-4 py-4">
-          {nav.areas.map(area => {
-            const expandida = areasExpandidas[area.id];
+          {[...nav.areas, ...(miEspacio.length ? [{ id: 'mi-espacio', label: 'Mi espacio', items: miEspacio }] : [])].map(area => {
+            // "Mi espacio" se pliega igual que las áreas; nace abierta.
+            const expandida = areasExpandidas[area.id] ?? area.id === 'mi-espacio';
             return (
               <div key={area.id} className="mb-3">
                 <button
@@ -429,7 +430,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
                   <div className="space-y-1">
                     {area.items.map(item => {
                       const Ic = Icons[item.icon] || Icons.Package;
-                      const active = modulo === item.id;
+                      const active = (area.id === 'mi-espacio' ? view : modulo) === item.id;
                       return (
                         <button key={item.id} onClick={() => go(item.id)}
                           className={`w-full rounded-[18px] px-3 py-2.5 text-left text-sm transition-all ${active ? 'bg-blue-50 text-blue-900 shadow-[0_16px_28px_rgba(2,10,15,0.16)]' : 'text-slate-300/80 hover:bg-white/5 hover:text-white'}`}>
@@ -448,26 +449,6 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
               </div>
             );
           })}
-          {miEspacio.length > 0 && (
-            <div className="mb-3">
-              <p className="mb-2 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">Mi espacio</p>
-              <div className="space-y-1">
-                {miEspacio.map(item => {
-                  const Ic = Icons[item.icon] || Icons.Package;
-                  const active = view === item.id;
-                  return (
-                    <button key={item.id} onClick={() => go(item.id)}
-                      className={`w-full rounded-[18px] px-3 py-2.5 text-left text-sm transition-all ${active ? 'bg-blue-50 text-blue-900 shadow-[0_16px_28px_rgba(2,10,15,0.16)]' : 'text-slate-300/80 hover:bg-white/5 hover:text-white'}`}>
-                      <span className="flex items-center gap-3">
-                        <span className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-[14px] ${active ? 'bg-blue-600 text-white' : 'bg-white/5 text-slate-300'}`}><Ic /></span>
-                        <span className="truncate flex-1">{item.label}</span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </nav>
 
         {onViewAs && nav.chrome.verComo && (

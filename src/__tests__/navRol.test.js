@@ -199,7 +199,7 @@ describe('B: shell compartido y ruteo', () => {
     expect(shell).toMatch(/const viendoComo = !!rolVista && rolVista !== user\?\.rol;/);
     expect(shell).toMatch(/const nav = useMemo\(\(\) => \(viendoComo \? navParaRol\(rolVista\) : navParaUsuario\(user\)\), \[viendoComo, rolVista, user\]\);/);
     expect(shell).not.toMatch(/\bconst AREAS = \[/);
-    expect(shell).toMatch(/\{nav\.areas\.map\(area => \{/);
+    expect(shell).toMatch(/\{\[\.\.\.nav\.areas, .*\]\.map\(area => \{/);
     // Mobile-first (2026-10-09): el drawer recorre las áreas del rol + "Mi espacio".
     expect(shell).toMatch(/\{\[\.\.\.nav\.areas, \.\.\.\(miEspacio\.length \? \[\{ id: 'mi-espacio', label: 'Mi espacio', items: miEspacio \}\] : \[\]\)\]\.map\(area => \(/);
     expect(shell).toMatch(/onViewAs && nav\.chrome\.verComo &&/);
@@ -229,7 +229,7 @@ describe('B: shell compartido y ruteo', () => {
     expect(shell).toMatch(/useState\(\(\) => vistaDeHash\(window\.location\.hash\) \|\| nav\.inicio\)/);
     // B3.6: título, área y entrada activa del menú salen del módulo dueño de la vista.
     expect(shell).toMatch(/const modulo = moduloDeVista\(nav, view\) \|\| view;\s*const current = ALL_ITEMS\.find\(n => n\.id === modulo\) \|\| \[MODULO_MI_ASISTENCIA, MODULO_MIS_ACTIVIDADES, MODULO_MI_CUENTA\]\.find\(n => n\.id === modulo\);/);
-    expect(shell).toMatch(/const active = modulo === item\.id;/);
+    expect(shell).toMatch(/const active = \(area\.id === 'mi-espacio' \? view : modulo\) === item\.id;/);
     // alias y primer sync sin paso extra en el historial
     expect(shell).toMatch(/if \(!window\.location\.hash \|\| vistaDeHash\(window\.location\.hash\) === view\) \{\s*window\.history\.replaceState/);
     expect(shell).toMatch(/data-testid="dashboard-shell"/);
