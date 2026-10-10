@@ -379,6 +379,31 @@ no usa todavía los contratos nuevos. Tarjeta: `docs/sistema/nomina.md`.
 - **No incluye:** comisiones calculadas con ventas, puntualidad automática con el reloj checador, reverso de un periodo pagado,
   recibo imprimible.
 
+## Alta de cliente por el chofer (127) y media barra (129) — 2026-10-10 — MIGRATIONS APPLIED TO PRODUCTION / VALIDATED LOCALLY / FRONTEND PUSHED
+**127 y 129 aplicadas por el dueño en el SQL Editor (2026-10-10); frontend en `main` (127: `6628b8e`; venta de barra: `c4e2389`;
+129: `482a697`). Gate local: suites 127 (22) y 129 (31) en verde, y 115, 106, 092 y 093 en verde con 129 aplicada. Verificación en
+producción de solo lectura: producto `HIB-25K` ($60, sin empaque, stock 0) presente; permisos de las funciones de 129 pendientes de
+pegar por el dueño. Falta la prueba real del desglose y del alta de cliente por el chofer tras el deploy.**
+- **127 `crear_cliente_chofer(p_datos)`:** solo Chofer activo (o service_role / contexto de contrato); exige nombre, RFC nominativo
+  (12–13 caracteres, no XAXX/XEXX), régimen SAT de 3 dígitos, uso de CFDI, CP de 5 dígitos y correo; el cliente nace Activo, sin saldo ni
+  crédito; idempotente por RFC (devuelve el existente sin modificarlo); auditado. Sin escritura REST nueva: el Chofer sigue sin INSERT/UPDATE
+  en `clientes`. Pantalla: "Registrar cliente nuevo" en la venta rápida con factura. Reversión: DROP FUNCTION (los clientes se conservan).
+- **Venta de barra (frontend, sin migración):** Nueva venta captura "Barra entera / Media barra" y la entrega (sin preparar, picada o
+  triturada); HIP y HIT ya no se ofrecen como productos sueltos y su stock se ve junto a la elección. Las líneas siguen por SKU: entera
+  picada o triturada = 2 bolsas ($60 c/u), media = 1 bolsa; el chofer nunca prepara. "Nueva venta" tiene canal A domicilio / Mostrador
+  (Mostrador abre el cobro al crear; sin la calculadora de cambio). No se tocaron `completar_venta_directa` ni `crear_orden`.
+- **129 media barra:** producto `HIB-25K` ($60, Producto Terminado, sin empaque; el stock vive en `cuartos_frios.stock`);
+  `partir_barra(op, cuarto, barras)` (Admin / Producción; barra −N, media +2N, fila `produccion` tipo `Partido`, sin costo);
+  `revertir_partir_barra` (solo Admin; falla si las medias ya se vendieron o prepararon); `registrar_preparacion_media(op, salida, cuarto,
+  medias)` (media → 1 bolsa de picada o triturada, consume 1 empaque; fila `Preparacion` con `input_sku = HIB-25K`, reversible con
+  `revertir_preparacion_barra` de 115; la conciliación de empaque la cuenta sin cambios); `registrar_produccion` rechaza `HIB-25K`.
+  Decisión del dueño: **Producción decide** qué queda de cada mitad (media barra, picada o triturada) al desglosar; Ventas no prepara.
+  Pantalla: Producción → Preparar → "Desglosar barra". Las filas `Partido` y `Preparacion` no cuentan como "producido hoy".
+- **Residuales:** "Editar venta" y la venta rápida del chofer siguen listando HIP/HIT/HIB tal cual; el desglose son varias llamadas
+  atómicas e idempotentes (si una falla a medias, reintentar con los mismos ids continúa); no hay aviso a Producción de pedidos que
+  necesitan preparación; `registrar_preparacion_barra` (115, barra entera → 2 bolsas iguales) no cambia.
+- **Numeración:** 128 es nómina (otra sesión); 127 y 129 son de esta fase.
+
 ## Go-live (puesta en operación) — 2026-10-06
 Go-Live Readiness (auditoría de solo lectura): **CONDITIONAL GO** · 3 GL-BLOCKERS · 16 tareas
 previas. CUBOPOLAR aún no se pone oficialmente a operar en la empresa (los pocos datos de
