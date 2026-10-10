@@ -14,6 +14,11 @@ BEGIN
   CREATE TEMP TABLE IF NOT EXISTS t100_movs (id BIGINT);
   DELETE FROM t100_movs;
   INSERT INTO t100_movs SELECT movimiento_id FROM nomina_periodos WHERE creado_por = 'Admin T100' AND movimiento_id IS NOT NULL;
+  -- 128: el desglose de los recibos de prueba (en modo replica el ON DELETE CASCADE no corre).
+  IF to_regclass('public.nomina_recibo_lineas') IS NOT NULL THEN
+    DELETE FROM nomina_recibo_lineas WHERE recibo_id IN (SELECT id FROM nomina_recibos
+      WHERE periodo_id IN (SELECT id FROM nomina_periodos WHERE creado_por = 'Admin T100') OR empleado_id BETWEEN 10001 AND 10009);
+  END IF;
   DELETE FROM nomina_recibos WHERE periodo_id IN (SELECT id FROM nomina_periodos WHERE creado_por = 'Admin T100') OR empleado_id BETWEEN 10001 AND 10009;
   DELETE FROM nomina_periodos WHERE creado_por = 'Admin T100';
   DELETE FROM movimientos_contables WHERE id IN (SELECT id FROM t100_movs) OR concepto LIKE 'T100%';

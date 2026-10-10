@@ -59,7 +59,8 @@ contabilidad o autenticación/RLS exigen análisis explícito de invariantes y d
 | Producción, empaque, compras de empaque, costo de empaque | `docs/sistema/produccion-empaque.md` |
 | Identidad, roles, RLS, grants, contratos, idempotencia, fecha de negocio | `docs/sistema/plataforma.md` |
 | Dinero: ingresos, cobros, CxC/CxP, caja, reportes, costos | `docs/sistema/finanzas.md` |
-| Otro subsistema (rutas, cuartos fríos, devoluciones, nómina, órdenes) | Aún sin tarjeta: usa el encabezado de sus migraciones y sus suites, citados en STATUS |
+| Nómina: periodos, recibos, bonos, comisiones, descuentos y préstamos | `docs/sistema/nomina.md` |
+| Otro subsistema (rutas, cuartos fríos, devoluciones, órdenes) | Aún sin tarjeta: usa el encabezado de sus migraciones y sus suites, citados en STATUS |
 
 La historia detallada son las migraciones (`supabase/NNN_*.sql`, su encabezado resume cada
 fase), las suites (`supabase/tests/`) y `git log`. Se consultan solo cuando la tarea lo pide.

@@ -351,6 +351,22 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## Conceptos de nómina (NOM-1, mig 128) — 2026-10-09 — IMPLEMENTED LOCALLY / MIGRATION PENDING
+**La migración 128 NO está aplicada en producción y el frontend no está desplegado.** Tarjeta: `docs/sistema/nomina.md`.
+- **Pedido del dueño:** que Admin dé de alta los bonos, comisiones y descuentos y a quién aplican (ejemplo: puntualidad $200 por
+  semana), en vez de teclearlos persona por persona cada semana. Diseño delegado ("que quede lo mejor posible").
+- **Qué agrega:** catálogo `nomina_conceptos` (monto fijo o % del salario diario; todos / un área / personas; monto propio y tope
+  por persona), desglose `nomina_recibo_lineas` (foto por renglón) y los contratos `guardar_concepto_nomina`,
+  `guardar_recibo_nomina`, `aplicar_conceptos_nomina`, `nomina_acumulados`; `generar_recibos_nomina` propone los conceptos al crear.
+- **Qué NO cambia (md5 idénticos a producción antes y después):** `pagar_nomina`, `nomina_recalcular_periodo`, las guardas y los
+  20 constraints de 100. Las casillas del recibo pasan a ser la suma de sus renglones; `editar_recibo_nomina` conserva firma y respuesta.
+- **Producción antes de 128 (solo lectura, 2026-10-09):** 0 periodos y 0 recibos (tras la limpieza de datos del dueño); md5 de
+  `generar_recibos_nomina` `f829cbdd…` y `editar_recibo_nomina` `7a4bbab5…` = base local (paridad en el runner).
+- **Activación (pendiente de autorización):** 1) aplicar 128 (aditiva, compatible con el frontend desplegado) → 2) verificación de
+  solo lectura → 3) push del frontend → 4) bundle vivo. Sin migración de contención: las tablas nuevas nacen sin DML por API.
+- **No incluye:** comisiones calculadas con ventas, puntualidad automática con el reloj checador, reverso de un periodo pagado,
+  recibo imprimible.
+
 ## Go-live (puesta en operación) — 2026-10-06
 Go-Live Readiness (auditoría de solo lectura): **CONDITIONAL GO** · 3 GL-BLOCKERS · 16 tareas
 previas. CUBOPOLAR aún no se pone oficialmente a operar en la empresa (los pocos datos de

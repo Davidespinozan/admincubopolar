@@ -42,7 +42,7 @@ import { alertaEsperanRuta } from './avisosLogic';
 import { buildPreparacionArgs, mensajeErrorPreparacion } from './preparacionBarraLogic';
 import { normalizarReporteFinanciero } from './finanzasLogic';
 import { fechaElegida, camposFechaCosto, buildPagarCxPArgs } from './fechaNegocioLogic';
-import { buildEditarReciboArgs } from './nominaLogic';
+import { buildEditarReciboArgs, buildGuardarReciboArgs, buildGuardarConceptoArgs } from './nominaLogic';
 import { diaNegocio } from '../utils/fechas';
 import { buildGuardarUsuarioArgs, mensajeErrorUsuario } from './usuariosLogic';
 
@@ -100,7 +100,7 @@ const EMPTY = {
   alertas: [], facturacionPendiente: [], conciliacion: [],
   auditoria: [], usuarios: [], umbrales: [], pagos: [],
   comodatos: [], leads: [], empleados: [], nominaPeriodos: [], actividadesAbiertas: [],
-  nominaRecibos: [], movContables: [], mermas: [], cuentasPorCobrar: [],
+  nominaRecibos: [], nominaConceptos: [], nominaConceptoEmpleados: [], nominaReciboLineas: [], nominaAcumulados: [], movContables: [], mermas: [], cuentasPorCobrar: [],
   cuentasPorPagar: [], pagosProveedores: [],
   costosFijos: [], costosHistorial: [],
   camiones: [],
@@ -215,7 +215,29 @@ export function useSupaStore(userId, userName, userRol) {
           safeRows(supabase.from('nomina_periodos').select('*').order('id', { ascending: false })),
           safeRows(supabase.from('nomina_recibos').select('*').order('id', { ascending: false })),
         ]);
-        setData(prev => ({ ...prev, nominaPeriodos: nomP.map(toCamel), nominaRecibos: nomR.map(toCamel) }));
+        // 128 (NOM-1): catálogo de conceptos, a quién aplican y el desglose de los
+        // recibos de las 12 semanas más recientes (lo que la pantalla muestra).
+        const recientes = new Set(nomP.slice(0, 12).map(p => p.id));
+        const idsRecibos = nomR.filter(r => recientes.has(r.periodo_id)).map(r => r.id);
+        const [nomC, nomCE, nomL] = await Promise.all([
+          safeRows(supabase.from('nomina_conceptos').select('*').order('id', { ascending: true })),
+          safeRows(supabase.from('nomina_concepto_empleados').select('*')),
+          idsRecibos.length
+            ? safeRows(supabase.from('nomina_recibo_lineas').select('*').in('recibo_id', idsRecibos).order('id', { ascending: true }).limit(5000))
+            : Promise.resolve([]),
+        ]);
+        // Avance de los topes (préstamos): solo si alguien tiene uno.
+        let acumulados = [];
+        if (nomCE.some(a => a.limite_total != null)) {
+          const { data: acu, error: eAcu } = await supabase.rpc('nomina_acumulados');
+          if (eAcu) console.warn('[nomina] nomina_acumulados:', eAcu.message);
+          else if (Array.isArray(acu)) acumulados = acu;
+        }
+        setData(prev => ({
+          ...prev, nominaPeriodos: nomP.map(toCamel), nominaRecibos: nomR.map(toCamel),
+          nominaConceptos: nomC.map(toCamel), nominaConceptoEmpleados: nomCE.map(toCamel), nominaReciboLineas: nomL.map(toCamel),
+          nominaAcumulados: acumulados.map(toCamel),
+        }));
         return;
       }
       case 'cuentas_por_pagar': {
@@ -3323,6 +3345,58 @@ export function useSupaStore(userId, userName, userRol) {
         }
         t()?.success('Recibo actualizado');
         rf();
+      },
+
+      // 128 (NOM-1) — guardar_recibo_nomina: días, séptimo y el desglose
+      // completo del recibo (renglones de catálogo y manuales) en una
+      // operación; el servidor guarda la foto y recalcula.
+      guardarReciboNomina: async (reciboId, campos, lineas, salarioDiario = null) => {
+        const built = buildGuardarReciboArgs(reciboId, campos, lineas, salarioDiario);
+        if (built.error) { t()?.error(built.error); return { error: built.error, message: built.error }; }
+        const { error } = await supabase.rpc('guardar_recibo_nomina', built.args);
+        if (error) {
+          console.warn('[guardarReciboNomina] rpc:', error.message);
+          const msg = traducirError(error, 'Error al guardar el recibo');
+          t()?.error(msg);
+          return { error: msg, message: msg };
+        }
+        t()?.success('Recibo guardado');
+        rf();
+      },
+
+      // aplicar_conceptos_nomina: agrega al borrador los conceptos del catálogo
+      // que le falten (creados o cambiados después de generar los recibos).
+      aplicarConceptosNomina: async (periodoId) => {
+        const { data, error } = await supabase.rpc('aplicar_conceptos_nomina', { p_periodo_id: Number(periodoId) });
+        if (error) {
+          console.warn('[aplicarConceptosNomina] rpc:', error.message);
+          const msg = traducirError(error, 'Error al aplicar los conceptos');
+          t()?.error(msg);
+          return { error: msg, message: msg };
+        }
+        const k = Number(data?.lineas || 0);
+        if (k > 0) t()?.success(`${k} concepto${k === 1 ? '' : 's'} agregado${k === 1 ? '' : 's'} en ${Number(data?.recibos || 0)} recibo${Number(data?.recibos || 0) === 1 ? '' : 's'}`);
+        else t()?.info('Los recibos ya tienen todos sus conceptos');
+        rf();
+        return { data };
+      },
+
+      // guardar_concepto_nomina: alta y edición del catálogo (Admin). Queda en
+      // la bitácora del Dueño. El servidor valida todo otra vez.
+      guardarConceptoNomina: async (conceptoId, form, empleados) => {
+        const built = buildGuardarConceptoArgs(conceptoId, form, empleados);
+        if (built.error) { t()?.error(built.error); return { error: built.error, message: built.error }; }
+        const { data, error } = await supabase.rpc('guardar_concepto_nomina', built.args);
+        if (error) {
+          console.warn('[guardarConceptoNomina] rpc:', error.message);
+          const msg = error.code === '23505' ? 'Ya existe un concepto activo con ese nombre' : traducirError(error, 'Error al guardar el concepto');
+          t()?.error(msg);
+          return { error: msg, message: msg };
+        }
+        if (data?.sin_cambios) t()?.info('Sin cambios');
+        else t()?.success(data?.creado ? 'Concepto creado' : 'Concepto actualizado');
+        rf();
+        return { data };
       },
 
       // Pagar nómina — 098/100: contrato pagar_nomina. Egreso, costo de nómina

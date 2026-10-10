@@ -129,13 +129,20 @@ export function buildGuardarUsuarioArgs({ id, nombre, rol, estatus, accesosExtra
 
 const ETIQUETA_TABLA = { usuarios: 'Usuarios', productos: 'Catálogo', precios_esp: 'Precios especiales', cuentas_por_pagar: 'Cuentas por pagar',
   empleados: 'Empleados', costos_fijos: 'Costos fijos', costos_historial: 'Gastos', movimientos_contables: 'Movimientos', configuracion_empresa: 'Datos de la empresa',
-  clientes: 'Clientes', cuartos_frios: 'Congeladores', ordenes: 'Ventas', rutas: 'Rutas', camiones: 'Camiones' };
+  clientes: 'Clientes', cuartos_frios: 'Congeladores', ordenes: 'Ventas', rutas: 'Rutas', camiones: 'Camiones', nomina_conceptos: 'Conceptos de nómina' };
 const ETIQUETA_CAMPO = { precio: 'precio', salario_diario: 'salario diario', rol: 'rol', estatus: 'estatus', accesos_extra: 'accesos', nombre: 'nombre',
-  monto: 'monto', saldo_pendiente: 'saldo', limite_credito: 'límite de crédito', credito_autorizado: 'crédito autorizado', total: 'total', debe_cambiar_password: 'contraseña' };
+  monto: 'monto', saldo_pendiente: 'saldo', limite_credito: 'límite de crédito', credito_autorizado: 'crédito autorizado', total: 'total', debe_cambiar_password: 'contraseña',
+  aplica_a: 'a quién aplica', personas: 'personas', activo: 'activo', calculo: 'cálculo', vigente_desde: 'desde', vigente_hasta: 'hasta' };
 const ACCION = { INSERT: 'creó', UPDATE: 'cambió', DELETE: 'borró', CONTRATO: 'cambió' };
 const corto = (v) => {
   if (v === null || v === undefined || v === '') return '—';
+  // Personas de un concepto de nómina: nombres (con su monto o tope si lo tienen).
+  if (Array.isArray(v) && v.length && typeof v[0] === 'object') {
+    const t = v.map(p => `${p?.nombre || '?'}${p?.excluido ? ' (no)' : p?.limite_total != null ? ` (tope ${p.limite_total})` : p?.monto != null ? ` (${p.monto})` : ''}`).join(', ');
+    return t.length > 60 ? t.slice(0, 59) + '…' : t;
+  }
   if (Array.isArray(v)) return v.length ? v.join(', ') : 'ninguno';
+  if (typeof v === 'boolean') return v ? 'sí' : 'no';
   if (typeof v === 'object') return '…';
   const t = String(v);
   return t.length > 28 ? t.slice(0, 27) + '…' : t;
@@ -146,7 +153,10 @@ export function describirCambio(row) {
   const tabla = String(row?.tabla || '');
   const antes = row?.antes && typeof row.antes === 'object' ? row.antes : {};
   const despues = row?.despues && typeof row.despues === 'object' ? row.despues : {};
-  const campos = Array.isArray(row?.cambios) && row.cambios.length ? row.cambios : (row?.accion === 'CONTRATO' ? Object.keys(despues) : []);
+  // Alta de un concepto de nómina (contrato sin "antes"): lo que importa es cuánto y a quién.
+  const altaConcepto = tabla === 'nomina_conceptos' && row?.accion === 'CONTRATO' && !row?.antes;
+  const campos = Array.isArray(row?.cambios) && row.cambios.length ? row.cambios
+    : altaConcepto ? ['monto', 'aplica_a', 'personas'] : (row?.accion === 'CONTRATO' ? Object.keys(despues) : []);
   const cambios = campos.filter(k => !['id', 'created_at', 'auth_id'].includes(k)).slice(0, 4)
     .map(k => ({ campo: ETIQUETA_CAMPO[k] || k.replace(/_/g, ' '), antes: corto(antes[k]), despues: corto(despues[k]) }));
   const quien = despues.nombre || antes.nombre || despues.folio || antes.folio || despues.sku || antes.sku || despues.concepto || antes.concepto || (row?.registro_id ? `#${row.registro_id}` : '');
@@ -156,8 +166,8 @@ export function describirCambio(row) {
     at: row?.at,
     modulo: ETIQUETA_TABLA[tabla] || tabla,
     actor: row?.actor || 'Sistema',
-    titulo: `${row?.actor || 'Sistema'} ${ACCION[row?.accion] || 'cambió'} ${quien}`.trim(),
-    detalle: row?.accion === 'CONTRATO' && row?.detalle && row.detalle !== 'guardar_usuario' ? row.detalle : null,
+    titulo: `${row?.actor || 'Sistema'} ${altaConcepto ? 'creó' : ACCION[row?.accion] || 'cambió'} ${quien}`.trim(),
+    detalle: row?.accion === 'CONTRATO' && row?.detalle && !['guardar_usuario', 'guardar_concepto_nomina'].includes(row.detalle) ? row.detalle : null,
     cambios,
     importante: row?.accion === 'DELETE' || campos.some(k => sensibles.includes(k)),
   };

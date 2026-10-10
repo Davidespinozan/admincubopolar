@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_') && !f.startsWith('123_') && !f.startsWith('124_') && !f.startsWith('125_') && !f.startsWith('127_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_') && !f.startsWith('123_') && !f.startsWith('124_') && !f.startsWith('125_') && !f.startsWith('127_') && !f.startsWith('128_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -2485,6 +2485,10 @@ async function conc100() {
     CREATE TEMP TABLE IF NOT EXISTS c100_movs (id BIGINT); DELETE FROM c100_movs;
     INSERT INTO c100_movs SELECT movimiento_id FROM nomina_periodos WHERE creado_por LIKE 'AdminC100-%' AND movimiento_id IS NOT NULL;
     DELETE FROM costos_historial WHERE movimiento_id IN (SELECT id FROM c100_movs);
+    DO $c100$ BEGIN IF to_regclass('public.nomina_recibo_lineas') IS NOT NULL THEN
+      DELETE FROM nomina_recibo_lineas WHERE recibo_id IN (SELECT id FROM nomina_recibos
+        WHERE periodo_id IN (SELECT id FROM nomina_periodos WHERE creado_por LIKE 'AdminC100-%') OR empleado_id BETWEEN 10061 AND 10069);
+    END IF; END $c100$;
     DELETE FROM nomina_recibos WHERE periodo_id IN (SELECT id FROM nomina_periodos WHERE creado_por LIKE 'AdminC100-%') OR empleado_id BETWEEN 10061 AND 10069;
     DELETE FROM nomina_periodos WHERE creado_por LIKE 'AdminC100-%';
     DELETE FROM movimientos_contables WHERE id IN (SELECT id FROM c100_movs);
@@ -4789,6 +4793,143 @@ console.log('── PRUEBAS 127');
   if (rr.aborted) { console.log('RESULTADO: FALLÓ (127)'); process.exit(1); }
 }
 
+// ═══ 128 — NOM-1: conceptos de nómina (catálogo, desglose por recibo, tope acumulado) ═══
+{
+  // Paridad con producción (md5 leídos en solo lectura el 2026-10-09; 0 periodos y 0 recibos tras la limpieza).
+  const PROD128 = { generar_recibos_nomina: 'f829cbdd17d3b6985f4f936a4c96b55f', editar_recibo_nomina: '7a4bbab59e5c9e9d4ad6205f67b5dfd0',
+    pagar_nomina: 'c4504312dd00137c00d570e4bb66ed1d', nomina_recalcular_periodo: 'ac3cc100044ac544a0b4433cb1a6fa43',
+    nomina_recibos_guard: '2006190420f139b89dfb2a1b9567bf96', nomina_periodos_guard: '252038791b42ec73b5383826f54eb094' };
+  const loc = Object.fromEntries((await c.query(`SELECT p.proname, md5(pg_get_functiondef(p.oid)) AS m FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = ANY($1)`, [Object.keys(PROD128)])).rows.map(r => [r.proname, r.m]));
+  const okP = Object.entries(PROD128).every(([k, v]) => loc[k] === v)
+    && (await c.query(`SELECT to_regclass('public.nomina_conceptos') IS NULL AND to_regclass('public.nomina_recibo_lineas') IS NULL
+        AND to_regprocedure('public.guardar_recibo_nomina(bigint,integer,boolean,jsonb)') IS NULL AS a`)).rows[0].a;
+  console.log(`  NOM1_PARITY_CHECK[pre-128 == producción]: ${okP ? 'PASS' : 'FAIL ' + JSON.stringify(loc)}`);
+  if (!okP) process.exit(1);
+}
+for (const k of [1, 2]) {
+  console.log(`── aplicar 128 (${k}/2${k === 2 ? ', idempotencia' : ''})`);
+  const rr = await runFile(c, path.join(ROOT, 'supabase', '128_conceptos_nomina.sql'), { stopOnError: true });
+  if (rr.aborted) process.exit(1);
+}
+if (!(await rlsCheck('tras 128 (sin deuda)', []))) { console.log('RESULTADO: FALLÓ (RLS_CHECK 128)'); process.exit(1); }
+{
+  // 128 no toca el pago, los totales del periodo ni las guardas de 100.
+  const INTACTAS = { pagar_nomina: 'c4504312dd00137c00d570e4bb66ed1d', nomina_recalcular_periodo: 'ac3cc100044ac544a0b4433cb1a6fa43',
+    nomina_recibos_guard: '2006190420f139b89dfb2a1b9567bf96', nomina_periodos_guard: '252038791b42ec73b5383826f54eb094' };
+  const loc = Object.fromEntries((await c.query(`SELECT p.proname, md5(pg_get_functiondef(p.oid)) AS m FROM pg_proc p
+      WHERE p.pronamespace = 'public'::regnamespace AND p.proname = ANY($1)`, [Object.keys(INTACTAS)])).rows.map(r => [r.proname, r.m]));
+  const ok = Object.entries(INTACTAS).every(([k, v]) => loc[k] === v);
+  console.log(`  NOM1_128[pagar_nomina, totales del periodo y guardas de 100 sin cambio]: ${ok ? 'PASS' : 'FAIL ' + JSON.stringify(loc)}`);
+  if (!ok) process.exit(1);
+}
+console.log('── PRUEBAS 128');
+for (const f of ['128_conceptos_nomina_test.sql', '100_nomina_canonica_test.sql']) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: true });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${f} tras 128)`); process.exit(1); }
+}
+await reruns090('128', ['072']);
+for (const [etq, f] of [...SUITES_123, ['123', '123_multisucursal_test.sql'], ['127', '127_chofer_alta_cliente_test.sql'], ['111', '111_operaciones_cfdi_test.sql']]) {
+  const rr = await runFile(c, path.join(ROOT, 'supabase/tests', f), { stopOnError: true, echo: false });
+  if (rr.aborted) { console.log(`RESULTADO: FALLÓ (${etq} tras 128)`); process.exit(1); }
+  console.log(`  ${etq} tras 128: PASS`);
+}
+async function conc128() {
+  console.log('── 128 CONCURRENCIA (dos conexiones reales)');
+  const sleep = ms => new Promise(res => setTimeout(res, ms));
+  let okAll = true;
+  const ok = (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) okAll = false; };
+  const n = async (sql, params) => Number(Object.values((await c.query(sql, params)).rows[0])[0]);
+  const SUB = (k) => 'a1280000-0000-0000-0000-0000000000' + String(k).padStart(2, '0');
+  const limpiar = `BEGIN; SET LOCAL session_replication_role = replica;
+    CREATE TEMP TABLE IF NOT EXISTS c128_movs (id BIGINT); DELETE FROM c128_movs;
+    INSERT INTO c128_movs SELECT movimiento_id FROM nomina_periodos WHERE creado_por LIKE 'AdminC128-%' AND movimiento_id IS NOT NULL;
+    DELETE FROM costos_historial WHERE movimiento_id IN (SELECT id FROM c128_movs);
+    DELETE FROM nomina_recibo_lineas WHERE recibo_id IN (SELECT id FROM nomina_recibos
+      WHERE periodo_id IN (SELECT id FROM nomina_periodos WHERE creado_por LIKE 'AdminC128-%') OR empleado_id BETWEEN 12861 AND 12869);
+    DELETE FROM nomina_recibos WHERE periodo_id IN (SELECT id FROM nomina_periodos WHERE creado_por LIKE 'AdminC128-%') OR empleado_id BETWEEN 12861 AND 12869;
+    DELETE FROM nomina_periodos WHERE creado_por LIKE 'AdminC128-%';
+    DELETE FROM movimientos_contables WHERE id IN (SELECT id FROM c128_movs);
+    DELETE FROM bitacora_cambios WHERE tabla = 'nomina_conceptos' AND registro_id IN (SELECT id::text FROM nomina_conceptos WHERE creado_por LIKE 'AdminC128-%');
+    DELETE FROM nomina_concepto_empleados WHERE concepto_id IN (SELECT id FROM nomina_conceptos WHERE creado_por LIKE 'AdminC128-%');
+    DELETE FROM nomina_conceptos WHERE creado_por LIKE 'AdminC128-%';
+    DELETE FROM auditoria WHERE usuario LIKE 'AdminC128-%';
+    DELETE FROM empleados WHERE id BETWEEN 12861 AND 12869;
+    DELETE FROM usuarios WHERE id BETWEEN 12861 AND 12869; DELETE FROM auth.users WHERE id::text LIKE 'a1280000-%';
+    COMMIT;`;
+  await c.query(limpiar);
+  await c.query(`BEGIN; SET LOCAL session_replication_role = replica;
+    INSERT INTO auth.users (id, email) SELECT ('a1280000-0000-0000-0000-0000000000' || lpad(k::text, 2, '0'))::uuid, 'c' || k || '@t128c' FROM generate_series(1, 2) k;
+    INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
+      (12861, 'AdminC128-1', 'c1@t128c', 'Admin', 'Activo', '${SUB(1)}'), (12862, 'AdminC128-2', 'c2@t128c', 'Admin', 'Activo', '${SUB(2)}');
+    INSERT INTO empleados (id, nombre, puesto, depto, salario_diario, fecha_ingreso, estatus) VALUES
+      (12861, 'EmpC128 uno', 'Operador', 'Producción', 100, '2024-01-01', 'Activo'), (12862, 'EmpC128 dos', 'Operador', 'Producción', 200, '2024-01-01', 'Activo');
+    COMMIT;`);
+  const a = await connect(); const b = await connect();
+  const actor = async (cl, sub) => {
+    await cl.query('BEGIN'); await cl.query('SET LOCAL ROLE authenticated');
+    await cl.query(`SELECT set_config('request.jwt.claims', $1, true)`, [JSON.stringify({ role: 'authenticated', sub })]);
+  };
+  const carrera = async (subA, sqlA, pA, subB, sqlB, pB) => {
+    await actor(a, subA); await actor(b, subB);
+    const ra = await a.query(sqlA, pA).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message }));
+    let done = false;
+    const prB = b.query(sqlB, pB).then(r => ({ ok: true, row: r.rows[0] }), e => ({ ok: false, code: e.code, msg: e.message })).finally(() => { done = true; });
+    await sleep(500);
+    const bloqueado = !done;
+    await a.query(ra.ok ? 'COMMIT' : 'ROLLBACK');
+    const rb = await prB;
+    await b.query(rb.ok ? 'COMMIT' : 'ROLLBACK');
+    return { ra, rb, bloqueado };
+  };
+  const como = async (k, sql, params) => {
+    await actor(a, SUB(k));
+    try { const r = await a.query(sql, params); await a.query('COMMIT'); return r.rows[0]; } catch (e) { await a.query('ROLLBACK'); throw e; }
+  };
+  // Dos Admins dan de alta el mismo concepto a la vez: uno solo.
+  const ALTA = `SELECT guardar_concepto_nomina(NULL, '{"nombre":"C128 Préstamo","tipo":"descuento","categoria":"prestamo","monto":400,"aplica_a":"personas","personas":[{"empleado_id":12861,"limite_total":500}]}') AS r`;
+  let r = await carrera(SUB(1), ALTA, [], SUB(2), ALTA, []);
+  ok(r.ra.ok && !r.rb.ok && r.rb.code === '23505' && r.bloqueado
+     && await n(`SELECT count(*) FROM nomina_conceptos WHERE creado_por LIKE 'AdminC128-%'`) === 1,
+     '128-C1 dos altas simultáneas del mismo concepto: una sola (la segunda espera y se rechaza por nombre repetido)');
+  const CON = r.ra.row.r.concepto_id;
+  await como(1, `SELECT guardar_concepto_nomina(NULL, '{"nombre":"C128 Bono","tipo":"percepcion","categoria":"bono_puntualidad","monto":50,"aplica_a":"todos"}')`, []);
+  const P1 = (await como(1, `SELECT crear_periodo_nomina(fin_hoy() - 49) AS r`, [])).r.periodo_id;
+  const P2 = (await como(1, `SELECT crear_periodo_nomina(fin_hoy() - 56) AS r`, [])).r.periodo_id;
+  // Dos semanas distintas generadas a la vez: el tope del préstamo (500, a 400 por semana) no se rebasa.
+  const GEN = `SELECT generar_recibos_nomina($1::bigint) AS r`;
+  r = await carrera(SUB(1), GEN, [P1], SUB(2), GEN, [P2]);
+  const tot = await n(`SELECT COALESCE(sum(l.monto), 0) FROM nomina_recibo_lineas l JOIN nomina_recibos x ON x.id = l.recibo_id WHERE l.concepto_id = $1 AND x.empleado_id = 12861`, [CON]);
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && tot === 500
+     && await n(`SELECT count(*) FROM nomina_recibo_lineas l JOIN nomina_recibos x ON x.id = l.recibo_id WHERE l.concepto_id = $1 AND x.empleado_id = 12861`, [CON]) === 2,
+     `128-C2 dos semanas generadas a la vez sobre el mismo préstamo: 400 + 100 = el tope exacto (total ${tot}); la segunda espera`);
+  // Dos "aplicar conceptos" simultáneos sobre el mismo borrador: sin líneas duplicadas.
+  await como(1, `SELECT guardar_concepto_nomina(NULL, '{"nombre":"C128 Vales","tipo":"percepcion","categoria":"otras_percepciones","monto":30,"aplica_a":"todos"}')`, []);
+  const APL = `SELECT aplicar_conceptos_nomina($1::bigint) AS r`;
+  r = await carrera(SUB(1), APL, [P1], SUB(2), APL, [P1]);
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && r.ra.row.r.lineas >= 2 && r.rb.row.r.lineas === 0
+     && await n(`SELECT count(*) FROM (SELECT recibo_id, concepto_id FROM nomina_recibo_lineas WHERE concepto_id IS NOT NULL GROUP BY 1, 2 HAVING count(*) > 1) x`) === 0,
+     '128-C3 dos "aplicar conceptos" simultáneos: cada línea una sola vez (el segundo agrega 0)');
+  // Guardar un recibo mientras se paga el periodo: el pago espera y paga lo guardado.
+  const R1 = await n(`SELECT id FROM nomina_recibos WHERE periodo_id = $1 AND empleado_id = 12862`, [P1]);
+  r = await carrera(SUB(1), `SELECT guardar_recibo_nomina($1::bigint, 6, true, '[{"nombre":"C128 Extra","tipo":"percepcion","categoria":"comisiones","monto":1000}]') AS r`, [R1],
+                    SUB(2), `SELECT pagar_nomina($1::bigint) AS r`, [P1]);
+  const neto = await n(`SELECT sum(neto_a_pagar) FROM nomina_recibos WHERE periodo_id = $1`, [P1]);
+  ok(r.ra.ok && r.rb.ok && r.bloqueado && Number(r.rb.row.r.total_neto) === neto
+     && await n(`SELECT neto_a_pagar FROM nomina_recibos WHERE id = $1`, [R1]) === 2400
+     && await n(`SELECT monto FROM movimientos_contables WHERE id = (SELECT movimiento_id FROM nomina_periodos WHERE id = $1)`, [P1]) === neto,
+     '128-C4 guardar el desglose y pagar a la vez: el pago espera y paga la versión guardada (egreso = suma de recibos)');
+  r = await carrera(SUB(1), `SELECT guardar_recibo_nomina($1::bigint, 6, true, '[]') AS r`, [R1], SUB(2), `SELECT aplicar_conceptos_nomina($1::bigint) AS r`, [P1]);
+  ok(!r.ra.ok && /pagado/.test(r.ra.msg || '') && !r.rb.ok && /pagado/.test(r.rb.msg || ''), '128-C5 después del pago: guardar y aplicar se rechazan');
+  await a.end(); await b.end();
+  await c.query(limpiar);
+  if (!okAll) { console.log('RESULTADO: FALLÓ (128 concurrencia)'); process.exit(1); }
+}
+await conc128();
+// La concurrencia de 100 (crear, generar, editar con el contrato anterior, pagar) con 128 activa: mismo resultado.
+await conc100();
+console.log('  NOM-1 conceptos de nómina tras 128: PASS');
+
 // ═══ OP-03 — ensayo operativo de punta a punta (Día 0; producción, barra, mostrador, ruta, mermas, reverso) ═══
 // Va al final (tras 116): deja sus funciones auxiliares op3_*, que 090-04 marcaría en una re-corrida posterior.
 console.log('── ENSAYO OPERATIVO OP-03');
@@ -4873,7 +5014,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   'bitacora_actor',
   // 123 (multisucursal)
   'clientes_sync_sucursal_principal', 'sucursales_guard', 'ordenes_guard_sucursal', 'precios_esp_guard_sucursal',
-  'sucursal_para_orden', 'guardar_sucursal', 'fusionar_cliente_en_sucursal'];
+  'sucursal_para_orden', 'guardar_sucursal', 'fusionar_cliente_en_sucursal',
+  // 128 (NOM-1)
+  'guardar_concepto_nomina', 'guardar_recibo_nomina', 'aplicar_conceptos_nomina', 'nomina_acumulados'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,
