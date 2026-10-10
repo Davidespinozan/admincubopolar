@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { Icons } from './ui/Icons';
 import { s, n, eqId, fmtMoney, validarRFC } from '../utils/safe';
+import { cantidadEnEdicion, cantidadNormalizada } from '../data/cantidadInputLogic';
 import { validateDireccion, placeSelectionToEntrega } from '../data/direccionLogic';
 import { sucursalesDeCliente, sucursalPrincipal, precioParaSucursal, resolverEntrega } from '../data/sucursalLogic';
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
@@ -678,7 +679,9 @@ export default function NuevaVentaModal({
               type="number"
               min="1"
               value={l.barra ? l.barra.cant : l.qty}
-              onChange={e => updateLine(i, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
+              inputMode="numeric"
+              onChange={e => updateLine(i, 'qty', cantidadEnEdicion(e.target.value))}
+              onBlur={e => updateLine(i, 'qty', cantidadNormalizada(e.target.value))}
               className="w-16 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center min-h-[44px] bg-white"
             />
             <span className="text-sm font-semibold text-slate-700 w-20 text-right">{fmtMoney(n(l.qty) * n(l.precio))}</span>
