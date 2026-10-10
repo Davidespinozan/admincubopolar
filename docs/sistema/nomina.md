@@ -14,6 +14,13 @@ inmutable (periodo, recibos y renglones). El navegador nunca manda salario ni to
 - `nomina_concepto_empleados` — por persona: `excluido`, `monto` propio y `limite_total` (tope).
 - `nomina_recibo_lineas` — el desglose del recibo. Cada renglón guarda la FOTO de nombre, tipo,
   clase y monto, y lo que se propuso (`propuesto`). `concepto_id` nulo = renglón manual.
+- Cálculo automático (130): `calculo` también puede ser `porcentaje_ventas`, `por_unidad` o
+  `por_entrega`, sobre las órdenes ENTREGADAS de la persona según `base_rol` (`vendedor` =
+  `ordenes.vendedor_id`; `chofer` / `ayudante` = los de la ruta de la orden), opcionalmente solo
+  ciertos `skus`. Cualquier percepción puede llevar `regla_asistencia` con `max_retardos` y
+  `max_faltas` (reloj checador, 116). `nomina_recibo_lineas.detalle` explica el número.
+- `nomina_linea_ordenes` — qué órdenes cubre cada renglón de comisión; única por (concepto,
+  persona, orden): una orden se comisiona una sola vez.
 - Clase → casilla del recibo: `comisiones`, `prima_dominical`, `bono_puntualidad`,
   `bono_productividad`, `otras_percepciones`; todo descuento (`isr`, `imss`, `prestamo`,
   `otras_deducciones`) suma en `deducciones`.
@@ -23,8 +30,10 @@ inmutable (periodo, recibos y renglones). El navegador nunca manda salario ni to
 - `crear_periodo_nomina(fecha)` · `pagar_nomina(periodo)` — sin cambio desde 100.
 - `generar_recibos_nomina(periodo)` — crea los recibos que falten y, SOLO a los recién creados,
   les propone los conceptos del catálogo. Nunca reescribe un recibo existente.
-- `aplicar_conceptos_nomina(periodo)` — agrega a un borrador los conceptos que le falten (catálogo
-  creado o cambiado después). No cambia montos capturados ni revive un renglón dejado en 0.
+- `aplicar_conceptos_nomina(periodo)` — agrega a un borrador los conceptos que le falten y (130)
+  RECALCULA los renglones automáticos: si el importe está intacto (= sugerido) sigue al cálculo
+  nuevo; si Admin lo cambió, se respeta y solo cambian el sugerido, la explicación y las órdenes
+  cubiertas. No toca conceptos fijos ya puestos, renglones manuales ni uno dejado en 0 a mano.
 - `guardar_recibo_nomina(recibo, dias, con_septimo, lineas)` — el desglose completo que debe
   quedar. Un concepto que ya estaba y no viene queda en 0 ("no aplicó"); los manuales se reemplazan.
 - `guardar_concepto_nomina(id, datos)` — alta y edición del catálogo; `personas` reemplaza la lista.
@@ -51,15 +60,28 @@ inmutable (periodo, recibos y renglones). El navegador nunca manda salario ni to
 - **Tipo y clase de un concepto no cambian después del alta:** se desactiva y se crea otro.
 - **Un concepto sin fechas aplica siempre** (también a la semana que se paga el mismo día del alta).
 
+- **Comisión = sobre lo ENTREGADO** (`delivered_at`, día de negocio), no lo levantado ni lo
+  cobrado; una orden cancelada no cuenta (130, decisión delegada 2026-10-09). Ventana: desde la
+  primera semana en que el concepto entró a un recibo de la persona hasta el viernes del periodo;
+  lo entregado después de pagar una semana entra a la siguiente, una sola vez.
+- **Bono condicionado a la asistencia: todo o nada.** Retardo = el del reloj checador (una
+  corrección de Admin lo reclasifica); falta = turno programado ya terminado sin marca. Sin turno
+  en la semana no se evalúa y se propone completo. Todo es una propuesta que Admin puede cambiar.
+- **Un renglón automático existe aunque quede en 0**, para explicar por qué (`detalle`).
+
 ## Known limits
 - Sin reverso de un periodo pagado (backlog aceptado). Sin recibo imprimible por empleado.
-- Comisiones calculadas con ventas o entregas y puntualidad con el reloj checador: no existen;
-  se capturan por semana.
+- Comisión sobre lo cobrado, ajuste por devoluciones o cancelaciones posteriores al pago, bono
+  proporcional y permisos/vacaciones (cuentan como falta hasta que Admin corrija el renglón): no existen.
+- La falta se calcula con los turnos ACTIVOS hoy; un turno desactivado a media semana deja de contar.
+- Antes de pagar hay que "Actualizar cálculos" (la pantalla lo hace sola al tocar Pagar);
+  `pagar_nomina` paga lo que esté en los recibos, no recalcula.
 - La pantalla carga el desglose de las 12 semanas más recientes.
 - "Faltan conceptos" en la pantalla es una pista (no cuenta conceptos con vigencia ni con tope);
   `aplicar_conceptos_nomina` es quien decide.
 
 ## Verification
+`supabase/tests/130_nomina_automatica_test.sql` (39), `src/__tests__/nom2NominaAutomatica.test.jsx`,
 `supabase/tests/128_conceptos_nomina_test.sql`, `100_nomina_canonica_test.sql` (también tras 128),
 concurrencia `conc128` / `conc100` del runner; `src/__tests__/nom1ConceptosNomina.test.jsx`,
 `src/__tests__/nomina.test.js`. Invariante en producción (solo lectura): por recibo, casillas =
@@ -67,4 +89,5 @@ sumas de `nomina_recibo_lineas`; por periodo, `total_neto` = suma de `neto_a_pag
 
 ## Load this card when
 nómina, recibos, periodo de nómina, bonos, comisiones, prima dominical, descuentos, préstamos a
-empleados, ISR/IMSS en el recibo, conceptos de nómina, `nomina_*`.
+empleados, ISR/IMSS en el recibo, conceptos de nómina, comisiones automáticas, bono de puntualidad
+con el reloj checador, `nomina_*`.

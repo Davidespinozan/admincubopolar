@@ -4,6 +4,7 @@
 // servidor; sin conexión no se marca (no hay cola offline: la hora es la del servidor).
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Card, SectionLabel, Guia } from './ui/Components';
+import AvisosPush from './ui/AvisosPush';
 import {
   GEO_OPCIONES, mensajeErrorGeo, mensajeRegistro, pantallaMiAsistencia, horaNegocio, fechaHoraNegocio, textoTurno,
 } from '../data/asistenciaLogic';
@@ -139,6 +140,9 @@ export default function MiAsistenciaView({ actions, onVolver }) {
           ? 'Al llegar al centro de trabajo toca “Marcar entrada”; al irte, “Marcar salida”. Administración ve tu asistencia y solo puede corregirla con un motivo que queda registrado.'
           : 'Administración configura en Asistencia el centro de trabajo, tu turno y liga tu usuario. En cuanto lo haga, aquí aparecerá el botón para marcar tu entrada.'}
       </Guia>
+
+      {/* PD-01.1: avisos al celular (antes de la entrada, si no has marcado, al salir). No se muestra sin soporte. */}
+      <div className="overflow-hidden rounded-[18px] border border-slate-200 bg-white [&>div]:border-b-0" data-testid="mi-asistencia-avisos"><AvisosPush /></div>
 
       <p className="px-1 text-xs text-slate-400">
         Tu ubicación se lee una sola vez, solo al tocar el botón. La entrada se marca dentro del centro de trabajo; la salida se puede marcar fuera y queda señalada.

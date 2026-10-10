@@ -7,6 +7,7 @@ import {
   clasesDeTipo, etiquetaClase, asignacionDe, montoConcepto, describirMonto, describirAlcance,
   lineasEditables, lineaManualNueva, lineaDeConcepto, conceptosParaAgregar, previewDesglose,
   formDeConcepto, personasDelForm, personaIncluida, avanceTope, recibosConFaltantes, AYUDA_CONCEPTOS,
+  BASES_COMISION, formasDeTipo, campoDeCalculo, esComision, recibosConAutomaticos,
 } from '../../data/nominaLogic';
 
 // 100: nómina canónica. La semana es sábado → viernes (pago el viernes) en días
@@ -14,6 +15,8 @@ import {
 // recalcula los recibos y paga. Un periodo Pagado no se edita.
 // 128 (NOM-1): los bonos, comisiones y descuentos salen del catálogo de
 // conceptos; cada recibo guarda su desglose y Admin lo ajusta por semana.
+// 130 (NOM-2): comisiones calculadas con lo entregado y bonos condicionados a
+// la asistencia; el servidor propone el número y explica de dónde salió.
 const etiqueta = (p) => s(p.periodo) || etiquetaPeriodoNomina(p);
 const $ = (v) => fmtMoney(v, { decimals: 2 });
 const CAMPO_CHICO = 'min-h-[44px] w-full rounded-field border border-line bg-slate-50 px-3 text-right text-[15px] text-ink tnum focus:border-accent focus:bg-white focus:outline-none focus:ring-2 focus:ring-accent/15 disabled:bg-slate-100 disabled:text-slate-500';
@@ -29,10 +32,11 @@ function Renglon({ linea, editable, sugerido, tope, onChange, onQuitar }) {
         {deCatalogo ? (
           <>
             <p className="truncate text-[15px] font-medium text-ink">{linea.nombre}</p>
-            <p className="truncate text-[12px] text-slate-500">
-              {enCero ? 'No aplica esta semana'
+            <p className={`text-[12px] text-slate-500 ${linea.detalle ? 'leading-snug' : 'truncate'}`} data-testid="renglon-detalle">
+              {enCero ? (linea.detalle || 'No aplica esta semana')
                 : tope ? `Lleva ${fmtMoney(tope.pagado + tope.enBorrador)} de ${fmtMoney(tope.limite)}`
-                : cambiado ? `Cambiado · se propuso ${$(linea.propuesto)}`
+                : cambiado ? `Cambiado · se propuso ${$(linea.propuesto)}${linea.detalle ? ` · ${linea.detalle}` : ''}`
+                : linea.detalle ? linea.detalle
                 : etiquetaClase(linea.categoria) !== linea.nombre ? etiquetaClase(linea.categoria) : 'Del catálogo'}
             </p>
           </>
@@ -200,7 +204,11 @@ function ConceptoModal({ concepto, data, onClose, onGuardar }) {
   const setPersona = (id, parche) => setForm(f => ({ ...f, personas: { ...f.personas, [String(id)]: { incluida: personaIncluida(f, id), monto: '', limite: '', ...f.personas[String(id)], ...parche } } }));
   const deptos = useMemo(() => [...new Set(emps.filter(e => s(e.estatus) === 'Activo').map(e => s(e.depto)).filter(Boolean))].sort(), [emps]);
   const personas = personasDelForm(form, emps);
-  const esPorcentaje = form.calculo === 'porcentaje_sd';
+  const esPorcentaje = form.calculo === 'porcentaje_sd' || form.calculo === 'porcentaje_ventas';
+  const comision = esComision(form.calculo);
+  const campo = campoDeCalculo(form.calculo);
+  const productos = useMemo(() => (data.productos || []).filter(p => s(p.tipo) === 'Producto Terminado').sort((a, b) => s(a.nombre).localeCompare(s(b.nombre))), [data.productos]);
+  const alternarSku = (sku) => set({ skus: form.skus.includes(sku) ? form.skus.filter(x => x !== sku) : [...form.skus, sku] });
   const guardar = async () => {
     if (guardando) return;
     setGuardando(true);
@@ -216,7 +224,7 @@ function ConceptoModal({ concepto, data, onClose, onGuardar }) {
           <p className="mb-1.5 text-[13px] font-medium text-slate-700">¿Qué hace?</p>
           <div className="grid grid-cols-2 gap-2">
             <ChoiceButton active={form.tipo === 'percepcion'} tone="emerald" disabled={!esNuevo} onClick={() => set({ tipo: 'percepcion', categoria: 'bono_puntualidad' })}>Se le paga</ChoiceButton>
-            <ChoiceButton active={form.tipo === 'descuento'} tone="amber" disabled={!esNuevo} onClick={() => set({ tipo: 'descuento', categoria: 'prestamo' })}>Se le descuenta</ChoiceButton>
+            <ChoiceButton active={form.tipo === 'descuento'} tone="amber" disabled={!esNuevo} onClick={() => set({ tipo: 'descuento', categoria: 'prestamo', calculo: comision ? 'fijo' : form.calculo, reglaAsistencia: false })}>Se le descuenta</ChoiceButton>
           </div>
           {!esNuevo && <p className="mt-1 text-xs text-slate-500">El tipo y la clase no se cambian. Si ya no sirve, desactívalo y crea otro.</p>}
         </div>
@@ -224,14 +232,58 @@ function ConceptoModal({ concepto, data, onClose, onGuardar }) {
           options={clasesDeTipo(form.tipo).map(c => ({ value: c.id, label: c.label }))} />
         <div>
           <p className="mb-1.5 text-[13px] font-medium text-slate-700">¿Cómo se calcula?</p>
-          <div className="grid grid-cols-2 gap-2">
-            <ChoiceButton active={!esPorcentaje} tone="slate" onClick={() => set({ calculo: 'fijo' })}>Monto fijo por semana</ChoiceButton>
-            <ChoiceButton active={esPorcentaje} tone="slate" onClick={() => set({ calculo: 'porcentaje_sd' })}>% del salario diario</ChoiceButton>
+          <div className="grid grid-cols-2 gap-2" data-testid="concepto-calculo">
+            {formasDeTipo(form.tipo).map(f => (
+              <ChoiceButton key={f.id} active={form.calculo === f.id} tone="slate" onClick={() => set({ calculo: f.id })}>{f.label}</ChoiceButton>
+            ))}
           </div>
         </div>
-        <FormInput label={esPorcentaje ? 'Porcentaje del salario diario' : 'Monto por semana'} type="number" inputMode="decimal" min="0" step="0.01" value={form.monto}
-          placeholder={esPorcentaje ? '25' : '200'} onChange={e => set({ monto: e.target.value })}
-          hint={esPorcentaje ? 'Ejemplo: 25 = la cuarta parte de un día de salario.' : 'Si cambia por persona, déjalo en 0 y escribe el monto de cada quien abajo.'} />
+        {comision && (
+          <div data-testid="concepto-comision">
+            <p className="mb-1.5 text-[13px] font-medium text-slate-700">¿Qué cuenta?</p>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+              {BASES_COMISION.map(b => (
+                <ChoiceButton key={b.id} active={form.baseRol === b.id} tone="slate" onClick={() => set({ baseRol: b.id })}>{b.label}</ChoiceButton>
+              ))}
+            </div>
+            <p className="mt-1 text-xs text-slate-500">{BASES_COMISION.find(b => b.id === form.baseRol)?.ayuda} Cuenta lo ya entregado en la semana; una venta cancelada no cuenta y ninguna se paga dos veces.</p>
+            <details className="mt-2 rounded-card border border-line px-3 py-2" open={form.skus.length > 0}>
+              <summary className="min-h-[32px] cursor-pointer text-[13px] font-medium text-slate-600">
+                {form.skus.length ? `Solo ${form.skus.length} producto${form.skus.length === 1 ? '' : 's'}` : 'Todos los productos (toca para elegir solo algunos)'}
+              </summary>
+              <div className="mt-1 divide-y divide-line">
+                {productos.map(p => (
+                  <label key={p.sku} className="flex min-h-[44px] cursor-pointer items-center gap-3 text-[14px] text-ink">
+                    <input type="checkbox" className="h-5 w-5 flex-shrink-0 accent-[#0E7490]" checked={form.skus.includes(s(p.sku))} onChange={() => alternarSku(s(p.sku))} />
+                    <span className="min-w-0 truncate">{s(p.nombre)}</span>
+                  </label>
+                ))}
+              </div>
+            </details>
+          </div>
+        )}
+        <FormInput label={campo.label} type="number" inputMode="decimal" min="0" step="0.01" value={form.monto}
+          placeholder={campo.ejemplo} onChange={e => set({ monto: e.target.value })}
+          hint={form.calculo === 'porcentaje_sd' ? 'Ejemplo: 25 = la cuarta parte de un día de salario.'
+            : form.calculo === 'porcentaje_ventas' ? 'Ejemplo: 2 = dos pesos por cada cien vendidos.'
+            : 'Si cambia por persona, déjalo en 0 y escribe el de cada quien abajo.'} />
+        {form.tipo === 'percepcion' && (
+          <div className="rounded-card border border-line px-3 py-2" data-testid="concepto-regla">
+            <label className="flex min-h-[44px] cursor-pointer items-center gap-3 text-[15px] text-ink">
+              <input type="checkbox" className="h-5 w-5 flex-shrink-0 accent-[#0E7490]" checked={form.reglaAsistencia} onChange={e => set({ reglaAsistencia: e.target.checked })} />
+              Solo si cumple con su asistencia
+            </label>
+            {form.reglaAsistencia && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <FormInput label="Retardos permitidos" type="number" inputMode="numeric" min="0" max="7" step="1" value={form.maxRetardos} onChange={e => set({ maxRetardos: e.target.value })} />
+                  <FormInput label="Faltas permitidas" type="number" inputMode="numeric" min="0" max="7" step="1" value={form.maxFaltas} onChange={e => set({ maxFaltas: e.target.value })} />
+                </div>
+                <p className="mt-1 text-xs text-slate-500">Usa el reloj checador de la semana. Si se pasa, el renglón llega en 0 con el motivo; quien no tiene turno no se evalúa. Siempre lo puedes cambiar en el recibo.</p>
+              </>
+            )}
+          </div>
+        )}
         <div>
           <p className="mb-1.5 text-[13px] font-medium text-slate-700">¿A quién aplica?</p>
           <div className="grid grid-cols-3 gap-2">
@@ -269,7 +321,7 @@ function ConceptoModal({ concepto, data, onClose, onGuardar }) {
                   </div>
                   {conAjuste && (
                     <div className="mb-1 ml-8 grid grid-cols-2 gap-2">
-                      <label className="text-[12px] text-slate-500">{esPorcentaje ? '% propio' : 'Monto propio'}
+                      <label className="text-[12px] text-slate-500">{esPorcentaje ? '% propio' : comision ? 'Pesos propios' : 'Monto propio'}
                         <input type="number" inputMode="decimal" min="0" step="0.01" value={p.monto || ''} placeholder={form.monto || '0'} onChange={ev => setPersona(e.id, { monto: ev.target.value })} className={`${CAMPO_CHICO} mt-1`} />
                       </label>
                       {form.tipo === 'descuento' && (
@@ -334,6 +386,8 @@ export function NominaView({ data, actions }) {
   const esBorrador = periodoSel ? s(periodoSel.estatus) === 'Borrador' : false;
   const faltantes = useMemo(() => (esBorrador ? recibosConFaltantes(recibosSel, data.nominaReciboLineas, conceptos, asignaciones, emps) : 0),
     [esBorrador, recibosSel, data.nominaReciboLineas, conceptos, asignaciones, emps]);
+  const automaticos = useMemo(() => (esBorrador ? recibosConAutomaticos(recibosSel, data.nominaReciboLineas, conceptos) : 0),
+    [esBorrador, recibosSel, data.nominaReciboLineas, conceptos]);
   const porPagar = periodosBorrador.reduce((sum, p) => sum + n(p.totalNeto), 0);
 
   const correr = async (fn) => {
@@ -344,11 +398,22 @@ export function NominaView({ data, actions }) {
   const crear = (fecha) => correr(async () => { await actions.crearPeriodoNomina(fecha || null); });
   const generar = (p) => correr(async () => { await actions.generarRecibosNomina(p.id); });
   const aplicar = (p) => correr(async () => { await actions.aplicarConceptosNomina(p.id); });
-  const pagar = (p) => {
+  // Con comisiones o bonos automáticos, primero se recalcula (ventas y asistencia
+  // cambian durante la semana) y se confirma el total YA actualizado.
+  const pagar = (p) => correr(async () => {
+    let total = n(p.totalNeto);
+    let nota = '';
+    if (recibosConAutomaticos(recibosDe(p.id), data.nominaReciboLineas, conceptos) > 0) {
+      const r = await actions.aplicarConceptosNomina(p.id, { silencioso: true });
+      if (r?.error) return;
+      const nuevo = n(r.data?.total_neto);
+      if (nuevo !== total) nota = ' Se actualizaron las comisiones y bonos automáticos.';
+      total = nuevo;
+    }
     askConfirm('Pagar nómina',
-      `${etiqueta(p)} — se registrará un egreso de ${$(p.totalNeto)} con fecha de hoy. El periodo quedará cerrado y sus recibos ya no se podrán editar.`,
+      `${etiqueta(p)} — se registrará un egreso de ${$(total)} con fecha de hoy.${nota} El periodo quedará cerrado y sus recibos ya no se podrán editar.`,
       () => correr(async () => { await actions.pagarNomina(p.id); }));
-  };
+  });
   const abrir = (p) => { setPeriodoId(p.id); setReciboAbierto(null); };
   const conceptosDe = (tipo) => conceptos.filter(c => c.tipo === tipo).sort((a, b) => (b.activo !== false) - (a.activo !== false) || s(a.nombre).localeCompare(s(b.nombre)));
 
@@ -470,6 +535,13 @@ export function NominaView({ data, actions }) {
               <p className="text-[14px] font-semibold text-ink">{faltantes} recibo{faltantes === 1 ? ' no tiene' : 's no tienen'} todos los bonos y descuentos</p>
               <p className="text-[13px] text-slate-600">Se crearon o cambiaron después de generar esta nómina. Lo que ya capturaste no se toca.</p>
               <FormBtn className="mt-2" onClick={() => aplicar(periodoSel)} disabled={ocupado}>Agregar lo que falta</FormBtn>
+            </Card>
+          )}
+          {esBorrador && automaticos > 0 && faltantes === 0 && (
+            <Card padding="p-3" data-testid="nomina-automaticos">
+              <p className="text-[14px] font-semibold text-ink">Comisiones y bonos automáticos</p>
+              <p className="text-[13px] text-slate-600">Se calculan con lo entregado y la asistencia hasta este momento. Lo que cambiaste a mano se respeta.</p>
+              <FormBtn className="mt-2" onClick={() => aplicar(periodoSel)} disabled={ocupado}>Actualizar cálculos</FormBtn>
             </Card>
           )}
           {recibosSel.length === 0 ? (

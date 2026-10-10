@@ -24,19 +24,24 @@ const configurar = () => {
 };
 
 /**
- * Envía un payload a TODAS las suscripciones registradas. Un endpoint
- * muerto (404/410 = el usuario revocó el permiso o cambió de navegador)
- * se borra de la tabla en el acto — así la lista se auto-limpia.
+ * Envía un payload a las suscripciones registradas. Un endpoint muerto
+ * (404/410 = el usuario revocó el permiso o cambió de navegador) se borra
+ * de la tabla en el acto — así la lista se auto-limpia.
+ *
+ * `usuarioIds` limita el envío a los dispositivos de esas personas
+ * (lista vacía = a nadie). Sin `usuarioIds` va a todas las suscripciones.
  *
  * @param {object} supabase cliente service_role
  * @param {{ title: string, body: string, url: string }} payload
+ * @param {{ usuarioIds?: number[] }} [opciones]
  * @returns {Promise<{ enviadas: number, borradas: number, fallidas: number }>}
  */
-export async function enviarPushATodas(supabase, payload) {
+export async function enviarPush(supabase, payload, { usuarioIds } = {}) {
+  if (Array.isArray(usuarioIds) && usuarioIds.length === 0) return { enviadas: 0, borradas: 0, fallidas: 0 };
   configurar();
-  const { data: subs, error } = await supabase
-    .from('push_subscriptions')
-    .select('id, endpoint, p256dh, auth');
+  let consulta = supabase.from('push_subscriptions').select('id, endpoint, p256dh, auth');
+  if (Array.isArray(usuarioIds)) consulta = consulta.in('usuario_id', usuarioIds);
+  const { data: subs, error } = await consulta;
   if (error) throw new Error(`push_subscriptions: ${error.message}`);
 
   let enviadas = 0;
@@ -61,4 +66,19 @@ export async function enviarPushATodas(supabase, payload) {
     }
   }
   return { enviadas, borradas, fallidas };
+}
+
+/**
+ * Usuarios activos de los roles que ven la campana de notificaciones del
+ * negocio (Admin y Facturación). Los avisos de cartera, rutas, etc. no van
+ * al teléfono de un chofer o un empleado que activó avisos para su asistencia.
+ */
+export async function usuariosDeCampana(supabase) {
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('id')
+    .eq('estatus', 'Activo')
+    .in('rol', ['Admin', 'Facturación']);
+  if (error) throw new Error(`usuarios: ${error.message}`);
+  return (data || []).map(u => u.id);
 }

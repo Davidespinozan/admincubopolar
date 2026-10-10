@@ -1,7 +1,8 @@
 // AsistenciaView — WF-0 + PD-01 (mig 116), solo Admin.
 // Día: tabla Empleado | Turno | Entrada | Estado | Salida, evidencia y
 // corrección (motivo obligatorio; el valor original y el historial quedan).
-// Turnos, centro de trabajo y accesos (empleado ↔ usuario) se configuran aquí;
+// Turnos, centro de trabajo, accesos (empleado ↔ usuario) y avisos al celular
+// (PD-01.1, mig 131) se configuran aquí;
 // nada se inventa: sin centro ni turnos el empleado ve "configuración pendiente".
 import { useEffect } from 'react';
 import { useState, useCallback, useMemo, Modal, FormInput, FormSelect, FormBtn, PageHeader, EmptyState, Guia, Chips } from './viewsCommon';
@@ -12,6 +13,8 @@ import {
   DIAS_SEMANA, GEO_OPCIONES, mensajeErrorGeo, pasosConfigAsistencia,
 } from '../../data/asistenciaLogic';
 import { diaNegocio } from '../../utils/fechas';
+import { AVISOS_CON_MINUTOS, AVISOS_SI_NO, formDeAvisos, etiquetaTipoAviso } from '../../data/avisosAsistenciaLogic';
+import AvisosPush from '../ui/AvisosPush';
 
 const TONO_CHIP = {
   ok: 'border-emerald-200 bg-emerald-50 text-emerald-800',
@@ -20,7 +23,7 @@ const TONO_CHIP = {
   neutro: 'border-slate-200 bg-slate-50 text-slate-700',
 };
 const TABS = [
-  { k: 'dia', l: 'Día' }, { k: 'turnos', l: 'Turnos' }, { k: 'centro', l: 'Centro de trabajo' }, { k: 'accesos', l: 'Accesos' },
+  { k: 'dia', l: 'Día' }, { k: 'turnos', l: 'Turnos' }, { k: 'centro', l: 'Centro de trabajo' }, { k: 'accesos', l: 'Accesos' }, { k: 'avisos', l: 'Avisos' },
 ];
 const m = (v) => (v == null ? '—' : `${Math.round(Number(v)).toLocaleString('es-MX')} m`);
 
@@ -53,6 +56,7 @@ export function AsistenciaView({ data, actions }) {
       {tab === 'turnos' && <Turnos data={data} actions={actions} />}
       {tab === 'centro' && <Centro actions={actions} />}
       {tab === 'accesos' && <Accesos data={data} actions={actions} />}
+      {tab === 'avisos' && <Avisos actions={actions} />}
     </div>
   );
 }
@@ -379,6 +383,133 @@ function Accesos({ data, actions }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// ── Avisos al celular (PD-01.1) ────────────────────────────────────
+// Qué avisos manda el sistema, a quién y con cuántos minutos. Todo se apaga o
+// se cambia aquí; cada persona activa los avisos en SU teléfono.
+function FilaAviso({ titulo, ayuda, encendido, onEncender, children }) {
+  return (
+    <div className="py-3">
+      <label className="flex cursor-pointer items-start gap-3">
+        <input type="checkbox" className="mt-1 h-4 w-4 flex-shrink-0" checked={encendido} onChange={e => onEncender(e.target.checked)} />
+        <span className="min-w-0">
+          <span className="block text-sm font-semibold text-slate-900">{titulo}</span>
+          <span className="block text-xs text-slate-500">{ayuda}</span>
+        </span>
+      </label>
+      {encendido && children && <div className="mt-2 pl-7">{children}</div>}
+    </div>
+  );
+}
+
+// Orden en que se leen en pantalla (como ocurren en el día).
+const ORDEN_AVISOS = {
+  persona: ['empleado_antes_min', 'empleado_tarde', 'empleado_salida_min'],
+  jefes: ['jefes_sin_marcar_min', 'jefes_retardo', 'jefes_sin_salida_min'],
+};
+
+function Avisos({ actions }) {
+  const [form, setForm] = useState(null);
+  const [recientes, setRecientes] = useState([]);
+  const [error, setError] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  const cargar = useCallback(async () => {
+    const r = await actions.avisosAsistencia();
+    if (r?.error) { setError(r.error); return; }
+    setError(null);
+    setForm(formDeAvisos(r.data?.config));
+    setRecientes(r.data?.recientes || []);
+  }, [actions]);
+  useEffect(() => { cargar(); }, [cargar]);
+
+  const guardar = async () => {
+    setGuardando(true);
+    const r = await actions.guardarAvisosAsistencia(form);
+    setGuardando(false);
+    if (r?.error) { setError(r.error); return; }
+    setError(null);
+    setForm(formDeAvisos(r.data?.config));
+  };
+
+  if (!form) return error
+    ? <p className="rounded-[14px] border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>
+    : <p className="text-sm text-slate-500">Cargando…</p>;
+
+  const grupo = (g) => (
+    <div className="divide-y divide-slate-100">
+      {ORDEN_AVISOS[g].map(campo => {
+        const a = AVISOS_CON_MINUTOS.find(x => x.campo === campo);
+        if (!a) {
+          const b = AVISOS_SI_NO.find(x => x.campo === campo);
+          return <FilaAviso key={campo} titulo={b.titulo} ayuda={b.ayuda} encendido={form[campo]} onEncender={v => setForm({ ...form, [campo]: v })} />;
+        }
+        return (
+          <FilaAviso key={campo} titulo={a.titulo} ayuda={a.ayuda} encendido={form[campo].encendido}
+            onEncender={v => setForm({ ...form, [campo]: { ...form[campo], encendido: v } })}>
+            <label className="flex items-center gap-2 text-xs text-slate-600">
+              <input type="number" inputMode="numeric" min={a.min} max={a.max} value={form[campo].minutos} aria-label={`${a.titulo}: minutos`}
+                onChange={e => setForm({ ...form, [campo]: { ...form[campo], minutos: e.target.value } })}
+                className="h-10 w-20 rounded-field border border-slate-300 px-2 text-center text-sm text-slate-900" />
+              {a.unidad}
+            </label>
+          </FilaAviso>
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <div className="space-y-4" data-testid="avisos-asistencia">
+      <Guia titulo="Avisos al celular">
+        El sistema avisa solo, aunque la app esté cerrada. Cada persona debe activar los avisos una vez en su teléfono,
+        desde “Mi asistencia”. En iPhone primero hay que agregar la app a la pantalla de inicio.
+      </Guia>
+      <div className="overflow-hidden rounded-[18px] border border-slate-200 bg-white"><AvisosPush /></div>
+
+      <label className="flex items-center gap-3 rounded-[18px] border border-slate-200 bg-white p-4">
+        <input type="checkbox" className="h-4 w-4" checked={form.activo} onChange={e => setForm({ ...form, activo: e.target.checked })} />
+        <span>
+          <span className="block text-sm font-semibold text-slate-900">Avisos de asistencia encendidos</span>
+          <span className="block text-xs text-slate-500">Apágalo para que el sistema no mande ningún aviso de asistencia.</span>
+        </span>
+      </label>
+
+      <div className={form.activo ? 'space-y-4' : 'pointer-events-none space-y-4 opacity-50'}>
+        <section className="rounded-[18px] border border-slate-200 bg-white p-4">
+          <h3 className="text-sm font-bold text-slate-900">A cada persona</h3>
+          <p className="text-xs text-slate-500">Solo le llega a quien le toca, en su propio teléfono.</p>
+          {grupo('persona')}
+        </section>
+        <section className="rounded-[18px] border border-slate-200 bg-white p-4">
+          <h3 className="text-sm font-bold text-slate-900">A los jefes</h3>
+          <FormSelect label="Quién los recibe" value={form.jefes} onChange={e => setForm({ ...form, jefes: e.target.value })}
+            options={[{ value: 'admins', label: 'Todos los administradores' }, { value: 'dueno', label: 'Solo el dueño' }]} />
+          {grupo('jefes')}
+        </section>
+      </div>
+
+      {error && <p className="rounded-[14px] border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}
+      <FormBtn primary onClick={guardar} loading={guardando}>Guardar avisos</FormBtn>
+
+      <section>
+        <h3 className="mb-2 text-sm font-bold text-slate-900">Últimos avisos enviados</h3>
+        {recientes.length === 0
+          ? <EmptyState message="Todavía no se ha enviado ningún aviso" />
+          : (
+            <ul className="divide-y divide-slate-100 rounded-[18px] border border-slate-200 bg-white">
+              {recientes.map(a => (
+                <li key={a.id} className="flex flex-wrap items-baseline justify-between gap-x-3 px-4 py-2.5 text-sm">
+                  <span className="min-w-0"><span className="font-semibold text-slate-900">{a.titulo}</span> <span className="text-slate-500">· {a.empleado}</span></span>
+                  <span className="text-xs text-slate-500">{etiquetaTipoAviso(a.tipo)} · {fechaHoraNegocio(a.created_at)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+      </section>
     </div>
   );
 }

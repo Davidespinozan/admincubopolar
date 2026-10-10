@@ -132,7 +132,8 @@ const ETIQUETA_TABLA = { usuarios: 'Usuarios', productos: 'Catálogo', precios_e
   clientes: 'Clientes', cuartos_frios: 'Congeladores', ordenes: 'Ventas', rutas: 'Rutas', camiones: 'Camiones', nomina_conceptos: 'Conceptos de nómina' };
 const ETIQUETA_CAMPO = { precio: 'precio', salario_diario: 'salario diario', rol: 'rol', estatus: 'estatus', accesos_extra: 'accesos', nombre: 'nombre',
   monto: 'monto', saldo_pendiente: 'saldo', limite_credito: 'límite de crédito', credito_autorizado: 'crédito autorizado', total: 'total', debe_cambiar_password: 'contraseña',
-  aplica_a: 'a quién aplica', personas: 'personas', activo: 'activo', calculo: 'cálculo', vigente_desde: 'desde', vigente_hasta: 'hasta' };
+  aplica_a: 'a quién aplica', personas: 'personas', activo: 'activo', calculo: 'cálculo', vigente_desde: 'desde', vigente_hasta: 'hasta',
+  base_rol: 'qué cuenta', skus: 'productos', regla_asistencia: 'condición de asistencia', max_retardos: 'retardos permitidos', max_faltas: 'faltas permitidas' };
 const ACCION = { INSERT: 'creó', UPDATE: 'cambió', DELETE: 'borró', CONTRATO: 'cambió' };
 const corto = (v) => {
   if (v === null || v === undefined || v === '') return '—';

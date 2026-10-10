@@ -10,6 +10,7 @@ import { buildUpdateFieldsProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
 import { buildActividadDatos, buildCompletarArgs, buildEditarOcurrenciaArgs, sumarDiasISO } from './calendarioLogic';
 import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs, esErrorDeRed, mensajeErrorLlamada, rolSinDatosNegocio } from './asistenciaLogic';
+import { buildGuardarAvisosArgs } from './avisosAsistenciaLogic';
 import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, buildAjusteCuartoArgs, buildMermaCuartoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
 import {
   normalizarEntregasCierre, claveCierreFinanciero, buildCerrarFinancieroArgs, interpretarCierreFinanciero,
@@ -1723,6 +1724,26 @@ export function useSupaStore(userId, userName, userRol) {
         return { data };
       },
 
+      // PD-01.1 (mig 131): avisos de asistencia al celular (configuración de Admin).
+      avisosAsistencia: async () => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const { data, error } = await supabase.rpc('avisos_asistencia');
+        if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
+        return { data };
+      },
+
+      guardarAvisosAsistencia: async (form) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const built = buildGuardarAvisosArgs(form);
+        if (built.error) return { error: built.error };
+        const { data, error } = await supabase.rpc('guardar_avisos_asistencia', { p_datos: built.datos });
+        if (error) return { error: mensajeErrorLlamada(error, enLinea()) };
+        t()?.success(data?.sin_cambios ? 'Sin cambios' : 'Avisos de asistencia guardados');
+        return { data };
+      },
+
       guardarCentroTrabajo: async (form) => {
         const guard = requireAdmin();
         if (guard) return guard;
@@ -3400,7 +3421,9 @@ export function useSupaStore(userId, userName, userRol) {
 
       // aplicar_conceptos_nomina: agrega al borrador los conceptos del catálogo
       // que le falten (creados o cambiados después de generar los recibos).
-      aplicarConceptosNomina: async (periodoId) => {
+      // 130: además de agregar lo que falta, recalcula comisiones y bonos
+      // automáticos del borrador (respeta lo cambiado a mano).
+      aplicarConceptosNomina: async (periodoId, { silencioso = false } = {}) => {
         const { data, error } = await supabase.rpc('aplicar_conceptos_nomina', { p_periodo_id: Number(periodoId) });
         if (error) {
           console.warn('[aplicarConceptosNomina] rpc:', error.message);
@@ -3409,8 +3432,8 @@ export function useSupaStore(userId, userName, userRol) {
           return { error: msg, message: msg };
         }
         const k = Number(data?.lineas || 0);
-        if (k > 0) t()?.success(`${k} concepto${k === 1 ? '' : 's'} agregado${k === 1 ? '' : 's'} en ${Number(data?.recibos || 0)} recibo${Number(data?.recibos || 0) === 1 ? '' : 's'}`);
-        else t()?.info('Los recibos ya tienen todos sus conceptos');
+        if (k > 0) t()?.success(`${k} renglón${k === 1 ? '' : 'es'} actualizado${k === 1 ? '' : 's'} en ${Number(data?.recibos || 0)} recibo${Number(data?.recibos || 0) === 1 ? '' : 's'}`);
+        else if (!silencioso) t()?.info('Los recibos ya están al día');
         rf();
         return { data };
       },

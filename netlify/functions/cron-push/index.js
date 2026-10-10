@@ -1,6 +1,8 @@
 // cron-push — repartidor de Web Push (Tanda 30). Cada 5 minutos toma
 // las notificaciones nuevas (push_enviada = false) y las manda a todos
-// los dispositivos suscritos, con el mismo deep link que la campana.
+// los dispositivos de quienes ven la campana (Admin y Facturación), con
+// el mismo deep link. Un chofer o empleado suscrito para su asistencia no
+// recibe avisos del negocio.
 //
 // Diseño anti-inundación:
 // - Solo notificaciones de las últimas 6 horas (si el cron estuvo
@@ -13,7 +15,7 @@
 import { ok, serverError } from '../_lib/http.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 import { withSentry } from '../_lib/sentry.js';
-import { enviarPushATodas, pushHabilitado } from '../_lib/push.js';
+import { enviarPush, pushHabilitado, usuariosDeCampana } from '../_lib/push.js';
 import { buildPushPayload } from '../../../src/data/pushLogic';
 
 const _handler = async () => {
@@ -39,10 +41,11 @@ const _handler = async () => {
     .in('id', ids);
   if (markError) return serverError('No se pudo marcar push_enviada', markError.message);
 
+  const usuarioIds = await usuariosDeCampana(supabase);
   let totalEnviadas = 0;
   let totalBorradas = 0;
   for (const notif of pendientes) {
-    const { enviadas, borradas } = await enviarPushATodas(supabase, buildPushPayload(notif));
+    const { enviadas, borradas } = await enviarPush(supabase, buildPushPayload(notif), { usuarioIds });
     totalEnviadas += enviadas;
     totalBorradas += borradas;
   }

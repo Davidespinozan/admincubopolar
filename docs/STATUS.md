@@ -354,6 +354,29 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## Nómina automática (NOM-2, mig 130) y avisos de asistencia (PD-01.1, mig 131) — 2026-10-09 — IMPLEMENTED LOCALLY / MIGRATIONS PENDING
+**Las migraciones 130 y 131 NO están aplicadas en producción y el frontend no está desplegado.** Pedido del dueño (por medio de David,
+2026-10-09): avisos, comisiones y bono "lo más pro, siempre modificable"; diseño delegado.
+- **130 (aditiva):** comisiones calculadas con lo ENTREGADO (% del importe, $ por bolsa, $ por entrega; como vendedor, chofer o ayudante;
+  opcional por producto), tabla `nomina_linea_ordenes` (una orden se comisiona una sola vez por concepto y persona), percepciones
+  condicionadas a la asistencia de la semana (retardos y faltas permitidos), `nomina_recibo_lineas.detalle` y recálculo del borrador
+  en `aplicar_conceptos_nomina` (respeta lo editado a mano). No redefine `generar_recibos_nomina`, `guardar_recibo_nomina`,
+  `editar_recibo_nomina`, `pagar_nomina` ni `nomina_recalcular_recibo` (la suite lo comprueba por md5). Tarjeta: `docs/sistema/nomina.md`.
+- **131 (aditiva):** `asistencia_avisos_config` (una fila; nace encendida), `asistencia_avisos` (uno por tipo, persona, turno y día),
+  `asistencia_generar_avisos` (solo service_role) y contratos de Admin `avisos_asistencia` / `guardar_avisos_asistencia`. No escribe
+  asistencias. Netlify: función programada nueva `cron-avisos-asistencia` (cada 5 min; Functions 18 → 19) y `cron-push` ahora manda las
+  notificaciones del negocio solo a Admin y Facturación (antes a TODO dispositivo suscrito).
+- **Frontend:** Nómina → Conceptos (formas de cálculo, "qué cuenta", productos, condición de asistencia), explicación en cada renglón,
+  "Actualizar cálculos" y recálculo automático al tocar Pagar; Asistencia → Avisos (Admin); botón de avisos en "Mi asistencia" (todos).
+- **Validación local (2026-10-09; sin corrida completa del runner, por decisión del usuario mientras no haya operación real):** 130 y 131
+  aplicadas ×2 sobre la base local con 123–129; suites `130_nomina_automatica_test.sql` (39) y `131_avisos_asistencia_test.sql` (21) OK;
+  re-corridas tras ambas: 100, 116, 117, 119, 120, 128 OK. Vitest 1,577 en UTC / Mazatlán / CDMX / Madrid; lint, typecheck y build limpios;
+  capturas WebKit iPhone 14 de las pantallas nuevas. Fases integradas al runner (sin ejecutar completo).
+- **Activación (pendiente de autorización):** 1) aplicar 130 y 131 (compatibles con el frontend desplegado) → 2) verificación de solo
+  lectura → 3) push del frontend → 4) bundle vivo y función programada en Netlify.
+- **No verificable sin operación real:** la entrega del push en teléfonos (iPhone exige la app en la pantalla de inicio) y que las
+  variables VAPID estén vigentes en Netlify (producción tiene 2 suscripciones registradas).
+
 ## Conceptos de nómina (NOM-1, mig 128) — 2026-10-09 — DEPLOYED / TECHNICALLY VERIFIED
 **Migración 128 aplicada por el dueño en el SQL Editor (2026-10-10, antes de 01:32Z; SHA-256
 `c2c814012aaad9b5f1d2692be5a1b109ede0fc58f243ed7b96061eef760594d5`) y verificada en solo lectura a las 01:32Z:** tablas

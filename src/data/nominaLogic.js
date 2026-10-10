@@ -127,6 +127,40 @@ export const clasesDeTipo = (tipo) => CLASES_CONCEPTO.filter(c => c.tipo === tip
 export const etiquetaClase = (categoria) => CLASES_CONCEPTO.find(c => c.id === categoria)?.label || '';
 const claseValida = (tipo, categoria) => CLASES_CONCEPTO.some(c => c.id === categoria && c.tipo === tipo);
 
+// 130 (NOM-2): además de monto fijo y % del salario diario, un concepto se
+// puede calcular con lo ENTREGADO de la persona (lo calcula el servidor) y una
+// percepción se puede condicionar a la asistencia de la semana.
+export const FORMAS_CALCULO = [
+  { id: 'fijo', label: 'Monto fijo por semana', campo: 'Monto por semana', ejemplo: '200' },
+  { id: 'porcentaje_sd', label: '% del salario diario', campo: 'Porcentaje del salario diario', ejemplo: '25' },
+  { id: 'porcentaje_ventas', label: '% de lo vendido', campo: 'Porcentaje sobre el importe', ejemplo: '2', comision: true },
+  { id: 'por_unidad', label: '$ por bolsa', campo: 'Pesos por bolsa', ejemplo: '0.50', comision: true },
+  { id: 'por_entrega', label: '$ por entrega', campo: 'Pesos por venta o entrega', ejemplo: '5', comision: true },
+];
+export const BASES_COMISION = [
+  { id: 'vendedor', label: 'Sus ventas', ayuda: 'Las ventas que levantó, cuando ya se entregaron.' },
+  { id: 'chofer', label: 'Sus entregas como chofer', ayuda: 'Lo que entregó en sus rutas, lo haya vendido quien lo haya vendido.' },
+  { id: 'ayudante', label: 'Sus entregas como ayudante', ayuda: 'Lo que se entregó en las rutas donde fue de ayudante.' },
+];
+const formaDe = (calculo) => FORMAS_CALCULO.find(f => f.id === calculo) || FORMAS_CALCULO[0];
+/** ¿Se calcula con ventas o entregas? */
+export const esComision = (calculo) => formaDe(calculo).comision === true;
+/** ¿El servidor lo calcula cada semana (ventas o asistencia)? */
+export const esAutomatico = (concepto) => !!concepto && (esComision(concepto.calculo) || concepto.reglaAsistencia === true);
+/** Formas de cálculo disponibles según el tipo (un descuento no se calcula con ventas). */
+export const formasDeTipo = (tipo) => FORMAS_CALCULO.filter(f => tipo === 'percepcion' || !f.comision);
+/** Etiqueta y ejemplo del campo del número según la forma de cálculo. */
+export const campoDeCalculo = (calculo) => ({ label: formaDe(calculo).campo, ejemplo: formaDe(calculo).ejemplo });
+const plural = (k, uno, varios) => `${k} ${k === 1 ? uno : varios}`;
+/** "Se pierde con más de 0 retardos o más de 1 falta" en palabras llanas. */
+export function describirRegla(concepto) {
+  if (!concepto?.reglaAsistencia) return '';
+  const r = Number(concepto.maxRetardos) || 0;
+  const f = Number(concepto.maxFaltas) || 0;
+  if (r === 0 && f === 0) return 'solo si no falta ni llega tarde';
+  return `permite ${plural(r, 'retardo', 'retardos')} y ${plural(f, 'falta', 'faltas')}`;
+}
+
 const mismoId = (a, b) => a != null && b != null && Number(a) === Number(b);
 const texto = (v) => String(v ?? '').replace(/\s+/g, ' ').trim();
 const esVacio = (v) => v === '' || v == null;
@@ -148,18 +182,28 @@ export function conceptoAplica(concepto, empleado, asignacion) {
 /** Monto semanal de un concepto para una persona (monto propio y % del salario diario), sin tope. */
 export function montoConcepto(concepto, asignacion, salarioDiario) {
   if (!concepto) return 0;
+  // Con ventas o entregas el importe lo calcula el servidor (aquí no hay órdenes).
+  if (esComision(concepto.calculo)) return 0;
   const base = Number(esVacio(asignacion?.monto) ? concepto.monto : asignacion.monto) || 0;
   if (concepto.calculo !== 'porcentaje_sd') return centavos(base);
   // En centavos enteros: mismo redondeo que el servidor (318.93 al 50 % = 159.47, no 159.46).
   return Math.round(Math.round((Number(salarioDiario) || 0) * 100) * base / 100) / 100;
 }
 
-/** "$200 por semana" · "25 % del salario diario". */
+/** "$200 por semana" · "25 % del salario diario" · "2 % de sus ventas" (+ condición de asistencia). */
 export function describirMonto(concepto) {
   if (!concepto) return '';
   const m = Number(concepto.monto) || 0;
-  if (concepto.calculo === 'porcentaje_sd') return `${m} % del salario diario`;
-  return m > 0 ? `${pesos(m)} por semana` : 'Monto por persona';
+  const de = { vendedor: 'sus ventas', chofer: 'sus entregas', ayudante: 'sus entregas de ayudante' }[concepto.baseRol] || 'sus ventas';
+  const solo = (concepto.skus || []).length ? ` (${(concepto.skus || []).join(', ')})` : '';
+  let base;
+  if (concepto.calculo === 'porcentaje_sd') base = `${m} % del salario diario`;
+  else if (concepto.calculo === 'porcentaje_ventas') base = `${m} % de ${de}${solo}`;
+  else if (concepto.calculo === 'por_unidad') base = `${pesos(m)} por bolsa de ${de}${solo}`;
+  else if (concepto.calculo === 'por_entrega') base = `${pesos(m)} por cada una de ${de}${solo}`;
+  else base = m > 0 ? `${pesos(m)} por semana` : 'Monto por persona';
+  const regla = describirRegla(concepto);
+  return regla ? `${base} · ${regla}` : base;
 }
 
 /** "Todos" · "Producción" · "3 personas" (+ excepciones). */
@@ -200,7 +244,7 @@ export function lineasEditables(recibo, lineas) {
   return (lineas || []).filter(l => mismoId(l.reciboId, recibo?.id))
     .map(l => ({
       key: `l${l.id}`, conceptoId: l.conceptoId == null ? null : Number(l.conceptoId), nombre: texto(l.nombre), tipo: l.tipo, categoria: l.categoria,
-      monto: String(Number(l.monto || 0)), propuesto: l.propuesto == null ? null : Number(l.propuesto), _id: Number(l.id),
+      monto: String(Number(l.monto || 0)), propuesto: l.propuesto == null ? null : Number(l.propuesto), detalle: texto(l.detalle), _id: Number(l.id),
     }))
     .sort((a, b) => (a.tipo === b.tipo ? 0 : a.tipo === 'percepcion' ? -1 : 1) || ((a.conceptoId == null) - (b.conceptoId == null)) || (a._id - b._id))
     .map(({ _id, ...l }) => l);
@@ -277,7 +321,9 @@ export function formDeConcepto(concepto, asignaciones) {
   }
   return {
     nombre: texto(c.nombre), tipo, categoria: c.categoria || (tipo === 'descuento' ? 'prestamo' : 'bono_puntualidad'),
-    calculo: c.calculo === 'porcentaje_sd' ? 'porcentaje_sd' : 'fijo', monto: esVacio(c.monto) ? '' : String(Number(c.monto)),
+    calculo: FORMAS_CALCULO.some(f => f.id === c.calculo) ? c.calculo : 'fijo', monto: esVacio(c.monto) ? '' : String(Number(c.monto)),
+    baseRol: BASES_COMISION.some(b => b.id === c.baseRol) ? c.baseRol : 'vendedor', skus: Array.isArray(c.skus) ? c.skus.map(String) : [],
+    reglaAsistencia: c.reglaAsistencia === true, maxRetardos: String(Number(c.maxRetardos) || 0), maxFaltas: String(Number(c.maxFaltas) || 0),
     aplicaA: ['todos', 'departamento', 'personas'].includes(c.aplicaA) ? c.aplicaA : 'todos', departamento: texto(c.departamento),
     activo: c.activo !== false, vigenteDesde: c.vigenteDesde || '', vigenteHasta: c.vigenteHasta || '', notas: texto(c.notas), personas,
   };
@@ -307,10 +353,19 @@ export function buildGuardarConceptoArgs(conceptoId, form = {}, empleados = []) 
   if (!nombre) return { error: 'Escribe el nombre del concepto' };
   if (nombre.length > 60) return { error: 'El nombre no puede pasar de 60 letras' };
   if (!claseValida(form.tipo, form.categoria)) return { error: 'Elige qué clase de concepto es' };
-  const calculo = form.calculo === 'porcentaje_sd' ? 'porcentaje_sd' : 'fijo';
+  const calculo = FORMAS_CALCULO.some(f => f.id === form.calculo) ? form.calculo : 'fijo';
+  const comision = esComision(calculo);
+  if (comision && form.tipo !== 'percepcion') return { error: 'Un descuento no se calcula con ventas' };
+  if (comision && !BASES_COMISION.some(b => b.id === form.baseRol)) return { error: 'Indica de quién son las ventas o entregas que cuentan' };
   const monto = num(form.monto);
   if (!Number.isFinite(monto) || monto < 0) return { error: 'Monto inválido' };
   if (calculo === 'porcentaje_sd' && monto > 700) return { error: 'El porcentaje del salario diario no puede pasar de 700' };
+  if (calculo === 'porcentaje_ventas' && monto > 100) return { error: 'El porcentaje sobre ventas no puede pasar de 100' };
+  const regla = form.reglaAsistencia === true && form.tipo === 'percepcion';
+  const maxRetardos = regla ? Number(form.maxRetardos || 0) : 0;
+  const maxFaltas = regla ? Number(form.maxFaltas || 0) : 0;
+  if (![maxRetardos, maxFaltas].every(x => Number.isInteger(x) && x >= 0 && x <= 7)) return { error: 'Los retardos y las faltas permitidos van de 0 a 7' };
+  const tasaMax = calculo === 'porcentaje_sd' ? 700 : calculo === 'porcentaje_ventas' ? 100 : Infinity;
   if (!['todos', 'departamento', 'personas'].includes(form.aplicaA)) return { error: 'Indica a quién aplica' };
   if (form.aplicaA === 'departamento' && !texto(form.departamento)) return { error: 'Elige el departamento' };
   if (form.vigenteDesde && form.vigenteHasta && form.vigenteHasta < form.vigenteDesde) return { error: 'La fecha final no puede ser anterior a la inicial' };
@@ -326,7 +381,7 @@ export function buildGuardarConceptoArgs(conceptoId, form = {}, empleados = []) 
     }
     const pm = esVacio(p.monto) ? null : num(p.monto);
     const pl = esVacio(p.limite) ? null : num(p.limite);
-    if (pm != null && (!Number.isFinite(pm) || pm < 0 || (calculo === 'porcentaje_sd' && pm > 700))) return { error: `Monto inválido para ${texto(e.nombre)}` };
+    if (pm != null && (!Number.isFinite(pm) || pm < 0 || pm > tasaMax)) return { error: `Monto inválido para ${texto(e.nombre)}` };
     if (pl != null && (!Number.isFinite(pl) || pl <= 0)) return { error: `Total del préstamo inválido para ${texto(e.nombre)}` };
     if ((pm ?? monto) > 0) conMonto += 1;
     if (form.aplicaA !== 'personas' && pm == null && pl == null) continue;
@@ -347,6 +402,8 @@ export function buildGuardarConceptoArgs(conceptoId, form = {}, empleados = []) 
         departamento: form.aplicaA === 'departamento' ? texto(form.departamento) : null,
         activo: form.activo !== false, vigente_desde: form.vigenteDesde || null, vigente_hasta: form.vigenteHasta || null,
         notas: texto(form.notas) || null, personas,
+        base_rol: comision ? form.baseRol : null, skus: comision ? [...new Set((form.skus || []).map(texto).filter(Boolean))] : [],
+        regla_asistencia: regla, max_retardos: maxRetardos, max_faltas: maxFaltas,
       },
     },
   };
@@ -375,14 +432,24 @@ export function recibosConFaltantes(recibos, lineas, conceptos, asignaciones, em
     if (activos.some(c => {
       const a = asignacionDe(asignaciones, c.id, emp.id);
       return !tiene.has(Number(c.id)) && !(c.vigenteDesde || c.vigenteHasta) && esVacio(a?.limiteTotal)
-        && conceptoAplica(c, emp, a) && montoConcepto(c, a, r.salarioDiario) > 0;
+        && conceptoAplica(c, emp, a) && (esAutomatico(c) || montoConcepto(c, a, r.salarioDiario) > 0);
     })) k += 1;
   }
   return k;
+}
+
+/** ¿El borrador tiene renglones que el servidor calcula (ventas o asistencia)? Entonces conviene "Actualizar" antes de pagar. */
+export function recibosConAutomaticos(recibos, lineas, conceptos) {
+  const auto = new Set((conceptos || []).filter(esAutomatico).map(c => Number(c.id)));
+  if (!auto.size) return 0;
+  const ids = new Set((recibos || []).map(r => Number(r.id)));
+  return new Set((lineas || []).filter(l => ids.has(Number(l.reciboId)) && l.conceptoId != null && auto.has(Number(l.conceptoId))).map(l => Number(l.reciboId))).size;
 }
 
 /** Texto de ayuda del catálogo (vive aquí: la vista no menciona impuestos ni los calcula). */
 export const AYUDA_CONCEPTOS = 'Da de alta aquí cada bono, comisión, prima o descuento una sola vez y di a quién le toca. '
   + 'Al crear la nómina de la semana, cada recibo ya los trae puestos y tú solo quitas o cambias lo que no aplicó. '
   + 'ISR e IMSS se capturan como descuento con el monto de cada persona: el sistema no calcula impuestos. '
-  + 'Un préstamo lleva el total a descontar y se apaga solo al terminar.';
+  + 'Un préstamo lleva el total a descontar y se apaga solo al terminar. '
+  + 'Una comisión se puede calcular sola con lo que cada quien vendió o entregó, y un bono se puede quitar solo a quien faltó o llegó tarde: '
+  + 'el sistema propone el número, dice de dónde salió, y tú lo puedes cambiar en el recibo.';

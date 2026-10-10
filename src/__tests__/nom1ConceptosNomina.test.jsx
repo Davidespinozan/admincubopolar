@@ -158,13 +158,15 @@ describe('NOM-1: desglose del recibo', () => {
 describe('NOM-1: formulario de un concepto', () => {
   it('nuevo: se paga, monto fijo, para todos, activo y sin fechas', () => {
     expect(formDeConcepto(null, ASIG)).toEqual({ nombre: '', tipo: 'percepcion', categoria: 'bono_puntualidad', calculo: 'fijo', monto: '', aplicaA: 'todos', departamento: '',
+      baseRol: 'vendedor', skus: [], reglaAsistencia: false, maxRetardos: '0', maxFaltas: '0',
       activo: true, vigenteDesde: '', vigenteHasta: '', notas: '', personas: {} });
   });
 
   it('bono para todos: no manda personas; quitar a alguien manda su exclusión', () => {
     const f = { ...formDeConcepto(null, []), nombre: '  Bono de   puntualidad ', monto: '200' };
     expect(buildGuardarConceptoArgs(null, f, EMPS).args).toEqual({ p_concepto_id: null, p_datos: { nombre: 'Bono de puntualidad', tipo: 'percepcion', categoria: 'bono_puntualidad',
-      calculo: 'fijo', monto: 200, aplica_a: 'todos', departamento: null, activo: true, vigente_desde: null, vigente_hasta: null, notas: null, personas: [] } });
+      calculo: 'fijo', monto: 200, aplica_a: 'todos', departamento: null, activo: true, vigente_desde: null, vigente_hasta: null, notas: null, personas: [],
+      base_rol: null, skus: [], regla_asistencia: false, max_retardos: 0, max_faltas: 0 } });
     const g = { ...f, personas: { 2: { incluida: false, monto: '', limite: '' }, 3: { incluida: true, monto: '300', limite: '' } } };
     expect(buildGuardarConceptoArgs(10, g, EMPS).args.p_datos.personas).toEqual([{ empleado_id: 2, excluido: true }, { empleado_id: 3, monto: 300 }]);
     expect(buildGuardarConceptoArgs(10, g, EMPS).args.p_concepto_id).toBe(10);

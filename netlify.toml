@@ -40,6 +40,10 @@
 [functions."cron-push"]
   schedule = "*/5 * * * *"
 
+# PD-01.1 (mig 131): avisos de asistencia a la persona y a los jefes, cada 5 min.
+[functions."cron-avisos-asistencia"]
+  schedule = "*/5 * * * *"
+
 # Assets con hash en nombre → cache inmutable (1 año)
 [[headers]]
   for = "/assets/*"
