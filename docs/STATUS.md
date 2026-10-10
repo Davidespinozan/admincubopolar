@@ -354,8 +354,11 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Evidencias de la venta: fotos del Chofer en el sistema (mig 134) — 2026-10-10 — IMPLEMENTED LOCALLY / MIGRATION PENDING
-**134 NO está aplicada en producción y el frontend no está desplegado.** Cierra el hallazgo de la fase anterior: la foto del comprobante de
+## Evidencias de la venta: fotos del Chofer en el sistema (mig 134) — 2026-10-10 — MIGRATION APPLIED TO PRODUCTION / VALIDATED (frontend pendiente de deploy)
+**134 aplicada por el dueño en el SQL Editor (2026-10-10; SHA-256 `70e4aeb2dbb4c653e81efe94edce3b4b0a3d7229f02eb997aee1509196a54a0d`) y verificada en solo
+lectura: md5 y permisos de `registrar_evidencia_orden` (`937fb9f2…`), `erp_foto_merma_en_uso` (`34c27b00…`) y la guarda, RLS, policy, grants, CHECK,
+llaves y trigger de `orden_evidencias` idénticos a la base local (la única diferencia es que Postgres 18 local lista los NOT NULL como
+constraints); 0 evidencias.** Cierra el hallazgo de la fase anterior: la foto del comprobante de
 transferencia y la de la entrega se quedaban en el teléfono del Chofer.
 - **134 (aditiva):** `orden_evidencias` (tipo `comprobante_pago` / `entrega`, ruta en el bucket privado `mermas`, referencia, quién la subió;
   inmutable, sin DML por API; lectura Admin y Facturación o quien la subió) y `registrar_evidencia_orden` (Admin cualquier orden, Ventas las
