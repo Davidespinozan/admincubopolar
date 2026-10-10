@@ -3,6 +3,7 @@ import CancelarCFDIModal from '../CancelarCFDIModal';
 import { isSandboxMode } from '../../lib/facturamaMode';
 import { estadoComplementosOrden, ESTADO_COMPLEMENTO } from '../../data/complementoLogic';
 import { correoFacturaValido } from '../../data/cfdiDocumentoLogic';
+import { receptorDeFactura, etiquetaRegimen, CODIGOS_OFRECER_PUBLICO } from '../../data/receptorFiscalLogic';
 
 // OL-04: estado del complemento POR PAGO (parcialidad, monto, fecha) y acción sobre ESE pago.
 const ETIQUETA_COMPLEMENTO = {
@@ -76,11 +77,20 @@ export function FacturacionView({ data, actions }) {
     return { timbradas: count, totalFact: sum };
   }, [data.ordenes]);
 
-  const handleTimbrar = useCallback(async (folio) => {
-    const err = await actions.timbrar(folio);
-    if (!err) toast?.success(`CFDI timbrado: ${folio}`);
-    setPreviewOrden(null);
-  }, [actions, toast]);
+  // El servidor nunca factura a público en general por su cuenta: si los datos fiscales
+  // del cliente faltan o el SAT los rechaza, lo dice y aquí se pregunta qué hacer.
+  const [ofrecerPublico, setOfrecerPublico] = useState(null); // { folio, mensaje }
+  const [timbrando, setTimbrando] = useState(false);
+  const handleTimbrar = useCallback(async (folio, opciones) => {
+    if (timbrando) return;
+    setTimbrando(true);
+    try {
+      const err = await actions.timbrar(folio, opciones);
+      if (!err) toast?.success(opciones?.publicoGeneral ? `CFDI timbrado a público en general: ${folio}` : `CFDI timbrado: ${folio}`);
+      setPreviewOrden(null);
+      setOfrecerPublico(err && CODIGOS_OFRECER_PUBLICO.has(err.code) ? { folio, mensaje: err.message } : null);
+    } finally { setTimbrando(false); }
+  }, [actions, toast, timbrando]);
 
   const [emitiendo, setEmitiendo] = useState(null);
   const handleEmitirComplemento = useCallback(async (pagoId) => {
@@ -269,21 +279,29 @@ export function FacturacionView({ data, actions }) {
         const lineas = o.preciosSnapshot || [];
         const subtotal = lineas.reduce((s, l) => s + n(l.subtotal || n(l.qty || l.cantidad) * n(l.precio_unit)), 0);
         const esPPD = s(o.metodo_pago).toLowerCase().includes('crédito');
+        const rec = receptorDeFactura(o.cliente_id ? cli : null, { cpEmisor: data?.configEmpresa?.codigoPostal });
         return <div className="space-y-4">
           {/* Emisor / Receptor */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="bg-blue-50 rounded-xl p-3">
               <p className="text-[10px] font-bold text-blue-400 uppercase mb-1">Emisor</p>
-              <p className="text-sm font-bold text-slate-800">{s(data?.configEmpresa?.razonSocial) || 'Cubo Polar S.A. de C.V.'}</p>
+              <p className="text-sm font-bold text-slate-800">{s(data?.configEmpresa?.razonSocial) || 'Falta la razón social (Ajustes)'}</p>
               {data?.configEmpresa?.rfc && <p className="font-mono text-xs text-slate-500 mt-0.5">{s(data.configEmpresa.rfc)}</p>}
             </div>
             <div className="bg-slate-50 rounded-xl p-3">
               <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Receptor</p>
-              <p className="text-sm font-bold text-slate-800">{s(cli.nombre) || s(o.cliente)}</p>
-              <p className="font-mono text-xs text-slate-500 mt-0.5">{s(cli.rfc) || 'Sin RFC'}</p>
-              {s(cli.regimen_fiscal) && <p className="text-xs text-slate-400 mt-0.5">{s(cli.regimen_fiscal)}</p>}
+              <p className="text-sm font-bold text-slate-800">{rec.nombre}</p>
+              <p className="font-mono text-xs text-slate-500 mt-0.5">{rec.rfc}</p>
+              <p className="text-xs text-slate-400 mt-0.5">{etiquetaRegimen(rec.regimen) || 'Sin régimen'}{rec.cp ? ` · C.P. ${rec.cp}` : ''}</p>
+              {rec.publicoGeneral && <p className="text-xs text-slate-500 mt-1">{s(cli.nombre) || s(o.cliente) || 'Esta venta'} no tiene RFC propio: la factura sale a público en general.</p>}
             </div>
           </div>
+          {rec.faltan.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <p className="font-semibold">A este cliente le falta {rec.faltan.join(', ')}.</p>
+              <p className="text-xs mt-1">Corrígelo en Clientes para que la factura salga a su nombre. Si timbras así, el sistema te avisará y no facturará a público en general sin preguntarte.</p>
+            </div>
+          )}
 
           {/* Detalles generales */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
@@ -330,17 +348,28 @@ export function FacturacionView({ data, actions }) {
 
           {/* ClaveProdServ / Régimen */}
           <div className="text-xs text-slate-400 space-y-0.5">
-            <p>ClaveProdServ: 50202302 — Hielo</p>
-            <p>Uso CFDI: G03 — Gastos en general</p>
+            <p>Uso CFDI: {rec.usoCfdi}</p>
             <p>IVA: Tasa 0% (Art. 2-A Fracción I LIVA)</p>
           </div>
 
           <div className="flex justify-end gap-2 mt-4">
             <FormBtn onClick={() => setPreviewOrden(null)}>Cerrar</FormBtn>
-            <FormBtn primary onClick={() => handleTimbrar(o.folio)}>Timbrar CFDI</FormBtn>
+            <FormBtn primary loading={timbrando} onClick={() => handleTimbrar(o.folio)}>Timbrar CFDI</FormBtn>
           </div>
         </div>;
       })()}
+    </Modal>
+
+    {/* ═══ MODAL: la factura no salió a nombre del cliente — decide el operador ═══ */}
+    <Modal open={!!ofrecerPublico} onClose={() => setOfrecerPublico(null)} title="La factura no se timbró">
+      {ofrecerPublico && <div className="space-y-4">
+        <p className="text-sm text-slate-700">{ofrecerPublico.mensaje}</p>
+        <p className="text-xs text-slate-500">Si la facturas a público en general, el cliente NO recibe una factura a su nombre (no la puede deducir).</p>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <FormBtn onClick={() => setOfrecerPublico(null)}>Cerrar y corregir al cliente</FormBtn>
+          <FormBtn primary loading={timbrando} onClick={() => handleTimbrar(ofrecerPublico.folio, { publicoGeneral: true })}>Facturar a público en general</FormBtn>
+        </div>
+      </div>}
     </Modal>
   </div>);
 }

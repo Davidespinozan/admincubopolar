@@ -38,6 +38,7 @@ import {
 import { getAuthenticatedProfile } from '../_lib/auth.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 import { withSentry } from '../_lib/sentry.js';
+import { registrarRastro } from '../_lib/rastro.js';
 import {
   validateAdminCreateUser,
   mapAuthErrorToUserMessage,
@@ -112,6 +113,10 @@ export const createHandler = ({
     .single();
 
   if (!insertError && usuario) {
+    await registrarRastro(supabase, {
+      actor: authResult.profile, accion: 'Crear usuario', modulo: 'Usuarios',
+      detalle: `${usuario.nombre} (${usuario.rol}) — ${usuario.email}${body?.forzarCambio === true ? ' — contraseña temporal' : ''}`,
+    });
     // GER-1 (120): con `forzarCambio` la contraseña que eligió Administración es
     // TEMPORAL: el servidor guarda su huella y la cuenta no tiene autoridad
     // hasta que su dueño la cambia. Si el paso falla la cuenta queda creada y

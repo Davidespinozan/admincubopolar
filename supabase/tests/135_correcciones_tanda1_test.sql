@@ -20,7 +20,8 @@ INSERT INTO usuarios (id, nombre, email, rol, estatus, auth_id) VALUES
   (13503, 'Fact T135', 'f@t135', 'Facturación', 'Activo', '13500000-0000-0000-0000-000000000003');
 INSERT INTO empleados (id, nombre, puesto, depto, salario_diario, fecha_ingreso, estatus, usuario_id) VALUES
   (13501, 'Emp T135 vendedor', 'Vendedor', 'Ventas', 100, '2024-01-01', 'Activo', 13502),
-  (13502, 'Emp T135 prestamo', 'Operador', 'Producción', 250, '2024-01-01', 'Activo', NULL);
+  -- Con usuario ligado: desde 136 solo se cuentan faltas a quien puede marcar.
+  (13502, 'Emp T135 prestamo', 'Operador', 'Producción', 250, '2024-01-01', 'Activo', 13503);
 INSERT INTO centros_trabajo (id, nombre, latitud, longitud, radio_m) VALUES (13501, 'Centro T135', 24, -104, 100);
 SET LOCAL session_replication_role = origin;
 

@@ -3,7 +3,7 @@ import { getAuthenticatedProfile } from '../_lib/auth.js';
 import { insertInvoiceAttempt } from '../_lib/persistence.js';
 import { getFacturamaConfig } from '../_lib/providers.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
-import { buildCfdiReceiver } from '../_lib/invoiceLogic.js';
+import { buildCfdiReceiver, decidirReceptor, periodoGlobal } from '../_lib/invoiceLogic.js';
 import { translateFacturamaError } from '../_lib/translateFacturama.js';
 import { withSentry } from '../_lib/sentry.js';
 import {
@@ -92,10 +92,6 @@ const buildFacturamaPayload = ({ orden, cliente, lineas, issuerZip }) => {
     };
   });
 
-  const now = new Date();
-  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
-  const currentYear = String(now.getFullYear());
-
   const cfdi = {
     CfdiType: 'I',
     PaymentForm: paymentForm,
@@ -118,8 +114,7 @@ const buildFacturamaPayload = ({ orden, cliente, lineas, issuerZip }) => {
   if (receiver.isPublicoGeneral) {
     cfdi.GlobalInformation = {
       Periodicity: '04',
-      Months: currentMonth,
-      Year: currentYear,
+      ...periodoGlobal(),
     };
   }
 
@@ -144,7 +139,7 @@ const getOrderContext = async ({ supabase, orden }) => {
   // 🔴-6 Tanda 4: CP del emisor se lee de configuracion_empresa (id=1
   // singleton, mig 044) en lugar del hardcoded ISSUER_ZIP_CODE.
   const [
-    { data: cliente },
+    { data: cliente, error: clienteError },
     { data: lineas, error: lineasError },
     { data: configEmpresa },
   ] = await Promise.all([
@@ -155,6 +150,10 @@ const getOrderContext = async ({ supabase, orden }) => {
     supabase.from('configuracion_empresa').select('codigo_postal').eq('id', 1).maybeSingle(),
   ]);
 
+  // Si el cliente no se pudo leer NO se timbra: antes la factura salía a público en general.
+  if (orden.cliente_id && (clienteError || !cliente)) {
+    throw new Error('No se pudo leer el cliente de la orden; no se contactó a Facturama. Reintenta.');
+  }
   if (lineasError) throw lineasError;
   if (!lineas || lineas.length === 0) throw new Error('La orden no tiene líneas para facturar');
 
@@ -282,7 +281,10 @@ export const createHandler = ({
     }
 
     const { cliente, lineas, issuerZip } = await getOrderContext({ supabase, orden });
-    let payload = buildFacturamaPayload({ orden, cliente, lineas, issuerZip });
+    // A quién se timbra se decide ANTES del proveedor y nunca cambia en silencio.
+    const receptor = decidirReceptor(cliente, { publicoGeneral: body?.publicoGeneral === true });
+    if (!receptor.ok) return json(receptor.status, { error: receptor.error, code: receptor.code });
+    const payload = buildFacturamaPayload({ orden, cliente: receptor.cliente, lineas, issuerZip });
 
     // 9. Reserva (transacción corta en la base; sin proveedor todavía).
     const res = await supabase.rpc('reservar_operacion_cfdi', {
@@ -302,17 +304,13 @@ export const createHandler = ({
     }
     operacion = reserva.operacion_id;
 
-    // 10. Proveedor (fuera de toda transacción). Reintento como público general
-    // si Facturama rechazó el RFC: el primer intento fue un rechazo definitivo,
-    // así que sigue siendo una sola emisión por operación.
+    // 10. Proveedor (fuera de toda transacción). Una sola llamada: si Facturama
+    // rechaza el RFC, la factura NO se reintenta sola a público en general (antes
+    // sí, y el cliente se quedaba sin factura a su nombre sin que nadie lo viera).
     const proveedor = { fetchImpl, getConfig, timeoutMs };
-    let respuesta = await timbrarEnFacturama(payload, proveedor);
-    let clase = clasificarEmision(respuesta);
-    if (clase.resultado === 'fallida' && /RFC/.test(mensajeRechazo(respuesta)) && payload.Receiver?.Rfc !== 'XAXX010101000') {
-      payload = buildFacturamaPayload({ orden, cliente: null, lineas, issuerZip });
-      respuesta = await timbrarEnFacturama(payload, proveedor);
-      clase = clasificarEmision(respuesta);
-    }
+    const respuesta = await timbrarEnFacturama(payload, proveedor);
+    const clase = clasificarEmision(respuesta);
+    const rfcRechazado = clase.resultado === 'fallida' && /RFC/.test(mensajeRechazo(respuesta)) && !receptor.publicoGeneral;
     // OL-04: cómo se emitió este CFDI (PPD / PUE) queda registrado en la operación
     // (fuente fiscal inmutable para los complementos de pago).
     const datos = { ...clase.datos, metodo_pago_sat: payload.PaymentMethod, detalle: { ...(clase.datos.detalle || {}), payload_hash_final: huellaPayload(payload) } };
@@ -349,7 +347,13 @@ export const createHandler = ({
           code: 'ORDEN_CAMBIO_TRAS_TIMBRAR', operacionId: operacion, facturamaUuid: uuid,
         });
       }
-      return ok({ invoice: respuesta.raw, operacionId: operacion });
+      return ok({ invoice: respuesta.raw, operacionId: operacion, publicoGeneral: receptor.publicoGeneral });
+    }
+    if (rfcRechazado) {
+      return json(422, {
+        error: `No se timbró: el SAT rechazó los datos fiscales de ${cliente?.nombre || 'el cliente'} (${mensajeRechazo(respuesta)}). Revisa RFC, razón social, régimen y código postal como vienen en su constancia, o factura esta venta a público en general.`,
+        code: 'RFC_RECHAZADO', operacionId: operacion,
+      });
     }
     if (clase.resultado === 'fallida') {
       return json(422, { error: mensajeRechazo(respuesta), code: 'PROVEEDOR_RECHAZO', operacionId: operacion });

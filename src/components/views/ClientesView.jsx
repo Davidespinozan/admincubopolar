@@ -3,6 +3,7 @@ import DireccionForm from '../ui/DireccionForm';
 import { validarRFC, normalizeStr, formatDireccion, validateDireccion } from '../../utils/safe';
 import { REGIMENES_OPTIONS } from '../../data/sat/regimenesFiscales';
 import SucursalesModal from '../SucursalesModal';
+import { USOS_CFDI, tipoRfc, fiscalesPorOmision, regimenCompatible, faltantesFiscales } from '../../data/receptorFiscalLogic';
 
 export function ClientesView({ data, actions, user }) {
   const toast = useToast();
@@ -28,7 +29,7 @@ export function ClientesView({ data, actions, user }) {
   const [page, setPage] = useState(0);
   const [errors, setErrors] = useState({});
   const empty = {
-    nombre:"",nombreComercial:"",rfc:"",regimen:"616",usoCfdi:"G03",
+    nombre:"",nombreComercial:"",rfc:"",regimen:"",usoCfdi:"",
     correo:"",tipo:"Tienda",contacto:"",
     // Dirección estructurada (mig 056). cp legacy queda fuera del DireccionForm
     // y se llena vía codigo_postal — ver doc deuda en PENDIENTES_TECNICOS.md.
@@ -49,8 +50,8 @@ export function ClientesView({ data, actions, user }) {
       nombre: s(c.nombre),
       nombreComercial: s(c.nombreComercial || c.nombre_comercial),
       rfc: s(c.rfc),
-      regimen: s(c.regimen) || "616",
-      usoCfdi: s(c.usoCfdi) || "G03",
+      regimen: s(c.regimen),
+      usoCfdi: s(c.usoCfdi),
       cp: s(c.cp),
       correo: s(c.correo),
       tipo: s(c.tipo),
@@ -61,7 +62,7 @@ export function ClientesView({ data, actions, user }) {
       colonia: s(c.colonia),
       ciudad: s(c.ciudad) || "Durango",
       estado: s(c.estado) || "Durango",
-      codigo_postal: s(c.codigo_postal) || s(c.cp),
+      codigo_postal: s(c.codigo_postal),
       zona: s(c.zona),
       latitud: c.latitud ?? null,
       longitud: c.longitud ?? null,
@@ -80,12 +81,21 @@ export function ClientesView({ data, actions, user }) {
       if (!form.rfc.trim()) e.rfc = "Requerido";
       else if (!validarRFC(form.rfc)) e.rfc = "Formato inválido (ej: XAXX010101000)";
       if (form.correo.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.correo)) e.correo = "Email inválido";
+      // Con RFC propio la factura sale a su nombre: al DAR DE ALTA se exigen sus datos fiscales
+      // reales (el CP fiscal es el de su constancia, no el de la entrega). Al editar un cliente
+      // que ya existía solo se avisa (no se le impide cambiar un teléfono); el servidor no
+      // timbra a su nombre mientras falten.
+      if (modal === "new" && (tipoRfc(form.rfc) === 'moral' || tipoRfc(form.rfc) === 'fisica')) {
+        const fiscales = { ...fiscalesPorOmision(form.rfc), ...(form.regimen ? { regimen: form.regimen } : {}) };
+        if (!regimenCompatible(form.rfc, fiscales.regimen) || fiscales.regimen === '616') e.regimen = "Elige el régimen de su constancia";
+        if (!/^\d{5}$/.test(String(form.cp || '').trim())) e.cp = "5 dígitos, como en su constancia";
+      } else if (String(form.cp || '').trim() && !/^\d{5}$/.test(String(form.cp).trim())) e.cp = "CP debe ser 5 dígitos";
     }
     if (currentStep === 2) {
       // Mig 056: número exterior obligatorio para entregas y CFDI 4.0.
       const dirErr = validateDireccion(form);
       if (dirErr) e.numero_exterior = dirErr.error;
-      const cpVal = String(form.codigo_postal || form.cp || '').trim();
+      const cpVal = String(form.codigo_postal || '').trim();
       if (cpVal && !/^\d{5}$/.test(cpVal)) e.codigo_postal = "CP debe ser 5 dígitos";
     }
     return e;
@@ -108,7 +118,7 @@ export function ClientesView({ data, actions, user }) {
     const e = { ...validateStep(1), ...validateStep(2) };
     if (Object.keys(e).length) {
       // Si hay error en un campo de otro paso, regresar al paso correcto con el campo en rojo
-      if (e.nombre || e.rfc || e.correo) setStep(1);
+      if (e.nombre || e.rfc || e.correo || e.regimen || e.cp) setStep(1);
       else if (e.numero_exterior || e.codigo_postal) setStep(2);
       setErrors(e);
       toast?.error('Revisa los campos marcados en rojo');
@@ -116,12 +126,14 @@ export function ClientesView({ data, actions, user }) {
     }
     setSaving(true);
     try {
-      // Mantener cp legacy sincronizado con codigo_postal — el resto del
-      // sistema sigue leyendo cp para CFDI hasta que se haga la migración
-      // de consolidación (ver docs/PENDIENTES_TECNICOS.md).
+      // `cp` = código postal FISCAL (el CFDI lo usa); `codigo_postal` = el de la entrega.
+      // Ya no se copia uno en el otro: una cadena factura en un CP y recibe en otro.
+      const porOmision = fiscalesPorOmision(form.rfc);
       const payload = {
         ...form,
-        cp: form.codigo_postal || form.cp || '',
+        regimen: form.regimen || porOmision.regimen,
+        usoCfdi: form.usoCfdi || porOmision.usoCfdi,
+        cp: String(form.cp || '').trim(),
       };
       const err = modal === "new"
         ? await actions.addCliente(payload)
@@ -370,20 +382,31 @@ export function ClientesView({ data, actions, user }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <FormInput label="Razón social *" value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} error={errors.nombre} />
             <FormInput label="Nombre comercial" value={form.nombreComercial} onChange={e=>setForm({...form,nombreComercial:e.target.value})} placeholder="Ej: Nevería Don Pedro" />
-            <FormInput label="RFC *" value={form.rfc} onChange={e=>setForm({...form,rfc:e.target.value.toUpperCase()})} maxLength={13} error={errors.rfc} />
+            <FormInput label="RFC *" value={form.rfc} maxLength={13} error={errors.rfc}
+              onChange={e=>{ const rfc = e.target.value.toUpperCase();
+                // Al cambiar de tipo de persona se propone el régimen que le corresponde.
+                setForm(f => ({ ...f, rfc, ...(tipoRfc(rfc) !== tipoRfc(f.rfc) ? { regimen: '', usoCfdi: '' } : {}) })); }} />
             <FormSelect label="Tipo" options={["Tienda","Restaurante","Cadena","Hotel","Nevería","General","Otro"]} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})} />
             <FormInput label="Teléfono" value={form.contacto} onChange={e=>setForm({...form,contacto:e.target.value})} />
             <FormInput label="Correo" type="email" value={form.correo} onChange={e=>setForm({...form,correo:e.target.value})} />
           </div>
-          <details className="mt-2">
-            <summary className="cursor-pointer text-xs text-slate-500 font-semibold hover:text-slate-700">
-              <span className="inline-flex items-center gap-1.5 align-middle"><Icons.Settings /> Datos fiscales avanzados (opcional)</span>
-            </summary>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3 pt-3 border-t border-slate-100">
-              <FormSelect label="Régimen fiscal SAT" options={REGIMENES_OPTIONS} value={form.regimen} onChange={e=>setForm({...form,regimen:e.target.value})} />
-              <FormSelect label="Uso CFDI" options={["G01","G03","S01","P01"]} value={form.usoCfdi} onChange={e=>setForm({...form,usoCfdi:e.target.value})} />
-            </div>
-          </details>
+          {/* Datos fiscales: obligatorios cuando el cliente tiene RFC propio (su factura sale a su nombre). */}
+          {(() => {
+            const conRfc = tipoRfc(form.rfc) === 'moral' || tipoRfc(form.rfc) === 'fisica';
+            const porOmision = fiscalesPorOmision(form.rfc);
+            const faltan = faltantesFiscales({ rfc: form.rfc, regimen: form.regimen || porOmision.regimen, cp: form.cp, usoCfdi: form.usoCfdi || porOmision.usoCfdi });
+            return (
+              <div className="mt-2 rounded-xl border border-slate-200 p-3">
+                <p className="text-xs font-semibold text-slate-600">Datos fiscales {conRfc ? '(como vienen en su constancia)' : '(sin RFC propio: se factura a público en general)'}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2">
+                  <FormSelect label={conRfc ? "Régimen fiscal *" : "Régimen fiscal"} options={REGIMENES_OPTIONS} value={form.regimen || porOmision.regimen} onChange={e=>setForm({...form,regimen:e.target.value})} error={errors.regimen} />
+                  <FormSelect label="Uso CFDI" options={USOS_CFDI} value={form.usoCfdi || porOmision.usoCfdi} onChange={e=>setForm({...form,usoCfdi:e.target.value})} />
+                  <FormInput label={conRfc ? "CP fiscal *" : "CP fiscal"} inputMode="numeric" maxLength={5} value={form.cp} onChange={e=>setForm({...form,cp:e.target.value.replace(/\D/g,'')})} error={errors.cp} placeholder="El de su constancia" />
+                </div>
+                {conRfc && faltan.length > 0 && <p className="mt-2 text-xs font-medium text-amber-700">Para facturarle a su nombre falta {faltan.join(', ')}.</p>}
+              </div>
+            );
+          })()}
         </div>
       )}
 

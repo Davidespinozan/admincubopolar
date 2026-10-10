@@ -88,12 +88,13 @@ describe('buildCfdiReceiver', () => {
       });
     });
 
-    it('usa CP del cliente si lo trae', () => {
+    it('receptor genérico: su CP es el lugar de expedición, no el del cliente (regla del SAT)', () => {
       const r = buildCfdiReceiver(
         { rfc: 'XEXX010101000', cp: '99999' },
         '34000'
       );
-      expect(r.zipCode).toBe('99999');
+      expect(r.zipCode).toBe('34000');
+      expect(buildCfdiReceiver({ rfc: 'XAXX010101000', cp: '99999' }, '34186').zipCode).toBe('34186');
     });
 
     it('cae a issuerZip si cliente sin CP', () => {

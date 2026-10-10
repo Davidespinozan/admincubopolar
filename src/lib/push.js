@@ -55,3 +55,34 @@ export async function desactivarPush() {
     await backendPost('push-subscribe', { accion: 'unsubscribe', subscription: { endpoint } });
   } catch { /* backend caído: la suscripción muerta se auto-limpia al 410 */ }
 }
+
+const conLimite = (promesa, ms) => Promise.race([promesa, new Promise((res) => setTimeout(res, ms))]);
+
+/**
+ * Al cerrar sesión: este aparato deja de estar ligado a quien sale (se borra la liga en el
+ * servidor). La suscripción del navegador se conserva para que, al entrar otra persona —o la
+ * misma—, `religarPush` la ligue sin volver a pedir permiso. Nunca lanza ni detiene la salida.
+ */
+export async function soltarPushAlSalir() {
+  try {
+    if (!soportaPush()) return;
+    await conLimite((async () => {
+      const sub = await suscripcionActual();
+      if (sub) await backendPost('push-subscribe', { accion: 'unsubscribe', subscription: { endpoint: sub.endpoint } });
+    })(), 2500);
+  } catch { /* sin red: la liga vieja se corrige en el siguiente ingreso (religarPush) */ }
+}
+
+/**
+ * Al entrar: si este navegador ya tenía los avisos activados, se ligan a QUIEN entró
+ * (el servidor guarda una suscripción por aparato). Sin permiso o sin suscripción no hace nada.
+ */
+export async function religarPush() {
+  try {
+    if (!soportaPush() || Notification.permission !== 'granted') return false;
+    const sub = await conLimite(suscripcionActual(), 4000);
+    if (!sub) return false;
+    await backendPost('push-subscribe', { accion: 'subscribe', subscription: sub.toJSON() });
+    return true;
+  } catch { return false; }
+}

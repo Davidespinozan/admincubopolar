@@ -7,6 +7,7 @@ import { cantidadEnEdicion, cantidadNormalizada } from '../data/cantidadInputLog
 import { validateDireccion, placeSelectionToEntrega } from '../data/direccionLogic';
 import { sucursalesDeCliente, sucursalPrincipal, precioParaSucursal, resolverEntrega } from '../data/sucursalLogic';
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
+import { fiscalesPorOmision } from '../data/receptorFiscalLogic';
 import { stockDisponiblePorSku } from '../utils/stock';
 import { BARRA_SKU } from '../data/preparacionBarraLogic';
 import { productosParaVenta, hayMediaBarra, barraPorOmision, resolverBarra, resumenBarra, esDerivadoBarra, avisoFaltaBarra } from '../data/barraVentaLogic';
@@ -27,7 +28,8 @@ const DEFAULTS_ADMIN = {
   folioNota: true,
   tipoCobro: true,
   clienteNuevoInline: true,
-  toggleFactura: false,
+  // Admin también marca "Facturar": antes sus ventas nunca llegaban a Pendientes de timbrar.
+  toggleFactura: true,
   autoOpenCobro: false,
   calculadoraCambio: false,
   totalGrande: true,
@@ -52,10 +54,10 @@ const cliFormEmpty = {
   requiereFactura: false,
   rfc: "",
   correo: "",
-  // Tanda 4 🔴-10: regimen guarda código SAT (3 dígitos), no string libre.
-  // 616 = "Sin obligaciones fiscales" (default seguro para cliente sin factura).
-  regimen: "616",
-  usoCfdi: "G03",
+  // Código SAT (3 dígitos). Vacío = el que corresponde al RFC capturado
+  // (moral 601, física 612; ver receptorFiscalLogic). 616 es solo para público en general.
+  regimen: "",
+  usoCfdi: "",
   cp: "",
   // Dirección estructurada (mig 056). numero_exterior obligatorio.
   calle: "",
@@ -266,6 +268,10 @@ export default function NuevaVentaModal({
       toast?.error?.('RFC inválido para facturación nominativa');
       return;
     }
+    if (cliForm.requiereFactura && !/^\d{5}$/.test(String(cliForm.cp || '').trim())) {
+      toast?.error?.('Escribe el código postal fiscal (5 dígitos, como en su constancia)');
+      return;
+    }
     // Mig 056: número exterior obligatorio para entregas y CFDI 4.0.
     const dirErr = validateDireccion(cliForm);
     if (dirErr) {
@@ -278,9 +284,11 @@ export default function NuevaVentaModal({
       tipo: cliForm.tipo,
       rfc: cliForm.requiereFactura ? cliForm.rfc : 'XAXX010101000',
       correo: cliForm.requiereFactura ? cliForm.correo : '',
-      regimen: cliForm.requiereFactura ? cliForm.regimen : '616',
-      usoCfdi: cliForm.requiereFactura ? cliForm.usoCfdi : 'S01',
-      cp: cliForm.codigo_postal || cliForm.cp || '34000',
+      regimen: cliForm.requiereFactura ? (cliForm.regimen || fiscalesPorOmision(cliForm.rfc).regimen) : '616',
+      usoCfdi: cliForm.requiereFactura ? (cliForm.usoCfdi || fiscalesPorOmision(cliForm.rfc).usoCfdi) : 'S01',
+      // CP FISCAL: solo el que capturó quien pide factura (ya no se inventa 34000 ni se copia el de entrega).
+      cp: cliForm.requiereFactura ? String(cliForm.cp || '').trim() : '',
+      codigo_postal: cliForm.codigo_postal || null,
       // Dirección estructurada (mig 056)
       calle: cliForm.calle || null,
       numero_exterior: cliForm.numero_exterior || null,
@@ -547,17 +555,22 @@ export default function NuevaVentaModal({
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Régimen fiscal SAT *</label>
-                  <select value={cliForm.regimen} onChange={e => setCliForm(f => ({ ...f, regimen: e.target.value }))}
+                  <select value={cliForm.regimen || fiscalesPorOmision(cliForm.rfc).regimen} onChange={e => setCliForm(f => ({ ...f, regimen: e.target.value }))}
                     className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white">
                     {REGIMENES_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Uso CFDI</label>
-                  <select value={cliForm.usoCfdi} onChange={e => setCliForm(f => ({ ...f, usoCfdi: e.target.value }))}
+                  <select value={cliForm.usoCfdi || fiscalesPorOmision(cliForm.rfc).usoCfdi} onChange={e => setCliForm(f => ({ ...f, usoCfdi: e.target.value }))}
                     className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white">
                     {USOS_CFDI.map(u => <option key={u.val} value={u.val}>{u.label}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-0.5">Código postal fiscal *</label>
+                  <input value={cliForm.cp} onChange={e => setCliForm(f => ({ ...f, cp: e.target.value.replace(/\D/g, '') }))} inputMode="numeric" maxLength={5}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm" placeholder="El de su constancia" />
                 </div>
               </div>
             )}

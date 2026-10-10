@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { perfilInactivo } from '../lib/sessionUser';
 import { Icons } from './ui/Icons';
 import { BtnSpinner } from './ui/Skeleton';
 
@@ -32,6 +33,13 @@ export default function LoginScreen({ onLogin }) {
       // uid de Auth (R5/083). El email ya no selecciona el perfil.
       const { data: perfiles } = await supabase.from('usuarios').select('*').eq('auth_id', authData.user.id);
 
+      if (perfiles && perfiles.length > 0 && perfilInactivo(perfiles[0])) {
+        // Dado de baja: no entra (antes veía la pantalla con todo fallando).
+        await supabase.auth.signOut();
+        setErr("Tu usuario está dado de baja. Habla con Administración.");
+        setLoading(false);
+        return;
+      }
       if (perfiles && perfiles.length > 0) {
         onLogin({
           ...perfiles[0],

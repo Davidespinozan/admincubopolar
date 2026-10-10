@@ -17,6 +17,7 @@ import { badRequest, forbidden, json, methodNotAllowed, ok, readJsonBody, server
 import { getAuthenticatedProfile } from '../_lib/auth.js';
 import { getSupabaseAdmin } from '../_lib/supabaseAdmin.js';
 import { withSentry } from '../_lib/sentry.js';
+import { registrarRastro } from '../_lib/rastro.js';
 import { permisosSobreUsuario, validarPasswordTemporal } from '../../../src/data/usuariosLogic.js';
 
 export const createHandler = ({
@@ -66,6 +67,11 @@ export const createHandler = ({
   } catch (error) {
     return serverError('No se pudo cambiar la contraseña', error.message);
   }
+  // La contraseña YA cambió: queda quién la restableció y a quién (nunca la contraseña).
+  await registrarRastro(supabase, {
+    actor, accion: 'Restablecer contraseña', modulo: 'Usuarios',
+    detalle: `${objetivo.nombre} (${objetivo.rol})${body?.forzarCambio === true ? ' — temporal, con cambio obligatorio' : ''}`,
+  });
 
   // Decisión del dueño (2026-10-09): el cambio obligatorio es opcional. Sin
   // `forzarCambio` la contraseña nueva queda como definitiva y, si la cuenta

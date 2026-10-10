@@ -30,6 +30,7 @@ async function request(path, options = {}) {
   if (!response.ok) {
     const error = new Error(data?.error || `Request failed: ${response.status}`);
     error.details = data?.details;
+    error.code = data?.code;
     error.status = response.status;
     throw error;
   }

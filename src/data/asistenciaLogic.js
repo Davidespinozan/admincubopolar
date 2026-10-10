@@ -225,6 +225,38 @@ export function buildCorreccionArgs({ operacionId, asistenciaId, campo, local, m
   return { args: { p_operacion_id: operacionId || nuevoOperacionId(), p_asistencia_id: Number(asistenciaId), p_campo: campo, p_valor: iso, p_motivo: m } };
 }
 
+/** Día siguiente de una fecha "YYYY-MM-DD" (sin zonas horarias). */
+function diaSiguiente(fecha) {
+  const d = new Date(`${fecha}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Argumentos de registrar_asistencia_manual (Admin, mig 136): la persona trabajó pero no pudo
+ * marcar. `entrada` y `salida` son horas "HH:MM" del día laboral `fecha` (hora del negocio);
+ * una salida menor o igual a la entrada es del día siguiente (turno nocturno). La salida es opcional.
+ */
+export function buildAsistenciaManualArgs({ operacionId, empleadoId, fecha, entrada, salida, motivo } = {}) {
+  if (!empleadoId) return { error: 'Persona requerida' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(fecha || ''))) return { error: 'Día inválido' };
+  const hora = /^\d{2}:\d{2}$/;
+  if (!hora.test(String(entrada || ''))) return { error: 'Escribe la hora de entrada' };
+  const conSalida = String(salida || '').trim() !== '';
+  if (conSalida && !hora.test(String(salida))) return { error: 'Hora de salida inválida' };
+  const m = String(motivo || '').trim();
+  if (m.length < 5) return { error: 'El motivo es obligatorio (mínimo 5 caracteres)' };
+  const diaSalida = conSalida && String(salida) <= String(entrada) ? diaSiguiente(fecha) : fecha;
+  return {
+    args: {
+      p_operacion_id: operacionId || nuevoOperacionId(), p_empleado_id: Number(empleadoId), p_fecha: fecha,
+      p_entrada: isoDesdeLocalNegocio(`${fecha}T${entrada}`),
+      p_salida: conSalida ? isoDesdeLocalNegocio(`${diaSalida}T${salida}`) : null,
+      p_motivo: m,
+    },
+  };
+}
+
 /** Argumentos de guardar_centro_trabajo (Admin). */
 export function buildCentroArgs(f = {}) {
   const nombre = String(f.nombre || '').trim();

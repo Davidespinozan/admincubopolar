@@ -20,9 +20,17 @@
 export function buildUserFromSessionAndProfile(session, profile) {
   if (!session || !session.user) return null;
   if (!profile) return null;
+  // Un usuario dado de baja no entra aunque su sesión siga guardada en el teléfono.
+  if (perfilInactivo(profile)) return null;
   return {
     ...profile,
     auth_id: profile.auth_id || session.user.id,
     authUserId: session.user.id,
   };
+}
+
+/** ¿El perfil está dado de baja? (sin estatus = perfil heredado, se trata como activo) */
+export function perfilInactivo(profile) {
+  const estatus = String(profile?.estatus ?? '').trim();
+  return !!estatus && estatus !== 'Activo';
 }

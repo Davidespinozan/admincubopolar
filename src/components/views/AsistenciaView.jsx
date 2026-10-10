@@ -110,17 +110,33 @@ function Dia({ actions }) {
           </table>
         </div>
       )}
-      <DetalleModal fila={sel} onClose={() => setDetalle(null)} actions={actions} onCorregido={cargar} />
+      <DetalleModal fila={sel} fecha={fecha} onClose={() => setDetalle(null)} actions={actions} onCorregido={cargar} />
     </div>
   );
 }
 
-function DetalleModal({ fila, onClose, actions, onCorregido }) {
+function DetalleModal({ fila, fecha, onClose, actions, onCorregido }) {
   const a = fila?.asistencia;
   const [form, setForm] = useState(null);
+  const [manual, setManual] = useState(null);
   const [error, setError] = useState(null);
   const [enviando, setEnviando] = useState(false);
-  useEffect(() => { setForm(null); setError(null); }, [fila?.empleado_id]);
+  useEffect(() => { setForm(null); setManual(null); setError(null); }, [fila?.empleado_id, fecha]);
+
+  // 136: trabajó pero no pudo marcar (sin señal, GPS impreciso, teléfono apagado).
+  const abrirManual = () => {
+    setError(null);
+    setManual({ operacionId: nuevoOperacionId(), entrada: horaCorta(fila?.turno?.hora_entrada).replace('—', ''), salida: '', motivo: '' });
+  };
+  const guardarManual = async () => {
+    if (enviando) return;
+    setEnviando(true);
+    const r = await actions.registrarAsistenciaManual({ operacionId: manual.operacionId, empleadoId: fila.empleado_id, fecha, entrada: manual.entrada, salida: manual.salida, motivo: manual.motivo });
+    setEnviando(false);
+    if (r?.error) { setError(r.error); return; }
+    setManual(null);
+    onCorregido();
+  };
 
   const abrir = (campo) => {
     setError(null);
@@ -147,6 +163,29 @@ function DetalleModal({ fila, onClose, actions, onCorregido }) {
             </p>
           )}
           {!a && <p className="text-slate-500">Sin registro de asistencia este día.</p>}
+          {!a && !manual && fila.turno && (
+            <div>
+              <FormBtn onClick={abrirManual}>Capturar asistencia</FormBtn>
+              <p className="mt-1 text-xs text-slate-500">Úsalo solo si la persona sí trabajó y no pudo marcar (sin señal, ubicación imprecisa, teléfono apagado).</p>
+            </div>
+          )}
+          {!a && !fila.turno && <p className="text-xs text-slate-500">Sin turno ese día: para capturar su asistencia primero dale un turno.</p>}
+          {manual && (
+            <div className="space-y-3 rounded-[18px] border border-slate-200 bg-slate-50 p-3" data-testid="asistencia-manual">
+              <p className="font-semibold text-slate-800">Capturar asistencia del {fecha} (hora de Durango)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <FormInput label="Entrada" type="time" value={manual.entrada} onChange={e => setManual({ ...manual, entrada: e.target.value })} />
+                <FormInput label="Salida (opcional)" type="time" value={manual.salida} onChange={e => setManual({ ...manual, salida: e.target.value })} />
+              </div>
+              <FormTextarea label="Motivo (obligatorio)" value={manual.motivo} onChange={e => setManual({ ...manual, motivo: e.target.value })} rows={2} placeholder="Por qué no se pudo marcar" />
+              {error && <p className="text-red-700">{error}</p>}
+              <div className="flex gap-2">
+                <FormBtn primary onClick={guardarManual} loading={enviando}>Guardar asistencia</FormBtn>
+                <FormBtn ghost onClick={() => setManual(null)}>Cancelar</FormBtn>
+              </div>
+              <p className="text-xs text-slate-500">Queda marcada como capturada por Administración, con tu nombre, la hora y el motivo. Cuenta para el bono de puntualidad igual que una marca normal.</p>
+            </div>
+          )}
           {a && (
             <div className="grid gap-3 sm:grid-cols-2">
               <Evidencia titulo="Entrada" ts={a.entrada_at} original={a.entrada_original_at} dist={a.entrada_distancia_m} prec={a.entrada_precision_m}

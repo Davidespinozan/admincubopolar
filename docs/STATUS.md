@@ -354,6 +354,39 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## Tanda 3 de correcciones de la revisión profunda (mig 136) — 2026-10-10 — COMMITTED / LOCAL-VALIDATED (migración y deploy PENDIENTES)
+**Estado: en git local (rama `tanda3-arreglos`). 136 NO aplicada en producción; frontend y funciones NO desplegados.** Autorizada por el
+dueño ("dale", 2026-10-10). Orden de activación: 136 (aditiva, compatible con el frontend desplegado) → verificación de solo lectura → push.
+- **136** (`136_correcciones_tanda3.sql`, SHA-256 `76c145d6479f4ebf1e9c9e6fad0459d2aba192021a05e4bb07c235692c10b9eb`; idempotente, mismas firmas y permisos, una función nueva):
+  (1) `mi_asistencia` — al terminar el turno conserva la entrada y la salida del día (antes "Fuera de horario" en blanco), y una salida
+  olvidada de un turno anterior ya no bloquea la entrada de hoy ni se cierra con la hora de hoy (queda como salida olvidada para Admin);
+  (2) `registrar_asistencia_manual` (NUEVA, solo Admin, motivo obligatorio, idempotente) — captura la asistencia de quien trabajó y no
+  pudo marcar; queda como corregida, en `asistencia_correcciones` y en auditoría; cuenta para el bono; (3) `asistencia_generar_avisos` —
+  el aviso "antes de tu entrada" también para turnos que empiezan a medianoche, y nada a un usuario dado de baja;
+  (4) `nomina_asistencia_semana` — no cuenta faltas de turnos que la persona no podía marcar (sin usuario ligado o centro inactivo);
+  (5) `cerrar_ruta_financiero` — rechaza una orden que ya es de OTRA ruta (22023).
+- **Facturación (Netlify `billing-create-invoice`):** el servidor ya NO cambia de receptor en silencio. Cliente con RFC propio y datos
+  incompletos (régimen ausente o 616, CP fiscal, uso de CFDI inválido) → 422 `DATOS_FISCALES_INCOMPLETOS` antes del proveedor; RFC
+  rechazado por el SAT → 422 `RFC_RECHAZADO` (una sola llamada; antes reintentaba solo a público en general); si no se pudo leer al
+  cliente no se timbra. Público en general solo si el cliente no tiene RFC propio o el operador lo elige (`publicoGeneral: true`; la
+  pantalla pregunta). Receptor genérico con el CP del lugar de expedición; mes y año de la factura global en la zona del negocio.
+- **Clientes:** régimen y uso por omisión según el RFC (moral 601, física 612, sin RFC 616 + S01; antes 616 + G03 para todos); se quitó
+  "P01"; CP fiscal (`clientes.cp`) separado del de entrega (`codigo_postal`, que antes no se guardaba); ya no se inventa "34000". Al dar
+  de alta un cliente con RFC propio se exigen régimen y CP fiscal; al editar uno existente solo se avisa.
+- **Ventas:** Admin también puede marcar "Facturar" (antes sus ventas nunca llegaban a Pendientes de timbrar). Vista previa de factura
+  con el receptor real, sin datos fijos.
+- **Usuarios:** un usuario dado de baja no entra (ni con sesión guardada); crear usuario y restablecer contraseña dejan rastro en
+  `auditoria` (`_lib/rastro.js`; nunca la contraseña).
+- **Avisos:** al cerrar sesión el aparato se desliga de quien sale y al entrar se liga a quien entra (teléfono compartido).
+- **Validación:** suite `136_correcciones_tanda3_test.sql` (24) + re-corridas en verde tras 136: 116, 131, 130, 135, 112, 119, 086, 087,
+  110, 128 (base local con migraciones hasta 136; sin el ensayo completo, por decisión del dueño mientras no hay operación real);
+  `src/__tests__/tanda3Arreglos.test.js`; Vitest 1,682 en 4 zonas; lint, typecheck, build, `diff --check`.
+- **Comportamiento que cambia a propósito:** una factura cuyo RFC rechaza el SAT ya no sale sola a público en general (pruebas de
+  OL-03B actualizadas); la suite 135 liga un usuario a su empleado de prueba (desde 136 solo se cuentan faltas a quien puede marcar).
+- **Pendiente de esta revisión (no programado):** cola offline del chofer tras 5 intentos fallidos; estatus "Completada" al editar ruta;
+  popups del mapa; estados de revisión de `payment_intents`; forma de pago 99 en pagos por link (contador); motivo 01 de cancelación.
+- Reversión: encabezado de 136; Netlify al commit anterior (`821f7b9`).
+
 ## Tanda 2 de correcciones de la revisión profunda — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED (sin migración)
 **Frontend y `billing-pay` `821f7b9` DEPLOYED (push autorizado por el dueño; Netlify `6aca84f055f2640008307847`, ready 2026-10-10T18:33:52Z); bundle
 vivo verificado; `/pagar/<inexistente>` responde 404.** Solo frontend y una función de Netlify.

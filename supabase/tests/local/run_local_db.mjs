@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_') && !f.startsWith('123_') && !f.startsWith('124_') && !f.startsWith('125_') && !f.startsWith('127_') && !f.startsWith('128_') && !f.startsWith('129_') && !f.startsWith('130_') && !f.startsWith('131_') && !f.startsWith('132_') && !f.startsWith('133_') && !f.startsWith('134_') && !f.startsWith('135_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_') && !f.startsWith('123_') && !f.startsWith('124_') && !f.startsWith('125_') && !f.startsWith('127_') && !f.startsWith('128_') && !f.startsWith('129_') && !f.startsWith('130_') && !f.startsWith('131_') && !f.startsWith('132_') && !f.startsWith('133_') && !f.startsWith('134_') && !f.startsWith('135_') && !f.startsWith('136_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -4967,6 +4967,10 @@ for (const [mig, suite, reruns] of [
   // orden de bloqueo bolsa → cuarto en la venta, lectura de evidencias).
   ['135_correcciones_tanda1.sql', '135_correcciones_tanda1_test.sql', ['130_nomina_automatica_test.sql', '128_conceptos_nomina_test.sql', '100_nomina_canonica_test.sql',
     '133_venta_barra_desde_entera_test.sql', '109_venta_directa_test.sql', '134_evidencias_orden_test.sql']],
+  // 136: tanda 3 (Mi asistencia tras la salida y con salida olvidada, captura manual, avisos de medianoche,
+  // faltas de quien no puede marcar, cierre de ruta con orden de otra ruta).
+  ['136_correcciones_tanda3.sql', '136_correcciones_tanda3_test.sql', ['116_asistencia_test.sql', '131_avisos_asistencia_test.sql', '130_nomina_automatica_test.sql',
+    '135_correcciones_tanda1_test.sql', '112_contencion_facturada_test.sql', '119_cierre_api_empleado_test.sql']],
 ]) {
   const n = mig.slice(0, 3);
   for (const k of [1, 2]) {
@@ -5074,7 +5078,7 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   'sucursal_para_orden', 'guardar_sucursal', 'fusionar_cliente_en_sucursal',
   // 128 (NOM-1)
   'guardar_concepto_nomina', 'guardar_recibo_nomina', 'aplicar_conceptos_nomina', 'nomina_acumulados',
-  'asistencia_generar_avisos', 'avisos_asistencia', 'guardar_avisos_asistencia', 'registrar_evidencia_orden'];
+  'asistencia_generar_avisos', 'avisos_asistencia', 'guardar_avisos_asistencia', 'registrar_evidencia_orden', 'registrar_asistencia_manual'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

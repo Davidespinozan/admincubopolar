@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
+import { CODIGOS_OFRECER_PUBLICO, fiscalesPorOmision } from './receptorFiscalLogic';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI, esPagoEnLinea } from './ordenLogic';
@@ -9,7 +10,7 @@ import { mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
 import { buildActividadDatos, buildCompletarArgs, buildEditarOcurrenciaArgs, sumarDiasISO } from './calendarioLogic';
-import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs, esErrorDeRed, mensajeErrorLlamada, rolSinDatosNegocio } from './asistenciaLogic';
+import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs, buildAsistenciaManualArgs, esErrorDeRed, mensajeErrorLlamada, rolSinDatosNegocio } from './asistenciaLogic';
 import { buildGuardarAvisosArgs } from './avisosAsistenciaLogic';
 import { dataUrlABlob, rutaEvidencia, yaExisteEnAlmacen } from './evidenciaLogic';
 import { base64ABlob, mensajeErrorDocumento } from './cfdiDocumentoLogic';
@@ -810,8 +811,10 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
           }
 
           const { data: newCli, error } = await supabase.from('clientes').insert({
-            nombre: c.nombre, rfc: c.rfc, regimen: c.regimen,
-            uso_cfdi: c.usoCfdi || 'G03', cp: c.cp, correo: c.correo,
+            nombre: c.nombre, rfc: c.rfc, regimen: c.regimen || fiscalesPorOmision(c.rfc).regimen,
+            uso_cfdi: c.usoCfdi || fiscalesPorOmision(c.rfc).usoCfdi, cp: c.cp, correo: c.correo,
+            // Código postal de ENTREGA (el fiscal es `cp`): antes no se guardaba.
+            codigo_postal: c.codigo_postal || c.codigoPostal || null,
             tipo: c.tipo, contacto: c.contacto,
             nombre_comercial: c.nombreComercial || null,
             calle: c.calle || null, colonia: c.colonia || null,
@@ -855,6 +858,7 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         if (c.regimen  !== undefined) update.regimen  = c.regimen;
         if (c.usoCfdi  !== undefined) update.uso_cfdi = c.usoCfdi;
         if (c.cp       !== undefined) update.cp       = c.cp;
+        if (c.codigo_postal !== undefined) update.codigo_postal = c.codigo_postal || null;
         if (c.correo   !== undefined) update.correo   = c.correo;
         if (c.tipo     !== undefined) update.tipo     = c.tipo;
         if (c.contacto !== undefined) update.contacto = c.contacto;
@@ -1840,6 +1844,19 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         return { data };
       },
 
+      // 136: la persona trabajó pero no pudo marcar (sin señal, GPS impreciso). Solo Admin,
+      // con motivo; queda en el historial de correcciones y en auditoría.
+      registrarAsistenciaManual: async (params) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const built = buildAsistenciaManualArgs(params);
+        if (built.error) return { error: built.error };
+        const { data, error } = await supabase.rpc('registrar_asistencia_manual', built.args);
+        if (error) return { error: (error.message || '').replace(/^registrar_asistencia_manual:\s*/, '') || 'No se pudo capturar' };
+        t()?.success('Asistencia capturada');
+        return { data };
+      },
+
       // ── PD-02 (mig 118): calendario operativo. Estado, fechas y permisos los
       // decide el servidor; crear/editar/desactivar solo Admin.
       calendario: async (desde, hasta, { soloMias = false, soloAbiertas = false } = {}) => {
@@ -2720,16 +2737,20 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         }
       },
 
-      timbrar: async (folio) => {
+      // `publicoGeneral`: decisión explícita del operador de facturar a público en general.
+      // El servidor nunca cambia de receptor por su cuenta: si los datos fiscales del cliente
+      // faltan o el SAT los rechaza, responde con un código y la pantalla pregunta.
+      timbrar: async (folio, { publicoGeneral = false } = {}) => {
+        let r = null;
         try {
-          await backendPost('billing-create-invoice', { folio });
+          r = await backendPost('billing-create-invoice', publicoGeneral ? { folio, publicoGeneral: true } : { folio });
         } catch (error) {
           console.error('[timbrar]', error.message);
-          t()?.error('Error al timbrar orden: ' + error.message);
+          if (!CODIGOS_OFRECER_PUBLICO.has(error.code)) t()?.error('Error al timbrar orden: ' + error.message);
           return error;
         }
         // Backend already updates estatus to 'Facturada' and saves facturama_id
-        log('Timbrar', 'Facturación', `${folio}`);
+        log('Timbrar', 'Facturación', r?.publicoGeneral ? `${folio} (público en general)` : `${folio}`);
         notify('factura', 'Factura timbrada', `CFDI generado para ${folio}`, '📄', folio);
         rf();
       },

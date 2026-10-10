@@ -83,7 +83,8 @@ export function buildCfdiReceiver(cliente, fallbackZip) {
       name: 'PUBLICO EN GENERAL EXTRANJERO',
       fiscalRegime: '616',
       cfdiUse: 'S01',
-      zipCode: cliente?.cp || fallbackZipStr,
+      // Receptor genérico: su domicilio fiscal ES el lugar de expedición (regla del SAT).
+      zipCode: fallbackZipStr,
       email: cliente?.correo || undefined,
       isPublicoGeneral: false,
       isExtranjero: true,
@@ -110,7 +111,7 @@ export function buildCfdiReceiver(cliente, fallbackZip) {
     name: 'PUBLICO EN GENERAL',
     fiscalRegime: '616',
     cfdiUse: 'S01',
-    zipCode: cliente?.cp || fallbackZipStr,
+    zipCode: fallbackZipStr,
     email: cliente?.correo || undefined,
     isPublicoGeneral: true,
     isExtranjero: false,
@@ -151,6 +152,60 @@ export function resolveRegimeCode(rawRegime) {
   const mapped = REGIME_CODE_MAP[trimmed];
   if (mapped) return mapped;
   return '616';
+}
+
+/**
+ * Código SAT del régimen SOLO si es reconocible (código del catálogo o texto
+ * heredado). A diferencia de resolveRegimeCode no inventa 616: sirve para saber
+ * si a un cliente con RFC le falta el régimen.
+ * @param {string} rawRegime
+ * @returns {string|null}
+ */
+export function regimenReconocido(rawRegime) {
+  const t = String(rawRegime ?? '').trim();
+  if (!t) return null;
+  if (CODIGOS_REGIMEN_SAT.has(t)) return t;
+  return REGIME_CODE_MAP[t] || null;
+}
+
+const USOS_CFDI = new Set(['G01', 'G02', 'G03', 'I01', 'I02', 'I03', 'I04', 'I05', 'I06', 'I07', 'I08', 'D01', 'D02', 'D03', 'D04', 'D05', 'D06', 'D07', 'D08', 'D09', 'D10', 'S01', 'CP01', 'CN01']);
+
+/**
+ * A quién se le timbra. Nunca cambia de receptor en silencio:
+ *   - `publicoGeneral` (decisión explícita del operador) → público en general.
+ *   - Cliente sin RFC o con RFC genérico → público en general (no hay otro receptor posible).
+ *   - Cliente con RFC nominativo → a su nombre, y solo si sus datos fiscales están
+ *     completos (régimen, CP fiscal de 5 dígitos, uso de CFDI del catálogo). Si falta
+ *     algo se rechaza ANTES de llamar al proveedor, diciendo qué falta.
+ * @returns {{ok:true, cliente:Object|null, publicoGeneral:boolean} | {ok:false, status:number, code:string, error:string}}
+ */
+export function decidirReceptor(cliente, { publicoGeneral = false } = {}) {
+  if (publicoGeneral) return { ok: true, cliente: null, publicoGeneral: true };
+  const rfc = String(cliente?.rfc || '').toUpperCase().trim();
+  if (isRfcExtranjero(rfc)) return { ok: true, cliente, publicoGeneral: false };
+  if (!rfc || isRfcPublicoGeneral(rfc)) return { ok: true, cliente: null, publicoGeneral: true };
+  const faltan = [];
+  if (!isValidRfc(rfc)) faltan.push('un RFC con formato válido');
+  const regimen = regimenReconocido(cliente?.regimen);
+  if (!regimen) faltan.push('el régimen fiscal');
+  // 616 es solo para público en general: con RFC propio el SAT lo rechaza.
+  else if (regimen === '616') faltan.push('su régimen fiscal real (tiene 616 "Sin obligaciones fiscales")');
+  if (!/^\d{5}$/.test(String(cliente?.cp || '').trim())) faltan.push('el código postal fiscal (5 dígitos)');
+  const uso = String(cliente?.uso_cfdi || '').trim();
+  if (uso && !USOS_CFDI.has(uso)) faltan.push(`un uso de CFDI válido (tiene "${uso}")`);
+  if (faltan.length) {
+    return {
+      ok: false, status: 422, code: 'DATOS_FISCALES_INCOMPLETOS',
+      error: `No se timbró: a ${cliente?.nombre || 'el cliente'} le falta ${faltan.join(', ')}. Corrígelo en Clientes, o factura esta venta a público en general.`,
+    };
+  }
+  return { ok: true, cliente, publicoGeneral: false };
+}
+
+/** Mes y año de la factura global, en la zona del negocio (no en la del servidor, que es UTC). */
+export function periodoGlobal(ahora = new Date(), zona = 'America/Monterrey') {
+  const partes = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: zona, year: 'numeric', month: '2-digit' }).formatToParts(ahora).map((x) => [x.type, x.value]));
+  return { Months: partes.month, Year: partes.year };
 }
 
 /**

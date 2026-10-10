@@ -120,12 +120,34 @@ describe('OL-03B timbrado: reserva → proveedor → finalización', () => {
     expect(prov.calls).toHaveLength(2);
     expect(ops(fake)).toEqual(['emision1:fallida', 'emision1:exitosa']);
   });
-  it('RFC rechazado → un segundo intento como público general DENTRO de la misma operación', async () => {
+  it('RFC rechazado → NO se factura sola a público en general: 422 RFC_RECHAZADO y una sola llamada (tanda 3)', async () => {
     const { fake, prov, timbrar } = montar(ORDEN(), [[400, { Message: 'El RFC del receptor no es válido' }], OK_EMISION()]);
-    expect(leer(await timbrar(ev('admin', { ordenId: 900 }))).status).toBe(200);
-    expect(prov.calls).toHaveLength(2);
-    expect(prov.calls[1].body.Receiver.Rfc).toBe('XAXX010101000');
+    const r = leer(await timbrar(ev('admin', { ordenId: 900 })));
+    expect(r).toMatchObject({ status: 422, body: { code: 'RFC_RECHAZADO' } });
+    expect(r.body.error).toMatch(/público en general/);
+    expect(prov.calls).toHaveLength(1);
+    expect(prov.calls[0].body.Receiver.Rfc).toBe('AAA010101AAA');
+    expect(ops(fake)).toEqual(['emision1:fallida']);
+    expect(fake.db.ordenes[0].estatus).toBe('Entregada');
+  });
+  it('público en general SOLO por decisión explícita del operador (publicoGeneral: true)', async () => {
+    const { fake, prov, timbrar } = montar(ORDEN(), [OK_EMISION()]);
+    const r = leer(await timbrar(ev('admin', { ordenId: 900, publicoGeneral: true })));
+    expect(r).toMatchObject({ status: 200, body: { publicoGeneral: true } });
+    expect(prov.calls).toHaveLength(1);
+    expect(prov.calls[0].body.Receiver).toMatchObject({ Rfc: 'XAXX010101000', Name: 'PUBLICO EN GENERAL', TaxZipCode: '34186', CfdiUse: 'S01' });
+    expect(prov.calls[0].body.GlobalInformation.Months).toMatch(/^(0[1-9]|1[0-2])$/);
     expect(ops(fake)).toEqual(['emision1:exitosa']);
+  });
+  it('cliente con RFC propio y datos fiscales incompletos → 422 antes del proveedor, sin operación', async () => {
+    const { fake, prov, timbrar } = montar(ORDEN(), [OK_EMISION()]);
+    fake.db.clientes[0].regimen = '616'; fake.db.clientes[0].cp = '';
+    const r = leer(await timbrar(ev('admin', { ordenId: 900 })));
+    expect(r).toMatchObject({ status: 422, body: { code: 'DATOS_FISCALES_INCOMPLETOS' } });
+    expect(r.body.error).toMatch(/régimen fiscal real/);
+    expect(r.body.error).toMatch(/código postal fiscal/);
+    expect(prov.calls).toHaveLength(0);
+    expect(ops(fake)).toEqual([]);
   });
   it('timeout → 502 RESULTADO_INCIERTO; operación incierta; un reintento NO llama al proveedor', async () => {
     const { fake, prov, timbrar } = montar(ORDEN(), ['colgado'], { timeoutMs: 30 });

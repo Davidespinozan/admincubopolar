@@ -6,7 +6,8 @@ import { Icons } from './components/ui/Icons'
 import { useSupaStore } from './data/supaStore'
 import { supabase } from './lib/supabase'
 import { setUserContext, Sentry } from './lib/sentry'
-import { buildUserFromSessionAndProfile } from './lib/sessionUser'
+import { buildUserFromSessionAndProfile, perfilInactivo } from './lib/sessionUser'
+import { soltarPushAlSalir, religarPush } from './lib/push'
 import { pagosVisiblesVendedor } from './data/alcancePagosLogic'
 import { debeCambiarPassword, tieneRol } from './data/usuariosLogic'
 import { PantallaCambioObligatorio } from './components/CambiarPassword'
@@ -93,6 +94,8 @@ function App() {
           .eq('auth_id', session.user.id)
           .maybeSingle()
         const restored = buildUserFromSessionAndProfile(session, profile)
+        // Sesión guardada de un usuario dado de baja: se cierra en vez de dejarla viva.
+        if (perfilInactivo(profile)) { try { await supabase.auth.signOut() } catch { /* best-effort */ } }
         if (restored && active) setUser(restored)
         if (active) setRestoring(false)
       } catch (e) {
@@ -116,6 +119,9 @@ function App() {
       try { subscription?.unsubscribe?.() } catch { /* noop */ }
     }
   }, [])
+
+  // Avisos: si este aparato ya los tenía activados, quedan ligados a quien entró.
+  useEffect(() => { if (user?.id) religarPush() }, [user?.id])
 
   // Tanda 7+19D: tagear contexto Sentry + telemetría de cambios de user.
   // Reactivo a login/logout/switch. adminViewAs NO aplica aquí: el user
@@ -276,6 +282,7 @@ function App() {
   if (bloqueadoPorPassword) {
     const salir = async () => {
       isManualLogoutRef.current = true
+      await soltarPushAlSalir()
       try { await supabase?.auth?.signOut() } catch { /* best-effort */ }
       setUser(null)
     }
@@ -342,6 +349,9 @@ function App() {
     // este logout como espontáneo. Se resetea automáticamente cuando
     // se consume.
     isManualLogoutRef.current = true
+    // Teléfono compartido: los avisos de este aparato dejan de ser de quien sale
+    // (antes los seguía recibiendo aquí, aunque otra persona usara el teléfono).
+    await soltarPushAlSalir()
     try { await supabase?.auth?.signOut() } catch { /* best-effort: continuar aunque falle */ }
     setUser(null)
   }
