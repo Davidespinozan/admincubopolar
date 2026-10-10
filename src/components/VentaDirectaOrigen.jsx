@@ -22,7 +22,7 @@ export function useVentaDirecta({ actions, cuartosFrios }) {
   // Existencia en vivo: si el inventario cambia mientras el diálogo está
   // abierto, las opciones se recalculan (el servidor vuelve a validar).
   const planes = useMemo(() => (orden ? planVentaDirecta(orden, cuartosFrios) : []), [orden, cuartosFrios]);
-  const validacion = useMemo(() => validarVentaDirecta(planes, repartos), [planes, repartos]);
+  const validacion = useMemo(() => validarVentaDirecta(planes, repartos, cuartosFrios), [planes, repartos, cuartosFrios]);
 
   const iniciar = (o) => {
     opRef.current = null;

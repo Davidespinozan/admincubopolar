@@ -354,6 +354,29 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## Arreglos de campo (2026-10-09): venta de barra contra la barra entera (133), datos bancarios (132) y correcciones de Chofer/Rutas — IMPLEMENTED LOCALLY / MIGRATIONS PENDING
+**132 y 133 NO están aplicadas en producción y el frontend no está desplegado.** Lista reportada por el dueño (por medio de David).
+- **133 — cambio de criterio del dueño (sustituye "Ventas no prepara" de 129):** vender media barra, picada o triturada depende SOLO de
+  que haya barra entera. Regla única `barra_exigir_disponible` (1 barra = 2 medias; 1 media = 1 bolsa; lo ya partido o preparado se usa
+  primero). `crear_orden` (123) la aplica sobre toda la planta; `completar_venta_directa` (120) por cuarto y, dentro de la misma
+  transacción, parte / prepara lo que falte en ese cuarto con los contratos de Producción (`partir_barra`,
+  `registrar_preparacion_barra`, `registrar_preparacion_media`): mismas filas de producción, kardex y consumo de empaque; sin bolsas
+  la entrega falla completa. Mismas firmas, respuestas y permisos. NO cambia la carga de ruta (`confirmar_carga_ruta`: al camión se
+  sube lo ya preparado por Producción) ni `update_orden_atomic`. Producción antes de 133 (solo lectura): md5 de `crear_orden`
+  `a090f0c6…` y `completar_venta_directa` `63eaffba…` = base local.
+- **132:** `configuracion_empresa.banco / clabe / beneficiario / cuenta_bancaria`; por API solo el Dueño los cambia (trigger); CHECK de
+  CLABE de 18 números; el cambio queda en `bitacora_cambios`. Pantallas: Ajustes → Datos para transferencias; "Enviar por WhatsApp" en el
+  cobro por transferencia de Chofer, Ventas y Admin.
+- **Sin migración (Netlify + frontend):** el link público `/nota/:id?t=` respondía 400 (el id ahora se toma de la ruta); Chofer: ticket
+  para WhatsApp al terminar cada entrega (con el motivo si falla) y mapa de la parada dentro de la app; resumen económico del cierre
+  de ruta calculado de las órdenes entregadas (`rutas.total_cobrado` / `total_credito` no se escriben desde 087: salía $0); la hoja de
+  firma de carga va en un portal con alto máximo (la barra inferior tapaba Confirmar); el mapa de pedidos de Rutas trae su botón
+  para ocultarlo y ya no se encima; foto de evidencia con "Abrir cámara" o "Elegir foto" en las 5 capturas.
+- **Validación local (sin corrida completa del runner, por decisión del usuario):** 132 y 133 ×2; suites `133_venta_barra_desde_entera_test.sql`
+  (18) y `132_datos_bancarios_test.sql` (5); re-corridas tras 133: 109, 110, 115, 120, 123, 129 OK. Vitest 1,603; lint, typecheck, build.
+- **Hallazgo sin resolver:** la foto del comprobante de transferencia y la foto de entrega del Chofer NUNCA se suben al servidor (quedan
+  en el teléfono); Ventas y Admin no tienen dónde adjuntar comprobante. Requiere almacenamiento y contrato nuevos (PROPOSED).
+
 ## Nómina automática (NOM-2, mig 130) y avisos de asistencia (PD-01.1, mig 131) — 2026-10-09 — DEPLOYED / TECHNICALLY VERIFIED
 **130 y 131 aplicadas por el dueño en el SQL Editor (2026-10-10 ~02:23Z, un solo pegado; SHA-256 de 130
 `544cbf1e018ff045272f21ed39b50b1c7b73e9c55b9bf44eb396c67399120b5b`, de 131 `3a7de3cc3ab80184a22ebb08e16da598e0ecfb0f3366f67bd25ecdcad1f95056`)

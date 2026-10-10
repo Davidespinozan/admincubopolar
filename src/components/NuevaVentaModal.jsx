@@ -8,7 +8,7 @@ import { sucursalesDeCliente, sucursalPrincipal, precioParaSucursal, resolverEnt
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
 import { stockDisponiblePorSku } from '../utils/stock';
 import { BARRA_SKU } from '../data/preparacionBarraLogic';
-import { productosParaVenta, hayMediaBarra, barraPorOmision, resolverBarra, resumenBarra, faltaPreparado } from '../data/barraVentaLogic';
+import { productosParaVenta, hayMediaBarra, barraPorOmision, resolverBarra, resumenBarra, esDerivadoBarra, avisoFaltaBarra } from '../data/barraVentaLogic';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 const DireccionForm = lazy(() => import('./ui/DireccionForm'));
@@ -318,19 +318,26 @@ export default function NuevaVentaModal({
       if (lines.length === 0 || !lines.some(l => l.sku && l.qty > 0)) {
         e.productos = 'Agrega al menos un producto';
       } else {
+        // 133: media barra, picada y triturada se revisan JUNTAS contra la barra entera
+        // (lo que falte se parte o prepara al entregar); lo demás, por su existencia.
+        const pedido = {};
         for (const l of lines) {
           if (l.barra) {
             const r = resolverBarra(l.barra, { hayMedia });
-            const falta = r.bloqueo || faltaPreparado(r, getStock);
-            if (falta) { e.productos = falta; break; }
+            if (r.bloqueo) { e.productos = r.bloqueo; break; }
           }
-          if (l.sku && l.qty > 0) {
-            const stock = getStock(l.sku);
-            if (n(l.qty) > stock) {
-              e.productos = `Stock insuficiente de ${l.sku} (disp: ${stock})`;
-              break;
-            }
+          if (l.sku && l.qty > 0) pedido[l.sku] = (pedido[l.sku] || 0) + n(l.qty);
+        }
+        if (!e.productos) {
+          for (const [sku, q] of Object.entries(pedido)) {
+            if (esDerivadoBarra(sku)) continue;
+            const stock = getStock(sku);
+            if (q > stock) { e.productos = `Stock insuficiente de ${sku} (disp: ${stock})`; break; }
           }
+        }
+        if (!e.productos) {
+          const falta = avisoFaltaBarra(pedido, getStock);
+          if (falta) e.productos = falta;
         }
       }
     }
@@ -708,8 +715,9 @@ export default function NuevaVentaModal({
               </div>
               <p className="text-[11px] text-slate-500 ml-1">
                 {resumenBarra(l.barra)}
-                {' · '}Preparado: {getStock('HIP-25K')} picada · {getStock('HIT-25K')} triturada{hayMedia ? ` · ${getStock('HIB-25K')} medias` : ''}
-                {l.barra.medida === 'media' ? ' · La otra mitad la decide Producción' : ''}
+                {' · '}Hay {getStock('HIB-50K')} {getStock('HIB-50K') === 1 ? 'barra entera' : 'barras enteras'}
+                {getStock('HIB-25K') > 0 ? ` · ${getStock('HIB-25K')} medias` : ''}{getStock('HIP-25K') > 0 ? ` · ${getStock('HIP-25K')} picada lista` : ''}{getStock('HIT-25K') > 0 ? ` · ${getStock('HIT-25K')} triturada lista` : ''}
+                {l.barra.medida === 'media' ? ' · La otra mitad se queda en el cuarto' : ''}
               </p>
             </div>
           ) : l.sku && <p className="text-[11px] text-slate-500 mt-1.5 ml-1">Stock disponible: {getStock(l.sku).toLocaleString()} bolsas</p>}

@@ -14,6 +14,7 @@
 import { s } from '../utils/safe';
 import { parseProductos } from './ordenLogic';
 import { tieneRutaAsignada } from './ventasCobroLogic';
+import { esDerivadoBarra, disponibleDerivado, avisoFaltaBarra } from './barraVentaLogic.js';
 
 export const METODOS_CONTADO = Object.freeze(['Efectivo', 'Transferencia SPEI', 'Tarjeta (terminal)']);
 export const METODO_CREDITO = 'Crédito (fiado)';
@@ -52,10 +53,15 @@ export function lineasOrden(orden) {
   return [...acc.entries()].map(([sku, cantidad]) => ({ sku, cantidad })).sort((a, b) => a.sku.localeCompare(b.sku));
 }
 
-/** Cuartos que tienen existencia física de ESE SKU (los demás no se ofrecen). */
+/**
+ * Cuartos que pueden surtir ESE SKU (los demás no se ofrecen). Para la media barra,
+ * la picada y la triturada (133) cuenta también lo que rinde la barra entera del
+ * cuarto: el servidor la parte o la prepara ahí mismo al entregar.
+ */
 export function cuartosParaSku(cuartosFrios, sku) {
+  const de = (cf) => (esDerivadoBarra(sku) ? disponibleDerivado(sku, (k) => entero(cf?.stock?.[k]) || 0) : entero(cf?.stock?.[sku]) || 0);
   return (Array.isArray(cuartosFrios) ? cuartosFrios : [])
-    .map(cf => ({ id: s(cf?.id), nombre: s(cf?.nombre) || s(cf?.id), disponible: entero(cf?.stock?.[sku]) || 0 }))
+    .map(cf => ({ id: s(cf?.id), nombre: s(cf?.nombre) || s(cf?.id), disponible: de(cf) }))
     .filter(c => c.id && c.disponible > 0)
     .sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -116,13 +122,26 @@ export function construirAsignacion(planes, repartos = {}) {
   return out.sort((a, b) => a.sku.localeCompare(b.sku) || a.cuarto_id.localeCompare(b.cuarto_id));
 }
 
-/** ¿Se puede enviar? Todas las líneas válidas. */
-export function validarVentaDirecta(planes, repartos = {}) {
+/**
+ * ¿Se puede enviar? Todas las líneas válidas. Con `cuartosFrios`, además revisa por
+ * cuarto que la barra alcance para TODO lo que sale de ahí (media, picada y
+ * triturada comparten las mismas barras; cada línea por separado podría caber).
+ */
+export function validarVentaDirecta(planes, repartos = {}, cuartosFrios = null) {
   if (!Array.isArray(planes) || planes.length === 0) return { ok: false, errores: { _: 'La orden no tiene productos' } };
   const errores = {};
   for (const p of planes) {
     const v = validarLinea(p, repartos[p.sku]);
     if (!v.ok) errores[p.sku] = v.error;
+  }
+  if (Array.isArray(cuartosFrios) && Object.keys(errores).length === 0) {
+    const porCuarto = {};
+    for (const a of construirAsignacion(planes, repartos)) (porCuarto[a.cuarto_id] ||= {})[a.sku] = a.cantidad;
+    for (const [id, pedido] of Object.entries(porCuarto)) {
+      const cf = cuartosFrios.find(c => s(c?.id) === id);
+      const aviso = avisoFaltaBarra(pedido, (k) => entero(cf?.stock?.[k]) || 0, s(cf?.nombre) || id);
+      if (aviso) { const sku = Object.keys(pedido).find(esDerivadoBarra); errores[sku] = aviso; break; }
+    }
   }
   return { ok: Object.keys(errores).length === 0, errores };
 }
@@ -185,6 +204,8 @@ export function mensajeErrorVentaDirecta(error) {
   if (/operacion_id ya usado con otros datos/i.test(msg)) return 'Este intento ya se registró con otros datos. Cierra y vuelve a abrir el cobro.';
   if (/no es de este vendedor|no autorizado/i.test(msg)) return 'No puedes completar esta orden.';
   if (/se requiere Creada o Asignada/i.test(msg)) return 'La orden ya no está pendiente (alguien la completó o la canceló). Actualiza la lista.';
+  if (/Stock insuficiente de (EMP|.*-EMP|.*bolsa)/i.test(msg)) return 'No hay bolsas registradas para picar o triturar la barra. Registra la compra de bolsas (Almacén de bolsas) y vuelve a intentar.';
+  if (/Stock insuficiente de barra/i.test(msg)) return `No hay barra suficiente en ese cuarto: ${msg.replace(/^Stock insuficiente de barra[^:]*:\s*/i, '')}. Elige otro cuarto o reparte.`;
   if (/Stock insuficiente/i.test(msg)) return `La existencia cambió: ${msg}. Revisa el origen.`;
   if (/no cubre el total/i.test(msg)) return 'El pago con link aún no cubre el total; todavía no se puede entregar.';
   return msg || 'No se pudo completar la venta';

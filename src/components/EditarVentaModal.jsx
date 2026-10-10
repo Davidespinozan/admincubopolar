@@ -9,6 +9,7 @@
 // riesgo la creación normal. Este modal es plano y enfocado en edit.
 
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
+import { esDerivadoBarra, avisoFaltaBarra } from '../data/barraVentaLogic';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { Icons } from './ui/Icons';
 import { s, n, eqId, fmtMoney } from '../utils/safe';
@@ -211,15 +212,19 @@ export default function EditarVentaModal({
     if (!orden?.id) return;
 
     // Validación de stock por línea
-    for (const l of lines) {
-      if (l.sku && n(l.qty) > 0) {
-        const stock = getStock(l.sku);
-        if (n(l.qty) > stock) {
-          toast?.error(`Stock insuficiente de ${l.sku} (disp: ${stock})`);
-          return;
-        }
+    // 133: media barra, picada y triturada se revisan juntas contra la barra entera.
+    const pedido = {};
+    for (const l of lines) if (l.sku && n(l.qty) > 0) pedido[l.sku] = (pedido[l.sku] || 0) + n(l.qty);
+    for (const [sku, q] of Object.entries(pedido)) {
+      if (esDerivadoBarra(sku)) continue;
+      const stock = getStock(sku);
+      if (q > stock) {
+        toast?.error(`Stock insuficiente de ${sku} (disp: ${stock})`);
+        return;
       }
     }
+    const faltaBarra = avisoFaltaBarra(pedido, getStock);
+    if (faltaBarra) { toast?.error(faltaBarra); return; }
 
     const lineasValidas = lines.filter(l => l.sku && n(l.qty) > 0);
     if (lineasValidas.length === 0) {

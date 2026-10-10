@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { resolverBarra, resumenBarra, faltaPreparado, productosParaVenta, esSkuBarra } from '../data/barraVentaLogic';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { resolverBarra, resumenBarra, faltaPreparado, faltanteBarra, avisoFaltaBarra, productosParaVenta, esSkuBarra } from '../data/barraVentaLogic';
+import { cuartosParaSku, planVentaDirecta, validarVentaDirecta, mensajeErrorVentaDirecta } from '../data/ventaDirectaLogic';
 
 describe('barraVentaLogic: la barra se vende entera o media y se entrega sin preparar, picada o triturada', () => {
   it('traduce la elección al SKU y las bolsas de la orden', () => {
@@ -29,12 +32,49 @@ describe('barraVentaLogic: la barra se vende entera o media y se entrega sin pre
     expect(resumenBarra({ medida: 'entera', entrega: 'sin', cant: 2 })).toBe('2 barras enteras');
     expect(resumenBarra({ medida: 'media', entrega: 'sin', cant: 1 })).toBe('1 media barra sin preparar');
   });
-  it('si falta preparado avisa y manda a Producción; la barra sin preparar no avisa', () => {
-    const stock = sku => ({ 'HIP-25K': 1, 'HIT-25K': 5 })[sku] || 0;
-    expect(faltaPreparado({ sku: 'HIP-25K', qty: 2 }, stock)).toMatch(/Producción/);
-    expect(faltaPreparado({ sku: 'HIT-25K', qty: 2 }, stock)).toBeNull();
-    expect(faltaPreparado({ sku: 'HIB-50K', qty: 9 }, stock)).toBeNull();
-    expect(faltaPreparado({ sku: 'HIB-25K', qty: 1 }, stock)).toMatch(/parta una barra/);
+  // 133 (decisión del dueño, 2026-10-09): ya no se exige "preparado"; alcanza con barra entera.
+  it('media, picada y triturada se venden mientras haya barra entera; sin barra, avisa', () => {
+    const sinNada = () => 0;
+    const conBarras = sku => ({ 'HIB-50K': 2 })[sku] || 0;
+    expect(faltaPreparado({ sku: 'HIP-25K', qty: 2 }, conBarras)).toBeNull();
+    expect(faltaPreparado({ sku: 'HIB-25K', qty: 4 }, conBarras)).toBeNull();
+    expect(faltaPreparado({ sku: 'HIB-25K', qty: 5 }, conBarras)).toMatch(/hay 2 barras enteras; faltan 1 media/);
+    expect(faltaPreparado({ sku: 'HIT-25K', qty: 1 }, sinNada)).toMatch(/No hay barra suficiente: hay 0 barras enteras; faltan 1 media/);
+    expect(faltaPreparado({ sku: 'HIB-50K', qty: 9 }, sinNada)).toBeNull();   // la barra entera se valida como cualquier producto
+  });
+  it('faltanteBarra: espejo de la regla del servidor (barra_exigir_disponible)', () => {
+    const st = (o) => (sku) => o[sku] || 0;
+    expect(faltanteBarra({ 'HIB-25K': 2 }, st({ 'HIB-50K': 1 }))).toBe(0);
+    expect(faltanteBarra({ 'HIP-25K': 3, 'HIT-25K': 1 }, st({ 'HIB-50K': 2 }))).toBe(0);
+    expect(faltanteBarra({ 'HIP-25K': 3 }, st({ 'HIB-50K': 1, 'HIP-25K': 1 }))).toBe(0);            // lo ya preparado cuenta
+    expect(faltanteBarra({ 'HIP-25K': 1 }, st({ 'HIB-25K': 1 }))).toBe(0);                          // una media suelta se pica
+    expect(faltanteBarra({ 'HIB-50K': 1, 'HIB-25K': 1, 'HIT-25K': 1 }, st({ 'HIB-50K': 2 }))).toBe(0);
+    expect(faltanteBarra({ 'HIB-25K': 3 }, st({ 'HIB-50K': 1 }))).toBe(1);
+    expect(faltanteBarra({ 'HIB-50K': 2, 'HIP-25K': 1 }, st({ 'HIB-50K': 2 }))).toBe(1);            // la barra vendida entera no se parte además
+    expect(faltanteBarra({ 'HIT-25K': 1 }, st({ 'HIP-25K': 5 }))).toBe(1);                          // la picada no sirve para triturada
+    expect(faltanteBarra({ 'HPC-5K': 99 }, st({}))).toBe(0);
+    expect(avisoFaltaBarra({ 'HIB-25K': 3 }, st({ 'HIB-50K': 1, 'HIB-25K': 0 }), 'CF-1')).toBe('No hay barra suficiente en CF-1: hay 1 barra entera; faltan 1 media para este pedido.');
+  });
+  it('la regla del cliente y la del servidor son la misma fórmula', () => {
+    const sql = readFileSync(fileURLToPath(new URL('../../supabase/133_venta_barra_desde_entera.sql', import.meta.url)), 'utf8');
+    expect(sql).toMatch(/v_falta := GREATEST\(v_p - s_p, 0\) \+ GREATEST\(v_t - s_t, 0\) \+ v_m - s_m - 2 \* GREATEST\(s_b - v_b, 0\);/);
+    expect(sql).toMatch(/CONTINUE WHEN v_l ->> 'sku' IN \('HIB-25K', 'HIP-25K', 'HIT-25K'\);/);
+  });
+  it('venta directa: un cuarto con barra entera puede surtir media, picada y triturada', () => {
+    const cuartos = [{ id: 'CF-1', nombre: 'Cuarto 1', stock: { 'HIB-50K': 2, 'HIT-25K': 1 } }, { id: 'CF-2', nombre: 'Cuarto 2', stock: { 'HPC-5K': 50 } }];
+    expect(cuartosParaSku(cuartos, 'HIB-25K')).toEqual([{ id: 'CF-1', nombre: 'Cuarto 1', disponible: 4 }]);
+    expect(cuartosParaSku(cuartos, 'HIT-25K')).toEqual([{ id: 'CF-1', nombre: 'Cuarto 1', disponible: 5 }]);
+    expect(cuartosParaSku(cuartos, 'HPC-5K')).toEqual([{ id: 'CF-2', nombre: 'Cuarto 2', disponible: 50 }]);   // lo demás, igual que antes
+    const orden = { preciosSnapshot: [{ sku: 'HIB-25K', qty: 3 }, { sku: 'HIP-25K', qty: 2 }] };
+    const planes = planVentaDirecta(orden, cuartos);
+    const repartos = { 'HIB-25K': { 'CF-1': 3 }, 'HIP-25K': { 'CF-1': 2 } };
+    expect(validarVentaDirecta(planes, repartos).ok).toBe(true);                    // cada línea sola cabe…
+    const junto = validarVentaDirecta(planes, repartos, cuartos);                  // …pero juntas piden 5 medias y hay 4
+    expect(junto.ok).toBe(false);
+    expect(Object.values(junto.errores)[0]).toMatch(/No hay barra suficiente en Cuarto 1: hay 2 barras enteras; faltan 1 media/);
+    expect(validarVentaDirecta(planes, { 'HIB-25K': { 'CF-1': 3 }, 'HIP-25K': { 'CF-1': 1 } }, cuartos).errores).toHaveProperty('HIP-25K');   // asignado != pedido
+    expect(mensajeErrorVentaDirecta('Stock insuficiente de EMP-25-SL: disponible=0, requerido=1')).toMatch(/No hay bolsas registradas/);
+    expect(mensajeErrorVentaDirecta('Stock insuficiente de barra en cuarto CF-1: hay 1 barra(s) entera(s) y 0 media(s); faltan 1 media(s) para surtir el pedido')).toMatch(/^No hay barra suficiente en ese cuarto: hay 1 barra/);
   });
   it('el selector no ofrece picada ni triturada como productos sueltos', () => {
     const ps = [{ sku: 'HIB-50K' }, { sku: 'HIB-25K' }, { sku: 'HIP-25K' }, { sku: 'HIT-25K' }, { sku: 'HPC-5K' }];

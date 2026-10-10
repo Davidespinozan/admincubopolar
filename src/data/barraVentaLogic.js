@@ -2,8 +2,10 @@
 // cómo se entrega (sin preparar, picada o triturada). Lo que se vende es la barra; la picada y
 // la triturada son solo la presentación de la entrega. Las líneas de la orden siguen siendo por
 // SKU (crear_orden y completar_venta_directa no cambian): esta lógica traduce la elección a
-// SKU y cantidad de bolsas. Las bolsas solo salen de "Preparar barra" (Producción / Admin); la
-// venta nunca las prepara.
+// SKU y cantidad de bolsas.
+// 133: la media barra, la picada y la triturada se venden contra la BARRA ENTERA. Lo ya partido
+// o preparado se usa primero; lo que falte lo saca el servidor de la barra al entregar
+// (parte / prepara en el mismo cuarto). `faltanteBarra` es el espejo de barra_exigir_disponible.
 //
 //   entera + sin preparar → HIB-50K × cantidad
 //   entera + picada       → HIP-25K × 2·cantidad   (una barra rinde 2 bolsas)
@@ -61,16 +63,52 @@ export function resumenBarra({ medida, entrega, cant } = {}) {
   return medida === 'entera' ? `${bolsas} (${c} ${c === 1 ? 'barra' : 'barras'})` : `${bolsas} (${c === 1 ? 'media barra' : c + ' medias barras'})`;
 }
 
+export const SKUS_DERIVADOS = Object.freeze([MEDIA_BARRA_SKU, SKU_PICADA, SKU_TRITURADA]);
+/** ¿Sale de partir o preparar una barra? (media, picada o triturada) */
+export const esDerivadoBarra = (sku) => SKUS_DERIVADOS.includes(s(sku));
+
+const cant = (v) => Math.max(0, Math.floor(n(v)) || 0);
 /**
- * Aviso cuando falta stock preparado. La venta no prepara: se lo pide a Producción.
+ * Medias barras que FALTAN para surtir un pedido con una existencia (0 = alcanza).
+ * 1 barra = 2 medias; 1 media = 1 bolsa de picada o de triturada. La barra que se
+ * vende entera no se puede partir además.
+ * @param {Object<string, number>} pedido  { sku: cantidad }
+ * @param {(sku:string)=>number} getStock  existencia (de un cuarto o de toda la planta)
+ */
+export function faltanteBarra(pedido, getStock) {
+  const p = pedido || {};
+  const m = cant(p[MEDIA_BARRA_SKU]); const pi = cant(p[SKU_PICADA]); const tr = cant(p[SKU_TRITURADA]);
+  if (m + pi + tr === 0) return 0;
+  const barrasLibres = Math.max(cant(getStock(BARRA_SKU)) - cant(p[BARRA_SKU]), 0);
+  const falta = Math.max(pi - cant(getStock(SKU_PICADA)), 0) + Math.max(tr - cant(getStock(SKU_TRITURADA)), 0) + m
+    - cant(getStock(MEDIA_BARRA_SKU)) - BOLSAS_POR_BARRA * barrasLibres;
+  return Math.max(falta, 0);
+}
+
+/** Cuántas unidades de un derivado puede dar una existencia: lo ya hecho + medias sueltas + 2 por barra entera. */
+export function disponibleDerivado(sku, getStock) {
+  const k = s(sku);
+  if (!esDerivadoBarra(k)) return cant(getStock(k));
+  const medias = cant(getStock(MEDIA_BARRA_SKU));
+  return (k === MEDIA_BARRA_SKU ? 0 : cant(getStock(k))) + medias + BOLSAS_POR_BARRA * cant(getStock(BARRA_SKU));
+}
+
+/** Aviso para el vendedor cuando la barra no alcanza para el pedido completo; null si alcanza. */
+export function avisoFaltaBarra(pedido, getStock, donde = '') {
+  const falta = faltanteBarra(pedido, getStock);
+  if (falta === 0) return null;
+  const b = cant(getStock(BARRA_SKU)); const m = cant(getStock(MEDIA_BARRA_SKU));
+  return `No hay barra suficiente${donde ? ` en ${donde}` : ''}: hay ${b} ${b === 1 ? 'barra entera' : 'barras enteras'}${m ? ` y ${m} ${m === 1 ? 'media' : 'medias'}` : ''}; `
+    + `faltan ${falta} ${falta === 1 ? 'media' : 'medias'} para este pedido.`;
+}
+
+/**
+ * Aviso de una sola línea de barra (compatibilidad). Con 133 ya no pide "preparado":
+ * alcanza mientras haya barra entera (o algo ya partido / preparado).
  * @param {{ sku, qty }} r  resultado de resolverBarra
  * @param {(sku:string)=>number} getStock
  */
 export function faltaPreparado(r, getStock) {
   if (!r?.sku || r.sku === BARRA_SKU) return null;
-  const hay = n(getStock(r.sku));
-  if (r.qty <= hay) return null;
-  if (r.sku === MEDIA_BARRA_SKU) return `No hay media barra suficiente (hay ${hay}, se necesitan ${r.qty}). Pide a Producción que parta una barra.`;
-  const tipo = r.sku === SKU_PICADA ? 'picada' : 'triturada';
-  return `No hay ${tipo} preparada suficiente (hay ${hay}, se necesitan ${r.qty}). Pide a Producción que prepare la barra.`;
+  return avisoFaltaBarra({ [r.sku]: r.qty }, getStock);
 }
