@@ -354,8 +354,8 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Tanda 4 de correcciones de la revisión profunda — 2026-10-10 — COMMITTED / LOCAL-VALIDATED (deploy PENDIENTE; sin migración)
-**Estado: en git local (rama `tanda4-arreglos`). Solo frontend; sin SQL ni funciones de Netlify.** Autorizada por el dueño ("dale con la
+## Tanda 4 de correcciones de la revisión profunda — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED (sin migración)
+**Frontend `a515335` DEPLOYED (push autorizado por el dueño; Netlify `6aca8d414698390008bfc47f`, ready 2026-10-10T19:09:17Z); bundle vivo verificado (`cola-fallidas`, `pagos-en-revision`, "Quitar (ya lo resolví)"). Solo frontend; sin SQL ni funciones de Netlify. Sin cierre del dueño.** Autorizada por el dueño ("dale con la
 tanda 4", 2026-10-10).
 - **Cola sin señal del chofer:** un fallo de RED ya no gasta intentos (antes, 5 intentos con mala señal dejaban la operación fallida para
   siempre y se borraba al cerrar la ruta). Solo cuentan los rechazos del servidor; la rechazada guarda su motivo, se ve en un aviso rojo
