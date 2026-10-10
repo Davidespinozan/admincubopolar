@@ -12,6 +12,7 @@ import { buildActividadDatos, buildCompletarArgs, buildEditarOcurrenciaArgs, sum
 import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs, esErrorDeRed, mensajeErrorLlamada, rolSinDatosNegocio } from './asistenciaLogic';
 import { buildGuardarAvisosArgs } from './avisosAsistenciaLogic';
 import { dataUrlABlob, rutaEvidencia, yaExisteEnAlmacen } from './evidenciaLogic';
+import { base64ABlob, mensajeErrorDocumento } from './cfdiDocumentoLogic';
 import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, buildAjusteCuartoArgs, buildMermaCuartoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
 import {
   normalizarEntregasCierre, claveCierreFinanciero, buildCerrarFinancieroArgs, interpretarCierreFinanciero,
@@ -2702,6 +2703,41 @@ export function useSupaStore(userId, userName, userRol) {
         log('Timbrar', 'Facturación', `${folio}`);
         notify('factura', 'Factura timbrada', `CFDI generado para ${folio}`, '📄', folio);
         rf();
+      },
+
+      // Factura oficial (PDF o XML) de un CFDI ya timbrado. `abrir`: se muestra en otra
+      // pestaña (vista del PDF); si no, se descarga. No cambia nada en el servidor.
+      descargarFactura: async (ordenId, formato, { abrir = false } = {}) => {
+        try {
+          const r = await backendPost('billing-download-invoice', { ordenId, formato });
+          const blob = base64ABlob(r?.base64, r?.contentType);
+          if (!blob) { t()?.error('La factura llegó vacía. Inténtalo otra vez.'); return { error: 'vacia' }; }
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          if (abrir) { a.target = '_blank'; a.rel = 'noopener'; } else { a.download = r.filename || `factura.${formato}`; }
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 60_000);
+          return { data: { filename: r.filename } };
+        } catch (err) {
+          const msg = mensajeErrorDocumento(err, formato === 'xml' ? 'descargar el XML' : 'abrir la factura');
+          t()?.error(msg);
+          return { error: msg };
+        }
+      },
+
+      // Envía por correo (Facturama) la factura ya timbrada: PDF y XML oficiales.
+      enviarFacturaCorreo: async (ordenId, email) => {
+        try {
+          const r = await backendPost('billing-send-invoice', { ordenId, email: email || null });
+          t()?.success(`Factura enviada a ${r?.email || 'el cliente'}`);
+          log('Enviar factura', 'Facturación', `Orden ${ordenId} → ${r?.email || ''}`);
+          return { data: r };
+        } catch (err) {
+          const msg = mensajeErrorDocumento(err, 'enviar la factura');
+          t()?.error(msg);
+          return { error: msg };
+        }
       },
 
       // Tanda 5: cancela un CFDI ya timbrado ante el SAT vía Facturama.

@@ -354,6 +354,21 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## Factura oficial: enviar por correo y ver / descargar PDF y XML — 2026-10-10 — IMPLEMENTED LOCALLY (sin migración)
+**No desplegado.** Pedido del dueño: que la factura se mande por correo y se pueda ver, como en su otro sistema.
+- **Netlify (2 funciones nuevas; Functions 19 → 21):** `billing-send-invoice` (POST `{ordenId, email?}`: Facturama envía el CFDI vigente al correo
+  escrito o al del cliente; éxito solo con 2xx Y `success === true`; bitácora en `invoice_attempts` con provider `facturama-email`) y
+  `billing-download-invoice` (POST `{ordenId, formato: pdf|xml}` → `{filename, contentType, base64}`; también de un CFDI cancelado). Misma
+  autorización que timbrar y cancelar (`facturacionGuard`: Admin y Facturación toda la empresa; Ventas solo SUS órdenes), evaluada antes del
+  proveedor. No cambian orden, CFDI, pagos ni inventario.
+- **Frontend:** en Facturación, cada factura timbrada tiene "Ver PDF", "XML" y "Enviar por correo" (correo del cliente precargado, editable
+  solo para ese envío). La "Vista previa" anterior al timbrado no cambia.
+- **Validación:** `src/__tests__/facturaDocumento.test.js` (handlers con base en memoria y proveedor falso); Vitest 1,624 en 4 zonas; lint,
+  typecheck, build. Rutas del sandbox comprobadas sin credenciales (401 = existen; una ruta inventada da 404).
+- **No verificable desde aquí:** un envío o descarga real (las credenciales viven en Netlify); se prueba con la primera factura del sandbox.
+- **Datos de la empresa (2026-10-10, SQL del dueño, verificado en solo lectura):** razón social `FABRICA DE PRODUCTOS DE HIELO`, régimen `601`,
+  domicilio según la Constancia de Situación Fiscal; datos bancarios BBVA (CLABE validada). La nota pública muestra ahora la razón social.
+
 ## Evidencias de la venta: fotos del Chofer en el sistema (mig 134) — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED
 **Frontend `e9f554b` DEPLOYED (push autorizado por el dueño; Netlify `6ac9dd2e4c12830008654351`, ready 2026-10-10T06:38:10Z); bundle vivo verificado
 (`registrar_evidencia_orden`, "Fotos de la venta", `orden_evidencias`). Sin cierre del dueño; la subida desde un teléfono en ruta NO está verificada.**

@@ -1,7 +1,8 @@
-import { useState, useMemo, useCallback, Modal, FormBtn, DataTable, PageHeader, EmptyState, s, n, fmtDate, fmtMoney, useToast, Icons, KpiTile } from './viewsCommon';
+import { useState, useMemo, useCallback, Modal, FormBtn, FormInput, DataTable, PageHeader, EmptyState, s, n, fmtDate, fmtMoney, useToast, Icons, KpiTile } from './viewsCommon';
 import CancelarCFDIModal from '../CancelarCFDIModal';
 import { isSandboxMode } from '../../lib/facturamaMode';
 import { estadoComplementosOrden, ESTADO_COMPLEMENTO } from '../../data/complementoLogic';
+import { correoFacturaValido } from '../../data/cfdiDocumentoLogic';
 
 // OL-04: estado del complemento POR PAGO (parcialidad, monto, fecha) y acción sobre ESE pago.
 const ETIQUETA_COMPLEMENTO = {
@@ -43,6 +44,26 @@ export function FacturacionView({ data, actions }) {
   const [previewOrden, setPreviewOrden] = useState(null);
   const [cancelOrden, setCancelOrden] = useState(null);
   const [filtroEstado, setFiltroEstado] = useState('todas'); // 'todas' | 'vigentes' | 'canceladas'
+  // Factura oficial ya timbrada: ver PDF, descargar XML y enviar por correo.
+  const [docOcupado, setDocOcupado] = useState(null);          // `${ordenId}|pdf` | `${ordenId}|xml`
+  const [correoOrden, setCorreoOrden] = useState(null);        // orden a enviar
+  const [correo, setCorreo] = useState('');
+  const [enviandoCorreo, setEnviandoCorreo] = useState(false);
+  const bajarDocumento = async (o, formato) => {
+    if (docOcupado) return;
+    setDocOcupado(`${o.id}|${formato}`);
+    try { await actions.descargarFactura?.(o.id, formato, { abrir: formato === 'pdf' }); } finally { setDocOcupado(null); }
+  };
+  const abrirCorreo = (o) => {
+    const cli = (data.clientes || []).find(c => String(c.id) === String(o.clienteId ?? o.cliente_id));
+    setCorreo(s(cli?.correo));
+    setCorreoOrden(o);
+  };
+  const enviarCorreo = async () => {
+    if (enviandoCorreo || !correoOrden) return;
+    setEnviandoCorreo(true);
+    try { const r = await actions.enviarFacturaCorreo?.(correoOrden.id, correo.trim()); if (!r?.error) setCorreoOrden(null); } finally { setEnviandoCorreo(false); }
+  };
 
   const { timbradas, totalFact } = useMemo(() => {
     let count = 0, sum = 0;
@@ -184,6 +205,20 @@ export function FacturacionView({ data, actions }) {
                     {esPPD ? 'PPD' : 'PUE'}
                   </span>
                   {!cancelado && !esPPD && <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700"><Icons.Check /> Pagado</span>}
+                  <button type="button" onClick={() => bajarDocumento(o, 'pdf')} disabled={!!docOcupado} data-testid="factura-pdf"
+                    className="min-h-[32px] rounded bg-slate-900 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-50" title="Ver la factura oficial (PDF)">
+                    {docOcupado === `${o.id}|pdf` ? 'Abriendo…' : 'Ver PDF'}
+                  </button>
+                  <button type="button" onClick={() => bajarDocumento(o, 'xml')} disabled={!!docOcupado} data-testid="factura-xml"
+                    className="min-h-[32px] rounded bg-slate-100 px-2.5 py-1 text-[10px] font-bold text-slate-700 disabled:opacity-50" title="Descargar el XML">
+                    {docOcupado === `${o.id}|xml` ? 'Bajando…' : 'XML'}
+                  </button>
+                  {!cancelado && (
+                    <button type="button" onClick={() => abrirCorreo(o)} data-testid="factura-correo"
+                      className="min-h-[32px] rounded bg-emerald-600 px-2.5 py-1 text-[10px] font-bold text-white" title="Enviar la factura por correo al cliente">
+                      Enviar por correo
+                    </button>
+                  )}
                   {!cancelado && (
                     <button
                       onClick={() => setCancelOrden(o)}
@@ -202,6 +237,18 @@ export function FacturacionView({ data, actions }) {
         }
       </div>
     )}
+
+    <Modal open={!!correoOrden} onClose={() => !enviandoCorreo && setCorreoOrden(null)} kicker="Factura" title={correoOrden ? `Enviar ${s(correoOrden.facturama_folio) ? 'CFDI ' + s(correoOrden.facturama_folio) : s(correoOrden.folio)}` : ''}
+      footer={<><FormBtn ghost onClick={() => setCorreoOrden(null)} disabled={enviandoCorreo}>Cancelar</FormBtn>
+        <FormBtn primary className="flex-1" onClick={enviarCorreo} loading={enviandoCorreo} disabled={!correoFacturaValido(correo)}>Enviar factura</FormBtn></>}>
+      {correoOrden && (
+        <div className="space-y-3" data-testid="enviar-factura">
+          <p className="text-sm text-slate-600">{s(correoOrden.cliente || correoOrden.cliente_nombre)} recibirá un correo de Facturama con el PDF y el XML de la factura.</p>
+          <FormInput label="Correo del cliente" type="email" inputMode="email" autoComplete="off" value={correo} onChange={e => setCorreo(e.target.value)} placeholder="cliente@correo.com"
+            hint={correo && !correoFacturaValido(correo) ? 'Escribe un correo válido' : 'Puedes cambiarlo solo para este envío; el del cliente no se modifica.'} />
+        </div>
+      )}
+    </Modal>
 
     <CancelarCFDIModal
       open={!!cancelOrden}
