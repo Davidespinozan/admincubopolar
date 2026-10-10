@@ -10,10 +10,9 @@
 //     correo) vive en `clientes` y la lee billing-create-invoice. La
 //     orden persiste `requiere_factura = true` para que aparezca en
 //     Facturación pendiente.
-//   - Si no existe el cliente, el chofer NO puede completar la venta
-//     con factura: Ventas/Admin debe darlo de alta por el flujo
-//     explícito (ClientesView / NuevaVentaModal). No hay matching ni
-//     merge automático (eso es P1).
+//   - Si no existe el cliente, el chofer lo da de alta con datos fiscales
+//     completos por el contrato `crear_cliente_chofer` (127): sin crédito,
+//     idempotente por RFC. No hay matching ni merge automático (eso es P1).
 
 import { validarRFC } from '../utils/safe';
 
@@ -26,10 +25,26 @@ import { validarRFC } from '../utils/safe';
 export function validarVentaExpressFactura({ factura, cliente }) {
   if (!factura) return null;
   if (!cliente || cliente.id === undefined || cliente.id === null || cliente.id === '') {
-    return { error: 'Para facturar selecciona un cliente registrado de la lista. Si no existe, Ventas debe darlo de alta.' };
+    return { error: 'Para facturar selecciona un cliente registrado de la lista. Si no existe, regístralo con "Registrar cliente nuevo".' };
   }
   if (!validarRFC(cliente.rfc, { permitirGenericos: false })) {
     return { error: 'El cliente no tiene RFC nominativo. Ventas/Admin debe capturar sus datos fiscales antes de facturar.' };
   }
+  return null;
+}
+
+/**
+ * Valida los datos fiscales que el chofer captura para registrar un cliente nuevo
+ * (espejo de las reglas de `crear_cliente_chofer`, 127; el servidor decide).
+ * @param {Object} d - { nombre, rfc, regimen, usoCfdi, cp, correo }
+ * @returns {{ error: string } | null}
+ */
+export function validarClienteNuevoChofer(d = {}) {
+  if (!String(d.nombre || '').trim()) return { error: 'Captura el nombre o razón social.' };
+  if (!validarRFC(d.rfc, { permitirGenericos: false })) return { error: 'El RFC no es válido (debe ser nominativo, no genérico).' };
+  if (!/^\d{3}$/.test(String(d.regimen || '').trim())) return { error: 'Elige el régimen fiscal.' };
+  if (!String(d.usoCfdi || '').trim()) return { error: 'Elige el uso de CFDI.' };
+  if (!/^\d{5}$/.test(String(d.cp || '').trim())) return { error: 'El código postal debe tener 5 dígitos.' };
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(d.correo || '').trim())) return { error: 'Captura un correo válido para enviar la factura.' };
   return null;
 }

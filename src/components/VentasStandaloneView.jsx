@@ -293,10 +293,10 @@ export default function VentasStandaloneView({ user, data, actions, onLogout, em
       <NuevaVentaModal
         open={modal}
         onClose={() => setModal(false)}
-        onSuccess={(orden) => {
+        onSuccess={(orden, { mostrador } = {}) => {
           setModal(false);
-          if (orden) {
-            showToast('Orden creada — ahora cobra');
+          if (mostrador && orden) {
+            showToast('Orden creada — cobra y entrega');
             cobrar(orden);
           } else {
             showToast('Orden creada');

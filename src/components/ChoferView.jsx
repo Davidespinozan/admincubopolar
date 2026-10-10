@@ -2,7 +2,8 @@ import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } fro
 import { diaNegocio } from '../utils/fechas';
 import { s, n, fmtMoney, fmtDate, extraerTelefono } from '../utils/safe';
 import { resolverEntrega, etiquetaClienteSucursal } from '../data/sucursalLogic';
-import { validarVentaExpressFactura } from '../data/ventaExpressLogic';
+import { validarVentaExpressFactura, validarClienteNuevoChofer } from '../data/ventaExpressLogic';
+import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { abrirNavegacion } from '../utils/navegacion';
@@ -147,8 +148,16 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 
   // ── READ REAL DATA FROM STORE ──
   const productos = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
-  const clientesActivos = useMemo(() => (data.clientes || []).filter(c => s(c.estatus || 'Activo') === 'Activo'), [data.clientes]);
-  const clienteExpressSel = useMemo(() => (data.clientes || []).find(c => String(c.id) === String(vForm.clienteId)), [data.clientes, vForm.clienteId]);
+  // 127: clientes que el chofer registró en esta sesión (hasta que el refresco los traiga de la base).
+  const [clientesNuevos, setClientesNuevos] = useState([]);
+  const [cliNuevoForm, setCliNuevoForm] = useState(null); // null = cerrado
+  const [guardandoCli, setGuardandoCli] = useState(false);
+  const clientesActivos = useMemo(() => {
+    const base = (data.clientes || []).filter(c => s(c.estatus || 'Activo') === 'Activo');
+    const ids = new Set(base.map(c => String(c.id)));
+    return [...base, ...clientesNuevos.filter(c => !ids.has(String(c.id)))];
+  }, [data.clientes, clientesNuevos]);
+  const clienteExpressSel = useMemo(() => clientesActivos.find(c => String(c.id) === String(vForm.clienteId)), [clientesActivos, vForm.clienteId]);
   // P0: con factura, la identidad fiscal es la del cliente registrado.
   const errorFacturaExpress = validarVentaExpressFactura({ factura: vForm.factura, cliente: clienteExpressSel })?.error || null;
 
@@ -743,6 +752,23 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     }
   };
 
+  const registrarClienteNuevo = async () => {
+    if (guardandoCli || !cliNuevoForm) return;
+    const err = validarClienteNuevoChofer(cliNuevoForm);
+    if (err) { showToast(err.error, 'error'); return; }
+    setGuardandoCli(true);
+    try {
+      const r = await actions.crearClienteChofer?.({ ...cliNuevoForm, rfc: cliNuevoForm.rfc.trim().toUpperCase() });
+      if (!r || r.error || r.id == null) return; // el store ya mostró el aviso
+      setClientesNuevos(prev => [...prev, { id: r.id, nombre: r.nombre, rfc: r.rfc, regimen: cliNuevoForm.regimen, uso_cfdi: cliNuevoForm.usoCfdi, cp: cliNuevoForm.cp, correo: cliNuevoForm.correo, estatus: 'Activo' }]);
+      setVForm(f => ({ ...f, clienteId: String(r.id), cliente: s(r.nombre) }));
+      setCliNuevoForm(null);
+      showToast(r.existente ? 'Ya existía un cliente con ese RFC: se seleccionó' : 'Cliente registrado');
+    } finally {
+      setGuardandoCli(false);
+    }
+  };
+
   const crearVentaExpress = async () => {
     if (creandoVenta) return;
     if (!vForm.cant || n(vForm.cant) <= 0) return;
@@ -1295,7 +1321,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         })()}
         {/* Mobile-first: las 3 acciones en una sola fila (antes se apilaban y tapaban la lista). */}
         <div className="grid grid-cols-3 gap-2">
-          <button type="button" onClick={() => { setVentaModal(true); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false }); }} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-card bg-cyan-200 px-2 py-2 text-xs font-bold text-slate-950 transition-transform active:scale-[0.98]"><Icons.ShoppingCart />Venta rápida</button>
+          <button type="button" onClick={() => { setVentaModal(true); setCliNuevoForm(null); setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false }); }} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-card bg-cyan-200 px-2 py-2 text-xs font-bold text-slate-950 transition-transform active:scale-[0.98]"><Icons.ShoppingCart />Venta rápida</button>
           <button type="button" onClick={() => { setMermaModal(true); setMForm({ sku: s(productos[0]?.sku) || "", cant: "", causa: "Bolsa rota" }); }} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-card bg-white/10 px-2 py-2 text-xs font-bold text-amber-200 transition-transform active:scale-[0.98]"><Icons.AlertTriangle />Merma</button>
           <button type="button" onClick={() => setStep("cierre")} className="flex min-h-[56px] w-full flex-col items-center justify-center gap-1 rounded-card bg-white px-2 py-2 text-xs font-bold text-slate-950"><Icons.ClipboardCheck />Cerrar ruta</button>
         </div>
@@ -1408,7 +1434,38 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           {vForm.factura && (
             <Card padding="p-3" className="space-y-1 !border-violet-200/80 !bg-violet-50/80">
               {errorFacturaExpress ? (
-                <p className="text-xs font-semibold text-violet-700">{errorFacturaExpress}</p>
+                <>
+                  <p className="text-xs font-semibold text-violet-700">{errorFacturaExpress}</p>
+                  {!cliNuevoForm ? (
+                    <button type="button" onClick={() => setCliNuevoForm({ nombre: s(vForm.cliente), rfc: '', regimen: '601', usoCfdi: 'G03', cp: '', correo: '' })}
+                      className="min-h-[44px] w-full rounded-field border border-violet-300 bg-white text-sm font-bold text-violet-700">+ Registrar cliente nuevo</button>
+                  ) : (
+                    <div className="space-y-2">
+                      <FormInput label="Nombre o razón social" value={cliNuevoForm.nombre} onChange={e => setCliNuevoForm(f => ({ ...f, nombre: e.target.value }))} />
+                      <FormInput label="RFC" value={cliNuevoForm.rfc} maxLength={13} autoCapitalize="characters" onChange={e => setCliNuevoForm(f => ({ ...f, rfc: e.target.value.toUpperCase() }))} />
+                      <div>
+                        <label className={LABEL}>Régimen fiscal</label>
+                        <select value={cliNuevoForm.regimen} onChange={e => setCliNuevoForm(f => ({ ...f, regimen: e.target.value }))} className="min-h-[48px] w-full rounded-field border border-line bg-white px-3 text-sm">
+                          {REGIMENES_OPTIONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={LABEL}>Uso de CFDI</label>
+                        <select value={cliNuevoForm.usoCfdi} onChange={e => setCliNuevoForm(f => ({ ...f, usoCfdi: e.target.value }))} className="min-h-[48px] w-full rounded-field border border-line bg-white px-3 text-sm">
+                          <option value="G01">G01 — Adquisición de mercancías</option>
+                          <option value="G03">G03 — Gastos en general</option>
+                          <option value="S01">S01 — Sin efectos fiscales</option>
+                        </select>
+                      </div>
+                      <FormInput label="Código postal fiscal" inputMode="numeric" maxLength={5} value={cliNuevoForm.cp} onChange={e => setCliNuevoForm(f => ({ ...f, cp: e.target.value.replace(/\D/g, '') }))} />
+                      <FormInput label="Correo para la factura" type="email" value={cliNuevoForm.correo} onChange={e => setCliNuevoForm(f => ({ ...f, correo: e.target.value }))} />
+                      <div className="flex gap-2">
+                        <FormBtn size="lg" className="flex-1" onClick={() => setCliNuevoForm(null)} disabled={guardandoCli}>Cancelar</FormBtn>
+                        <FormBtn primary size="lg" className="flex-[2]" onClick={registrarClienteNuevo} loading={guardandoCli}>Registrar cliente</FormBtn>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <>
                   <p className="text-[10px] font-bold uppercase text-violet-600">Datos fiscales del cliente</p>

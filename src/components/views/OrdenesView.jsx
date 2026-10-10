@@ -416,9 +416,10 @@ export function OrdenesView({ data, actions, user }) {
     <NuevaVentaModal
       open={modal}
       onClose={() => setModal(false)}
-      onSuccess={() => {
+      onSuccess={(orden, { mostrador } = {}) => {
         toast?.success('Orden creada');
         setModal(false);
+        if (mostrador && orden) cobrarOrden(orden);
       }}
       data={data}
       actions={actions}

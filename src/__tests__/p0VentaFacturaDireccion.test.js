@@ -94,3 +94,23 @@ describe('validarVentaExpressFactura', () => {
     expect(validarVentaExpressFactura({ factura: true, cliente: { id: 9, rfc: '' } })?.error).toMatch(/RFC nominativo/);
   });
 });
+
+describe('127: validarClienteNuevoChofer (espejo de crear_cliente_chofer)', () => {
+  const ok = { nombre: 'Hielos SA', rfc: 'HSA010101AB1', regimen: '601', usoCfdi: 'G03', cp: '34000', correo: 'fact@hielos.mx' };
+  it('acepta datos fiscales completos', async () => {
+    const { validarClienteNuevoChofer } = await import('../data/ventaExpressLogic');
+    expect(validarClienteNuevoChofer(ok)).toBeNull();
+  });
+  it.each([
+    ['nombre', { nombre: ' ' }],
+    ['RFC genérico', { rfc: 'XAXX010101000' }],
+    ['RFC mal formado', { rfc: 'ABC' }],
+    ['régimen', { regimen: '' }],
+    ['uso CFDI', { usoCfdi: '' }],
+    ['CP', { cp: '340' }],
+    ['correo', { correo: 'sin-arroba' }],
+  ])('rechaza %s', async (_t, cambio) => {
+    const { validarClienteNuevoChofer } = await import('../data/ventaExpressLogic');
+    expect(validarClienteNuevoChofer({ ...ok, ...cambio })?.error).toBeTruthy();
+  });
+});

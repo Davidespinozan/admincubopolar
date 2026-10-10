@@ -981,6 +981,20 @@ export function useSupaStore(userId, userName, userRol) {
       },
 
       // ── SUCURSALES (123): solo por contrato ──
+      // 127: el Chofer registra un cliente con datos fiscales completos para facturar su venta rápida.
+      crearClienteChofer: async (d) => {
+        const guard = requireRol(['Chofer']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        const { data, error } = await supabase.rpc('crear_cliente_chofer', { p_datos: {
+          nombre: d.nombre, rfc: d.rfc, regimen: d.regimen, uso_cfdi: d.usoCfdi, cp: d.cp, correo: d.correo, contacto: d.contacto || null,
+        } });
+        if (error) {
+          const msg = String(error.message || 'No se pudo registrar el cliente').replace(/^crear_cliente_chofer: /, '');
+          t()?.error(msg); return { error: msg, code: error.code };
+        }
+        rf();
+        return data || {};
+      },
       guardarSucursal: async (id, clienteId, datos) => {
         const guard = requireRol(['Admin', 'Ventas']);
         if (guard) { t()?.error(guard.error); return guard; }
