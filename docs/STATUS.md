@@ -354,6 +354,31 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## Pedido sin existencia (mig 137) — 2026-10-10 — COMMITTED / LOCAL-VALIDATED (migración y deploy PENDIENTES)
+**Estado: en git local (rama `pedidos-sin-stock`). 137 NO aplicada en producción; frontend NO desplegado.** Pedido y autorizado por el
+dueño el 2026-10-10 ("me gusta, dale"). Orden de activación: 137 (compatible con el frontend desplegado: sin la bandera nada cambia) →
+verificación de solo lectura → push.
+- **Antes (auditado en solo lectura):** `crear_orden` (133) y la pantalla rechazaban TODA venta cuya cantidad superara la existencia del
+  momento, igual en mostrador que en un pedido para otro día. La orden nunca apartó inventario (solo baja al entregar o cargar el camión).
+- **Regla nueva:** **Mostrador** (se entrega ahí mismo): sin existencia no se vende (sin cambio). **A domicilio**: el pedido se levanta
+  aunque falte; la pantalla avisa cuánto hay que producir y el botón dice "Crear pedido por surtir".
+- **137** (`137_pedido_sin_existencia.sql`, SHA-256 `d7dce63ad2c3281d826f27f73801c63fa28e73a32af941ec13b3ccd332e05416`; idempotente, misma firma y permisos): `crear_orden` acepta
+  `p_orden.permitir_sin_stock = true`; entonces no rechaza por existencia, devuelve `faltantes` (sku, pedido, disponible, falta) y
+  `falta_barra` (la regla de 133 como aviso) y deja en `auditoria` "Pedido sin existencia" con quién y cuánto. Sin la bandera el cuerpo es
+  el de 133. md5 en producción ANTES: `557168664182191ef86519f55452ef32` (= definición de 133); DESPUÉS esperado (base local):
+  `ef8e49a380d52f870aaccc1bf2ef323c`.
+- **No cambia:** crédito, precios, folio, sucursal; `completar_venta_directa`, la carga del camión y el cierre de ruta siguen exigiendo
+  que el producto exista (suite 137-15: el pedido sin existencia no se puede entregar hasta producirlo). La orden sigue sin apartar
+  inventario. Producción ya ve los pedidos pendientes en "Qué necesitas producir" (sin cambio).
+- **Decisiones tomadas por omisión (el dueño no las respondió; ajustables):** lo puede hacer cualquier Admin o Ventas (los mismos que ya
+  levantan ventas) y sin tope de cantidad; queda rastro en auditoría.
+- **Frontend:** `src/data/pedidoStockLogic.js` (`revisarExistencia`); Nueva venta (aviso ámbar, bloqueo solo en mostrador); Editar venta
+  ya no se bloquea por existencia (solo avisa; el servidor nunca la revisó al editar).
+- **Validación:** suite `137_pedido_sin_existencia_test.sql` (17) + re-corridas en verde: 133, 123, 109, 129, 135, 088, 110;
+  `src/__tests__/pedidoSinExistencia.test.js`; Vitest 1,702 en 4 zonas; lint, typecheck, build, `diff --check`. Sin el ensayo completo.
+- **No incluido:** apartar inventario por pedido; tope por capacidad de la planta; aviso automático a Producción; la venta exprés del chofer.
+- Reversión: volver a aplicar `crear_orden` de 133; Netlify al commit anterior (`a515335`).
+
 ## Tanda 4 de correcciones de la revisión profunda — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED (sin migración)
 **Frontend `a515335` DEPLOYED (push autorizado por el dueño; Netlify `6aca8d414698390008bfc47f`, ready 2026-10-10T19:09:17Z); bundle vivo verificado (`cola-fallidas`, `pagos-en-revision`, "Quitar (ya lo resolví)"). Solo frontend; sin SQL ni funciones de Netlify. Sin cierre del dueño.** Autorizada por el dueño ("dale con la
 tanda 4", 2026-10-10).

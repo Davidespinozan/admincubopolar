@@ -8,9 +8,10 @@ import { validateDireccion, placeSelectionToEntrega } from '../data/direccionLog
 import { sucursalesDeCliente, sucursalPrincipal, precioParaSucursal, resolverEntrega } from '../data/sucursalLogic';
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
 import { fiscalesPorOmision } from '../data/receptorFiscalLogic';
+import { pedidoPorSku, revisarExistencia, textoFaltantes } from '../data/pedidoStockLogic';
 import { stockDisponiblePorSku } from '../utils/stock';
 import { BARRA_SKU } from '../data/preparacionBarraLogic';
-import { productosParaVenta, hayMediaBarra, barraPorOmision, resolverBarra, resumenBarra, esDerivadoBarra, avisoFaltaBarra } from '../data/barraVentaLogic';
+import { productosParaVenta, hayMediaBarra, barraPorOmision, resolverBarra, resumenBarra } from '../data/barraVentaLogic';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 const DireccionForm = lazy(() => import('./ui/DireccionForm'));
@@ -318,6 +319,12 @@ export default function NuevaVentaModal({
     }
   };
 
+  // 137: existencia de lo que se está pidiendo, según el canal (mostrador bloquea; a domicilio avisa).
+  const existencia = useMemo(
+    () => revisarExistencia({ pedido: pedidoPorSku(lines), getStock, mostrador: form.canal === 'mostrador' }),
+    [lines, getStock, form.canal]
+  );
+
   const validateStep = (currentStep) => {
     const e = {};
     if (currentStep === 1) {
@@ -329,25 +336,14 @@ export default function NuevaVentaModal({
       } else {
         // 133: media barra, picada y triturada se revisan JUNTAS contra la barra entera
         // (lo que falte se parte o prepara al entregar); lo demás, por su existencia.
-        const pedido = {};
         for (const l of lines) {
-          if (l.barra) {
-            const r = resolverBarra(l.barra, { hayMedia });
-            if (r.bloqueo) { e.productos = r.bloqueo; break; }
-          }
-          if (l.sku && l.qty > 0) pedido[l.sku] = (pedido[l.sku] || 0) + n(l.qty);
+          if (!l.barra) continue;
+          const r = resolverBarra(l.barra, { hayMedia });
+          if (r.bloqueo) { e.productos = r.bloqueo; break; }
         }
-        if (!e.productos) {
-          for (const [sku, q] of Object.entries(pedido)) {
-            if (esDerivadoBarra(sku)) continue;
-            const stock = getStock(sku);
-            if (q > stock) { e.productos = `Stock insuficiente de ${sku} (disp: ${stock})`; break; }
-          }
-        }
-        if (!e.productos) {
-          const falta = avisoFaltaBarra(pedido, getStock);
-          if (falta) e.productos = falta;
-        }
+        // 137: en mostrador sin existencia no se vende; a domicilio el pedido se levanta
+        // y se avisa cuánto hay que producir (ver `existencia`).
+        if (!e.productos && existencia.bloqueo) e.productos = existencia.bloqueo;
       }
     }
     return e;
@@ -386,6 +382,7 @@ export default function NuevaVentaModal({
         tipoCobro: form.tipoCobro || 'Contado',
         folioNota: form.folioNota || null,
         requiereFactura: ft.toggleFactura ? !!form.requiereFactura : undefined,
+        permitirSinStock: existencia.permitirSinStock, // 137: pedido a domicilio que se surte después
         direccionEntrega: form.direccionTouched ? s(form.direccionEntrega) : '',
         referenciaEntrega: s(form.referenciaEntrega),
         latitudEntrega: form.direccionTouched ? form.latitudEntrega : null,
@@ -680,6 +677,14 @@ export default function NuevaVentaModal({
     <div className="space-y-3">
       <p className="text-sm text-slate-500 mb-2">¿Qué le vas a vender? Puedes agregar varios productos.</p>
 
+      {existencia.permitirSinStock && !errors.productos && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900" data-testid="aviso-sin-existencia">
+          <p className="flex items-center gap-1.5 font-bold"><span className="flex-shrink-0"><Icons.AlertTriangle /></span>No hay existencia suficiente: es un pedido por surtir</p>
+          {existencia.faltan.length > 0 && <p className="mt-1">Falta producir {textoFaltantes(existencia.faltan)}.</p>}
+          {existencia.barra && <p className="mt-1">{existencia.barra}</p>}
+          <p className="mt-1">El pedido se puede levantar. No saldrá de la planta hasta que el producto exista (al cargar el camión o al entregar). Avisa a Producción.</p>
+        </div>
+      )}
       {errors.productos && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-3">
           <p className="flex items-center gap-1.5 text-xs text-red-700 font-semibold"><span className="flex-shrink-0"><Icons.AlertTriangle /></span>{errors.productos}</p>
@@ -906,7 +911,7 @@ export default function NuevaVentaModal({
         {ft.wizard && step < ultimoPaso && <FormBtn primary size="lg" className="flex-[2]" onClick={nextStep}>Siguiente <Icons.ChevronRight /></FormBtn>}
         {(!ft.wizard || step === ultimoPaso) && (
           <FormBtn primary size="lg" className="flex-[2]" onClick={save} loading={saving} disabled={excedeCredito}>
-            {mostrador ? 'Crear y cobrar' : form.requiereFactura ? 'Crear venta con factura' : 'Crear venta'}
+            {mostrador ? 'Crear y cobrar' : existencia.permitirSinStock ? 'Crear pedido por surtir' : form.requiereFactura ? 'Crear venta con factura' : 'Crear venta'}
           </FormBtn>
         )}
       </div>

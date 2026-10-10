@@ -10,10 +10,10 @@
 
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
 import { unirLineasPorSku } from '../data/ordenLogic';
-import { esDerivadoBarra, avisoFaltaBarra } from '../data/barraVentaLogic';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { Icons } from './ui/Icons';
 import { s, n, eqId, fmtMoney } from '../utils/safe';
+import { pedidoPorSku, revisarExistencia, textoFaltantes } from '../data/pedidoStockLogic';
 import { stockDisponiblePorSku, stockDisponibleParaEdicion } from '../utils/stock';
 import { placeSelectionToEntrega } from '../data/direccionLogic';
 import { sucursalesDeCliente, precioParaSucursal, resolverEntrega } from '../data/sucursalLogic';
@@ -212,20 +212,13 @@ export default function EditarVentaModal({
     if (saving) return;
     if (!orden?.id) return;
 
-    // Validación de stock por línea
-    // 133: media barra, picada y triturada se revisan juntas contra la barra entera.
-    const pedido = {};
-    for (const l of lines) if (l.sku && n(l.qty) > 0) pedido[l.sku] = (pedido[l.sku] || 0) + n(l.qty);
-    for (const [sku, q] of Object.entries(pedido)) {
-      if (esDerivadoBarra(sku)) continue;
-      const stock = getStock(sku);
-      if (q > stock) {
-        toast?.error(`Stock insuficiente de ${sku} (disp: ${stock})`);
-        return;
-      }
+    // 137: editar un pedido ya no se bloquea por existencia (puede ser un pedido por surtir;
+    // el servidor tampoco la revisa al editar). Solo se avisa; el candado físico sigue en la
+    // carga del camión y en la entrega.
+    const existencia = revisarExistencia({ pedido: pedidoPorSku(lines), getStock, mostrador: false });
+    if (existencia.hayFaltante) {
+      toast?.info?.(`Queda como pedido por surtir: ${[existencia.faltan.length ? `falta producir ${textoFaltantes(existencia.faltan)}` : '', existencia.barra || ''].filter(Boolean).join('. ')}`);
     }
-    const faltaBarra = avisoFaltaBarra(pedido, getStock);
-    if (faltaBarra) { toast?.error(faltaBarra); return; }
 
     if (!form.fecha) { toast?.error('Elige la fecha de la venta'); return; }
     const lineasValidas = lines.filter(l => l.sku && n(l.qty) > 0);

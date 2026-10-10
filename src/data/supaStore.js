@@ -1142,6 +1142,9 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
               requiere_factura: o.requiereFactura === true,
               folio_nota: o.folioNota || null,
               fecha: o.fecha || null,
+              // 137: pedido a domicilio que se surte después (el servidor lo acepta sin existencia
+              // y devuelve lo que falta producir). Mostrador nunca lo manda.
+              ...(o.permitirSinStock === true ? { permitir_sin_stock: true } : {}),
               direccion_entrega: typeof o.direccionEntrega === 'string' ? o.direccionEntrega.trim() : null,
               referencia_entrega: typeof o.referenciaEntrega === 'string' ? o.referenciaEntrega.trim() : null,
               latitud_entrega: (lat === '' || lat === null || lat === undefined || !Number.isFinite(Number(lat))) ? null : Number(lat),
@@ -1156,7 +1159,9 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
             return { message: msg };
           }
           const newOrd = data || {};
-          await log('Crear', 'Órdenes', `${newOrd.folio} — $${newOrd.total}`);
+          const porSurtir = (Array.isArray(newOrd.faltantes) && newOrd.faltantes.length > 0) || !!newOrd.falta_barra;
+          await log('Crear', 'Órdenes', `${newOrd.folio} — $${newOrd.total}${porSurtir ? ' (por surtir)' : ''}`);
+          if (porSurtir) t()?.info?.(`${newOrd.folio} quedó como pedido por surtir: falta producirlo antes de entregar.`);
           notify('venta', 'Nueva orden creada', `${newOrd.folio} — ${newOrd.cliente_nombre} — $${Number(newOrd.total || 0).toLocaleString()}`, '🧾', newOrd.folio);
           rf();
           return { orden: { ...newOrd, cliente: newOrd.cliente_nombre } };
