@@ -6,6 +6,8 @@ import { validateDireccion, placeSelectionToEntrega } from '../data/direccionLog
 import { sucursalesDeCliente, sucursalPrincipal, precioParaSucursal, resolverEntrega } from '../data/sucursalLogic';
 import { REGIMENES_OPTIONS } from '../data/sat/regimenesFiscales';
 import { stockDisponiblePorSku } from '../utils/stock';
+import { BARRA_SKU } from '../data/preparacionBarraLogic';
+import { productosParaVenta, barraPorOmision, resolverBarra, resumenBarra, faltaPreparado } from '../data/barraVentaLogic';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 const DireccionForm = lazy(() => import('./ui/DireccionForm'));
@@ -226,9 +228,23 @@ export default function NuevaVentaModal({
   const addLine = () => setLines(prev => [...prev, { sku: '', qty: 1, precio: 0 }]);
   const updateLine = (idx, field, val) => setLines(prev => prev.map((l, i) => {
     if (i !== idx) return l;
-    const u = { ...l, [field]: val };
+    if (field === 'sku' && val === BARRA_SKU) return aplicarBarra(l, barraPorOmision());
+    const { barra: _barra, ...base } = l;
+    const u = { ...base, [field]: val };
+    if (field === 'qty' && l.barra) return aplicarBarra(l, { ...l.barra, cant: val });
     if (field === 'sku') u.precio = getPrice(form.clienteId, val, form.sucursalId || null);
     return u;
+  }));
+  // La venta captura la barra (entera o media) y su entrega; la línea real es la de la bolsa preparada.
+  const aplicarBarra = (l, barra) => {
+    const r = resolverBarra(barra);
+    return { ...l, barra, sku: r.sku || '', qty: r.sku ? r.qty : barra.cant, precio: r.sku ? getPrice(form.clienteId, r.sku, form.sucursalId || null) : 0 };
+  };
+  const updateBarra = (idx, patch) => setLines(prev => prev.map((l, i) => {
+    if (i !== idx || !l.barra) return l;
+    const b = { ...l.barra, ...patch };
+    if (b.medida === 'media' && b.entrega === 'sin') b.entrega = 'picada'; // la media barra sin preparar aún no existe
+    return aplicarBarra(l, b);
   }));
   const removeLine = (idx) => setLines(prev => prev.filter((_, i) => i !== idx));
 
@@ -301,6 +317,11 @@ export default function NuevaVentaModal({
         e.productos = 'Agrega al menos un producto';
       } else {
         for (const l of lines) {
+          if (l.barra) {
+            const r = resolverBarra(l.barra);
+            const falta = r.bloqueo || faltaPreparado(r, getStock);
+            if (falta) { e.productos = falta; break; }
+          }
           if (l.sku && l.qty > 0) {
             const stock = getStock(l.sku);
             if (n(l.qty) > stock) {
@@ -401,9 +422,11 @@ export default function NuevaVentaModal({
   );
 
   const prodOpts = useMemo(
-    () => [{ value: '', label: 'Seleccionar producto...' }, ...prodTerminados.map(p => ({
+    () => [{ value: '', label: 'Seleccionar producto...' }, ...productosParaVenta(prodTerminados).map(p => ({
       value: s(p.sku),
-      label: `${s(p.sku)} — ${s(p.nombre)} (${n(cfStockMap[p.sku])} disp.)`,
+      label: s(p.sku) === BARRA_SKU
+        ? `${s(p.sku)} — Barra de hielo, entera o media (${n(cfStockMap[p.sku])} barras disp.)`
+        : `${s(p.sku)} — ${s(p.nombre)} (${n(cfStockMap[p.sku])} disp.)`,
     }))],
     [prodTerminados, cfStockMap]
   );
@@ -644,7 +667,7 @@ export default function NuevaVentaModal({
         <div key={i} className="bg-slate-50 rounded-xl p-3">
           <div className="flex items-center gap-2">
             <select
-              value={l.sku}
+              value={l.barra ? BARRA_SKU : l.sku}
               onChange={e => updateLine(i, 'sku', e.target.value)}
               className="flex-1 border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-white min-h-[44px]"
             >
@@ -653,7 +676,7 @@ export default function NuevaVentaModal({
             <input
               type="number"
               min="1"
-              value={l.qty}
+              value={l.barra ? l.barra.cant : l.qty}
               onChange={e => updateLine(i, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
               className="w-16 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center min-h-[44px] bg-white"
             />
@@ -662,7 +685,30 @@ export default function NuevaVentaModal({
               <button type="button" onClick={() => removeLine(i)} className="text-red-400 hover:text-red-600 text-lg min-w-[28px]">×</button>
             )}
           </div>
-          {l.sku && <p className="text-[11px] text-slate-500 mt-1.5 ml-1">Stock disponible: {getStock(l.sku).toLocaleString()} bolsas</p>}
+          {l.barra ? (
+            <div className="mt-2 space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                {[['entera', 'Barra entera'], ['media', 'Media barra']].map(([k, t]) => (
+                  <button key={k} type="button" onClick={() => updateBarra(i, { medida: k })}
+                    className={`min-h-[40px] rounded-xl border-2 text-sm font-semibold ${l.barra.medida === k ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}>{t}</button>
+                ))}
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[['sin', 'Sin preparar'], ['picada', 'Picada'], ['triturada', 'Triturada']].map(([k, t]) => {
+                  const off = k === 'sin' && l.barra.medida === 'media';
+                  return (
+                    <button key={k} type="button" disabled={off} onClick={() => updateBarra(i, { entrega: k })}
+                      className={`min-h-[40px] rounded-xl border-2 text-xs font-semibold ${off ? 'border-slate-100 bg-slate-50 text-slate-300' : l.barra.entrega === k ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`}>{t}</button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-slate-500 ml-1">
+                {resumenBarra(l.barra)}
+                {' · '}Preparado: {getStock('HIP-25K')} picada · {getStock('HIT-25K')} triturada
+                {l.barra.medida === 'media' ? ' · La otra mitad la decide Producción' : ''}
+              </p>
+            </div>
+          ) : l.sku && <p className="text-[11px] text-slate-500 mt-1.5 ml-1">Stock disponible: {getStock(l.sku).toLocaleString()} bolsas</p>}
         </div>
       ))}
 
