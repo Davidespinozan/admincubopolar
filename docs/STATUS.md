@@ -354,7 +354,8 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Pedido sin existencia (mig 137) — 2026-10-10 — MIGRATION APPLIED TO PRODUCTION / VALIDATED
+## Pedido sin existencia (mig 137) — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED
+**Frontend `c5129ba` DEPLOYED (push autorizado por el dueño; Netlify `6acac5c5cfef52000723f813`, ready 2026-10-10T23:10:26Z); bundle vivo verificado (`aviso-sin-existencia`, "Crear pedido por surtir", `permitir_sin_stock`). Sin cierre del dueño; sin prueba con un pedido real.**
 **137 aplicada en producción el 2026-10-10 desde esta sesión con `supabase db query --linked -f` (autorizada por el dueño: "DALE" tras revisar el SQL; esta vez el clasificador no la bloqueó), una vez; verificada en solo lectura: md5 de `crear_orden` `ef8e49a380d52f870aaccc1bf2ef323c` = base local, SECURITY DEFINER, `search_path` fijo, sin anon, una sola firma; `completar_venta_directa` sin cambio (`2107586c…`).** Pedido y autorizado por el
 dueño el 2026-10-10 ("me gusta, dale"). Orden de activación: 137 (compatible con el frontend desplegado: sin la bandera nada cambia) →
 verificación de solo lectura → push.
