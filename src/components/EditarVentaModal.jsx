@@ -15,6 +15,7 @@ import { s, n, eqId, fmtMoney } from '../utils/safe';
 import { stockDisponiblePorSku, stockDisponibleParaEdicion } from '../utils/stock';
 import { placeSelectionToEntrega } from '../data/direccionLogic';
 import { sucursalesDeCliente, precioParaSucursal, resolverEntrega } from '../data/sucursalLogic';
+import { cantidadEnEdicion, cantidadNormalizada } from '../data/cantidadInputLogic';
 
 const AddressAutocomplete = lazy(() => import('./ui/AddressAutocomplete'));
 
@@ -336,7 +337,9 @@ export default function EditarVentaModal({
                       type="number"
                       min="1"
                       value={l.qty}
-                      onChange={e => updateLine(i, 'qty', Math.max(1, parseInt(e.target.value) || 1))}
+                      inputMode="numeric"
+                      onChange={e => updateLine(i, 'qty', cantidadEnEdicion(e.target.value))}
+                      onBlur={e => updateLine(i, 'qty', cantidadNormalizada(e.target.value))}
                       className="w-16 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center min-h-[44px] bg-white"
                     />
                     <input
