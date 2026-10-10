@@ -10,9 +10,9 @@
 //   entera + triturada    → HIT-25K × 2·cantidad
 //   media  + picada       → HIP-25K × cantidad     (una bolsa = media barra)
 //   media  + triturada    → HIT-25K × cantidad
-//   media  + sin preparar → todavía no existe como producto (sin inventario fraccionario)
+//   media  + sin preparar → HIB-25K × cantidad     (media barra, 129; sin la migración no existe)
 import { s, n } from '../utils/safe';
-import { BARRA_SKU, SALIDAS_BARRA, BOLSAS_POR_BARRA } from './preparacionBarraLogic.js';
+import { BARRA_SKU, SALIDAS_BARRA, BOLSAS_POR_BARRA, MEDIA_BARRA_SKU } from './preparacionBarraLogic.js';
 
 export const SKU_PICADA = SALIDAS_BARRA[0];
 export const SKU_TRITURADA = SALIDAS_BARRA[1];
@@ -20,11 +20,14 @@ export const MEDIDAS = Object.freeze(['entera', 'media']);
 export const ENTREGAS = Object.freeze(['sin', 'picada', 'triturada']);
 
 /** ¿Este SKU es parte de la familia de la barra (la barra y sus dos presentaciones)? */
-export const esSkuBarra = (sku) => s(sku) === BARRA_SKU || SALIDAS_BARRA.includes(s(sku));
+export const esSkuBarra = (sku) => s(sku) === BARRA_SKU || s(sku) === MEDIA_BARRA_SKU || SALIDAS_BARRA.includes(s(sku));
 
 /** Productos que se ofrecen en el selector de venta: sin la picada ni la triturada como productos sueltos. */
 export const productosParaVenta = (productos) =>
-  (Array.isArray(productos) ? productos : []).filter(p => !SALIDAS_BARRA.includes(s(p?.sku)));
+  (Array.isArray(productos) ? productos : []).filter(p => !SALIDAS_BARRA.includes(s(p?.sku)) && s(p?.sku) !== MEDIA_BARRA_SKU);
+
+/** ¿El catálogo ya tiene la media barra (migración 129)? */
+export const hayMediaBarra = (productos) => (Array.isArray(productos) ? productos : []).some(p => s(p?.sku) === MEDIA_BARRA_SKU);
 
 export const barraPorOmision = () => ({ medida: 'entera', entrega: 'sin', cant: 1 });
 
@@ -32,11 +35,14 @@ export const barraPorOmision = () => ({ medida: 'entera', entrega: 'sin', cant: 
  * Traduce la elección a la línea real de la orden.
  * @returns {{ sku: string|null, qty: number, bloqueo: string|null }}
  */
-export function resolverBarra({ medida, entrega, cant } = {}) {
+export function resolverBarra({ medida, entrega, cant } = {}, { hayMedia = true } = {}) {
   const c = Math.max(1, Math.floor(n(cant)) || 1);
   if (!MEDIDAS.includes(medida) || !ENTREGAS.includes(entrega)) return { sku: null, qty: 0, bloqueo: 'Elige la medida y la entrega' };
   if (entrega === 'sin') {
-    if (medida === 'media') return { sku: null, qty: 0, bloqueo: 'La media barra sin preparar aún no está disponible: elige picada o triturada' };
+    if (medida === 'media') {
+      if (!hayMedia) return { sku: null, qty: 0, bloqueo: 'La media barra sin preparar aún no está disponible: elige picada o triturada' };
+      return { sku: MEDIA_BARRA_SKU, qty: c, bloqueo: null };
+    }
     return { sku: BARRA_SKU, qty: c, bloqueo: null };
   }
   const sku = entrega === 'picada' ? SKU_PICADA : SKU_TRITURADA;
@@ -49,6 +55,7 @@ export function resumenBarra({ medida, entrega, cant } = {}) {
   if (r.bloqueo || !r.sku) return '';
   const c = Math.max(1, Math.floor(n(cant)) || 1);
   if (r.sku === BARRA_SKU) return `${c} ${c === 1 ? 'barra entera' : 'barras enteras'}`;
+  if (r.sku === MEDIA_BARRA_SKU) return `${c} ${c === 1 ? 'media barra' : 'medias barras'} sin preparar`;
   const tipo = r.sku === SKU_PICADA ? 'picada' : 'triturada';
   const bolsas = `${r.qty} ${r.qty === 1 ? 'bolsa' : 'bolsas'} de ${tipo}`;
   return medida === 'entera' ? `${bolsas} (${c} ${c === 1 ? 'barra' : 'barras'})` : `${bolsas} (${c === 1 ? 'media barra' : c + ' medias barras'})`;
@@ -63,6 +70,7 @@ export function faltaPreparado(r, getStock) {
   if (!r?.sku || r.sku === BARRA_SKU) return null;
   const hay = n(getStock(r.sku));
   if (r.qty <= hay) return null;
+  if (r.sku === MEDIA_BARRA_SKU) return `No hay media barra suficiente (hay ${hay}, se necesitan ${r.qty}). Pide a Producción que parta una barra.`;
   const tipo = r.sku === SKU_PICADA ? 'picada' : 'triturada';
   return `No hay ${tipo} preparada suficiente (hay ${hay}, se necesitan ${r.qty}). Pide a Producción que prepare la barra.`;
 }

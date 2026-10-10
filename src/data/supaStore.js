@@ -39,7 +39,7 @@ import { TABLAS_CORE_RT, TABLAS_SLICE_RT } from './realtimeLogic';
 import { complementoPendienteOrden } from './complementoLogic';
 import { ordenesEsperanRuta } from './bandejaLogic';
 import { alertaEsperanRuta } from './avisosLogic';
-import { buildPreparacionArgs, mensajeErrorPreparacion } from './preparacionBarraLogic';
+import { buildPreparacionArgs, buildPartirArgs, buildPreparacionMediaArgs, mensajeErrorPreparacion } from './preparacionBarraLogic';
 import { normalizarReporteFinanciero } from './finanzasLogic';
 import { fechaElegida, camposFechaCosto, buildPagarCxPArgs } from './fechaNegocioLogic';
 import { buildEditarReciboArgs, buildGuardarReciboArgs, buildGuardarConceptoArgs } from './nominaLogic';
@@ -1643,6 +1643,40 @@ export function useSupaStore(userId, userName, userRol) {
         } catch (e) {
           console.error('[prepararDesdeBarra] excepción:', e);
           return { error: mensajeErrorPreparacion(e) };
+        }
+      },
+
+      // 129: "Desglosar barra". Producción decide qué queda de cada mitad (media barra, picada o
+      // triturada). Se compone de contratos atómicos e idempotentes: partir_barra y, por cada
+      // bolsa pedida, registrar_preparacion_media. Cada paso deja el inventario consistente; si uno
+      // falla, reintentar con los mismos operacionIds continúa sin duplicar (replay).
+      // p = { cuartoId, barras, plan: { picada, triturada }, operaciones: { partir, picada, triturada } }
+      desglosarBarra: async (p = {}) => {
+        const guard = requireRol(['Admin', 'Producción']);
+        if (guard) { t()?.error(guard.error); return guard; }
+        const ops = p.operaciones || {};
+        const pasos = [{ nombre: 'partir', rpc: 'partir_barra', built: buildPartirArgs({ operacionId: ops.partir, cuartoId: p.cuartoId, barras: p.barras }) }];
+        if (p.plan?.picada) pasos.push({ nombre: 'picada', rpc: 'registrar_preparacion_media', built: buildPreparacionMediaArgs({ operacionId: ops.picada, cuartoId: p.cuartoId, salidaSku: 'HIP-25K', medias: p.plan.picada }) });
+        if (p.plan?.triturada) pasos.push({ nombre: 'triturada', rpc: 'registrar_preparacion_media', built: buildPreparacionMediaArgs({ operacionId: ops.triturada, cuartoId: p.cuartoId, salidaSku: 'HIT-25K', medias: p.plan.triturada }) });
+        for (const paso of pasos) if (paso.built.error) return { error: paso.built.error };
+        const hechos = [];
+        try {
+          for (const paso of pasos) {
+            const { data, error } = await supabase.rpc(paso.rpc, paso.built.args);
+            if (error) {
+              console.warn('[desglosarBarra] rpc:', paso.rpc, error.message);
+              if (hechos.length) rf();
+              const base = mensajeErrorPreparacion(error);
+              return { error: hechos.length ? `${base} La barra ya quedó partida; reintenta para completar el desglose.` : base, parcial: hechos.length > 0 };
+            }
+            hechos.push({ paso: paso.nombre, data });
+          }
+          rf();
+          return { data: { pasos: hechos } };
+        } catch (e) {
+          console.error('[desglosarBarra] excepción:', e);
+          if (hechos.length) rf();
+          return { error: mensajeErrorPreparacion(e), parcial: hechos.length > 0 };
         }
       },
 

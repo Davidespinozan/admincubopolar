@@ -187,7 +187,10 @@ OL-05, CLOSURE-2 ni otra auditoría pendientes).
 **Fase en curso: MULTISUCURSAL (mig 123 + correcciones 124 y 125) — MIGRATIONS APPLIED TO PRODUCTION (por el dueño; 123 el
 2026-10-09 ~23:51Z con el nombre `122_multisucursal.sql`, 124 y 125 el 2026-10-10) / VERIFIED (md5 y llaves idénticos a la base
 local) / frontend DEPLOYED (commit `6c52cb3`, push del dueño 2026-10-10; bundle vivo verificado: `Fusionar un cliente existente`,
-`Nueva sucursal`, `guardar_sucursal`, `toda la cadena`). Pendiente: fusionar LEVIN (12) y VENEGAS (4) desde la pantalla (Admin).** Ver su sección abajo. Siguiente paso autorizado: ninguno (commit, push y deploy requieren autorización del dueño).
+`Nueva sucursal`, `guardar_sucursal`, `toda la cadena`). LEVIN (12 sucursales) y VENEGAS (4) FUSIONADOS en producción el 2026-10-10 con SQL del dueño sobre el contrato
+`fusionar_cliente_en_sucursal` (14 clientes absorbidos Inactivos con `fusionado_en`, 14 renglones de auditoría, 217 sucursales,
+0 clientes sin principal, 0 sucursales en clientes fusionados; verificado en solo lectura). Los 16 locales no tienen domicilio
+capturado (la lista original no lo traía): pendiente del dueño en Clientes → Sucursales.** Ver su sección abajo. Siguiente paso autorizado: ninguno (commit, push y deploy requieren autorización del dueño).
 
 | Severidad | Cuenta |
 |---|---|
@@ -292,7 +295,7 @@ clasificador de permisos de la sesión bloqueó `supabase db query` contra produ
   `121_ger1_contencion_usuarios_test.sql` (7), 41 suites anteriores tras cada una, C120a/b, ensayo OP-03); `src/__tests__/ger1DuenoAccesos.test.jsx`.
 - Reversión: encabezados de 120 y 121 (121 primero: recrear `admin_all` y sus grants; después Netlify a `feb3721`; 120 al final).
 
-## Multisucursal por cliente (mig 123) — 2026-10-09 — DEPLOYED / TECHNICALLY VERIFIED (fusión de LEVIN y VENEGAS pendiente)
+## Multisucursal por cliente (mig 123) — 2026-10-09 — DEPLOYED / TECHNICALLY VERIFIED (LEVIN y VENEGAS fusionados; domicilios de sus sucursales pendientes del dueño)
 **Migraciones y frontend en producción** (commit `6c52cb3`). El trabajo en curso de otra sesión (alta de cliente por el chofer, 127) quedó fuera de ese commit. El dueño pegó el SQL en Supabase el 2026-10-09 (~23:51Z) con el nombre
 `122_multisucursal.sql`, junto con `122_zona_negocio_durango.sql` de otra sesión, ANTES de que el gate local terminara (la única
 falla del gate en ese momento era una aserción mal escrita de la suite, no la migración). Verificado en solo lectura después:
@@ -351,8 +354,17 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Conceptos de nómina (NOM-1, mig 128) — 2026-10-09 — IMPLEMENTED LOCALLY / MIGRATION PENDING
-**La migración 128 NO está aplicada en producción y el frontend no está desplegado.** Tarjeta: `docs/sistema/nomina.md`.
+## Conceptos de nómina (NOM-1, mig 128) — 2026-10-09 — MIGRATION APPLIED TO PRODUCTION / VALIDATED (frontend pendiente de deploy)
+**Migración 128 aplicada por el dueño en el SQL Editor (2026-10-10, antes de 01:32Z; SHA-256
+`c2c814012aaad9b5f1d2692be5a1b109ede0fc58f243ed7b96061eef760594d5`) y verificada en solo lectura a las 01:32Z:** tablas
+`nomina_conceptos`, `nomina_concepto_empleados` y `nomina_recibo_lineas` (RLS activa, policy `admin_read` = `erp_rol_activo() = 'Admin'`,
+authenticated solo SELECT, anon nada, 0 filas); md5 de las 20 funciones `*nomina*` de producción IDÉNTICOS a la base local que pasó las
+suites (entre ellas `guardar_concepto_nomina` `81a069c27d74bfc7ed1bb7247e5c4df9`, `guardar_recibo_nomina`
+`bd8d67c86c3b2caced7191207bc191cc`, `aplicar_conceptos_nomina` `897b3ddcb3debc220b98a8c9b66f4e28`, `generar_recibos_nomina`
+`ab1723f5b1d0c63082469ad31e73588b`, `editar_recibo_nomina` `ff72121e92018ceea6aade9ed5ec6a12`); sin cambio: `pagar_nomina`
+`c4504312dd00137c00d570e4bb66ed1d`, `nomina_recalcular_periodo`, `nomina_recibos_guard`, `nomina_periodos_guard`. 0 periodos y 0 recibos
+antes y después. Conteos a esa hora (incluyen fases de otras sesiones): 196 funciones · 91 policies · 54 tablas. El frontend desplegado
+no usa todavía los contratos nuevos. Tarjeta: `docs/sistema/nomina.md`.
 - **Pedido del dueño:** que Admin dé de alta los bonos, comisiones y descuentos y a quién aplican (ejemplo: puntualidad $200 por
   semana), en vez de teclearlos persona por persona cada semana. Diseño delegado ("que quede lo mejor posible").
 - **Qué agrega:** catálogo `nomina_conceptos` (monto fijo o % del salario diario; todos / un área / personas; monto propio y tope
@@ -362,8 +374,8 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   20 constraints de 100. Las casillas del recibo pasan a ser la suma de sus renglones; `editar_recibo_nomina` conserva firma y respuesta.
 - **Producción antes de 128 (solo lectura, 2026-10-09):** 0 periodos y 0 recibos (tras la limpieza de datos del dueño); md5 de
   `generar_recibos_nomina` `f829cbdd…` y `editar_recibo_nomina` `7a4bbab5…` = base local (paridad en el runner).
-- **Activación (pendiente de autorización):** 1) aplicar 128 (aditiva, compatible con el frontend desplegado) → 2) verificación de
-  solo lectura → 3) push del frontend → 4) bundle vivo. Sin migración de contención: las tablas nuevas nacen sin DML por API.
+- **Activación:** 1) aplicar 128 (aditiva, compatible con el frontend desplegado) ✔ → 2) verificación de
+  solo lectura ✔ → 3) push del frontend (pendiente de autorización) → 4) bundle vivo. Sin migración de contención: las tablas nuevas nacen sin DML por API.
 - **No incluye:** comisiones calculadas con ventas, puntualidad automática con el reloj checador, reverso de un periodo pagado,
   recibo imprimible.
 

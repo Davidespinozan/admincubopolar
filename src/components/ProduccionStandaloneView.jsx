@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { diaNegocio } from '../utils/fechas';
 import { resolverOperacion, claveProduccion } from '../data/produccionAtomicaLogic';
-import { MAQUINAS_PRODUCCION, SALIDAS_BARRA, seProduceSinEmpaque, skusProducibles, esPreparacion, vistaPreviaPreparacion, clavePreparacion } from '../data/preparacionBarraLogic';
+import { MAQUINAS_PRODUCCION, SALIDAS_BARRA, DESTINOS_MITAD, seProduceSinEmpaque, skusProducibles, esPreparacion, esFilaDerivada, barrasUsadasFila, textoFilaDerivada, vistaPreviaPreparacion, vistaPreviaDesglose, clavePreparacion, claveDesglose } from '../data/preparacionBarraLogic';
 import { claveSalida, claveTraspaso, claveMermaCuarto, MOTIVOS_SALIDA_MANUAL, motivoSalidaManual } from '../data/stockContratosLogic';
 import { mermasActivas } from '../data/mermasLogic';
 import { resumenCongeladores, resumenMermas } from '../data/produccionResumenLogic';
@@ -42,6 +42,11 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   // OP-01D: "Preparar desde barra" (reemplaza a las Transformaciones de agosto).
   const [prepForm, setPrepForm] = useState({ cuarto: "CF-1", salida: SALIDAS_BARRA[0], barras: "" });
   const [guardandoPrep, setGuardandoPrep] = useState(false);
+  // 129: desglosar una barra; cada mitad queda como media barra, picada o triturada.
+  const [desForm, setDesForm] = useState({ barras: "", mitadA: "media", mitadB: "triturada" });
+  const [guardandoDes, setGuardandoDes] = useState(false);
+  const opDesRef = useRef(null);
+  const enVueloDes = useRef(false);
 
   // Producir form — includes destino (congelador) + merma inline opcional
   const [form, setForm] = useState({ turno: "Turno 1", maquina: "Máquina 30", sku: "", cantidad: "", destino: "CF-1", conMerma: false, mermaCantidad: "", mermaCausa: "Bolsa rota" });
@@ -194,7 +199,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const prodHoy = useMemo(() => {
     const hoy = diaNegocio();
-    return data.produccion.filter(p => p.fecha && p.fecha.slice(0, 10) === hoy && !esPreparacion(p));
+    return data.produccion.filter(p => p.fecha && p.fecha.slice(0, 10) === hoy && !esFilaDerivada(p));
   }, [data.produccion]);
 
   const totalHoy = useMemo(() => prodHoy.reduce((s, p) => s + n(p.cantidad), 0), [prodHoy]);
@@ -278,7 +283,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     for (const p of productosHielo) acc[s(p.sku)] = 0;
     const hoy = diaNegocio();
     for (const pr of (data.produccion || [])) {
-      if (!s(pr.fecha).startsWith(hoy) || esPreparacion(pr)) continue;
+      if (!s(pr.fecha).startsWith(hoy) || esFilaDerivada(pr)) continue;
       const sku = s(pr.sku);
       acc[sku] = (acc[sku] || 0) + n(pr.cantidad);
     }
@@ -306,16 +311,46 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   // servidor consume la barra y el empaque configurado en un solo paso.
   const preparacionesHoy = useMemo(() => {
     const hoy = diaNegocio();
-    return (data.produccion || []).filter(p => esPreparacion(p) && s(p.fecha).slice(0, 10) === hoy && s(p.estatus) !== 'Revertida');
+    return (data.produccion || []).filter(p => esFilaDerivada(p) && s(p.fecha).slice(0, 10) === hoy && s(p.estatus) !== 'Revertida');
   }, [data.produccion]);
   const resumenPrep = useMemo(() => ({
-    preparaciones: preparacionesHoy.length,
-    barras: preparacionesHoy.reduce((t, p) => t + n(p.input_kg ?? p.inputKg), 0),
-    bolsas: preparacionesHoy.reduce((t, p) => t + n(p.cantidad), 0),
+    preparaciones: preparacionesHoy.filter(esPreparacion).length,
+    barras: preparacionesHoy.reduce((t, p) => t + barrasUsadasFila(p), 0),
+    bolsas: preparacionesHoy.filter(esPreparacion).reduce((t, p) => t + n(p.cantidad), 0),
   }), [preparacionesHoy]);
   const vistaPrep = useMemo(() => vistaPreviaPreparacion({
     productos: data.productos, cuartos: data.cuartosFrios, cuartoId: prepForm.cuarto, salidaSku: prepForm.salida, barras: prepForm.barras,
   }), [data.productos, data.cuartosFrios, prepForm]);
+
+  const vistaDes = useMemo(() => vistaPreviaDesglose({
+    productos: data.productos, cuartos: data.cuartosFrios, cuartoId: prepForm.cuarto, barras: desForm.barras, mitadA: desForm.mitadA, mitadB: desForm.mitadB,
+  }), [data.productos, data.cuartosFrios, prepForm.cuarto, desForm]);
+
+  const desglosarBarra = async () => {
+    if (guardandoDes || enVueloDes.current) return;
+    if (vistaDes.bloqueo) { showToast(vistaDes.bloqueo.mensaje, 'error'); return; }
+    const datos = { cuartoId: prepForm.cuarto, barras: Number(desForm.barras), mitadA: desForm.mitadA, mitadB: desForm.mitadB };
+    const clave = claveDesglose(datos);
+    // Un operacion_id por paso, estable mientras sea el mismo intento (reintento = replay, sin duplicar).
+    const prev = opDesRef.current;
+    const operaciones = prev && prev.clave === clave ? prev.ops : { partir: crypto.randomUUID(), picada: crypto.randomUUID(), triturada: crypto.randomUUID() };
+    opDesRef.current = { clave, ops: operaciones };
+    enVueloDes.current = true;
+    setGuardandoDes(true);
+    try {
+      const result = await actions.desglosarBarra({ cuartoId: datos.cuartoId, barras: datos.barras, plan: vistaDes.plan, operaciones });
+      if (result?.error) { showToast(result.error, 'error'); return; }
+      opDesRef.current = null;
+      showToast(`Desglose registrado: ${vistaDes.resumen}`);
+      setDesForm(f => ({ ...f, barras: "" }));
+    } catch (e) {
+      console.error('Error desglose:', e);
+      showToast('Error al desglosar. Verifica tu conexión y reintenta.', 'error');
+    } finally {
+      enVueloDes.current = false;
+      setGuardandoDes(false);
+    }
+  };
 
   const registrarPreparacion = async () => {
     if (guardandoPrep || enVueloPrep.current) return;
@@ -840,12 +875,44 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
               {guardandoPrep ? 'Guardando...' : 'Preparar'}
             </FormBtn>
           </Card>
+          {/* 129: desglosar una barra — Producción decide qué queda de cada mitad */}
+          <Card padding="p-4" data-testid="desglosar-barra">
+            <p className="text-sm font-bold text-slate-800">Desglosar barra</p>
+            <p className="mb-3 text-xs text-slate-500">Parte la barra en dos mitades y elige qué queda de cada una. Usa el cuarto de arriba.</p>
+            <div className="space-y-4">
+              {[['mitadA', 'Primera mitad'], ['mitadB', 'Segunda mitad']].map(([campo, etiqueta]) => (
+                <div key={campo}>
+                  <label className={LABEL}>{etiqueta}</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {DESTINOS_MITAD.map(d => (
+                      <ChoiceButton key={d} active={desForm[campo] === d} onClick={() => setDesForm(f => ({ ...f, [campo]: d }))} className="text-xs">
+                        {d === 'media' ? 'Media barra' : d === 'picada' ? 'Picada' : 'Triturada'}
+                      </ChoiceButton>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <FormInput label="Barras enteras a desglosar" type="number" min="1" step="1" inputMode="numeric" value={desForm.barras}
+                onChange={e => setDesForm(f => ({ ...f, barras: e.target.value }))} inputClassName="text-center !text-lg font-bold" placeholder="Ej: 1"
+                hint={`Hay ${vistaDes.barrasDisponibles.toLocaleString()} barras en este cuarto`} />
+              {vistaDes.resumen && (
+                <Card tone={vistaDes.bloqueo ? "danger" : "success"} padding="p-3">
+                  <p className="text-sm font-bold">{vistaDes.resumen}</p>
+                  {vistaDes.consumo && <p className="mt-0.5 text-xs">{vistaDes.consumo}</p>}
+                  {vistaDes.bloqueo && <p className="mt-1 text-xs font-bold">{vistaDes.bloqueo.mensaje}</p>}
+                </Card>
+              )}
+            </div>
+            <FormBtn primary size="lg" className="mt-4 w-full" onClick={desglosarBarra} disabled={guardandoDes || !!vistaDes.bloqueo}>
+              {guardandoDes ? 'Guardando...' : 'Desglosar'}
+            </FormBtn>
+          </Card>
           {preparacionesHoy.length > 0 && (
             <div className="space-y-2">
               <SectionLabel>Preparado hoy ({preparacionesHoy.length})</SectionLabel>
               {preparacionesHoy.slice().reverse().map(p => (
                 <Card key={p.id} padding="p-3">
-                  <p className="text-sm font-bold text-slate-800">{n(p.input_kg ?? p.inputKg)} {n(p.input_kg ?? p.inputKg) === 1 ? 'barra' : 'barras'} → {n(p.cantidad)} × {s(p.sku)}</p>
+                  <p className="text-sm font-bold text-slate-800">{textoFilaDerivada(p)}</p>
                   <p className="text-xs text-slate-500">{s(p.folio)} · {s(p.cuarto_id ?? p.cuartoId)}</p>
                 </Card>
               ))}
