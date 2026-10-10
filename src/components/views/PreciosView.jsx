@@ -1,7 +1,7 @@
 import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect, FormBtn, s, n, eqId, fmtMoney, fmtPct, useToast, useConfirm, Icons, normalizeStr } from './viewsCommon';
 import { traducirError } from '../../utils/errorMessages';
 import { filtrarPreciosEsp } from '../../data/mejorasMenoresLogic';
-import { sucursalesDeCliente } from '../../data/sucursalLogic';
+import { sucursalesDeCliente, clientesVigentes } from '../../data/sucursalLogic';
 
 export function PreciosView({ data, actions }) {
   const toast = useToast();
@@ -47,7 +47,14 @@ export function PreciosView({ data, actions }) {
   const prodTerminados = useMemo(() => data.productos.filter(p => p.tipo === "Producto Terminado"), [data.productos]);
   // Build select options once
   const prodOptions = useMemo(() => [{value:"",label:"Seleccionar..."},...prodTerminados.map(p=>({value:s(p.sku),label:`${s(p.sku)} — $${n(p.precio)}`}))], [prodTerminados]);
-  const clienteOptions = useMemo(() => [{value:"",label:"Seleccionar..."},...(data.clientes || []).filter(c=>c.tipo!=="General").map(c=>({value:String(c.id),label:s(c.nombre)}))], [data.clientes]);
+  // 123: solo clientes vigentes (sin Inactivos ni fusionados como sucursal). Al
+  // editar un precio de un cliente que ya no es vigente se conserva su opción.
+  const clienteOptions = useMemo(() => {
+    const vigentes = clientesVigentes(data.clientes);
+    const actual = form.clienteId && !vigentes.some(c => eqId(c.id, form.clienteId))
+      ? (data.clientes || []).filter(c => eqId(c.id, form.clienteId)) : [];
+    return [{value:"",label:"Seleccionar..."},...[...vigentes, ...actual].map(c=>({value:String(c.id),label:s(c.nombre)}))];
+  }, [data.clientes, form.clienteId]);
 
   // P16: data.productos.find() inside data.preciosEsp.map() = O(n×m)
   // With 200 preciosEsp × 200 productos = 40,000 .find iterations per render.
