@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { CODIGOS_OFRECER_PUBLICO, fiscalesPorOmision } from './receptorFiscalLogic';
+import { detalleRechazo, esRechazoDeCarga, mensajeRechazoServidor, avisoSinCubrir, buildRevertirEntregaArgs } from './recuperacionRutaLogic';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
 import { parseProductos, validateItems, buildLineas, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI, esPagoEnLinea } from './ordenLogic';
@@ -1218,7 +1219,17 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
             if (extra.folioNota) updateObj.folio_nota = extra.folioNota;
             ({ error } = await supabase.from('ordenes').update(updateObj).eq('id', id));
           }
-          if (error) { t()?.error('Error al actualizar orden'); return error; }
+          if (error) {
+            // 138: el servidor rechaza una entrega que no cabe en lo cargado (la orden NO quedó
+            // Entregada). Se muestra su motivo y se marca para que la pantalla lo distinga.
+            if (esRechazoDeCarga(error)) {
+              const msg = mensajeRechazoServidor(error);
+              t()?.error(msg);
+              return { error: msg, message: msg, cargaInsuficiente: detalleRechazo(error) };
+            }
+            t()?.error('Error al actualizar orden');
+            return error;
+          }
 
           // Auto-registrar ingreso o CxC al cobrar (Entregada)
           if (nuevoEst === 'Entregada') {
@@ -2542,9 +2553,13 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
           });
           if (rpcErr) {
             console.warn('[asignarOrdenesARuta] rpc:', rpcErr.message);
-            t()?.error(rpcErr.message || 'No se pudieron asignar las órdenes');
-            return { error: rpcErr.message };
+            const msg = mensajeRechazoServidor(rpcErr, 'No se pudieron asignar las órdenes');
+            t()?.error(msg);
+            return { error: msg };
           }
+          // 138: la carga autorizada no sube sola; si no cubre los pedidos, se avisa.
+          const aviso = avisoSinCubrir(result?.sin_cubrir);
+          if (aviso) t()?.info?.(aviso);
 
           const carga = (result && result.carga && typeof result.carga === 'object') ? result.carga : {};
           const cargaTxt = Object.entries(carga).map(([sku, qty]) => `${qty}×${sku}`).join(', ') || `${totalBolsas || 0} bolsas`;
@@ -3819,7 +3834,12 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
           });
           if (built.error) return { error: built.error };
           const { data: finData, error: finErr } = await supabase.rpc('cerrar_ruta_financiero', built.args);
-          if (finErr) return { error: mensajeErrorCierreFinanciero(finErr) };
+          if (finErr) {
+            // 138: lo vendido/entregado no cabe en lo cargado → no se registró NADA. Se devuelve
+            // el detalle para que la pantalla quite lo que no corresponde.
+            if (esRechazoDeCarga(finErr)) return { error: mensajeRechazoServidor(finErr), cargaInsuficiente: detalleRechazo(finErr) };
+            return { error: mensajeErrorCierreFinanciero(finErr) };
+          }
           try { storage?.setItem(claveFin, JSON.stringify(entregasPayload)); } catch { /* sin espacio: el reintento usará lo actual */ }
           const finRes = interpretarCierreFinanciero(finData);
           if (finRes.replay) {
@@ -3845,6 +3865,36 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
           console.error('[prepararCierreRuta] excepción:', err);
           return { error: err?.message || 'No se pudo preparar el cierre' };
         }
+      },
+
+      // ── T5-A (mig 138): recuperación de una ruta cuyo inventario no cuadra. Solo Admin. ──
+      // Lectura: por producto (cargado, entregado, merma, devuelto, exceso) y por orden.
+      diagnosticoRuta: async (rutaId) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        if (!rutaId) return { error: 'Ruta requerida' };
+        const { data, error } = await supabase.rpc('diagnostico_ruta', { p_ruta_id: Number(rutaId) });
+        if (error) return { error: mensajeRechazoServidor(error, 'No se pudo revisar la ruta') };
+        return { data };
+      },
+
+      // Una entrega marcada por error vuelve a Asignada (motivo obligatorio; queda evidencia).
+      // No toca inventario ni borra cobros: si la orden tiene dinero cobrado, el servidor exige
+      // `conservarCobro` y responde con el código COBRO_REGISTRADO mientras no venga.
+      revertirEntregaRuta: async (params) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const built = buildRevertirEntregaArgs(params);
+        if (built.error) return { error: built.error };
+        const { data, error } = await supabase.rpc('revertir_entrega_ruta', built.args);
+        if (error) {
+          const det = detalleRechazo(error);
+          return { error: mensajeRechazoServidor(error, 'No se pudo revertir la entrega'), codigo: det.codigo || null, cobrado: det.cobrado ?? null };
+        }
+        await log('Revertir entrega', 'Rutas', `${data?.folio || params.ordenId}: ${String(params.motivo || '').trim()}`);
+        t()?.success(`Entrega de ${data?.folio || 'la orden'} revertida: volvió a Asignada`);
+        rf();
+        return { data };
       },
 
       // Cierre de ruta, paso 2 (087): conteo físico → el servidor valida

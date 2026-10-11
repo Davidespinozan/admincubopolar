@@ -2,8 +2,10 @@ import { lazy, Suspense, useEffect } from 'react';
 import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, fmtDate, fmtMoney, useDebounce, useToast, reporteRutas, normalizeStr } from './viewsCommon';
 import { conteoInicial, diferenciasConteo } from '../../data/inventarioRutaLogic';
 import { resolverEntrega, etiquetaClienteSucursal } from '../../data/sucursalLogic';
+import { puedeAgregarPedidos, etapaDeRuta } from '../../data/recuperacionRutaLogic';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 const ReporteRutaModal = lazy(() => import('../ReporteRutaModal'));
+const RecuperacionRutaModal = lazy(() => import('../RecuperacionRutaModal'));
 
 function AsignarOrdenesModal({ ruta, ordenes, onClose, onConfirm }) {
   const [selected, setSelected] = useState([]);
@@ -73,6 +75,7 @@ export function RutasView({ data, actions }) {
   const [camionForm, setCamionForm] = useState({nombre:"",placas:"",modelo:""});
   const [mapaVisible, setMapaVisible] = useState(false);
   const [reporteModal, setReporteModal] = useState(null);
+  const [recuperacionModal, setRecuperacionModal] = useState(null); // 138: revisar y corregir el inventario de una ruta
   const [saving, setSaving] = useState(false);
   const [cerrando, setCerrando] = useState(false);
   const [cancelarModal, setCancelarModal] = useState(null);
@@ -719,7 +722,10 @@ export function RutasView({ data, actions }) {
                                 const sinCarga = !(r.carga_confirmada_at || r.cargaConfirmadaAt);
                                 return (
                                   <>
-                                    <button onClick={() => asignarOrdenes(r)} className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">+ Órdenes</button>
+                                    {/* 138: a una ruta con carga capturada ya no se le agregan pedidos (el servidor lo rechaza). */}
+                                    {puedeAgregarPedidos(r).ok
+                                      ? <button onClick={() => asignarOrdenes(r)} className="px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors">+ Órdenes</button>
+                                      : etapaDeRuta(r) && <span title={puedeAgregarPedidos(r).motivo} className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 rounded-lg" data-testid="etapa-ruta">{etapaDeRuta(r).etiqueta}</span>}
                                     <button
                                       onClick={() => actions.updateRutaEstatus(r.id, "En progreso")}
                                       disabled={sinCarga}
@@ -752,6 +758,12 @@ export function RutasView({ data, actions }) {
                                   <button onClick={(e) => { e.currentTarget.closest('details').open = false; abrirEdicion(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 inline-flex items-center gap-1.5 min-h-[40px]"><Icons.Edit /> Editar</button>
                                   {!isCerrada && !isProgramada && (
                                     <button onClick={(e) => { e.currentTarget.closest('details').open = false; setDetalleModal(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 inline-flex items-center gap-1.5 min-h-[40px]"><Icons.Eye /> Ver detalle</button>
+                                  )}
+                                  {(r.carga_confirmada_at || r.cargaConfirmadaAt) && (
+                                    <button onClick={(e) => { e.currentTarget.closest('details').open = false; setRecuperacionModal(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 border-t border-slate-100">
+                                      <span className="inline-flex items-center gap-1.5"><Icons.Package /> Revisar inventario de la ruta</span>
+                                      <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Cargado vs entregado; corregir una entrega</span>
+                                    </button>
                                   )}
                                   {isEnProgreso && (
                                     <button onClick={(e) => { e.currentTarget.closest('details').open = false; abrirCierre(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 text-amber-700 border-t border-slate-100">
@@ -1070,7 +1082,13 @@ export function RutasView({ data, actions }) {
           <div className="border-t pt-4">
             <h4 className="text-sm font-bold text-slate-700 mb-1">Inventario del camión</h4>
             <p className="text-xs text-slate-500 mb-3">El sistema calcula lo que debe regresar; captura lo que realmente regresó. Vuelve al cuarto frío de donde salió.</p>
-            {cierreBalanceError && <p className="text-xs text-red-600 font-semibold">{cierreBalanceError}</p>}
+            {cierreBalanceError && (
+              <div className="space-y-2">
+                <p className="text-xs text-red-600 font-semibold">{cierreBalanceError}</p>
+                {/* 138: si el inventario no cuadra, aquí está el porqué y cómo corregirlo (antes: solo SQL). */}
+                <FormBtn onClick={() => { const r = cierreModal; setCierreModal(null); setRecuperacionModal(r); }}>Revisar inventario de la ruta</FormBtn>
+              </div>
+            )}
             {!cierreBalance && !cierreBalanceError && <p className="text-xs text-slate-400">Calculando balance…</p>}
             {cierreBalance && cierreBalance.length === 0 && <p className="text-xs text-slate-500">La ruta no tiene inventario en el camión.</p>}
             {cierreBalance && cierreBalance.length > 0 && (() => {
@@ -1228,6 +1246,13 @@ export function RutasView({ data, actions }) {
     {reporteModal && (
       <Suspense fallback={<div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"><div className="bg-white rounded-2xl p-6 text-sm text-slate-500">Cargando reporte…</div></div>}>
         <ReporteRutaModal ruta={reporteModal} data={data} actions={actions} onClose={() => setReporteModal(null)} />
+      </Suspense>
+    )}
+
+    {/* 138 (T5-A): inventario de la ruta y recuperación de Admin */}
+    {recuperacionModal && (
+      <Suspense fallback={null}>
+        <RecuperacionRutaModal ruta={recuperacionModal} actions={actions} productos={data.productos} onClose={() => setRecuperacionModal(null)} />
       </Suspense>
     )}
   </div>);

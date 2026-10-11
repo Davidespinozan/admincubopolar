@@ -140,7 +140,7 @@ describe('A5: Chofer — modo enfoque con la identidad del producto; flujo, offl
     expect((v.match(/<Modal open=/g) || []).length).toBe(8);   // + mapa de la parada y ticket de la entrega
     expect(v).not.toMatch(/bg-\[#07131a\]|rounded-t-\[30px\]|fixed inset-0|setToast|useBodyScrollLock|function Toast/);
     expect(v).toMatch(/fixed bottom-0 left-1\/2 z-40/);   // barra de acciones fija en ruta
-    expect(v).toMatch(/<BannerColaOffline online=\{online\} cola=\{colaOffline\} sincronizando=\{sincronizando\} onSincronizar=\{sincronizarCola\} onReintentar=\{reintentarFallidasCola\} onQuitar=\{descartarDeCola\} \/>/);
+    expect(v).toMatch(/<BannerColaOffline online=\{online\} cola=\{colaOffline\} sincronizando=\{sincronizando\} onSincronizar=\{sincronizarCola\} onReintentar=\{reintentarFallidasCola\} onQuitar=\{quitarRechazada\} \/>/);
   });
   it('cola offline, GPS, fotos y firma: código idéntico', () => {
     expect(v).toMatch(/useColaOffline\(\{ rutaId: miRutaActiva\?\.id, ejecutores: ejecutoresOffline, avisar: showToast \}\)/);
@@ -412,7 +412,7 @@ describe('OL-01A: honestidad del cobro del vendedor (contención; ciclo de vida 
     expect(admin).toMatch(/const err = await actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo\);\s*if \(err\) \{\s*toast\?\.error\("No se pudo registrar el cobro"\);\s*return;/);
     const chofer = src('../components/ChoferView.jsx');
     expect(chofer).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null \}\)/);
-    expect(chofer).toMatch(/if \(err\) \{\s*showToast\("No se pudo registrar la entrega", 'error'\);/);
+    expect(chofer).toMatch(/if \(err\) \{[\s\S]{0,260}showToast\(err\.cargaInsuficiente \? [^:]+ : "No se pudo registrar la entrega", 'error'\);/);
     const logic = src('../data/ventasCobroLogic.js');
     expect(logic).not.toMatch(/supabase|rpc|fetch\(|backend|import /);
     const orden = src('../data/ordenLogic.js');

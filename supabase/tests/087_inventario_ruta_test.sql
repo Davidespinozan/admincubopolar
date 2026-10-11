@@ -282,14 +282,34 @@ DO $do$ BEGIN
   END IF;
 END $do$;
 COMMIT;
+-- 138 (T5-A): con la guarda de carga, una venta exprés que no cabe en lo cargado ya se rechaza en
+-- el cierre financiero (antes pasaba y era la finalización la que fallaba, dejando la ruta sin
+-- salida). La suite corre antes y después de 138.
 BEGIN; SET LOCAL ROLE authenticated; SELECT t87_actor(17);
-SELECT cerrar_ruta_financiero('87000000-0000-0000-0000-00000000002a'::uuid, 8708, '[{"express": true, "pago": "Efectivo", "items": [{"sku": "P87-B", "cant": 1, "precio": 30}]}]'::jsonb, 8717, 'x');
-SELECT t87_err($q$SELECT finalizar_inventario_ruta('87000000-0000-0000-0000-00000000008a', 8708, '{"P87-A": 5}')$q$, '087-H3 exprés con SKU válido no cargado: falla cerrado', 'P0001', '%no fue cargado%');
+DO $do$ BEGIN
+  IF to_regprocedure('public.ordenes_guard_carga_ruta()') IS NOT NULL THEN
+    PERFORM t87_err($q$SELECT cerrar_ruta_financiero('87000000-0000-0000-0000-00000000002a'::uuid, 8708, '[{"express": true, "pago": "Efectivo", "items": [{"sku": "P87-B", "cant": 1, "precio": 30}]}]'::jsonb, 8717, 'x')$q$,
+      '087-H3 (138) exprés con SKU válido no cargado: rechazada en el cierre financiero', '22023', '%supera lo que se cargó%');
+  ELSE
+    PERFORM cerrar_ruta_financiero('87000000-0000-0000-0000-00000000002a'::uuid, 8708, '[{"express": true, "pago": "Efectivo", "items": [{"sku": "P87-B", "cant": 1, "precio": 30}]}]'::jsonb, 8717, 'x');
+    PERFORM t87_err($q$SELECT finalizar_inventario_ruta('87000000-0000-0000-0000-00000000008a', 8708, '{"P87-A": 5}')$q$, '087-H3 exprés con SKU válido no cargado: falla cerrado', 'P0001', '%no fue cargado%');
+  END IF;
+END $do$;
 COMMIT;
 BEGIN; SET LOCAL ROLE authenticated; SELECT t87_actor(18);
-SELECT cerrar_ruta_financiero('87000000-0000-0000-0000-00000000003a'::uuid, 8709, '[{"express": true, "pago": "Efectivo", "items": [{"sku": "P87-A", "cant": 7, "precio": 30}]}]'::jsonb, 8718, 'x');
-SELECT t87_err($q$SELECT finalizar_inventario_ruta('87000000-0000-0000-0000-00000000007a', 8709, '{}')$q$, '087-H4 exprés por encima de lo cargado: falla cerrado', 'P0001', '%supera lo cargado%');
-SELECT t87_err($q$SELECT registrar_merma('P87-A', 1, 'x', NULL, NULL, 8709)$q$, '087-H5 tampoco se registran mermas sobre un balance inconsistente', 'P0001', '%supera lo cargado%');
+DO $do$ BEGIN
+  IF to_regprocedure('public.ordenes_guard_carga_ruta()') IS NOT NULL THEN
+    PERFORM t87_err($q$SELECT cerrar_ruta_financiero('87000000-0000-0000-0000-00000000003a'::uuid, 8709, '[{"express": true, "pago": "Efectivo", "items": [{"sku": "P87-A", "cant": 7, "precio": 30}]}]'::jsonb, 8718, 'x')$q$,
+      '087-H4 (138) exprés por encima de lo cargado: rechazada en el cierre financiero', '22023', '%supera lo que se cargó%');
+    RESET ROLE;
+    PERFORM t87_assert(NOT EXISTS (SELECT 1 FROM cierres_financieros_ruta WHERE ruta_id IN (8708, 8709)) AND NOT EXISTS (SELECT 1 FROM ordenes WHERE ruta_id IN (8708, 8709)),
+      '087-H5 (138) sin venta exprés ni marca de cierre: el balance de la ruta nunca queda inconsistente');
+  ELSE
+    PERFORM cerrar_ruta_financiero('87000000-0000-0000-0000-00000000003a'::uuid, 8709, '[{"express": true, "pago": "Efectivo", "items": [{"sku": "P87-A", "cant": 7, "precio": 30}]}]'::jsonb, 8718, 'x');
+    PERFORM t87_err($q$SELECT finalizar_inventario_ruta('87000000-0000-0000-0000-00000000007a', 8709, '{}')$q$, '087-H4 exprés por encima de lo cargado: falla cerrado', 'P0001', '%supera lo cargado%');
+    PERFORM t87_err($q$SELECT registrar_merma('P87-A', 1, 'x', NULL, NULL, 8709)$q$, '087-H5 tampoco se registran mermas sobre un balance inconsistente', 'P0001', '%supera lo cargado%');
+  END IF;
+END $do$;
 COMMIT;
 SELECT t87_assert((SELECT count(*) = 3 FROM rutas WHERE id IN (8707, 8708, 8709) AND estatus = 'En progreso') AND (SELECT count(*) = 0 FROM stock_operaciones WHERE ruta_id IN (8707, 8708, 8709) AND tipo = 'cierre_ruta'), '087-H6 las tres rutas siguen abiertas, sin devolución');
 

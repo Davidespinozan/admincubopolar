@@ -354,6 +354,58 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## T5-A · Recuperación del cierre de ruta (mig 138) — 2026-10-10 — COMMITTED / LOCAL-VALIDATED (migración y deploy PENDIENTES)
+**Estado: en git local (rama `t5a-cierre-ruta`). 138 NO aplicada en producción; frontend NO desplegado. Gate local completo RESULTADO OK (2026-10-10): 138 ×2, RLS_CHECK PASS, suite 138, 18 suites re-corridas tras 138, C138a–f, OP-03, SEARCH_PATH 142/142, UNQUALIFIED_RESOLUTION PASS.** Origen: auditoría final de
+solo lectura del 2026-10-10 (7 agentes; hallazgo P0 confirmado en código). Instrucción del dueño: documento "CUBOPOLAR · T5-A".
+- **Causa raíz:** marcar una orden de ruta como Entregada era un UPDATE directo sin revisar lo que traía el camión. Si el producto no se
+  había cargado o no alcanzaba, el balance canónico de 087 fallaba cerrado ("entregado supera lo cargado") en el cierre del chofer Y en el
+  de Admin; una ruta cargada no se cancela (087) y una Entregada no se revierte (105): solo SQL. Se llegaba fácil: "+ Órdenes" seguía
+  disponible con el camión cargado y agregar una orden no sube la carga autorizada; las ventas exprés solo se topaban en el teléfono.
+- **Producción (solo lectura, 2026-10-10):** 1 ruta, Cerrada; 0 rutas abiertas, 0 rutas con exceso, 0 órdenes Asignadas en ruta cargada. md5
+  ANTES de 138 = base local: `asignar_orden` `d9e6ce16…`, `asignar_ordenes_a_ruta` `3fc56dae…`, `cerrar_ruta_financiero` `9b80d0e9…`,
+  `ordenes_delivered_at` `00517e63…`; sin cambio antes y después: `balance_ruta_interno` `d73858db…`, `finalizar_inventario_ruta`
+  `6df6f778…`, `registrar_no_entrega` `19438688…`.
+- **138** (`138_recuperacion_cierre_ruta.sql`, SHA-256 `508666f9f9d124d69a31fd9b5935c487c9b17f2559f44f50a35e2245eb5bdad5`; idempotente):
+  **Prevención** — (1) `ordenes_guard_carga_ruta`, disparador AFTER UPDATE en `ordenes` sin exención de rol ni de contexto: una orden de
+  una ruta con carga estructurada solo pasa a Entregada si cargado ≥ entregado + merma + devuelto por cada producto suyo; bloquea la fila de
+  la ruta (dos entregas simultáneas no consumen la misma carga); vale para el UPDATE del chofer o de Admin, la cola sin señal y el cierre
+  financiero; el rechazo (22023, `DETAIL` JSON `CARGA_INSUFICIENTE`) revierte la sentencia. (2) `cerrar_ruta_financiero` verifica la ruta
+  entera al final (ventas exprés): si no cuadra no registra NADA. (3) `asignar_ordenes_a_ruta` / `asignar_orden` rechazan agregar pedidos a
+  una ruta con carga capturada (Pendiente firma) o confirmada; antes de cargar sí, y la respuesta trae `sin_cubrir` (la carga autorizada NO
+  sube sola). **Recuperación (solo Admin, motivo, auditada, idempotente)** — (4) `diagnostico_ruta` (lectura). (5) `revertir_entrega_ruta`:
+  la orden vuelve a Asignada en su ruta; sin kardex (la entrega de ruta sale del balance, no mueve inventario); CxC sin abonos → anulada con
+  el contrato de 090; con abonos → rechazo; un cobro NO se borra: se conserva y Admin lo reconoce (`p_conservar_cobro`, código
+  `COBRO_REGISTRADO`); rechazo si Facturada, con devolución, CFDI sin resolver, comisión ya pagada o ruta Cerrada. Evidencia en
+  `ruta_entregas_revertidas` (antes/después, quién, cuándo, por qué; RLS, lectura Admin, sin DML por API) y `auditoria`.
+  (6) `ordenes_delivered_at` limpia la fecha de entrega solo dentro de esa reversión.
+- **Md5 esperados tras 138 (base local):** `ordenes_guard_carga_ruta` `f9669b57ee94de6905f6eb3ddb4c8473` · `ruta_inventario_resumen`
+  `8e7a3ec0483b383cb09858c9dbe7bff2` · `asignar_orden` `62945d7ad3f93e9fc5a90915170f980a` · `asignar_ordenes_a_ruta`
+  `cc35220b8b28eb9087984c6119a410a6` · `cerrar_ruta_financiero` `a4e627685850db7af897d3239e1a0dc5` · `ordenes_delivered_at`
+  `90583139f3500759fd2e432af2fd5e4d` · `ruta_entrega_no_reversible` `76d9c267c9634f284a0fc72bf497c0aa` · `diagnostico_ruta`
+  `8db8d2594efc9288ef64f84d4415d489` · `revertir_entrega_ruta` `6e07b49a38d7a85956f42d32bbafc466`. Diff de catálogo esperado: +5 funciones,
+  +1 tabla, +1 policy, +1 secuencia, +1 disparador en `ordenes`, cuerpo de 4 funciones.
+- **No cambia:** balance y finalización de 087, carga (084/085), cobros y CxC (088/114), rutas sin carga estructurada (camino anterior a
+  087: la guarda no interviene). No repara rutas existentes.
+- **Frontend:** `src/data/recuperacionRutaLogic.js`; Chofer — aviso previo si la orden no cabe en lo que trae (también sin señal), motivo
+  del servidor, "Quitar" una operación rechazada la saca de Entregadas, un cierre rechazado devuelve la orden a Por entregar, botón "Quitar"
+  (dos toques) en una venta rápida local; Rutas (Admin) — "+ Órdenes" solo antes de la carga, etiquetas "Carga por firmar" / "Camión
+  cargado", aviso si la carga autorizada no cubre los pedidos, y "Revisar inventario de la ruta" (`RecuperacionRutaModal`: cargado vs
+  entregado, revertir entrega, marcar no entregada).
+- **Compatibilidad con el frontend desplegado:** sí. Con 138 aplicada y el bundle viejo, una entrega que no cabe se rechaza con el aviso
+  genérico "Error al actualizar orden" (falla cerrado); lo demás igual. Orden de activación: 138 → verificación → push.
+- **Evidencia:** suite `138_recuperacion_cierre_ruta_test.sql` (51); concurrencia con dos conexiones `c138_concurrencia.mjs` C138a–f
+  (entregas simultáneas, entrega + cierre, asignación + carga, reversiones simultáneas, reversión + entrega, candados cruzados → 40P01
+  limpio); suites históricas re-corridas tras 138 (078, 080, 081, 084–088, 090, 093, 096, 100, 104, 109–114, 117, 119, 123, 127–130,
+  133–137, OP-03); 087 y 081 hechas conscientes de 138 (corren antes y después); `src/__tests__/t5aCierreRuta.test.js`; Vitest 1,719 en
+  4 zonas; lint, typecheck, build, `diff --check`.
+- **Residuales:** el plazo, el fiado con límite 0 (T5-B) y los demás hallazgos de la auditoría final siguen abiertos; la reversión conserva
+  el cobro (un efectivo que no se recibió sale como faltante en el corte de caja de la ruta: visible, no silencioso); una orden revertida y
+  luego No entregada con cobro sigue sin salida de reembolso (hallazgo aparte); una venta exprés ya registrada en el servidor en una ruta
+  inconsistente anterior a 138 se revierte a Asignada como cualquier orden (0 casos en producción); entrega y cierre de la MISMA orden a la
+  vez → una transacción se aborta con 40P01 (el reintento funciona); sin segunda carga del camión (decisión operativa futura); el aviso
+  previo del teléfono usa su cuenta local, la autoridad es el servidor.
+- Reversión: encabezado de 138 (reabre el P0); Netlify al commit anterior (`c5129ba`).
+
 ## Pedido sin existencia (mig 137) — 2026-10-10 — DEPLOYED / TECHNICALLY VERIFIED
 **Frontend `c5129ba` DEPLOYED (push autorizado por el dueño; Netlify `6acac5c5cfef52000723f813`, ready 2026-10-10T23:10:26Z); bundle vivo verificado (`aviso-sin-existencia`, "Crear pedido por surtir", `permitir_sin_stock`). Sin cierre del dueño; sin prueba con un pedido real.**
 **137 aplicada en producción el 2026-10-10 desde esta sesión con `supabase db query --linked -f` (autorizada por el dueño: "DALE" tras revisar el SQL; esta vez el clasificador no la bloqueó), una vez; verificada en solo lectura: md5 de `crear_orden` `ef8e49a380d52f870aaccc1bf2ef323c` = base local, SECURITY DEFINER, `search_path` fijo, sin anon, una sola firma; `completar_venta_directa` sin cambio (`2107586c…`).** Pedido y autorizado por el

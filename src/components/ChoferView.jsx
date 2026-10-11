@@ -17,6 +17,7 @@ import { rutaActivaDelChofer, motivoSinCredito, mezclarEntregas } from '../data/
 import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas, descripcionMutacion } from '../data/colaOfflineLogic';
 import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from '../data/stockContratosLogic';
 import { useColaOffline } from '../data/useColaOffline';
+import { faltanteEnCamion, mensajeNoCabe } from '../data/recuperacionRutaLogic';
 import { conteoInicial, diferenciasConteo, totalesBalance, mensajeNoEntrega } from '../data/inventarioRutaLogic';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { Card, SectionLabel, RoleHeader, ChoiceButton } from './ui/Components';
@@ -82,6 +83,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 
   // Fase 18 paso 3: Carga real + firma
   const [cargaRealForm, setCargaRealForm] = useState({});
+  const [quitarExpressId, setQuitarExpressId] = useState(null);
   const [solicitandoFirma, setSolicitandoFirma] = useState(false);
   const [firmaModal, setFirmaModal] = useState(false);
   const [excepcionModal, setExcepcionModal] = useState(false);
@@ -211,6 +213,17 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     descartar: descartarDeCola,
     limpiar: limpiarCola,
   } = useColaOffline({ rutaId: miRutaActiva?.id, ejecutores: ejecutoresOffline, avisar: showToast });
+
+  // Quitar una entrega que el servidor rechazó (cola sin señal): además de salir de la cola,
+  // sale de "Entregadas" del teléfono, porque el servidor NO la tiene como entregada. La orden
+  // vuelve a "Por entregar" para marcarla No entregada o entregarla bien.
+  const quitarRechazada = useCallback((id) => {
+    const m = (colaOffline || []).find(x => x.id === id);
+    if (m?.tipo === TIPOS_MUTACION.ENTREGA && m.payload?.ordenId != null) {
+      setEntregas(prev => prev.filter(e => !(e.offline && String(e.ordenId) === String(m.payload.ordenId))));
+    }
+    descartarDeCola(id);
+  }, [colaOffline, descartarDeCola]);
 
   // Derivar step desde el estado real de la ruta — si ya está "En progreso" saltar directo a ruta
   const rutaEnProgreso = miRutaActiva && (s(miRutaActiva.estatus).toLowerCase() === 'en progreso' || s(miRutaActiva.estatus).toLowerCase() === 'en_progreso');
@@ -629,6 +642,11 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       showToast(validErr.error, 'error');
       return;
     }
+    // 138: una entrega no puede consumir más de lo que trae el camión. El servidor lo rechaza;
+    // aquí se avisa antes (y sin señal es la única revisión posible). Antes pasaba, y la ruta
+    // quedaba imposible de cerrar.
+    const noCabe = mensajeNoCabe(faltanteEnCamion(entregaModal.items, restante), (sku) => s(productos.find(p => s(p.sku) === sku)?.nombre) || sku);
+    if (noCabe) { showToast(noCabe, 'error'); return; }
     // Fiado: se revisa ANTES de marcar la entrega. Si el servidor lo rechaza después, la venta
     // quedaba Entregada sin cobro ni deuda y bloqueaba el cierre de la ruta.
     if (cobroMetodo === "Crédito") {
@@ -695,7 +713,8 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         ? await actions.updateOrdenEstatus(entregaModal.id, "Entregada", cobroMetodo, { folioNota: folioNota || null })
         : null;
       if (err) {
-        showToast("No se pudo registrar la entrega", 'error');
+        // 138: si no cabe en lo cargado, el servidor dice por qué (y la orden NO quedó entregada).
+        showToast(err.cargaInsuficiente ? (err.error || 'La carga del camión no alcanza para esta orden') : "No se pudo registrar la entrega", 'error');
         return;
       }
       setEntregas(prev => [...prev, entrega]);
@@ -960,6 +979,19 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         mermas,
       });
       if (!res) return;
+      // 138: lo vendido/entregado no cabe en lo cargado → el servidor NO registró nada. Si el
+      // rechazo es por una orden, sale de "Entregadas" (no lo está en el servidor) y vuelve a
+      // "Por entregar"; si es por ventas rápidas, se quitan a mano desde "Entregadas".
+      if (res.cargaInsuficiente) {
+        const ordenId = res.cargaInsuficiente.orden_id;
+        if (ordenId != null) {
+          setEntregas(prev => prev.filter(e => String(e.ordenId) !== String(ordenId)));
+          showToast(`${res.error} Volvió a "Por entregar".`, 'error');
+        } else {
+          showToast(`${res.error} Quita la venta rápida que no corresponde (botón "Quitar" en Entregadas).`, 'error');
+        }
+        return;
+      }
       if (res.mermasRegistradas) marcarMermasRegistradas(res.mermasRegistradas);
       // Ventas y cobros ya quedaron registrados: las ventas exprés ahora son órdenes del
       // servidor (llegan con la recarga). Se quitan las copias locales para no contarlas dos veces.
@@ -1240,7 +1272,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
   // ═══ STEP 2: RUTA ═══
   if (step === "ruta") return (
     <div className={CHOFER_SHELL} data-testid="chofer-shell" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 150px)" }}>
-      <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} onReintentar={reintentarFallidasCola} onQuitar={descartarDeCola} />
+      <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} onReintentar={reintentarFallidasCola} onQuitar={quitarRechazada} />
       <RoleHeader compact kicker="Chofer" title="En ruta" subtitle={saludo} accent="cyan"
         right={<div className="text-right"><p className="font-display text-lg font-bold text-white">{fmtMoney(totalCobrado)}</p><p className="text-xs text-cyan-200/80">cobrado</p></div>}>
         <div className="mb-3 flex flex-wrap gap-2">
@@ -1363,7 +1395,15 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
                 <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="ml-1 text-[10px] text-slate-400">Nota: {e.folioNota}</span>}<span className="ml-2 text-sm font-semibold text-slate-700">{s(e.cliente)}</span>{e.express && <span className="ml-1 rounded bg-emerald-200 px-1.5 py-0.5 text-[10px] text-emerald-800">Exprés</span>}{e.factura && <span className="ml-1 rounded bg-violet-200 px-1.5 py-0.5 text-[10px] text-violet-800">Factura</span>}</div>
                 <div className="flex items-center gap-2 text-right">{estadoFotosEntrega(e) && <span data-testid="estado-fotos" title={estadoFotosEntrega(e) === 'guardadas' ? 'Fotos guardadas en el sistema' : 'Fotos por subir (se suben solas con señal)'} className={`[&>svg]:h-3.5 [&>svg]:w-3.5 ${estadoFotosEntrega(e) === 'guardadas' ? 'text-emerald-500' : 'text-amber-500'}`}><Icons.Camera /></span>}<div><p className="text-sm font-bold">{fmtMoney(e.total)}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div>{online && e.ordenId && (
                   <button type="button" onClick={() => abrirTicket(e, e.contacto)} className="flex min-h-[40px] flex-shrink-0 items-center rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-700" title="Enviar ticket" aria-label={`Enviar ticket ${s(e.folio)}`}>Ticket</button>
-                )}</div>
+                )}
+                  {/* Una venta rápida solo vive en el teléfono hasta el cierre: si se capturó por error se quita aquí (dos toques). */}
+                  {!e.ordenId && !balanceCierre && !rutaCerrada && (
+                    <button type="button" data-testid="quitar-express"
+                      onClick={() => { if (quitarExpressId === e.id) { setEntregas(prev => prev.filter(x => x.id !== e.id)); setQuitarExpressId(null); showToast('Venta rápida quitada'); } else setQuitarExpressId(e.id); }}
+                      className={`flex min-h-[40px] flex-shrink-0 items-center rounded-lg border px-3 py-2 text-xs font-bold ${quitarExpressId === e.id ? 'border-red-600 bg-red-600 text-white' : 'border-red-200 bg-white text-red-700'}`}>
+                      {quitarExpressId === e.id ? '¿Quitar?' : 'Quitar'}
+                    </button>
+                  )}</div>
               </div>
             </Card>
           ))}
@@ -1704,7 +1744,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 
     return (
       <div className={CHOFER_SHELL} data-testid="chofer-shell">
-        <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} onReintentar={reintentarFallidasCola} onQuitar={descartarDeCola} />
+        <BannerColaOffline online={online} cola={colaOffline} sincronizando={sincronizando} onSincronizar={sincronizarCola} onReintentar={reintentarFallidasCola} onQuitar={quitarRechazada} />
         <RoleHeader compact kicker="Chofer · Paso 3 de 3" title="Cierre de ruta" subtitle={`${saludo} · ${fmtDate(new Date())}`} accent="cyan"
           right={!rutaCerrada && <button type="button" onClick={() => setStep("ruta")} className="inline-flex min-h-[44px] items-center rounded-[13px] border border-white/10 bg-white/10 px-4 py-2.5 text-xs font-semibold text-white">← Volver</button>}>{barraPersonal}</RoleHeader>
         <div className={`${CONTENIDO} space-y-4`}>
