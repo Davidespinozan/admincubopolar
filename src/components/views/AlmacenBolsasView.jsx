@@ -2,8 +2,11 @@ import { useEffect } from 'react';
 import { diaNegocio } from '../../utils/fechas';
 import { useMemo, useState, PageHeader, EmptyState, s, n } from './viewsCommon';
 import { clasificarMovEmpaque, efectoEnTotal, normalizarConciliacion } from '../../data/empaqueLogic';
+import ConteoEmpaques from '../ConteoEmpaques';
 
-export function AlmacenBolsasView({ data, actions }) {
+export function AlmacenBolsasView({ data, actions, user }) {
+  // T5-C: el conteo físico (existencia, costo e historial) es solo de Administración.
+  const esAdmin = s(user?.rol) === 'Admin';
   const bolsas = (data.productos || []).filter(p => s(p.tipo) === "Empaque");
   const productosBySku = useMemo(() => {
     const map = {};
@@ -70,6 +73,8 @@ export function AlmacenBolsasView({ data, actions }) {
         </div>);
       })}
     </div>
+
+    {esAdmin && <ConteoEmpaques actions={actions} refrescoKey={refrescoKey} />}
 
     {prodHoy.length > 0 && (<div className="bg-white border border-slate-100 rounded-2xl p-4 mb-4">
       <h3 className="text-xs font-bold text-blue-500 uppercase tracking-wider mb-2">Producción hoy ({prodHoy.length} lotes)</h3>

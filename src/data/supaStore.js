@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { CODIGOS_OFRECER_PUBLICO, fiscalesPorOmision } from './receptorFiscalLogic';
+import { buildRegistrarConteoArgs, codigoConteo, mensajeErrorConteo } from './conteoEmpaqueLogic';
 import { detalleRechazo, esRechazoDeCarga, esCreditoRechazado, mensajeRechazoServidor, avisoSinCubrir, buildRevertirEntregaArgs, buildEntregarOrdenRutaArgs } from './recuperacionRutaLogic';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
@@ -2267,6 +2268,39 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         });
         if (error) { t()?.error(mensajeErrorEmpaque(error, error.message || 'No se pudo ajustar la existencia')); return error; }
         rf();
+      },
+
+      // ── T5-C (mig 140): conteo físico de empaques. Solo Admin; todo por contrato. ──
+      // Lectura: existencia, costo, último movimiento y la revisión que el conteo debe devolver.
+      empaquesParaConteo: async () => {
+        const guard = requireRol(['Admin']);
+        if (guard) return guard;
+        const { data, error } = await supabase.rpc('empaques_para_conteo');
+        if (error) return { error: mensajeErrorConteo(error) };
+        return { data: Array.isArray(data) ? data : [] };
+      },
+      // Aplica un conteo. El servidor compara `existencia` y `revision` (lo que la pantalla mostraba)
+      // con lo vigente: si algo se movió, rechaza con `obsoleto` y no aplica nada.
+      registrarConteoEmpaque: async (params = {}) => {
+        const guard = requireRol(['Admin']);
+        if (guard) return guard;
+        const built = buildRegistrarConteoArgs(params);
+        if (built.error) return { error: built.error };
+        const { data, error } = await supabase.rpc('registrar_conteo_empaque', built.args);
+        if (error) {
+          const det = codigoConteo(error);
+          return { error: mensajeErrorConteo(error), obsoleto: det?.codigo === 'CONTEO_OBSOLETO', sobrante: det?.codigo === 'CONTEO_MAYOR' };
+        }
+        await log('Conteo físico', 'Inventario', `${built.args.p_sku}: ${data?.anterior} → ${data?.nueva} (${built.args.p_motivo})`);
+        rf();
+        return { data };
+      },
+      historialEmpaque: async (sku, limite = 100) => {
+        const guard = requireRol(['Admin']);
+        if (guard) return guard;
+        const { data, error } = await supabase.rpc('historial_empaque', { p_sku: String(sku || ''), p_limite: limite });
+        if (error) return { error: mensajeErrorConteo(error) };
+        return { data: data || { movimientos: [], conteos: [] } };
       },
 
       // ── RUTAS ──
