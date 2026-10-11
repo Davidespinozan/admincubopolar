@@ -25,6 +25,11 @@ terminado no se capitaliza ni tiene costo unitario.
 - `registrar_recepcion_compra(op, sku, cantidad, costo_total, proveedor, credito)` — Admin, Almacén Bolsas.
 - `registrar_salida_empaque(op, sku, cantidad)` — Admin, Almacén Bolsas (entrega a Producción).
 - `ajustar_existencia(op, sku, nueva, motivo)` — Admin. `conciliacion_empaque()` — lectura.
+- Conteo físico de empaques (140, T5-C; Admin): `empaques_para_conteo()` (existencia, costo, último movimiento y `revision`
+  = último id de kardex), `registrar_conteo_empaque(op, sku, existencia_vista, revision_vista, conteo, motivo)` (rechaza
+  `CONTEO_OBSOLETO` si la existencia o el kardex cambiaron desde que se abrió el conteo y `CONTEO_MAYOR` si se contó más de lo
+  registrado; después delega en `ajustar_existencia`, que no cambia) e `historial_empaque(sku, limite)`. No hay segundo ledger:
+  el conteo es un ajuste de `productos.stock` con su fila de kardex y su `stock_operaciones`.
 
 ## Closed decisions
 - **Empaque "Modelo A" (092):** la entrega a Producción es un traslado logístico que no cambia la
@@ -64,9 +69,9 @@ terminado no se capitaliza ni tiene costo unitario.
 - Cuartos fríos (tarjeta pendiente; evidencia 102/103): primitiva interna `stock_mov_cuarto`.
 
 ## Evidence
-Migraciones 076, 077, 088 (compra), 092, 093/094, 106, 107/108. Suites `076`, `092`, `093`, `106`, `107` y sus
+Migraciones 076, 077, 088 (compra), 092, 093/094, 106, 107/108, 140. Suites `076`, `092`, `093`, `106`, `107`, `140` y sus
 bloques de concurrencia en el runner local. Vitest: `produccionAtomica`, `reversoProduccion`,
-`costoEmpaquePromedio`, `baseCostoEmpaque`.
+`costoEmpaquePromedio`, `baseCostoEmpaque`, `t5cConteoEmpaques`.
 
 ## Open residuals
 - Sin corrección ni reverso de una compra; la CxP de una compra se puede editar o borrar por REST.

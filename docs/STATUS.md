@@ -354,6 +354,44 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## T5-C · Conteo físico de empaques (mig 140) — 2026-10-11 — COMMITTED LOCALLY / LOCAL-VALIDATED (140 NO aplicada; frontend NO desplegado)
+**Estado: en git local (rama `t5c-conteo-empaques`). La activación requiere autorización explícita del dueño. Gate local completo
+RESULTADO OK (2026-10-11): 140 ×2, RLS_CHECK PASS, suite 140 (49), 10 suites re-corridas tras 140 (092, 093, 106, 107, 115, 129, 090, 119,
+138, 139), C140a–f, OP-03, SEARCH_PATH 147/147, UNQUALIFIED_RESOLUTION PASS. Vitest 1,759 en UTC / Mazatlán / CDMX / Madrid; lint,
+typecheck, build y `diff --check` limpios.** Origen: auditoría final (2026-10-10, "no hay pantalla para el conteo de bolsas");
+instrucción del dueño: documento "CUBOPOLAR · T5-C".
+- **Causa raíz:** el contrato `ajustar_existencia` (107/108, Admin) existía y el store lo exponía (`ajustarExistenciaManual`), pero
+  ninguna pantalla lo usaba para empaques; además recibe un valor absoluto sin saber qué existencia vio quien contó, así que un conteo
+  hecho mientras Producción consumía habría pisado ese consumo.
+- **140 (SHA-256 `ae5aa92880cf14975d8cc0a2f41839c380e61d7a50c7f8b6cdff6fe22fa51f7e`, 170 líneas; aditiva, sin datos, sin tablas, sin
+  policies, sin disparadores):** 3 funciones nuevas, solo Admin, SECURITY DEFINER con `search_path` fijo, sin anon:
+  `empaques_para_conteo()` (existencia, costo, último movimiento y `revision` = último id de kardex del empaque),
+  `registrar_conteo_empaque(op, sku, existencia_vista, revision_vista, conteo, motivo)` y `historial_empaque(sku, limite)`. md5 locales:
+  `registrar_conteo_empaque` `4c0866500038522e1957e0ab077fce9a` · `historial_empaque` `85ba5ec934ede5415942b93368001f84` ·
+  `empaques_para_conteo` `174b1bfbd177ff286d3b95c34a91d1a5`. **`ajustar_existencia` NO cambia** (md5 `def11d269c049c7301dfa568a96c529f` = producción).
+- **Sin segundo ledger:** el conteo es un ajuste de `productos.stock` con su fila de `inventario_mov` y su `stock_operaciones`
+  (`ajuste_existencia`, motivo "Conteo físico: …", existencia anterior y resultante, actor y hora del servidor). Un conteo sin
+  diferencia queda registrado en `stock_operaciones` sin fila de kardex.
+- **Reglas del servidor:** piezas enteras ≥ 0; motivo ≥ 5 letras; idempotente por operación (doble clic = misma respuesta; la misma
+  operación con otra cantidad se rechaza); candado sobre el producto; `CONTEO_OBSOLETO` si la existencia o la revisión cambiaron desde
+  que se abrió el conteo (producción, compra u otro ajuste): no aplica nada y la pantalla recarga y pide confirmar otra vez;
+  `CONTEO_MAYOR` si se contó más de lo registrado: los empaques solo se ajustan a la baja (decisión cerrada de 107/108; lo que sobra
+  entra por compra recibida, que es lo que conserva la base de costo). El costo unitario no cambia con un conteo.
+- **Pantalla (solo Admin):** Insumos (Bolsas) → sección "Empaques": SKU, empaque, existencia registrada, unidad, costo unitario, último
+  movimiento, "Ver historial" y "Registrar conteo" (existencia registrada, cantidad contada, diferencia calculada, motivo obligatorio y
+  casilla de confirmación; nada se aplica solo). Tarjetas en móvil, tabla en escritorio. Los demás roles no ven la sección ni el costo, y
+  el servidor los rechaza (42501). Archivos: `src/data/conteoEmpaqueLogic.js`, `src/components/ConteoEmpaques.jsx`,
+  `AlmacenBolsasView.jsx`, 3 acciones en `supaStore.js`; pruebas `src/__tests__/t5cConteoEmpaques.test.jsx` (27).
+- **Producción (solo lectura, 2026-10-11, antes de 140):** `EMP-5` 122,080 · `EMP-25` 13,920 · `EMP-25-SL` 5,293 (recepciones de compra
+  del 2026-10-10 y consumo de producción; los 99,000 / 9,800 de secciones anteriores ya no son la existencia vigente). Sin negativos.
+  No se ejecutó ningún conteo ni movimiento en producción; la migración no ajusta inventario.
+- **Activación propuesta:** 1) 140 una vez (aditiva; compatible con el frontend desplegado, que no la usa) → 2) verificación de solo
+  lectura (md5, ACL, datos idénticos) → 3) push del frontend → 4) bundle vivo → 5) el dueño captura el conteo real de apertura.
+- **Residuales:** un sobrante no se captura como conteo (va por compra recibida, que pide costo); `productos` no tiene bandera de
+  activo/inactivo (se listan todos los empaques); el kardex no guarda existencia anterior/resultante salvo en ajustes; no hay conteo de
+  varios empaques en una sola operación ni conteo por ubicación (almacén vs Producción).
+- Reversión: `DROP FUNCTION` de las tres (los conteos ya aplicados quedan como ajustes normales del ledger); frontend al commit anterior.
+
 ## T5-B · Entrega de ruta y fiado atómicos (mig 139) — 2026-10-11 — DEPLOYED / TECHNICALLY VERIFIED (sin cierre del dueño)
 **Frontend `7ab079f` DEPLOYED (push autorizado por el dueño: "dale"; Netlify `6acbd9bee0c1ac0008cf615b`, ready 2026-10-11T18:47:53Z); bundle
 vivo verificado: `entregar_orden_ruta` 1 archivo, "Sin señal no se puede fiar" 1, "su límite es $0" 1, y ya SIN `crear_cxc_orden` ni "No se
