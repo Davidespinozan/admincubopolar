@@ -354,7 +354,11 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## T5-C · Conteo físico de empaques (mig 140) — 2026-10-11 — DEPLOYED / TECHNICALLY VERIFIED (sin cierre del dueño; conteo real de apertura pendiente)
+## T5-C · Conteo físico de empaques (mig 140) — 2026-10-11 — CLOSED IN PRODUCTION (cierre técnico; validación visual autenticada pendiente)
+**Cierre del dueño (2026-10-11): "Acepto T5-C como CLOSED PROD técnico, con validación visual de la pantalla autenticada pendiente."
+Pendiente del dueño: ver Insumos (Bolsas) → Empaques con sesión y capturar el conteo real de apertura. Regla para futuras activaciones
+(dueño, 2026-10-11): aplicar una migración y publicar el frontend requieren autorizaciones INDEPENDIENTES; un "SUCCESS" del SQL Editor
+no autoriza el deploy (en T5-C el frontend se publicó tras el "SUCCESS", apoyado en el documento GO).**
 **140 aplicada por el dueño en el SQL Editor (2026-10-11, una vez) y verificada en solo lectura: las 3 funciones con md5 IDÉNTICOS a la
 base local (`empaques_para_conteo` `174b1bfb…`, `registrar_conteo_empaque` `4c086650…`, `historial_empaque` `85ba5ec9…`), SECURITY
 DEFINER, `search_path=public, pg_temp`, EXECUTE para authenticated y service_role, sin anon ni PUBLIC; catálogo: +3 funciones (216 → 219)
