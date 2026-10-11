@@ -354,7 +354,13 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## T5-B · Entrega de ruta y fiado atómicos (mig 139) — 2026-10-11 — COMMITTED / LOCAL-VALIDATED (migración y deploy PENDIENTES)
+## T5-B · Entrega de ruta y fiado atómicos (mig 139) — 2026-10-11 — MIGRATION APPLIED TO PRODUCTION / VALIDATED (deploy PENDIENTE)
+**139 aplicada por el dueño en el SQL Editor (2026-10-11) y verificada en solo lectura: `entregar_orden_ruta`
+`29967d7a0208ae34f279838a35e87f04` y `ordenes_guard_credito_entrega` `a9c59333122fc17f8efb86fd1fe3cc6e` IDÉNTICOS a la base local (SECURITY
+DEFINER, `search_path` fijo, sin anon); disparador `trg_ordenes_guard_credito_entrega` presente (ordenes 10 → 11); 214 → 216 funciones,
+policies 96 y tablas 59 sin cambio; sin cambio `fin_validar_credito`, `crear_cxc_orden`, `registrar_pago_orden`, `abonar_cxc`,
+`cerrar_ruta_financiero`, `completar_venta_directa` ni las funciones de 138; datos de negocio IDÉNTICOS a los de tras T5-A
+(`estado_negocio.sql`); `error_log` máx 4. Frontend `7ab079f` aún NO desplegado: falta el push (autorización del dueño).**
 **Estado: en git local (rama `t5b-credito-atomico`). 139 NO aplicada en producción; frontend NO desplegado. La activación requiere
 autorización explícita del dueño. Gate local completo RESULTADO OK (2026-10-11): 139 ×2, RLS_CHECK PASS, suite 139, 15 suites re-corridas
 tras 139 (incluida 138), C138a–f y C139a–f, OP-03, SEARCH_PATH 144/144, UNQUALIFIED_RESOLUTION PASS.** Origen: auditoría final (2026-10-10); instrucción del dueño: documento "CUBOPOLAR · T5-B".
