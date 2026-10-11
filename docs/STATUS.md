@@ -354,8 +354,18 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## T5-A · Recuperación del cierre de ruta (mig 138) — 2026-10-10 — COMMITTED / LOCAL-VALIDATED (migración y deploy PENDIENTES)
-**Estado: en git local (rama `t5a-cierre-ruta`). 138 NO aplicada en producción; frontend NO desplegado. Gate local completo RESULTADO OK (2026-10-10): 138 ×2, RLS_CHECK PASS, suite 138, 18 suites re-corridas tras 138, C138a–f, OP-03, SEARCH_PATH 142/142, UNQUALIFIED_RESOLUTION PASS.** Origen: auditoría final de
+## T5-A · Recuperación del cierre de ruta (mig 138) — 2026-10-11 — DEPLOYED / TECHNICALLY VERIFIED (sin cierre del dueño)
+**Activación (GO del dueño, 2026-10-11): 138 aplicada UNA vez por el dueño en el SQL Editor (el clasificador de la sesión bloqueó la
+escritura a producción), antes de 18:10Z, con el hash aprobado. Verificado en solo lectura (18:10Z): las 9 funciones de 138 con md5
+IDÉNTICOS a la base local; sin cambio `balance_ruta_interno`, `finalizar_inventario_ruta`, `registrar_no_entrega`, `confirmar_carga_ruta`,
+`registrar_pago_orden`, `crear_cxc_orden`, `abonar_cxc`, `anular_cxc_orden`; disparador `trg_ordenes_guard_carga_ruta` activo; tabla
+`ruta_entregas_revertidas` (RLS, lectura Admin, 0 filas). Diff de catálogo EXACTO: +5 funciones, 4 cuerpos, +1 tabla, +1 policy, +1
+secuencia, +1 disparador (ordenes 9 → 10); 214 funciones · 96 policies · 59 tablas · 53 secuencias. Datos de negocio IDÉNTICOS antes y
+después (`estado_negocio.sql`; `error_log` máx 4 sin cambio; 1 ruta, Cerrada). Actividad ajena en el intervalo (no es de 138): 3 avisos de
+asistencia del cron y 2 eventos de webhook. Frontend `aef7e1e` DEPLOYED (Netlify `6acbd17a20433700082041b5`, ready 2026-10-11T18:12:39Z);
+bundle vivo verificado (`recuperacion-ruta`, `revertir_entrega_ruta`, `diagnostico_ruta`, "Revisar inventario de la ruta",
+`quitar-express`, "No alcanza lo que traes en el camión"); sitio y funciones responden 200. Sin operaciones de prueba en producción.**
+**Estado anterior a la activación: en git local (rama `t5a-cierre-ruta`). Gate local completo RESULTADO OK (2026-10-10): 138 ×2, RLS_CHECK PASS, suite 138, 18 suites re-corridas tras 138, C138a–f, OP-03, SEARCH_PATH 142/142, UNQUALIFIED_RESOLUTION PASS.** Origen: auditoría final de
 solo lectura del 2026-10-10 (7 agentes; hallazgo P0 confirmado en código). Instrucción del dueño: documento "CUBOPOLAR · T5-A".
 - **Causa raíz:** marcar una orden de ruta como Entregada era un UPDATE directo sin revisar lo que traía el camión. Si el producto no se
   había cargado o no alcanzaba, el balance canónico de 087 fallaba cerrado ("entregado supera lo cargado") en el cierre del chofer Y en el
