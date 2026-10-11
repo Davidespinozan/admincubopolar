@@ -354,8 +354,19 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## T5-C · Conteo físico de empaques (mig 140) — 2026-10-11 — COMMITTED LOCALLY / LOCAL-VALIDATED (140 NO aplicada; frontend NO desplegado)
-**Estado: en git local (rama `t5c-conteo-empaques`). La activación requiere autorización explícita del dueño. Gate local completo
+## T5-C · Conteo físico de empaques (mig 140) — 2026-10-11 — DEPLOYED / TECHNICALLY VERIFIED (sin cierre del dueño; conteo real de apertura pendiente)
+**140 aplicada por el dueño en el SQL Editor (2026-10-11, una vez) y verificada en solo lectura: las 3 funciones con md5 IDÉNTICOS a la
+base local (`empaques_para_conteo` `174b1bfb…`, `registrar_conteo_empaque` `4c086650…`, `historial_empaque` `85ba5ec9…`), SECURITY
+DEFINER, `search_path=public, pg_temp`, EXECUTE para authenticated y service_role, sin anon ni PUBLIC; catálogo: +3 funciones (216 → 219)
+y NINGUNA otra diferencia (96 policies, 59 tablas, 11 disparadores en `ordenes`; `ajustar_existencia` `def11d26…` sin cambio; T5-A y T5-B
+intactas). Frontend `dbdc153` DEPLOYED (autorización: documento "T5-C — GO ACTIVACIÓN CONTROLADA"; Netlify `6acbe0e6592b720008547bd2`,
+ready 2026-10-11T19:18:27Z, `commit_ref` = `dbdc153`); bundle vivo (52 archivos js): `registrar_conteo_empaque`, `empaques_para_conteo`,
+`historial_empaque`, "Registrar conteo" y `conteo-empaques` en 1 archivo cada uno; sitio 200. Datos de negocio IDÉNTICOS antes de 140,
+después de 140 y después del deploy (`estado_negocio.sql`): EMP-5 122,080 · EMP-25 13,920 · EMP-25-SL 5,293, mismos costos, kardex 31
+movimientos (mismo md5), 0 ajustes, 6 renglones de historial de costo, 9 producciones, `error_log` máx 4. Sin conteos ni movimientos de
+prueba en producción. La interfaz autenticada no se abrió en producción (QA de solo lectura): la revisa el dueño al capturar el conteo
+real. Regla 107/108 conservada: el conteo solo ajusta a la baja.**
+**Gate local completo
 RESULTADO OK (2026-10-11): 140 ×2, RLS_CHECK PASS, suite 140 (49), 10 suites re-corridas tras 140 (092, 093, 106, 107, 115, 129, 090, 119,
 138, 139), C140a–f, OP-03, SEARCH_PATH 147/147, UNQUALIFIED_RESOLUTION PASS. Vitest 1,759 en UTC / Mazatlán / CDMX / Madrid; lint,
 typecheck, build y `diff --check` limpios.** Origen: auditoría final (2026-10-10, "no hay pantalla para el conteo de bolsas");
