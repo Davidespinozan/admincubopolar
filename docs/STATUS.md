@@ -354,6 +354,54 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## T5-B · Entrega de ruta y fiado atómicos (mig 139) — 2026-10-11 — COMMITTED / LOCAL-VALIDATED (migración y deploy PENDIENTES)
+**Estado: en git local (rama `t5b-credito-atomico`). 139 NO aplicada en producción; frontend NO desplegado. La activación requiere
+autorización explícita del dueño. Gate local completo RESULTADO OK (2026-10-11): 139 ×2, RLS_CHECK PASS, suite 139, 15 suites re-corridas
+tras 139 (incluida 138), C138a–f y C139a–f, OP-03, SEARCH_PATH 144/144, UNQUALIFIED_RESOLUTION PASS.** Origen: auditoría final (2026-10-10); instrucción del dueño: documento "CUBOPOLAR · T5-B".
+- **Causa raíz:** la entrega de una orden de ruta eran DOS escrituras del cliente (`updateOrdenEstatus`): UPDATE a `Entregada` y después
+  `crear_cxc_orden` (fiado) o `registrar_pago_orden` (contado). Si la segunda fallaba (cliente sin crédito, con límite 0 o en su límite), el
+  cliente intentaba regresar el estatus y la guarda de 105 lo prohíbe: quedaba Entregada con método Crédito, sin deuda ni cobro, y el cierre
+  financiero abortaba al reintentar el fiado. El teléfono del chofer trataba límite 0 como "sin límite" y Admin ("Cobrar entrega") no
+  revisaba el crédito antes.
+- **Producción (solo lectura, 2026-10-11):** 2 órdenes Entregadas, 0 a crédito; **0 entregas a crédito sin cuenta por cobrar** y 0 de contado
+  sin pago; 200 clientes activos, ninguno con crédito autorizado. Sin herramienta de reparación (no hace falta). md5 = base local:
+  `fin_validar_credito` `7bb429dd…`, `crear_cxc_orden` `bee6bcb2…`, `registrar_pago_orden` `add148ab…`.
+- **Regla (decisión del dueño):** crédito autorizado explícito; **límite 0 = sin capacidad** (el servidor ya lo calculaba así:
+  `fin_validar_credito` NO cambia); el crédito lo valida el servidor con el cliente bloqueado, contra las cuentas por cobrar vigentes;
+  insuficiente = rechazo ANTES de confirmar la entrega; nunca se registra un cobro que no ocurrió.
+- **139** (`139_entrega_ruta_atomica.sql`, SHA-256 `4063868565ba73b8b9064d02a4a89f62a25510683040788e34d1d34bec60771f`; idempotente):
+  (1) `entregar_orden_ruta(operación, orden, método, nota, referencia)` — NUEVO; Admin o el Chofer de esa ruta. Una transacción: candado
+  ruta → orden → `Entregada` (pasa por la guarda de carga de 138) → `crear_cxc_orden` (fiado, 30 días) o `registrar_pago_orden` (contado) o
+  nada (link: lo registra el webhook). Si algo falla no queda NADA (`CREDITO_RECHAZADO`, `CARGA_INSUFICIENTE`, `REFERENCIA_REPETIDA` en
+  `DETAIL`). Idempotente por el estado de la orden: repetir no duplica deuda ni cobro ni cambia la modalidad. Una orden ya Entregada SIN
+  registro financiero (estado anterior, o entrega por link que no se pagó) se **resuelve** con la misma llamada eligiendo el método
+  ("Resolver cobro de entrega" en auditoría): esa es la salida sin SQL. Normaliza las etiquetas largas de Admin ("Crédito (fiado)" →
+  "Crédito"). (2) `ordenes_guard_credito_entrega`, BEFORE UPDATE en `ordenes` sin exención de rol: fuera de un contrato ninguna escritura
+  deja una orden Entregada/Facturada con método de crédito (ni al entregar ni cambiando el método después).
+- **Md5 esperados tras 139 (base local):** `entregar_orden_ruta` `29967d7a0208ae34f279838a35e87f04` · `ordenes_guard_credito_entrega`
+  `a9c59333122fc17f8efb86fd1fe3cc6e`. Diff esperado: +2 funciones, +1 disparador en `ordenes` (10 → 11). Sin tablas, policies ni datos.
+- **No cambia:** `fin_validar_credito`, `crear_cxc_orden`, `registrar_pago_orden`, `abonar_cxc`, `cerrar_ruta_financiero` (ya era atómico),
+  138 (guarda de carga y reversión), `completar_venta_directa` (mostrador), saldos y cuentas existentes. El contado por la vía anterior
+  (UPDATE directo) no se prohíbe: su cobro lo completa de forma idempotente el cierre de ruta.
+- **Frontend:** `updateOrdenEstatus(…, 'Entregada')` → `entregarOrdenRuta` (un contrato; se quitaron las dos escrituras y el "regresar el
+  estatus"); regla única `motivoNoFiar` (`recuperacionRutaLogic.js`) para Chofer y Admin: límite 0 = sin capacidad, cuenta lo que ya debe;
+  **sin señal no se fía** (el crédito solo lo aprueba el servidor: un fiado nunca entra a la cola sin señal); rechazo del servidor → mensaje
+  accionable y el diálogo sigue abierto para cobrar de otra forma; venta rápida fiada: mismo aviso contando lo fiado que aún está en el
+  teléfono (se valida de verdad en el cierre, atómico).
+- **Compatibilidad con el frontend desplegado (`aef7e1e`):** con 139 aplicada y el bundle viejo, un fiado de ruta se rechaza ("Error al
+  actualizar orden", falla cerrado) y el contado sigue igual. Hoy no hay clientes con crédito: aplicar 139 y publicar el mismo día.
+- **Decisión tomada por omisión (a confirmar por el dueño):** sin señal el chofer NO puede fiar una entrega (antes se encolaba y podía
+  rechazarse después de haber dejado el producto). Alternativa descartada por riesgosa: encolar el fiado "por confirmar".
+- **Evidencia:** suite `139_entrega_ruta_atomica_test.sql` (45: los 28 escenarios pedidos y más); concurrencia con dos conexiones
+  `c139_concurrencia.mjs` C139a–f (dos choferes y un solo crédito, abono + venta, misma operación dos veces, fiado vs efectivo sobre la
+  misma orden, entrega + cierre sin interbloqueo, invariante global); 138 hecha consciente de 139; `src/__tests__/t5bCreditoAtomico.test.js`;
+  4 pruebas anteriores actualizadas por el cambio intencional; Vitest 1,732 en 4 zonas; lint, typecheck, build, `diff --check`.
+- **Residuales:** el crédito se valida al ENTREGAR, no al levantar el pedido (dos pedidos a crédito pueden caber al levantarse y el segundo
+  rechazarse al entregar: ahora con mensaje y sin estado a medias); plazo 30 días en la entrega y 15 en el fiado registrado solo en el
+  cierre (hallazgo aparte); una entrega por link no pagado queda Entregada sin cobro hasta que llegue el webhook o se resuelva con otro
+  método; el contado por UPDATE directo sigue permitido (lo completa el cierre); la venta rápida fiada se valida en el cierre.
+- Reversión: encabezado de 139 (reabre el P0); Netlify a `aef7e1e`.
+
 ## T5-A · Recuperación del cierre de ruta (mig 138) — 2026-10-11 — DEPLOYED / TECHNICALLY VERIFIED (sin cierre del dueño)
 **Activación (GO del dueño, 2026-10-11): 138 aplicada UNA vez por el dueño en el SQL Editor (el clasificador de la sesión bloqueó la
 escritura a producción), antes de 18:10Z, con el hash aprobado. Verificado en solo lectura (18:10Z): las 9 funciones de 138 con md5

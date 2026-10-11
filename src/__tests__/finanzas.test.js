@@ -84,9 +84,14 @@ describe('093: la entrega de mostrador registra el cobro como pago canónico', (
     expect(esPagoEnLinea('Transferencia')).toBe(false);
     expect(esPagoEnLinea('Tarjeta')).toBe(false);
   });
-  it('updateOrdenEstatus usa registrar_pago_orden (no un ingreso contable suelto)', () => {
+  it('la entrega de ruta registra el cobro como pago canónico dentro del contrato (139), no como ingreso suelto', () => {
+    // Desde T5-B (139) el cliente ya no llama a registrar_pago_orden: lo hace el contrato
+    // entregar_orden_ruta en la misma transacción que la entrega.
     const store = src('../data/supaStore.js');
-    expect(store).toMatch(/else if \(!esPagoEnLinea\(mPago\)\)[\s\S]{0,700}rpc\('registrar_pago_orden'/);
+    expect(store).toMatch(/if \(nuevoEst === 'Entregada'\) return actionsRef\.current\.entregarOrdenRuta\(id, metodoPago, extra\);/);
+    expect(store).toMatch(/rpc\('entregar_orden_ruta', built\.args\)/);
     expect(store).not.toMatch(/rpc\('registrar_ingreso_orden'/);
+    const sql = src('../../supabase/139_entrega_ruta_atomica.sql');
+    expect(sql).toMatch(/v_fin := registrar_pago_orden\(p_orden_id, v_metodo, p_referencia, v_actor_id\);/);
   });
 });

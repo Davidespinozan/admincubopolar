@@ -6,6 +6,7 @@ import DevolucionModal from '../DevolucionModal';
 import DetalleVentaModal from '../DetalleVentaModal';
 import VentaDirectaOrigen, { useVentaDirecta } from '../VentaDirectaOrigen';
 import { esElegibleVentaDirecta, modoVentaDirecta, linkPagadoCompleto, METODO_LINK } from '../../data/ventaDirectaLogic';
+import { motivoNoFiar } from '../../data/recuperacionRutaLogic';
 
 export function OrdenesView({ data, actions, user }) {
   const toast = useToast();
@@ -111,10 +112,16 @@ export function OrdenesView({ data, actions, user }) {
       cerrarCobro();
       return;
     }
-    // Orden con ruta: flujo de ruta existente (sin cambio en OL-02C).
-    const err = await actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo);
+    // Orden con ruta. T5-B (139): la entrega y su cuenta por cobrar o su pago van en UN contrato.
+    // El fiado se avisa antes (límite 0 = sin capacidad) y lo decide el servidor: si lo rechaza,
+    // la orden NO queda entregada y el diálogo sigue abierto para cobrar de otra forma.
+    const cliRuta = (data.clientes || []).find(c => String(c.id) === String(pagoModal.clienteId ?? pagoModal.cliente_id));
+    const sinCredito = motivoNoFiar({ metodo: pagoForm.metodo, cliente: cliRuta, importe: pagoModal.total });
+    if (sinCredito) { toast?.error(sinCredito); return; }
+    const err = await actions.updateOrdenEstatus(pagoModal.id, "Entregada", pagoForm.metodo, { referencia: pagoForm.metodo === "Transferencia SPEI" ? pagoForm.referencia : null });
     if (err) {
-      toast?.error("No se pudo registrar el cobro");
+      // El store ya mostró el motivo del servidor cuando lo hay (crédito, carga, referencia).
+      if (!err.creditoRechazado && !err.cargaInsuficiente) toast?.error("No se pudo registrar el cobro");
       return;
     }
     toast?.success("Orden " + s(pagoModal.folio) + " cobrada - " + pagoForm.metodo);

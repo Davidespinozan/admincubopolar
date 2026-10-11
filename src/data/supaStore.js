@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { CODIGOS_OFRECER_PUBLICO, fiscalesPorOmision } from './receptorFiscalLogic';
-import { detalleRechazo, esRechazoDeCarga, mensajeRechazoServidor, avisoSinCubrir, buildRevertirEntregaArgs } from './recuperacionRutaLogic';
+import { detalleRechazo, esRechazoDeCarga, esCreditoRechazado, mensajeRechazoServidor, avisoSinCubrir, buildRevertirEntregaArgs, buildEntregarOrdenRutaArgs } from './recuperacionRutaLogic';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
-import { parseProductos, validateItems, buildLineas, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI, esPagoEnLinea } from './ordenLogic';
+import { parseProductos, validateItems, buildLineas, validateCancelacion, buildAnotacionCancelacion, validateEdicionOrden, parseLineasEdicion, buildUpdateFieldsOrden, validateTransicionOrden, isFacturable, validateCancelacionCFDI } from './ordenLogic';
 import { traducirErrorCamionRutaActiva } from './mejorasMenoresLogic';
 import { mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion } from './produccionLogic';
@@ -1174,6 +1174,11 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
       },
 
       updateOrdenEstatus: async (id, nuevoEst, metodoPago = null, extra = {}) => {
+        // T5-B (mig 139): entregar una orden de ruta es UN contrato del servidor — entrega +
+        // cuenta por cobrar (fiado) o pago (contado) en una transacción. Antes eran dos escrituras
+        // desde aquí: si el fiado se rechazaba, la orden quedaba Entregada sin deuda ni cobro y
+        // ya no se podía regresar. Un rechazo ahora no deja nada.
+        if (nuevoEst === 'Entregada') return actionsRef.current.entregarOrdenRuta(id, metodoPago, extra);
         try {
           const { data: ordenPrev, error: errPrev } = await supabase
             .from('ordenes')
@@ -1231,86 +1236,6 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
             return error;
           }
 
-          // Auto-registrar ingreso o CxC al cobrar (Entregada)
-          if (nuevoEst === 'Entregada') {
-            const { data: ord, error: errOrd } = await supabase
-              .from('ordenes')
-              .select('id, folio, total, cliente_id, metodo_pago, facturama_id')
-              .eq('id', id)
-              .single();
-            if (errOrd) {
-              console.warn('[updateOrdenEstatus] select datos completos:', errOrd.message);
-              // Rollback: restaurar estatus previo
-              await supabase.from('ordenes').update({
-                estatus: ordenPrev?.estatus || 'Creada',
-                metodo_pago: ordenPrev?.metodo_pago || metodoPago,
-              }).eq('id', id);
-              t()?.error('No se pudieron leer los datos de la orden — estatus revertido');
-              return errOrd;
-            }
-
-            if (ord && n(ord.total) > 0) {
-              let cli = null;
-              if (ord.cliente_id) {
-                const { data: cliData, error: errCli } = await supabase
-                  .from('clientes').select('nombre').eq('id', ord.cliente_id).single();
-                if (errCli) {
-                  console.warn('[updateOrdenEstatus] select cliente nombre (no crítico):', errCli.message);
-                }
-                cli = cliData;
-              }
-              const mPago = metodoPago || s(ord.metodo_pago) || 'Efectivo';
-              const esCredito = mPago.toLowerCase().includes('crédito') || mPago.toLowerCase().includes('fiado');
-              let downstreamError = null;
-
-              if (esCredito && ord.cliente_id) {
-                // P1 Fase A: contrato atómico (CxC + saldo del cliente en una
-                // transacción, idempotente por orden).
-                const { data: cxcRes, error: cxcError } = await supabase.rpc('crear_cxc_orden', {
-                  p_orden_id: id,
-                  p_dias_vencimiento: 30,
-                });
-                if (cxcError) {
-                  downstreamError = cxcError;
-                } else if (cxcRes?.creada) {
-                  notify('credito', 'Venta a crédito', `${s(ord.folio)} — ${cli?.nombre || 'Cliente'} — $${n(ord.total).toLocaleString()} a 30 días`, '💳', s(ord.folio));
-                }
-              } else if (!esPagoEnLinea(mPago)) {
-                // 093: la venta de contado cobrada al entregar se registra como
-                // PAGO (evento canónico del flujo de efectivo) con el contrato
-                // registrar_pago_orden (idempotente; también deja el ingreso
-                // contable). El ingreso del estado de resultados sale de la
-                // entrega (delivered_at), no de este registro.
-                const { error: pagoError } = await supabase.rpc('registrar_pago_orden', {
-                  p_orden_id: id,
-                  p_metodo: mPago,
-                  p_usuario_id: uid(),
-                });
-                if (pagoError) downstreamError = pagoError;
-              }
-              // QR / link de pago: el dinero llega por el webhook (pagos); no se
-              // registra un cobro que todavía no ocurrió.
-
-              if (downstreamError) {
-                await supabase.from('ordenes').update({
-                  estatus: ordenPrev?.estatus || 'Creada',
-                  metodo_pago: ordenPrev?.metodo_pago || ord.metodo_pago,
-                }).eq('id', id);
-                t()?.error('No se pudo sincronizar el cobro: ' + (downstreamError?.message || String(downstreamError)));
-                return downstreamError;
-              }
-            }
-
-            // Sync payment status with Facturama if invoice exists
-            if (ord && ord.facturama_id) {
-              try {
-                await backendPost('billing-sync-payment', { ordenId: ord.id });
-              } catch {
-                notify('advertencia', 'Sincronización Facturama', `No se pudo sincronizar el pago de ${s(ord.folio)} con Facturama`, '⚠️', s(ord.folio));
-              }
-            }
-          }
-
           if (nuevoEst === 'Facturada') {
             const { data: ordFact, error: errOrdFact } = await supabase.from('ordenes').select('folio, cliente_nombre').eq('id', id).maybeSingle();
             if (errOrdFact) {
@@ -1327,6 +1252,55 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         } catch (e) {
           console.error('[updateOrdenEstatus] excepción:', e);
           t()?.error('Error inesperado al actualizar orden');
+          return { error: e?.message || 'Error inesperado' };
+        }
+      },
+
+      // Entrega de una orden de RUTA (chofer en línea, cola sin señal y "Cobrar entrega" de Admin).
+      // extra: { folioNota, referencia, operacionId }. Devuelve undefined si salió bien, o un
+      // objeto de error (con `creditoRechazado` / `cargaInsuficiente` cuando el servidor dice por qué).
+      entregarOrdenRuta: async (id, metodoPago = null, extra = {}) => {
+        try {
+          let metodo = metodoPago;
+          if (!metodo) {
+            const { data: prev, error: errPrev } = await supabase.from('ordenes').select('metodo_pago').eq('id', id).maybeSingle();
+            if (errPrev) { t()?.error('No se pudo leer la orden'); return errPrev; }
+            metodo = s(prev?.metodo_pago) || 'Efectivo';
+          }
+          const built = buildEntregarOrdenRutaArgs({ operacionId: extra.operacionId, ordenId: id, metodo, folioNota: extra.folioNota, referencia: extra.referencia });
+          if (built.error) { t()?.error(built.error); return { error: built.error }; }
+          const { data: res, error } = await supabase.rpc('entregar_orden_ruta', built.args);
+          if (error) {
+            if (esCreditoRechazado(error) || esRechazoDeCarga(error) || detalleRechazo(error).codigo === 'REFERENCIA_REPETIDA') {
+              const msg = mensajeRechazoServidor(error);
+              t()?.error(msg);
+              return { error: msg, message: msg, creditoRechazado: esCreditoRechazado(error) ? detalleRechazo(error) : undefined,
+                       cargaInsuficiente: esRechazoDeCarga(error) ? detalleRechazo(error) : undefined };
+            }
+            console.warn('[entregarOrdenRuta] rpc:', error.message);
+            // Sin respuesta del servidor (red): el texto original se conserva para que la cola
+            // sin señal lo reconozca y reintente; un rechazo se muestra tal cual.
+            const msg = mensajeRechazoServidor(error, 'No se pudo registrar la entrega');
+            t()?.error(/Failed to fetch|NetworkError|Load failed|network|fetch failed|timeout/i.test(String(error.message || '')) ? 'Sin conexión con el servidor. Reintenta: la entrega no se duplicará.' : msg);
+            return { error: error.message || msg, message: error.message || msg, code: error.code };
+          }
+          if (res?.cxc_creada) {
+            notify('credito', 'Venta a crédito', `${s(res.folio)} — $${n(res.total).toLocaleString()} a 30 días`, '💳', s(res.folio));
+          }
+          // Si la orden ya tenía factura, se avisa a Facturama del cobro (igual que antes).
+          if (!res?.replay && res?.via === 'contado') {
+            const { data: ordF } = await supabase.from('ordenes').select('id, folio, facturama_id').eq('id', id).maybeSingle();
+            if (ordF?.facturama_id) {
+              try { await backendPost('billing-sync-payment', { ordenId: ordF.id }); }
+              catch { notify('advertencia', 'Sincronización Facturama', `No se pudo sincronizar el pago de ${s(ordF.folio)} con Facturama`, '⚠️', s(ordF.folio)); }
+            }
+          }
+          await log(res?.resuelta ? 'Resolver cobro de entrega' : 'Cambiar estatus', 'Órdenes', `Orden #${id} → Entregada (${s(res?.metodo) || metodo})`);
+          rf();
+          return undefined;
+        } catch (e) {
+          console.error('[entregarOrdenRuta] excepción:', e);
+          t()?.error('Error inesperado al registrar la entrega');
           return { error: e?.message || 'Error inesperado' };
         }
       },

@@ -409,10 +409,11 @@ describe('OL-01A: honestidad del cobro del vendedor (contención; ciclo de vida 
   it('sin cambios de contratos: mismas acciones del store; Admin y Chofer intactos', () => {
     expect((v.match(/actions\.\w+/g) || []).sort()).toEqual(['actions.crearCheckoutPago', 'actions.updateOrdenEstatus']);   // OL-02C: el cobro directo va por useVentaDirecta → completarVentaDirecta
     const admin = src('../components/views/OrdenesView.jsx');
-    expect(admin).toMatch(/const err = await actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo\);\s*if \(err\) \{\s*toast\?\.error\("No se pudo registrar el cobro"\);\s*return;/);
+    // 139 (T5-B): misma acción del store; ahora pasa la referencia y no duplica el aviso cuando el servidor ya dijo por qué.
+    expect(admin).toMatch(/const err = await actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo, \{ referencia: [^}]+\}\);\s*if \(err\) \{[\s\S]{0,220}toast\?\.error\("No se pudo registrar el cobro"\);\s*return;/);
     const chofer = src('../components/ChoferView.jsx');
     expect(chofer).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null \}\)/);
-    expect(chofer).toMatch(/if \(err\) \{[\s\S]{0,260}showToast\(err\.cargaInsuficiente \? [^:]+ : "No se pudo registrar la entrega", 'error'\);/);
+    expect(chofer).toMatch(/if \(err\) \{[\s\S]{0,420}showToast\(err\.cargaInsuficiente \? [\s\S]{0,320}: "No se pudo registrar la entrega", 'error'\);/);
     const logic = src('../data/ventasCobroLogic.js');
     expect(logic).not.toMatch(/supabase|rpc|fetch\(|backend|import /);
     const orden = src('../data/ordenLogic.js');

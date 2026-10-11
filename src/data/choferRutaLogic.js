@@ -1,3 +1,4 @@
+import { motivoNoFiar } from './recuperacionRutaLogic';
 // choferRutaLogic.js — reglas puras de la app del Chofer que no dependen de la
 // pantalla: qué ruta es la suya ahora, si un cliente puede llevarse fiado y
 // cómo se mezclan las entregas guardadas en el teléfono con las del servidor.
@@ -40,15 +41,8 @@ export function rutaActivaDelChofer(rutas, usuario, hoy, { esAdmin = false } = {
  * @returns {string|null} motivo para el chofer, o null si sí puede.
  */
 export function motivoSinCredito(cliente, importe) {
-  if (!cliente) return 'El crédito necesita un cliente registrado. Cobra de otra forma.';
-  if (!(cliente.credito_autorizado ?? cliente.creditoAutorizado)) return `${txt(cliente.nombre) || 'Este cliente'} no tiene crédito autorizado. Cobra de otra forma o avisa a administración.`;
-  const limite = num(cliente.limite_credito ?? cliente.limiteCredito);
-  const saldo = num(cliente.saldo);
-  if (limite > 0 && saldo + num(importe) > limite + 0.004) {
-    const disp = Math.max(Math.round((limite - saldo) * 100) / 100, 0);
-    return `${txt(cliente.nombre) || 'El cliente'} ya no tiene crédito suficiente (le quedan $${disp.toLocaleString('es-MX')}). Cobra de otra forma o avisa a administración.`;
-  }
-  return null;
+  // T5-B: una sola regla, compartida con Admin y espejo del servidor. Límite 0 = sin capacidad.
+  return motivoNoFiar({ metodo: 'Crédito', cliente, importe });
 }
 
 // Lo que solo existe en el teléfono y el servidor no devuelve.

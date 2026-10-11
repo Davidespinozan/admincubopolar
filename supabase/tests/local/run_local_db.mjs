@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_') && !f.startsWith('123_') && !f.startsWith('124_') && !f.startsWith('125_') && !f.startsWith('127_') && !f.startsWith('128_') && !f.startsWith('129_') && !f.startsWith('130_') && !f.startsWith('131_') && !f.startsWith('132_') && !f.startsWith('133_') && !f.startsWith('134_') && !f.startsWith('135_') && !f.startsWith('136_') && !f.startsWith('137_') && !f.startsWith('138_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_') && !f.startsWith('123_') && !f.startsWith('124_') && !f.startsWith('125_') && !f.startsWith('127_') && !f.startsWith('128_') && !f.startsWith('129_') && !f.startsWith('130_') && !f.startsWith('131_') && !f.startsWith('132_') && !f.startsWith('133_') && !f.startsWith('134_') && !f.startsWith('135_') && !f.startsWith('136_') && !f.startsWith('137_') && !f.startsWith('138_') && !f.startsWith('139_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -4983,6 +4983,12 @@ for (const [mig, suite, reruns] of [
     '085_contencion_stock_test.sql', '078_rutas_chofer_test.sql', '093_finanzas_reverso_test.sql', '096_dia_negocio_caja_test.sql', '104_devoluciones_test.sql',
     '109_venta_directa_test.sql', '110_contencion_entrega_directa_test.sql', '112_contencion_facturada_test.sql', '136_correcciones_tanda3_test.sql',
     '137_pedido_sin_existencia_test.sql', '119_cierre_api_empleado_test.sql']],
+  // 139 (T5-B): la entrega de ruta y su cuenta por cobrar o su pago van en una transacción; fuera de un
+  // contrato nada queda Entregado a crédito. Se re-corren ruta, cierre, crédito, guardas de órdenes y T5-A.
+  ['139_entrega_ruta_atomica.sql', '139_entrega_ruta_atomica_test.sql', ['138_recuperacion_cierre_ruta_test.sql', '087_inventario_ruta_test.sql',
+    '086_cierre_financiero_test.sql', '088_b3_integridad_test.sql', '090_b4_privilegios_test.sql', '078_rutas_chofer_test.sql', '096_dia_negocio_caja_test.sql',
+    '104_devoluciones_test.sql', '109_venta_directa_test.sql', '110_contencion_entrega_directa_test.sql', '112_contencion_facturada_test.sql',
+    '114_referencia_pago_unica_test.sql', '136_correcciones_tanda3_test.sql', '137_pedido_sin_existencia_test.sql', '119_cierre_api_empleado_test.sql']],
 ]) {
   const n = mig.slice(0, 3);
   for (const k of [1, 2]) {
@@ -5009,6 +5015,14 @@ for (const [mig, suite, reruns] of [
   let todo138 = true;
   await c138({ connect, c, ok: (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) todo138 = false; } });
   if (!todo138) { console.log('RESULTADO: FALLÓ (138 concurrencia)'); process.exit(1); }
+}
+
+// ═══ 139 (T5-B) — concurrencia de crédito con dos conexiones ═══
+{
+  const { c139 } = await import('./c139_concurrencia.mjs');
+  let todo139 = true;
+  await c139({ connect, c, ok: (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) todo139 = false; } });
+  if (!todo139) { console.log('RESULTADO: FALLÓ (139 concurrencia)'); process.exit(1); }
 }
 
 // ═══ OP-03 — ensayo operativo de punta a punta (Día 0; producción, barra, mostrador, ruta, mermas, reverso) ═══
@@ -5100,7 +5114,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   'guardar_concepto_nomina', 'guardar_recibo_nomina', 'aplicar_conceptos_nomina', 'nomina_acumulados',
   'asistencia_generar_avisos', 'avisos_asistencia', 'guardar_avisos_asistencia', 'registrar_evidencia_orden', 'registrar_asistencia_manual',
   // 138 (T5-A)
-  'ordenes_guard_carga_ruta', 'ruta_inventario_resumen', 'ruta_entrega_no_reversible', 'diagnostico_ruta', 'revertir_entrega_ruta'];
+  'ordenes_guard_carga_ruta', 'ruta_inventario_resumen', 'ruta_entrega_no_reversible', 'diagnostico_ruta', 'revertir_entrega_ruta',
+  // 139 (T5-B)
+  'entregar_orden_ruta', 'ordenes_guard_credito_entrega'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

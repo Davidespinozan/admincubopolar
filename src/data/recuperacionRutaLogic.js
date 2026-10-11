@@ -128,3 +128,49 @@ export function buildRevertirEntregaArgs({ operacionId, ordenId, motivo, conserv
   if (m.length < 5) return { error: 'Escribe el motivo (por qué esa entrega no ocurrió)' };
   return { args: { p_operacion_id: operacionId || nuevoOperacionId(), p_orden_id: Number(ordenId), p_motivo: m, p_conservar_cobro: conservarCobro === true } };
 }
+
+// ── T5-B (mig 139): la entrega de ruta y su obligación financiera van en UNA transacción ──
+
+/** ¿El servidor rechazó el fiado (sin autorización, límite 0, límite excedido, sin cliente)? */
+export function esCreditoRechazado(error) {
+  return detalleRechazo(error).codigo === 'CREDITO_RECHAZADO';
+}
+
+/** Argumentos de `entregar_orden_ruta`. El método es obligatorio; el servidor lo valida y normaliza. */
+export function buildEntregarOrdenRutaArgs({ operacionId, ordenId, metodo, folioNota, referencia } = {}) {
+  if (!ordenId) return { error: 'Orden requerida' };
+  const m = txt(metodo);
+  if (!m) return { error: 'Elige cómo se cobra' };
+  return {
+    args: {
+      p_operacion_id: operacionId || nuevoOperacionId(), p_orden_id: Number(ordenId), p_metodo: m,
+      p_folio_nota: txt(folioNota) || null, p_referencia: txt(referencia) || null,
+    },
+  };
+}
+
+const esFiado = (metodo) => /cr[eé]dito|fiado/i.test(txt(metodo));
+
+/**
+ * ¿Se puede fiar ESTA entrega desde aquí? Aviso previo; la autoridad es el servidor.
+ * Regla (la misma de `fin_validar_credito`): crédito autorizado explícito; el límite es un tope
+ * real y **límite 0 = sin capacidad** (antes el teléfono lo tomaba como "sin límite"); cuenta lo
+ * que el cliente ya debe. Sin señal no se fía: el crédito solo lo aprueba el servidor.
+ * @returns {string|null} motivo para mostrar, o null si se puede intentar.
+ */
+export function motivoNoFiar({ metodo, cliente, importe, enLinea = true } = {}) {
+  if (!esFiado(metodo)) return null;
+  if (!enLinea) return 'Sin señal no se puede fiar: el crédito lo aprueba el servidor. Cobra de otra forma o busca señal.';
+  if (!cliente) return 'El crédito necesita un cliente registrado. Cobra de otra forma.';
+  const nombre = txt(cliente.nombre) || 'Este cliente';
+  if (!(cliente.credito_autorizado ?? cliente.creditoAutorizado)) return `${nombre} no tiene crédito autorizado. Cobra de otra forma o avisa a Administración.`;
+  const limite = Number(cliente.limite_credito ?? cliente.limiteCredito) || 0;
+  const saldo = Number(cliente.saldo) || 0;
+  const disponible = Math.max(Math.round((limite - saldo) * 100) / 100, 0);
+  if ((Number(importe) || 0) > disponible + 0.004) {
+    return limite <= 0
+      ? `${nombre} tiene crédito autorizado pero su límite es $0: no tiene capacidad para fiar. Cobra de otra forma o pide a Administración que le asigne un límite.`
+      : `${nombre} ya no tiene crédito suficiente (le quedan $${disponible.toLocaleString('es-MX')}). Cobra de otra forma o avisa a Administración.`;
+  }
+  return null;
+}

@@ -234,7 +234,7 @@ describe('OL-02C: Admin usa el mismo contrato para órdenes sin ruta', () => {
   it('sin ruta → venta.completar (mismo hook y acción); con ruta → flujo de ruta existente sin cambio', () => {
     expect(a).toMatch(/const venta = useVentaDirecta\(\{ actions, cuartosFrios: data\.cuartosFrios \}\);/);
     expect(a).toMatch(/const directa = !!pagoModal && esElegibleVentaDirecta\(pagoModal\);/);
-    expect(cobro).toMatch(/if \(directa\) \{[\s\S]*const r = await venta\.completar\([\s\S]*return;\s*\}\s*const err = await actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo\);/);
+    expect(cobro).toMatch(/if \(directa\) \{[\s\S]*const r = await venta\.completar\([\s\S]*return;\s*\}[\s\S]{0,900}const err = await actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo, \{ referencia: /);
     expect(a).toMatch(/\{modoCobro && <div className="mb-2"><VentaDirectaOrigen venta=\{venta\} disabled=\{venta\.enviando\} \/><\/div>\}/);
     expect(a).not.toMatch(/registrar_pago_orden|crear_cxc_orden|salida_cuarto_manual/);
   });

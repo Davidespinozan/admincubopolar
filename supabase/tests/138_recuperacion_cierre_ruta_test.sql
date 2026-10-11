@@ -260,8 +260,17 @@ SELECT pg_temp.ok((SELECT (o ->> 'no_reversible') LIKE '%No está Entregada%' FR
 
 \echo '── 138: dinero en la reversión'
 SELECT pg_temp.como(15);
-UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Crédito' WHERE id IN (13811, 13812);
-SELECT crear_cxc_orden(13811, 30); SELECT crear_cxc_orden(13812, 30);
+-- 139 (T5-B): la entrega a crédito va por su contrato (entrega + cuenta por cobrar juntas); las dos
+-- escrituras de antes quedan prohibidas. La suite corre antes y después de 139.
+DO $do$ BEGIN
+  IF to_regprocedure('public.entregar_orden_ruta(uuid,bigint,text,text,text)') IS NOT NULL THEN
+    PERFORM entregar_orden_ruta('13800000-0000-0000-0000-0000000000d1'::uuid, 13811, 'Crédito');
+    PERFORM entregar_orden_ruta('13800000-0000-0000-0000-0000000000d2'::uuid, 13812, 'Crédito');
+  ELSE
+    UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Crédito' WHERE id IN (13811, 13812);
+    PERFORM crear_cxc_orden(13811, 30); PERFORM crear_cxc_orden(13812, 30);
+  END IF;
+END $do$;
 UPDATE ordenes SET estatus = 'Entregada', metodo_pago = 'Efectivo' WHERE id IN (13813, 13814, 13815);
 SELECT pg_temp.como(1);
 SELECT abonar_cxc((SELECT id FROM cuentas_por_cobrar WHERE orden_id = 13812), 20, 'Efectivo', NULL, 13801);

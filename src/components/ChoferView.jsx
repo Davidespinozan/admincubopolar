@@ -13,11 +13,11 @@ import { MOTIVOS_NO_ENTREGA } from '../data/ordenLogic';
 import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
 import { mensajeTicket, enlaceWhatsApp, urlMapaParada, urlNavegacionParada } from '../data/ticketLogic';
 import { evidenciasPendientes, estadoFotosEntrega } from '../data/evidenciaLogic';
-import { rutaActivaDelChofer, motivoSinCredito, mezclarEntregas } from '../data/choferRutaLogic';
+import { rutaActivaDelChofer, mezclarEntregas } from '../data/choferRutaLogic';
 import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas, descripcionMutacion } from '../data/colaOfflineLogic';
 import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from '../data/stockContratosLogic';
 import { useColaOffline } from '../data/useColaOffline';
-import { faltanteEnCamion, mensajeNoCabe } from '../data/recuperacionRutaLogic';
+import { faltanteEnCamion, mensajeNoCabe, motivoNoFiar } from '../data/recuperacionRutaLogic';
 import { conteoInicial, diferenciasConteo, totalesBalance, mensajeNoEntrega } from '../data/inventarioRutaLogic';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { Card, SectionLabel, RoleHeader, ChoiceButton } from './ui/Components';
@@ -189,7 +189,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
   // acción de supaStore normalizando la convención de error a truthy.
   const ejecutoresOffline = useMemo(() => ({
     [TIPOS_MUTACION.ENTREGA]: async (p) => {
-      const err = await actions.updateOrdenEstatus?.(p.ordenId, 'Entregada', p.metodoPago, { folioNota: p.folioNota || null });
+      const err = await actions.updateOrdenEstatus?.(p.ordenId, 'Entregada', p.metodoPago, { folioNota: p.folioNota || null, operacionId: p.operacionId });
       return err || null;
     },
     [TIPOS_MUTACION.NO_ENTREGA]: async (p) => {
@@ -649,9 +649,11 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     if (noCabe) { showToast(noCabe, 'error'); return; }
     // Fiado: se revisa ANTES de marcar la entrega. Si el servidor lo rechaza después, la venta
     // quedaba Entregada sin cobro ni deuda y bloqueaba el cierre de la ruta.
+    // T5-B: límite 0 = sin capacidad, y sin señal NO se fía (el crédito solo lo aprueba el
+    // servidor: no se promete un fiado que después se rechace). El servidor es la autoridad.
     if (cobroMetodo === "Crédito") {
       const cli = (data.clientes || []).find(c => String(c.id) === String(entregaModal.clienteId ?? entregaModal.cliente_id));
-      const sinCredito = motivoSinCredito(cli, entregaModal.totalCalc);
+      const sinCredito = motivoNoFiar({ metodo: cobroMetodo, cliente: cli, importe: entregaModal.totalCalc, enLinea: online });
       if (sinCredito) { showToast(sinCredito, 'error'); return; }
     }
     // QR / Link de pago → generate checkout
@@ -714,7 +716,9 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         : null;
       if (err) {
         // 138: si no cabe en lo cargado, el servidor dice por qué (y la orden NO quedó entregada).
-        showToast(err.cargaInsuficiente ? (err.error || 'La carga del camión no alcanza para esta orden') : "No se pudo registrar la entrega", 'error');
+        // 139: lo mismo con el fiado — el servidor dice por qué; el diálogo sigue abierto para cobrar de otra forma.
+        showToast(err.cargaInsuficiente ? (err.error || 'La carga del camión no alcanza para esta orden')
+          : err.creditoRechazado ? (err.error || 'No se pudo fiar esta entrega. Cobra de otra forma.') : "No se pudo registrar la entrega", 'error');
         return;
       }
       setEntregas(prev => [...prev, entrega]);
@@ -876,7 +880,12 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       const precio = getPrice(vForm.clienteId || clienteExpressSel?.id || null, sku);
       const subtotal = n(vForm.cant) * precio;
       if (vForm.pago === "Crédito") {
-        const sinCredito = motivoSinCredito(clienteExpressSel || (data.clientes || []).find(c => String(c.id) === String(vForm.clienteId)), subtotal);
+        // T5-B: la venta rápida fiada se registra (y se valida de verdad) en el cierre. Aquí se avisa
+        // antes: sin señal no se fía, límite 0 = sin capacidad, y cuentan las ventas rápidas fiadas
+        // al mismo cliente que todavía solo están en el teléfono.
+        const cliX = clienteExpressSel || (data.clientes || []).find(c => String(c.id) === String(vForm.clienteId));
+        const fiadoLocal = entregas.filter(e => !e.ordenId && e.pago === "Crédito" && cliX && String(e.clienteId) === String(cliX.id)).reduce((t, e) => t + n(e.total), 0);
+        const sinCredito = motivoNoFiar({ metodo: vForm.pago, cliente: cliX, importe: subtotal + fiadoLocal, enLinea: online });
         if (sinCredito) { showToast(sinCredito, 'error'); return; }
       }
       const total = subtotal; // Hielo: IVA tasa 0%

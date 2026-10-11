@@ -52,14 +52,16 @@ describe('Chofer: fiado solo a quien tiene crédito', () => {
     expect(motivoSinCredito({ nombre: 'Abarrotes', credito_autorizado: false }, 100)).toMatch(/Abarrotes no tiene crédito autorizado/);
     expect(motivoSinCredito({ nombre: 'Abarrotes', credito_autorizado: true, limite_credito: 1000, saldo: 950 }, 100)).toMatch(/le quedan \$50/);
   });
-  it('con crédito y dentro del límite (o sin límite): sí', () => {
+  it('con crédito y dentro del límite: sí; límite 0 = SIN capacidad (T5-B, igual que el servidor)', () => {
     expect(motivoSinCredito({ credito_autorizado: true, limite_credito: 1000, saldo: 900 }, 100)).toBeNull();
-    expect(motivoSinCredito({ credito_autorizado: true, limite_credito: 0, saldo: 5000 }, 100)).toBeNull();
+    // Antes el teléfono trataba límite 0 como "sin límite" y el servidor rechazaba con la orden ya Entregada.
+    expect(motivoSinCredito({ credito_autorizado: true, limite_credito: 0, saldo: 5000 }, 100)).toMatch(/límite es \$0/);
     expect(motivoSinCredito({ creditoAutorizado: true, limiteCredito: 500, saldo: 0 }, 500)).toBeNull();
   });
   it('la pantalla lo revisa antes de marcar la entrega, y la venta rápida no ofrece link de pago', () => {
     const v = src('../components/ChoferView.jsx');
-    expect(v.indexOf('const sinCredito = motivoSinCredito(cli, entregaModal.totalCalc);')).toBeLessThan(v.indexOf('await actions.updateOrdenEstatus(entregaModal.id, "Entregada"'));
+    expect(v.indexOf('const sinCredito = motivoNoFiar({ metodo: cobroMetodo, cliente: cli, importe: entregaModal.totalCalc, enLinea: online });')).toBeGreaterThan(-1);
+    expect(v.indexOf('const sinCredito = motivoNoFiar({ metodo: cobroMetodo, cliente: cli, importe: entregaModal.totalCalc, enLinea: online });')).toBeLessThan(v.indexOf('await actions.updateOrdenEstatus(entregaModal.id, "Entregada"'));
     expect(v).toMatch(/PAGOS\.filter\(m => m !== "QR \/ Link de pago"\)\.map\(m => <ChoiceButton key=\{m\} active=\{vForm\.pago===m\}/);
   });
 });
