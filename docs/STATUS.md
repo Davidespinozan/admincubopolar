@@ -354,9 +354,24 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## T5-D1 · Venta rápida registrada al capturarla (mig 141) — 2026-10-11 — COMMITTED LOCALLY / LOCAL-VALIDATED (141 NO aplicada; frontend NO desplegado)
-**Estado: en git local (rama `t5d1-venta-rapida`). Producción sin cambio (solo lectura, 2026-10-11): 219 funciones, 96 policies, 59 tablas,
-sin objetos de 141, frontend `dbdc153`. La migración y el deploy requieren autorizaciones INDEPENDIENTES del dueño. Gate local completo
+## T5-D1 · Venta rápida registrada al capturarla (mig 141) — 2026-10-12 — DEPLOYED / TECHNICALLY VERIFIED (sin cierre del dueño; prueba con sesión real PENDIENTE)
+**141 aplicada por el dueño en el SQL Editor (2026-10-12, una vez; autorización "GO MIGRACIÓN 141") y verificada en solo lectura: tabla
+`ventas_rapidas_ruta` (RLS activa, 0 policies, sin SELECT/INSERT/UPDATE/DELETE para anon ni authenticated, 0 filas) y las dos funciones
+con md5 IDÉNTICOS a la base local (`registrar_venta_rapida_ruta` `68c38f48…`, `ventas_rapidas_de_ruta` `32c24343…`; SECURITY DEFINER,
+`search_path` fijo, sin anon ni PUBLIC); catálogo: +2 funciones (219 → 221), +1 tabla (59 → 60) y NINGUNA otra diferencia; sin cambio
+`cerrar_ruta_financiero`, `finalizar_inventario_ruta`, `entregar_orden_ruta`, `crear_cxc_orden`, `registrar_pago_orden`, `abonar_cxc`,
+`fin_validar_credito` ni las guardas de 138/139. Frontend DEPLOYED con autorización APARTE ("GO DEPLOY FRONTEND"): push `ff2f862`
+(código = `15c76d0`, más los commits de documentación `287ec09`, `b1225c9` y `ff2f862`); Netlify `6acd32d09f723cd4adb78da3`, ready
+2026-10-12T19:20:15Z, `commit_ref` = `ff2f862`. Bundle vivo (52 archivos js): `registrar_venta_rapida_ruta`, `ventas_rapidas_de_ruta`,
+`venta_rapida`, `ventas_rapidas_revision`, "Solo en este teléfono", "Todavía no está registrada", "Faltan ventas por enviar al sistema",
+"Pasar a revisión de Administración", "Ventas rápidas registradas", "pregúntale antes de cerrar" (1 archivo cada uno), "Requiere
+revisión administrativa" (2), y ya SIN el aviso anterior "Venta exprés: " (0). Sitio 200; funciones del servidor responden (401 sin
+sesión); 21 Netlify Functions. Datos de negocio IDÉNTICOS antes de 141, después de 141 y después del deploy (`estado_negocio.sql`);
+`error_log` máx 4; 0 ventas rápidas registradas. Sin operaciones de prueba en producción.**
+**Pendiente (validación operativa, no verificable en solo lectura):** primera venta rápida real con sesión de Chofer (con señal, sin señal
+y su sincronización), venta después de "Registrar ventas y mermas", aviso de revisión con una ruta cerrada, y la lista de ventas rápidas
+en "Cerrar ruta" de Admin. Hasta entonces el comportamiento en pantalla está probado solo en local (suite 141, C141, Vitest).
+**Gate local completo
 RESULTADO OK: 141 ×2, RLS_CHECK PASS, suite 141 (72), 15 suites re-corridas tras 141 (086, 087, 088, 090, 078, 096, 104, 109, 114, 119,
 136–140), C141a–g, OP-03, SEARCH_PATH 149/149, UNQUALIFIED_RESOLUTION PASS. Vitest 1,797 en UTC / Mazatlán / CDMX / Madrid; lint,
 typecheck, build y `diff --check` limpios.** Origen: auditoría T5-D1 (solo lectura) y documento "T5-D1 — DECISIONES CERRADAS".
