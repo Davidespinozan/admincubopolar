@@ -354,6 +354,48 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## T5-D1 · Venta rápida registrada al capturarla (mig 141) — 2026-10-11 — COMMITTED LOCALLY / LOCAL-VALIDATED (141 NO aplicada; frontend NO desplegado)
+**Estado: en git local (rama `t5d1-venta-rapida`). Producción sin cambio (solo lectura, 2026-10-11): 219 funciones, 96 policies, 59 tablas,
+sin objetos de 141, frontend `dbdc153`. La migración y el deploy requieren autorizaciones INDEPENDIENTES del dueño. Gate local completo
+RESULTADO OK: 141 ×2, RLS_CHECK PASS, suite 141 (72), 15 suites re-corridas tras 141 (086, 087, 088, 090, 078, 096, 104, 109, 114, 119,
+136–140), C141a–g, OP-03, SEARCH_PATH 149/149, UNQUALIFIED_RESOLUTION PASS. Vitest 1,797 en UTC / Mazatlán / CDMX / Madrid; lint,
+typecheck, build y `diff --check` limpios.** Origen: auditoría T5-D1 (solo lectura) y documento "T5-D1 — DECISIONES CERRADAS".
+- **Causa raíz corregida:** la venta rápida vivía solo en el teléfono hasta "Registrar ventas y mermas" y `cerrar_ruta_financiero` acepta
+  un registro por ruta; una venta posterior se borraba al volver a registrar (`ChoferView` filtraba todo lo que no fuera orden), se
+  convertía en merma por el faltante del conteo, o se destruía al cerrar. También se perdían todas si Administración cerraba primero.
+- **Decisiones del dueño:** D1 sin señal se permite en contado y queda PENDIENTE (crédito sin señal sigue prohibido); D2 el fiado de venta
+  rápida vence a 30 días; D3 una venta pendiente que llega con la ruta cerrada se rechaza, se conserva en el teléfono como REQUIERE
+  REVISIÓN ADMINISTRATIVA y no se borra sola (la resolución administrativa queda fuera de T5-D1).
+- **141 (SHA-256 `0a7d301b613bd3539c39bf11cf577d0a93e90c78d412ef84c2c4b87add718c45`, 268 líneas; aditiva, sin datos):** tabla `ventas_rapidas_ruta` (operación, ruta, orden, huella, hora de
+  captura, actor; RLS sin policies ni grants) y dos funciones SECURITY DEFINER con `search_path` fijo, sin anon:
+  `registrar_venta_rapida_ruta(op, ruta, cliente, nombre, productos, método, factura, referencia, capturada)` (Admin o el Chofer de la
+  ruta; candado de ruta → En progreso con carga → precio del servidor → orden Entregada + líneas → pago o cuenta por cobrar a 30 días con
+  crédito validado → regla de carga de 138; reintento = misma respuesta, también con la ruta cerrada; códigos `RUTA_CERRADA`,
+  `RUTA_NO_INICIADA`, `CARGA_INSUFICIENTE`, `CREDITO_RECHAZADO`, `PRECIO_CAMBIO`, `REFERENCIA_REPETIDA`) y `ventas_rapidas_de_ruta(ruta)`
+  (lectura, Admin). md5 locales: `68c38f4847373536ee80b5ff3a981311` y `32c24343c9a23446c6b1bdecad42dbec`.
+- **Convivencia financiera (probada, sin tocar contratos cerrados):** `cerrar_ruta_financiero`, `finalizar_inventario_ruta`,
+  `entregar_orden_ruta`, `crear_cxc_orden`, `registrar_pago_orden`, `fin_validar_credito` y las guardas de 138/139 conservan su md5. Una
+  venta registrada es una orden de la ruta: el balance y el conteo la incluyen sin volver a consolidar; si el cierre la recibe como
+  orden, no repite pago ni cuenta (141-56). Venta después del cierre financiero: aceptada, y el conteo que la ignora se rechaza por
+  sobrante en vez de volverse merma (141-57 a 59). Un teléfono sin actualizar sigue por el camino viejo sin doble registro (141-64).
+- **Fecha:** la orden lleva el día de negocio de la hora de captura (acotada entre la salida de la ruta y la hora del servidor); el pago,
+  la fecha en que el servidor lo recibió. Cruce de medianoche probado (141-65 a 67).
+- **Frontend:** `src/data/ventaRapidaLogic.js`; `ChoferView.jsx` (registro al capturar; sin señal → cola con identificador y estado
+  "Solo en este teléfono — falta enviarla"; sin respuesta → reenvío con el MISMO identificador; se eliminó el borrado al registrar el
+  cierre; el cierre final exige señal, cola vacía y ninguna venta por enviar; con el conteo abierto se refresca el balance; ventas de
+  la versión anterior se adoptan a la cola; ventas en la cola de otra ruta se envían o pasan a revisión; aviso permanente "Requiere
+  revisión administrativa" con productos, importe, método, fecha e identificador, sin botón de borrar); `colaOfflineLogic.ts` (tipo
+  `venta_rapida`); `supaStore.js` (`registrarVentaRapidaRuta`, `ventasRapidasDeRuta`; al cierre solo van órdenes del servidor);
+  `VentasRapidasRuta.jsx` en "Cerrar ruta" de Admin. Pruebas `src/__tests__/t5d1VentaRapida.test.jsx` (38).
+- **Activación propuesta:** 1) 141 una vez (compatible con el frontend desplegado, que no la usa) → 2) verificación de solo lectura →
+  3) autorización APARTE → push del frontend → 4) bundle vivo.
+- **Residuales:** lo guardado sin señal en un teléfono perdido, ajeno o con datos borrados no lo conoce el servidor (no hay garantía
+  posible; Admin lo ve solo como faltante al contar); las ventas en revisión no tienen todavía resolución dentro del sistema y el aviso
+  permanece en el teléfono; el camino viejo (venta rápida dentro del cierre, teléfono sin actualizar) sigue creando el fiado a 15 días
+  porque `cerrar_ruta_financiero` no se tocó; un pendiente capturado por error se puede quitar del teléfono (si ya había llegado al
+  servidor reaparece como venta registrada); la cancelación de una orden nacida de venta rápida no se revisó.
+- Reversión: sin ventas registradas, `DROP` de las dos funciones y la tabla y frontend anterior; con ventas, conservar la tabla.
+
 ## T5-C · Conteo físico de empaques (mig 140) — 2026-10-11 — CLOSED IN PRODUCTION (cierre técnico; validación visual autenticada pendiente)
 **Cierre del dueño (2026-10-11): "Acepto T5-C como CLOSED PROD técnico, con validación visual de la pantalla autenticada pendiente."
 Pendiente del dueño: ver Insumos (Bolsas) → Empaques con sesión y capturar el conteo real de apertura. Regla para futuras activaciones
