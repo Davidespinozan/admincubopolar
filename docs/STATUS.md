@@ -354,10 +354,28 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## T5-D2 · Recuperación administrativa y cierre seguro de rutas (mig 142) — 2026-10-12 — COMMITTED LOCALLY / LOCAL-VALIDATED (142 NO aplicada; frontend NO desplegado)
-**Estado: en git local (rama `t5d2-recuperacion-rutas`). Producción sin cambio (solo lectura, 2026-10-12): migraciones hasta 141, 221
-funciones, 96 policies, 60 tablas, sin objetos de 142, frontend `ff2f862`, una ruta (Cerrada), `error_log` máx 4. La migración y el
-deploy requieren autorizaciones INDEPENDIENTES del dueño. Gate local completo RESULTADO OK: 142 ×2, RLS_CHECK PASS, suite 142 (89), 16
+## T5-D2 · Recuperación administrativa y cierre seguro de rutas (mig 142) — 2026-10-12 — CLOSED IN PRODUCTION (cierre técnico; validación operativa pendiente)
+**Cierre técnico registrado conforme al documento del dueño "T5-D2 — FRONTEND PRODUCTION DEPLOY" (deploy y verificaciones en PASS).
+142 aplicada por el dueño en el SQL Editor (2026-10-12, una vez; SHA-256
+`3eb47a4b1470f56d02bc2fadc604a0a34367ab582f70701acf3ca651c85b7a31`) y verificada en solo lectura (POST-MIGRATION 142 VERIFICATION = PASS):
+5 funciones con md5 IDÉNTICOS a la base local, SECURITY DEFINER, `search_path` fijo, sin anon ni PUBLIC (el helper interno sin EXECUTE
+para authenticated); tablas `ruta_intervenciones` y `ruta_faltantes` con RLS, 0 policies, sin grants y 0 filas; catálogo: +5 funciones
+(221 → 226), +2 tablas (60 → 62), +1 secuencia, 96 policies y NINGUNA otra diferencia; 17 contratos cerrados con su md5 (incluida la
+sobrecarga antigua de 4 parámetros de `cerrar_ruta_financiero`, anterior a esta fase y sin tocar). Frontend DEPLOYED con autorización
+APARTE: push `a1e3d34` (código = `37f7d12`, más documentación `62e4e83`, `4d25230`, `a1e3d34`); Netlify `6acd4fa26b5cc1863ad1d46d`, ready
+2026-10-12T21:23:13Z, `commit_ref` = `a1e3d34`, sin error de build, 21 funciones. Bundle vivo (52 archivos js): `cerrar_ruta_admin`,
+`iniciar_ruta_admin`, `conciliacion_ruta`, `ruta_cobros_pendientes`, "El camión NO salió", "El camión SÍ salió", "FALTANTE NO
+JUSTIFICADO", "Links de pago pendientes", "Motivo de la intervención", "El efectivo todavía NO está conciliado", `links-pago-pendientes`,
+"Entrega de la orden" / "No entrega de la orden" (revisión) presentes; "Cierre forzado por admin" y "Pídele al chofer que envíe su
+reporte primero" en 0 archivos (el forzar por REST ya no existe en el cliente). Sitio, JS y CSS 200; funciones del servidor responden
+(401 sin sesión). Datos de negocio IDÉNTICOS antes de 142, después de 142 y después del deploy (1 ruta Cerrada, 2 órdenes, 2 pagos $550,
+0 CxC, kardex 31, 1 merma, 1 cierre financiero, 1 cierre de inventario, 0 cierres de caja, 0 ventas rápidas; `estado_negocio.sql`
+idéntico); `error_log` máx 4, 0 en 24 h; 0 intervenciones y 0 faltantes. Sin operaciones de prueba en producción.**
+**Validación operativa PENDIENTE (no verificable en solo lectura; nada de esto se probó con sesión real):** abrir "Cerrar ruta (admin)"
+con sesión de Admin en una ruta real (conciliación, órdenes una por una, faltante, motivo), los casos "no salió" y "salió sin iniciar",
+el aviso de links pendientes en la bandeja, la continuación del cierre del chofer con una marca financiera ajena y el aviso de revisión
+de una entrega tardía en el teléfono.
+**Gate local completo RESULTADO OK: 142 ×2, RLS_CHECK PASS, suite 142 (89), 16
 suites re-corridas tras 142 (086, 087, 088, 090, 078, 096, 104, 109, 114, 119, 136–141), C142a–g (9 carreras), OP-03, SEARCH_PATH
 154/154, UNQUALIFIED_RESOLUTION PASS. Vitest 1,851 en UTC / Mazatlán / CDMX / Madrid; lint, typecheck, build y `diff --check` limpios.**
 Origen: auditoría T5-D2, "FINAL DESIGN VALIDATION REPORT" y documento "T5-D2 IMPLEMENTACIÓN LOCAL" (decisiones D2-1 a D2-6).
