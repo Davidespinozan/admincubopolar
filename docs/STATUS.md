@@ -354,7 +354,11 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## T5-D1 · Venta rápida registrada al capturarla (mig 141) — 2026-10-12 — DEPLOYED / TECHNICALLY VERIFIED (sin cierre del dueño; prueba con sesión real PENDIENTE)
+## T5-D1 · Venta rápida registrada al capturarla (mig 141) — 2026-10-12 — CLOSED IN PRODUCTION (cierre técnico; validación operativa pendiente)
+**Cierre del dueño (2026-10-12): "Acepto T5-D1 como CLOSED PROD técnico, con validación operativa pendiente." Riesgos residuales que el
+dueño pidió mantener explícitos: (1) las ventas sin señal que pasan a REVISIÓN no tienen resolución administrativa dentro del sistema;
+(2) un teléfono con la versión anterior sigue por el camino viejo hasta actualizarse; (3) ese camino viejo crea el fiado de venta rápida
+a 15 días (`cerrar_ruta_financiero` no se tocó); (4) la cancelación de una orden nacida de venta rápida no está auditada.**
 **141 aplicada por el dueño en el SQL Editor (2026-10-12, una vez; autorización "GO MIGRACIÓN 141") y verificada en solo lectura: tabla
 `ventas_rapidas_ruta` (RLS activa, 0 policies, sin SELECT/INSERT/UPDATE/DELETE para anon ni authenticated, 0 filas) y las dos funciones
 con md5 IDÉNTICOS a la base local (`registrar_venta_rapida_ruta` `68c38f48…`, `ventas_rapidas_de_ruta` `32c24343…`; SECURITY DEFINER,
