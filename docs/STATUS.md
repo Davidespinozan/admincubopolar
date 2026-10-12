@@ -354,6 +354,56 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
+## T5-D2 · Recuperación administrativa y cierre seguro de rutas (mig 142) — 2026-10-12 — COMMITTED LOCALLY / LOCAL-VALIDATED (142 NO aplicada; frontend NO desplegado)
+**Estado: en git local (rama `t5d2-recuperacion-rutas`). Producción sin cambio (solo lectura, 2026-10-12): migraciones hasta 141, 221
+funciones, 96 policies, 60 tablas, sin objetos de 142, frontend `ff2f862`, una ruta (Cerrada), `error_log` máx 4. La migración y el
+deploy requieren autorizaciones INDEPENDIENTES del dueño. Gate local completo RESULTADO OK: 142 ×2, RLS_CHECK PASS, suite 142 (89), 16
+suites re-corridas tras 142 (086, 087, 088, 090, 078, 096, 104, 109, 114, 119, 136–141), C142a–g (9 carreras), OP-03, SEARCH_PATH
+154/154, UNQUALIFIED_RESOLUTION PASS. Vitest 1,851 en UTC / Mazatlán / CDMX / Madrid; lint, typecheck, build y `diff --check` limpios.**
+Origen: auditoría T5-D2, "FINAL DESIGN VALIDATION REPORT" y documento "T5-D2 IMPLEMENTACIÓN LOCAL" (decisiones D2-1 a D2-6).
+- **Defectos corregidos:** A) "Cerrar ruta (admin)" eran dos llamadas (marca financiera vacía y después inventario): si el conteo fallaba
+  la marca quedaba y el chofer ya no podía cerrar; B) una ruta Cargada con el chofer ausente no tenía salida; C) con órdenes pendientes
+  el cierre mandaba a un callejón y existía un "forzar" inalcanzable que escribía órdenes por REST; D) Admin cerraba sin ver dinero ni
+  pendientes; E) entregas y no entregas sin señal quedaban varadas si Admin cerraba.
+- **142 (SHA-256 `3eb47a4b1470f56d02bc2fadc604a0a34367ab582f70701acf3ca651c85b7a31`, 461 líneas; aditiva, sin datos):** tablas
+  `ruta_intervenciones` y `ruta_faltantes` (RLS sin policies ni grants) y cinco funciones SECURITY DEFINER con `search_path` fijo, sin
+  anon: `cerrar_ruta_admin(op, ruta, tipo, conteo, faltantes, motivo)` `d25f37e2…` · `iniciar_ruta_admin(op, ruta, motivo)` `1a3d9d25…`
+  · `conciliacion_ruta(ruta)` `29f87a6f…` · `ruta_cobros_pendientes(ruta)` `db22ba66…` (Admin, o el Chofer de esa ruta) ·
+  `ruta_cobros_pendientes_interno` `7079a15c…` (sin EXECUTE por API). md5 completos en el runner (`gate_t5d2.log`).
+- **Cierre atómico:** candado de la ruta → reintento por operación y huella → estado → órdenes pendientes (rechazo; en "no salió" se
+  liberan a Creada) → entregas sin registro financiero (rechazo; un link pendiente NO bloquea) → marca financiera (la existente se
+  reutiliza; si no hay, `cerrar_ruta_financiero` con lista vacía DENTRO de la transacción) → faltante declarado = faltante real →
+  `finalizar_inventario_ruta` → intervención y auditoría. Un fallo no deja nada (142-31, 142-53, 142-77; C142d/e/f).
+- **Contratos existentes sin cambio (md5 = producción):** `cerrar_ruta_financiero`, `finalizar_inventario_ruta`, `registrar_merma`,
+  `revertir_merma`, `registrar_no_entrega`, `diagnostico_ruta`, `entregar_orden_ruta`, `registrar_venta_rapida_ruta`, `crear_cxc_orden`,
+  `registrar_pago_orden` y las guardas de 138/139.
+- **B1 / B2:** "Cargada" = firma + producto fuera del cuarto; "En progreso" = solo un estatus (la tabla `rutas` no registra hora de
+  salida). B1 (`tipo no_salio`): solo desde Cargada y sin operaciones; libera las órdenes a Creada, exige conteo, devuelve la carga y
+  cierra; el paso por En progreso ocurre dentro de la transacción y no deja evento. B2 (`iniciar_ruta_admin`): Cargada → En progreso
+  con motivo, registrado como intervención de Administración; la ruta sigue su flujo normal.
+- **Faltante no justificado (D2-1):** cuadra el balance con una fila de `mermas` (sin egreso contable ni cambio de costo desde 106) y
+  queda distinguido ESTRUCTURALMENTE por su fila en `ruta_faltantes` (motivo, Admin, hora, operación); debe coincidir exactamente con el
+  faltante del conteo. No se puede revertir: nace en la transacción que cierra la ruta y `revertir_merma` (087, sin cambio) rechaza las
+  mermas de una ruta cerrada (142-49/50).
+- **Cobros pendientes (D2-2):** una entrega con link sin cobrar no bloquea, no se cobra ni se fía; queda en la conciliación, en la
+  fotografía de la intervención y en el aviso de la bandeja de Admin hasta que el estado real cambie (webhook tardío sin duplicar:
+  142-70; cobro por otro método con el contrato de 139 y la ruta cerrada: 142-71).
+- **Frontend:** `conciliacionRutaLogic.js`, `CierreRutaAdminModal.jsx` (conciliación, órdenes una por una con su contrato, elección
+  B1/B2, conteo, merma con causa o faltante reconocido, motivo obligatorio), `RutasView.jsx` (cierre disponible también en Cargada),
+  `supaStore.js` (`cerrarRuta` = una llamada a `cerrar_ruta_admin`; se retiró el "forzar"; `iniciarRutaAdmin`, `conciliacionRuta`,
+  `rutaCobrosPendientes`; `prepararCierreRuta` ya no se atora con una marca ajena: pregunta al servidor qué falta), `ChoferView.jsx` y
+  `ventaRapidaLogic.js` (entregas y no entregas tardías → "Requiere revisión administrativa", con su tipo; un fallo de red no es
+  rechazo), `bandejaLogic.ts` (avisos de links pendientes y entregas sin registro). Pruebas `t5d2RecuperacionRutas.test.jsx` (54).
+- **Diferencias frente al diseño:** `cierre_admin` exige En progreso (una ruta Cargada primero se declara "no salió" o "salió");
+  `conciliacion_ruta` reutiliza `diagnostico_ruta` por dentro; si el chofer encuentra entregas sin registro, la pantalla le dice cuáles
+  y las resuelve Administración (no se agregó captura de cobro en el teléfono).
+- **Activación propuesta:** 1) 142 una vez (compatible con el frontend desplegado, que no la usa) → 2) verificación de solo lectura →
+  3) autorización APARTE → push del frontend → 4) bundle vivo.
+- **Residuales:** lo que solo existió en un teléfono perdido no es recuperable; B1 contra B2 lo decide Administración por evidencia
+  física; las operaciones en revisión siguen sin resolución dentro del sistema; un teléfono con la versión anterior conserva el mensaje
+  viejo del defecto A; la carga mal registrada sigue sin corrección; el efectivo se concilia en un paso aparte; sin prueba con sesión real.
+- Reversión: sin intervenciones, `DROP` de las funciones y las dos tablas y frontend anterior; con intervenciones, conservar las tablas.
+
 ## T5-D1 · Venta rápida registrada al capturarla (mig 141) — 2026-10-12 — CLOSED IN PRODUCTION (cierre técnico; validación operativa pendiente)
 **Cierre del dueño (2026-10-12): "Acepto T5-D1 como CLOSED PROD técnico, con validación operativa pendiente." Riesgos residuales que el
 dueño pidió mantener explícitos: (1) las ventas sin señal que pasan a REVISIÓN no tienen resolución administrativa dentro del sistema;
