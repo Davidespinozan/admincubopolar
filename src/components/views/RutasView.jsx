@@ -3,6 +3,7 @@ import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, For
 import { conteoInicial, diferenciasConteo } from '../../data/inventarioRutaLogic';
 import { resolverEntrega, etiquetaClienteSucursal } from '../../data/sucursalLogic';
 import { puedeAgregarPedidos, etapaDeRuta } from '../../data/recuperacionRutaLogic';
+import VentasRapidasRuta from '../VentasRapidasRuta';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 const ReporteRutaModal = lazy(() => import('../ReporteRutaModal'));
 const RecuperacionRutaModal = lazy(() => import('../RecuperacionRutaModal'));
@@ -1077,6 +1078,9 @@ export function RutasView({ data, actions }) {
               <div><span className="text-slate-400">Entregadas:</span> <span className="font-semibold">{n(cierreModal.entregadas)}</span></div>
             </div>
           </div>
+
+          {/* T5-D1: ventas rápidas que el servidor ya registró en esta ruta (con su cobro o su cuenta). */}
+          <VentasRapidasRuta rutaId={cierreModal.id} actions={actions} />
 
           {/* 087: devolución = conteo físico validado contra el balance canónico */}
           <div className="border-t pt-4">

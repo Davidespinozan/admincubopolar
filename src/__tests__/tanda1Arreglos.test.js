@@ -102,7 +102,9 @@ describe('Chofer: cobra el total de la venta y puede cerrar con venta exprés', 
     expect(st).toMatch(/const g = storage\?\.getItem\(claveFin\); if \(g\) entregasPayload = JSON\.parse\(g\);/);
     expect(st.indexOf("if (finErr) return { error: mensajeErrorCierreFinanciero(finErr) };")).toBeLessThan(st.indexOf('storage?.setItem(claveFin'));   // solo se guarda si el servidor aceptó
     expect(st).toMatch(/storage\?\.removeItem\(`cierre_fin_entregas_\$\{rutaId\}`\)/);
-    expect(src('../components/ChoferView.jsx')).toMatch(/if \(res\.financiero\) setEntregas\(prev => prev\.filter\(e => e\.ordenId\)\);/);
+    // T5-D1 (141): el teléfono ya NO borra ventas al registrar el cierre, y al cierre solo van órdenes del servidor.
+    expect(src('../components/ChoferView.jsx')).not.toMatch(/if \(res\.financiero\) setEntregas\(prev => prev\.filter\(e => e\.ordenId\)\);/);
+    expect(st).toMatch(/let entregasPayload = normalizarEntregasCierre\(entregasParaCierre\(entregas\)\);/);
   });
 });
 

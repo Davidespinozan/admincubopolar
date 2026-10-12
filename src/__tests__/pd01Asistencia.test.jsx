@@ -183,7 +183,9 @@ describe('WF-0: rol Empleado aislado', () => {
     expect(chofer).toMatch(/export default function ChoferView\(\{ user, data, actions, onLogout, onMiAsistencia, onMisActividades, onMiCuenta \}\)/);
     // Mobile-first: fila bajo el título (barraPersonal) en 4 pasos; en "En ruta" junto a "Ver mapa".
     // GER-1: la misma fila suma "Cuenta" (cambiar su contraseña).
-    expect(chofer).toMatch(/const barraPersonal = \(botonAsistencia \|\| botonActividades \|\| botonCuenta\) \? \(\s*<div[^>]*>\{botonAsistencia\}\{botonActividades\}\{botonCuenta\}<\/div>/);
+    // T5-D1: la misma fila lleva además el aviso de ventas rápidas que requieren revisión.
+    expect(chofer).toMatch(/const barraPersonal = \(botonAsistencia \|\| botonActividades \|\| botonCuenta \|\| ventasRevision\.length > 0\) \? \(/);
+    expect(chofer).toMatch(/<div[^>]*data-testid="chofer-barra-personal">\{botonAsistencia\}\{botonActividades\}\{botonCuenta\}<\/div>/);
     expect((chofer.match(/\{barraPersonal\}/g) || []).length).toBe(4);
     expect(chofer).toMatch(/\{botonAsistencia\}\s*\{botonActividades\}\s*<button type="button" onClick=\{\(\) => setMapaVisible/);
   });

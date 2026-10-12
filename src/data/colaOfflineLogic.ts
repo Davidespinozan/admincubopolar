@@ -21,6 +21,8 @@ export const TIPOS_MUTACION = {
   ENTREGA: 'entrega',
   NO_ENTREGA: 'no_entrega',
   MERMA: 'merma',
+  // T5-D1 (141): venta rápida capturada sin señal; el payload es la venta completa con su operacionId.
+  VENTA_RAPIDA: 'venta_rapida',
 } as const;
 
 export type TipoMutacion = (typeof TIPOS_MUTACION)[keyof typeof TIPOS_MUTACION];
@@ -193,6 +195,8 @@ export function descripcionMutacion(m: Mutacion | null | undefined): string {
       return `No entregada orden #${p.ordenId}`;
     case TIPOS_MUTACION.MERMA:
       return `Merma ${p.cant}× ${p.sku}`;
+    case TIPOS_MUTACION.VENTA_RAPIDA:
+      return `Venta rápida $${Number(p.total || 0).toLocaleString('es-MX')}${p.pago ? ` (${p.pago})` : ''}`;
     default:
       return m.tipo;
   }

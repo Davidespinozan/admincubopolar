@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { backendPost } from '../lib/backend';
 import { CODIGOS_OFRECER_PUBLICO, fiscalesPorOmision } from './receptorFiscalLogic';
 import { buildRegistrarConteoArgs, codigoConteo, mensajeErrorConteo } from './conteoEmpaqueLogic';
+import { buildVentaRapidaArgs, clasificarFalloVenta, entregasParaCierre } from './ventaRapidaLogic';
 import { detalleRechazo, esRechazoDeCarga, esCreditoRechazado, mensajeRechazoServidor, avisoSinCubrir, buildRevertirEntregaArgs, buildEntregarOrdenRutaArgs } from './recuperacionRutaLogic';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
@@ -3829,7 +3830,9 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
           // tras el primero, las ventas exprés ya volvieron del servidor como órdenes y la lista
           // del teléfono cambiaba, así que el servidor lo rechazaba ("cierre con otros datos").
           const claveFin = `cierre_fin_entregas_${rutaId}`;
-          let entregasPayload = normalizarEntregasCierre(entregas);
+          // T5-D1 (141): al cierre solo van órdenes del servidor. Las ventas rápidas se registran
+          // una por una al capturarse; lo que el teléfono aún no envía NO se manda aquí.
+          let entregasPayload = normalizarEntregasCierre(entregasParaCierre(entregas));
           try { const g = storage?.getItem(claveFin); if (g) entregasPayload = JSON.parse(g); } catch { /* guardado ilegible: se usa lo actual */ }
           const opCierre = resolverOperacionCierre(leerOperacionCierre(storage, rutaId), claveCierreFinanciero(rutaId, entregasPayload));
           guardarOperacionCierre(storage, rutaId, opCierre);
@@ -3873,6 +3876,38 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
           console.error('[prepararCierreRuta] excepción:', err);
           return { error: err?.message || 'No se pudo preparar el cierre' };
         }
+      },
+
+      // ── T5-D1 (mig 141): la venta rápida se registra en el servidor cuando ocurre. ──
+      // Una transacción: orden Entregada de la ruta + cobro (contado) o cuenta por cobrar a 30
+      // días (fiado), dentro de lo cargado. Idempotente por `operacionId`: el reintento (doble
+      // toque, respuesta perdida, cola sin señal) devuelve la misma venta.
+      //  · `red: true` → no hubo respuesta: la venta NO está registrada; se reenvía igual.
+      //  · `codigo` → rechazo del servidor (RUTA_CERRADA, CARGA_INSUFICIENTE, CREDITO_RECHAZADO…).
+      registrarVentaRapidaRuta: async (venta = {}) => {
+        const built = buildVentaRapidaArgs(venta);
+        if (built.error) return { error: built.error };
+        try {
+          const { data, error } = await supabase.rpc('registrar_venta_rapida_ruta', built.args);
+          if (error) {
+            const f = clasificarFalloVenta(error, typeof navigator === 'undefined' ? true : navigator.onLine);
+            return { error: f.mensaje, red: f.red, codigo: f.codigo, rutaCerrada: f.rutaCerrada === true };
+          }
+          if (!data?.replay) rf();
+          return { data };
+        } catch (e) {
+          const f = clasificarFalloVenta(e, typeof navigator === 'undefined' ? true : navigator.onLine);
+          return { error: f.mensaje, red: f.red, codigo: f.codigo, rutaCerrada: false };
+        }
+      },
+      // Ventas rápidas registradas de una ruta, con su cobro o su cuenta por cobrar. Solo Admin.
+      ventasRapidasDeRuta: async (rutaId) => {
+        const guard = requireRol(['Admin']);
+        if (guard) return guard;
+        if (!rutaId) return { error: 'Ruta requerida' };
+        const { data, error } = await supabase.rpc('ventas_rapidas_de_ruta', { p_ruta_id: Number(rutaId) });
+        if (error) return { error: mensajeRechazoServidor(error, 'No se pudieron leer las ventas rápidas') };
+        return { data: Array.isArray(data) ? data : [] };
       },
 
       // ── T5-A (mig 138): recuperación de una ruta cuyo inventario no cuadra. Solo Admin. ──

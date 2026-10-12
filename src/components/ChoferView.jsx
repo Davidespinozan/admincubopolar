@@ -19,6 +19,10 @@ import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from 
 import { useColaOffline } from '../data/useColaOffline';
 import { faltanteEnCamion, mensajeNoCabe, motivoNoFiar } from '../data/recuperacionRutaLogic';
 import { conteoInicial, diferenciasConteo, totalesBalance, mensajeNoEntrega } from '../data/inventarioRutaLogic';
+import {
+  nuevaVentaRapida, payloadCola, puedeGuardarseSinSenal, confirmarVentaLocal, quitarVentaLocal, ventasSinConfirmar, adoptarVentasAnteriores,
+  etiquetaEstadoVenta, registroRevision, leerRevision, agregarRevision, guardarRevision, colasConVentasDeOtrasRutas,
+} from '../data/ventaRapidaLogic';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { Card, SectionLabel, RoleHeader, ChoiceButton } from './ui/Components';
 import { textoSaludo } from '../data/saludoLogic';
@@ -76,8 +80,14 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       <Icons.Lock /> Cuenta
     </button>
   ) : null;
-  const barraPersonal = (botonAsistencia || botonActividades || botonCuenta) ? (
-    <div className="mb-3 flex flex-wrap gap-2" data-testid="chofer-barra-personal">{botonAsistencia}{botonActividades}{botonCuenta}</div>
+  // T5-D1 (141): ventas rápidas que el servidor NO aceptó (p. ej. la ruta ya estaba cerrada).
+  // Se conservan en el teléfono, a la vista en todos los pasos, hasta que Administración las revise.
+  const [ventasRevision, setVentasRevision] = useState(() => leerRevision(typeof localStorage !== 'undefined' ? localStorage : null));
+  const barraPersonal = (botonAsistencia || botonActividades || botonCuenta || ventasRevision.length > 0) ? (
+    <>
+      {(botonAsistencia || botonActividades || botonCuenta) && <div className="mb-3 flex flex-wrap gap-2" data-testid="chofer-barra-personal">{botonAsistencia}{botonActividades}{botonCuenta}</div>}
+      <AvisoVentasRevision ventas={ventasRevision} />
+    </>
   ) : null;
   const saludo = textoSaludo(user?.nombre);
 
@@ -187,7 +197,32 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
   // Sin señal, entrega/no-entrega/merma se encolan en localStorage y se
   // reintentan al reconectar. Los ejecutores traducen cada tipo a su
   // acción de supaStore normalizando la convención de error a truthy.
+  // T5-D1: pasar una venta rápida a "requiere revisión administrativa". Devuelve false si el
+  // teléfono no pudo guardarla: entonces NO se quita de donde estaba (no se pierde).
+  const mandarARevision = useCallback((venta, motivo) => {
+    const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+    const lista = agregarRevision(leerRevision(storage), registroRevision(venta, motivo));
+    if (!guardarRevision(storage, lista)) return false;
+    setVentasRevision(lista);
+    setEntregas(prev => quitarVentaLocal(prev, venta?.operacionId));
+    return true;
+  }, []);
+  const refrescarBalanceRef = useRef(null);
   const ejecutoresOffline = useMemo(() => ({
+    // T5-D1: venta rápida guardada sin señal. El payload es la venta completa con su
+    // identificador: el servidor la registra una sola vez aunque se reenvíe.
+    [TIPOS_MUTACION.VENTA_RAPIDA]: async (p) => {
+      const r = await actions.registrarVentaRapidaRuta?.(p);
+      if (r?.data) {
+        setEntregas(prev => confirmarVentaLocal(prev, p.operacionId, r.data));
+        refrescarBalanceRef.current?.();
+        return null;
+      }
+      if (!r || r.red) return { error: 'Failed to fetch' };          // sin respuesta: la cola espera, no gasta intentos
+      // La ruta ya no admite ventas: no se reintenta ni se borra; queda para revisión.
+      if (r.rutaCerrada && mandarARevision(p, r.error)) return null;
+      return r;
+    },
     [TIPOS_MUTACION.ENTREGA]: async (p) => {
       const err = await actions.updateOrdenEstatus?.(p.ordenId, 'Entregada', p.metodoPago, { folioNota: p.folioNota || null, operacionId: p.operacionId });
       return err || null;
@@ -200,7 +235,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     },
     // Nota: TIPOS_MUTACION.MERMA no se encola desde ruta — la merma de
     // ruta es local hasta el cierre (ver registrarMerma, Tanda 23 fix).
-  }), [actions]);
+  }), [actions, mandarARevision]);
   const {
     cola: colaOffline,
     online,
@@ -222,8 +257,39 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     if (m?.tipo === TIPOS_MUTACION.ENTREGA && m.payload?.ordenId != null) {
       setEntregas(prev => prev.filter(e => !(e.offline && String(e.ordenId) === String(m.payload.ordenId))));
     }
+    // T5-D1: una venta rápida rechazada NO se borra: pasa a revisión administrativa (se conserva
+    // con productos, importe, método, fecha e identificador). Si no se pudo guardar, se queda en la cola.
+    if (m?.tipo === TIPOS_MUTACION.VENTA_RAPIDA && !mandarARevision(m.payload, m.ultimoError)) {
+      showToast('No se pudo guardar la venta para revisión. No se quitó.', 'error');
+      return;
+    }
     descartarDeCola(id);
-  }, [colaOffline, descartarDeCola]);
+  }, [colaOffline, descartarDeCola, mandarARevision]);
+
+  // T5-D1: ventas rápidas que quedaron en la cola de OTRA ruta (Administración la cerró o el
+  // teléfono cambió de ruta antes de tener señal). Se envían igual: si el servidor ya las tenía
+  // responde lo mismo; si las rechaza, pasan a revisión. Sin respuesta, se quedan donde están.
+  const enviandoOtrasRutas = useRef(false);
+  const enviarVentasDeOtrasRutas = useCallback(async () => {
+    if (enviandoOtrasRutas.current || typeof localStorage === 'undefined') return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    enviandoOtrasRutas.current = true;
+    try {
+      for (const q of colasConVentasDeOtrasRutas(localStorage, miRutaActiva?.id ?? null)) {
+        let cola = q.cola;
+        for (const m of q.ventas) {
+          const r = await actions.registrarVentaRapidaRuta?.(m.payload);
+          if (!r || r.red) return;
+          if (r.error && !mandarARevision(m.payload, r.error)) return;
+          cola = cola.filter(x => x.id !== m.id);
+          try { if (cola.length > 0) localStorage.setItem(q.clave, JSON.stringify(cola)); else localStorage.removeItem(q.clave); } catch { return; }
+        }
+      }
+    } finally {
+      enviandoOtrasRutas.current = false;
+    }
+  }, [actions, miRutaActiva?.id, mandarARevision]);
+  useEffect(() => { if (online) enviarVentasDeOtrasRutas(); }, [online, enviarVentasDeOtrasRutas]);
 
   // Derivar step desde el estado real de la ruta — si ya está "En progreso" saltar directo a ruta
   const rutaEnProgreso = miRutaActiva && (s(miRutaActiva.estatus).toLowerCase() === 'en progreso' || s(miRutaActiva.estatus).toLowerCase() === 'en_progreso');
@@ -405,6 +471,32 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       } catch { /* sin espacio ni para eso: la copia en memoria sigue viva */ }
     }
   }, [entregas, miRutaActiva?.id, rutaDeEntregas]);
+
+  // T5-D1: ventas rápidas capturadas con la versión anterior (solo en el teléfono, sin
+  // identificador). Reciben identificador y entran a la cola para registrarse por el contrato
+  // nuevo: ya no dependen del cierre financiero.
+  useEffect(() => {
+    if (!miRutaActiva?.id || rutaDeEntregas !== miRutaActiva.id) return;
+    const { entregas: nuevas, adoptadas } = adoptarVentasAnteriores(entregas, miRutaActiva.id, nuevoOperacionId);
+    if (adoptadas.length === 0) return;
+    setEntregas(nuevas);
+    for (const v of adoptadas) encolarOffline(TIPOS_MUTACION.VENTA_RAPIDA, payloadCola({ ...v, rutaFolio: s(miRutaActiva.folio) }));
+    sincronizarCola();
+  }, [entregas, miRutaActiva?.id, miRutaActiva?.folio, rutaDeEntregas, encolarOffline, sincronizarCola]);
+
+  // T5-D1: una venta registrada con el conteo ya abierto cambia lo que debe regresar en el
+  // camión. No se vuelve a consolidar: solo se pide el balance vigente al servidor.
+  const balanceAbiertoRef = useRef(false);
+  balanceAbiertoRef.current = !!balanceCierre && !rutaCerrada;
+  refrescarBalanceRef.current = async () => {
+    if (!balanceAbiertoRef.current || !miRutaActiva?.id) return;
+    const bal = await actions.obtenerBalanceRuta?.(miRutaActiva.id);
+    if (bal?.data && balanceAbiertoRef.current) {
+      setBalanceCierre(bal.data);
+      setFaltanteCierre(null);
+      showToast('Se actualizó lo que debe regresar en el camión: revisa el conteo', 'info');
+    }
+  };
 
   // Load mermas from localStorage on mount (persist across reloads)
   useEffect(() => {
@@ -888,25 +980,57 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         const sinCredito = motivoNoFiar({ metodo: vForm.pago, cliente: cliX, importe: subtotal + fiadoLocal, enLinea: online });
         if (sinCredito) { showToast(sinCredito, 'error'); return; }
       }
-      const total = subtotal; // Hielo: IVA tasa 0%
-      const venta = {
-        id: Date.now(), folio: "EX-" + String(Date.now()).slice(-4),
-        clienteId: vForm.clienteId || clienteExpressSel?.id || null,
-        cliente: clienteNombre,
-        items: [{ sku, cant: n(vForm.cant), precio }],
-        subtotal, iva: 0,
-        total, pago: vForm.pago,
-        hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
-        express: true,
-        factura: vForm.factura,
+      if (!miRutaActiva?.id) { showToast('No hay ruta activa para registrar la venta', 'error'); return; }
+      // T5-D1 (141): la venta se registra en el servidor AHORA (orden + cobro o cuenta por cobrar),
+      // no al cerrar la ruta. El identificador nace aquí y viaja en cada reintento.
+      const venta = nuevaVentaRapida({
+        operacionId: nuevoOperacionId(), rutaId: miRutaActiva.id, rutaFolio: s(miRutaActiva.folio),
+        clienteId: vForm.clienteId || clienteExpressSel?.id || null, cliente: clienteNombre,
+        items: [{ sku, cant: n(vForm.cant), precio }], pago: vForm.pago, factura: vForm.factura,
+      });
+      const cerrarCaptura = () => {
+        setVentaModal(false);
+        setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false });
       };
-      setEntregas(prev => [...prev, venta]);
-      showToast("Venta exprés: " + fmtMoney(total) + (vForm.factura ? " (factura)" : ""));
-      setVentaModal(false);
-      setVForm({ clienteId: "", cliente: "", sku: s(productos[0]?.sku) || "", cant: "", pago: "Efectivo", factura: false });
+      // Sin señal (solo contado): queda en la cola del teléfono como PENDIENTE DE ENVIAR.
+      const guardarPendiente = () => {
+        encolarOffline(TIPOS_MUTACION.VENTA_RAPIDA, payloadCola(venta));
+        setEntregas(prev => [...prev, venta]);
+        showToast(`Sin señal: la venta de ${fmtMoney(venta.total)} quedó guardada SOLO en este teléfono. Todavía no está registrada; se enviará al volver la señal.`, 'info');
+        cerrarCaptura();
+      };
+      if (!online) {
+        if (!puedeGuardarseSinSenal(venta.pago)) { showToast('Sin señal no se puede fiar. Cobra en efectivo, transferencia o tarjeta.', 'error'); return; }
+        guardarPendiente();
+        return;
+      }
+      const r = await actions.registrarVentaRapidaRuta?.(venta);
+      if (r?.data) {
+        setEntregas(prev => confirmarVentaLocal([...prev, venta], venta.operacionId, r.data));
+        showToast(`Venta rápida registrada: ${fmtMoney(r.data.total ?? venta.total)} · ${s(r.data.folio)}${vForm.factura ? " (factura)" : ""}`);
+        cerrarCaptura();
+        refrescarBalanceRef.current?.();
+        return;
+      }
+      if (!r || r.red) {
+        // No hubo respuesta: con el MISMO identificador se reenvía sin riesgo de duplicarla.
+        if (!puedeGuardarseSinSenal(venta.pago)) { showToast('No hubo respuesta del servidor y sin señal no se puede fiar. Reintenta con señal o cobra de otra forma.', 'error'); return; }
+        guardarPendiente();
+        return;
+      }
+      // Rechazo del servidor (carga, crédito, precio, ruta cerrada): no se registró nada; se corrige aquí.
+      showToast(r.error || 'No se pudo registrar la venta. No se aplicó ningún cambio.', 'error');
     } finally {
       setCreandoVenta(false);
     }
+  };
+
+  // Quitar una venta rápida que todavía no se envía (capturada por error sin señal).
+  const quitarVentaPendiente = (e) => {
+    const enCola = (colaOffline || []).find(m => m.tipo === TIPOS_MUTACION.VENTA_RAPIDA && m.payload?.operacionId === e.operacionId);
+    if (enCola) descartarDeCola(enCola.id);
+    setEntregas(prev => (e.operacionId ? quitarVentaLocal(prev, e.operacionId) : prev.filter(x => x.id !== e.id)));
+    showToast('Venta quitada de este teléfono. Si ya había llegado al sistema, aparecerá como venta registrada.');
   };
 
   const registrarMerma = async () => {
@@ -1002,9 +1126,8 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         return;
       }
       if (res.mermasRegistradas) marcarMermasRegistradas(res.mermasRegistradas);
-      // Ventas y cobros ya quedaron registrados: las ventas exprés ahora son órdenes del
-      // servidor (llegan con la recarga). Se quitan las copias locales para no contarlas dos veces.
-      if (res.financiero) setEntregas(prev => prev.filter(e => e.ordenId));
+      // T5-D1: aquí ya NO se borra ninguna venta del teléfono. Una venta rápida solo sale de la
+      // lista local cuando el servidor la confirma (pasa a ser orden) o cuando pasa a revisión.
       if (res.error) {
         showToast('No se pudo preparar el cierre: ' + res.error, 'error');
         return;
@@ -1022,6 +1145,16 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
   // balance, devuelve a los cuartos de origen y cierra la ruta.
   const cerrarRuta = async () => {
     if (cerrandoRuta || rutaCerrada || !balanceCierre) return;
+    // T5-D1: nada conocido por este teléfono puede quedar sin enviar al cerrar.
+    if (!online) { showToast('Sin señal — busca conexión para cerrar la ruta', 'info'); return; }
+    if (pendientesCola().length > 0) {
+      await sincronizarCola();
+      if (pendientesCola().length > 0) { showToast('Hay operaciones sin enviar (ventas rápidas o entregas). Espera a que se envíen antes de cerrar.', 'error'); return; }
+    }
+    if (fallidasCola().length > 0) {
+      showToast('Hay operaciones que el servidor rechazó. Revísalas en el aviso rojo antes de cerrar.', 'error');
+      return;
+    }
     setCerrandoRuta(true);
     try {
       const res = await actions.finalizarInventarioRuta?.(miRutaActiva?.id, conteoForm);
@@ -1401,14 +1534,14 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           {entregas.map(e => (
             <Card key={e.ordenId || e.id} tone="success" padding="p-3" className="mb-2">
               <div className="flex items-center justify-between">
-                <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="ml-1 text-[10px] text-slate-400">Nota: {e.folioNota}</span>}<span className="ml-2 text-sm font-semibold text-slate-700">{s(e.cliente)}</span>{e.express && <span className="ml-1 rounded bg-emerald-200 px-1.5 py-0.5 text-[10px] text-emerald-800">Exprés</span>}{e.factura && <span className="ml-1 rounded bg-violet-200 px-1.5 py-0.5 text-[10px] text-violet-800">Factura</span>}</div>
+                <div><span className="font-mono text-xs text-emerald-600">#{s(e.folio)}</span>{e.folioNota&&<span className="ml-1 text-[10px] text-slate-400">Nota: {e.folioNota}</span>}<span className="ml-2 text-sm font-semibold text-slate-700">{s(e.cliente)}</span>{(e.ventaRapida || (e.express && e.ordenId)) && <span className="ml-1 rounded bg-emerald-200 px-1.5 py-0.5 text-[10px] text-emerald-800">Venta rápida</span>}{!e.ordenId && <span data-testid="venta-pendiente" className="ml-1 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">{etiquetaEstadoVenta(e)}</span>}{e.factura && <span className="ml-1 rounded bg-violet-200 px-1.5 py-0.5 text-[10px] text-violet-800">Factura</span>}</div>
                 <div className="flex items-center gap-2 text-right">{estadoFotosEntrega(e) && <span data-testid="estado-fotos" title={estadoFotosEntrega(e) === 'guardadas' ? 'Fotos guardadas en el sistema' : 'Fotos por subir (se suben solas con señal)'} className={`[&>svg]:h-3.5 [&>svg]:w-3.5 ${estadoFotosEntrega(e) === 'guardadas' ? 'text-emerald-500' : 'text-amber-500'}`}><Icons.Camera /></span>}<div><p className="text-sm font-bold">{fmtMoney(e.total)}</p><p className="text-[10px] text-slate-400">{e.pago} · {e.hora}</p></div>{online && e.ordenId && (
                   <button type="button" onClick={() => abrirTicket(e, e.contacto)} className="flex min-h-[40px] flex-shrink-0 items-center rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-bold text-emerald-700" title="Enviar ticket" aria-label={`Enviar ticket ${s(e.folio)}`}>Ticket</button>
                 )}
-                  {/* Una venta rápida solo vive en el teléfono hasta el cierre: si se capturó por error se quita aquí (dos toques). */}
-                  {!e.ordenId && !balanceCierre && !rutaCerrada && (
+                  {/* T5-D1: una venta que aún no llega al servidor (sin señal) se puede quitar si se capturó por error (dos toques): sale de la cola y del teléfono. */}
+                  {!e.ordenId && !rutaCerrada && (
                     <button type="button" data-testid="quitar-express"
-                      onClick={() => { if (quitarExpressId === e.id) { setEntregas(prev => prev.filter(x => x.id !== e.id)); setQuitarExpressId(null); showToast('Venta rápida quitada'); } else setQuitarExpressId(e.id); }}
+                      onClick={() => { if (quitarExpressId === e.id) { quitarVentaPendiente(e); setQuitarExpressId(null); } else setQuitarExpressId(e.id); }}
                       className={`flex min-h-[40px] flex-shrink-0 items-center rounded-lg border px-3 py-2 text-xs font-bold ${quitarExpressId === e.id ? 'border-red-600 bg-red-600 text-white' : 'border-red-200 bg-white text-red-700'}`}>
                       {quitarExpressId === e.id ? '¿Quitar?' : 'Quitar'}
                     </button>
@@ -1580,7 +1713,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       <Modal open={!!ventaModal} onClose={() => setVentaModal(false)} kicker="Venta rápida" title="Venta exprés" safeBottom closeOnEscape={!creandoVenta}
         footer={
           <FormBtn primary size="lg" className="w-full" onClick={crearVentaExpress} disabled={creandoVenta||!vForm.cant||n(vForm.cant)<=0||n(vForm.cant)>(restante[vForm.sku]||0)||(vForm.factura&&!!errorFacturaExpress)}>
-            {creandoVenta ? "Creando venta…" : vForm.factura ? "Crear venta con factura" : "Crear venta"}
+            {creandoVenta ? "Registrando venta…" : !online ? "Guardar en el teléfono (sin señal)" : vForm.factura ? "Registrar venta con factura" : "Registrar venta"}
           </FormBtn>
         }>
         <div className="space-y-3">
@@ -1748,6 +1881,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     const difConteo = balanceCierre ? diferenciasConteo(balanceCierre, conteoForm) : { faltante: {}, sobrante: {} };
     const totBal = totalesBalance(balanceCierre || []);
     const mermasSinRegistrar = mermas.filter(m => !m.registrada).length;
+    const sinEnviar = ventasSinConfirmar(entregas).length;
     const cobrosPorMetodo = {};
     for (const e of entregas) cobrosPorMetodo[e.pago] = (cobrosPorMetodo[e.pago]||0) + n(e.total);
 
@@ -1813,7 +1947,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             <SectionLabel className="mb-3">Detalle ({entregas.length})</SectionLabel>
             {entregas.map(e => (
               <div key={e.ordenId||e.id} className="flex items-center justify-between border-b border-slate-50 py-1.5 text-xs">
-                <div><span className="font-mono text-slate-400">#{s(e.folio)}</span><span className="ml-1.5 font-semibold text-slate-700">{s(e.cliente)}</span></div>
+                <div><span className="font-mono text-slate-400">#{s(e.folio)}</span><span className="ml-1.5 font-semibold text-slate-700">{s(e.cliente)}</span>{!e.ordenId && <span className="ml-1.5 rounded bg-amber-200 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">{etiquetaEstadoVenta(e)}</span>}</div>
                 <div className="text-right"><span className="font-bold">{fmtMoney(e.total)}</span><span className={`ml-1.5 rounded px-1.5 py-0.5 text-[10px] ${e.pago==="Crédito"?"bg-amber-100 text-amber-700":"bg-slate-100 text-slate-500"}`}>{e.pago}</span></div>
               </div>
             ))}
@@ -1822,11 +1956,12 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             <SectionLabel className="mb-2 !text-amber-700">Mermas</SectionLabel>
             {mermas.map(m => <div key={m.id} className="flex justify-between py-1 text-xs"><span>{m.cant}× {m.sku}</span><span className="text-amber-600">{m.causa}</span></div>)}
           </Card>}
+          {sinEnviar > 0 && <Card tone="warning" padding="p-3" data-testid="ventas-sin-enviar"><p className="text-xs font-bold text-amber-800">{sinEnviar === 1 ? 'Hay 1 venta rápida guardada solo en este teléfono' : `Hay ${sinEnviar} ventas rápidas guardadas solo en este teléfono`}. Todavía no {sinEnviar === 1 ? 'está registrada' : 'están registradas'} en el sistema: la ruta se cierra cuando se {sinEnviar === 1 ? 'envíe' : 'envíen'} (se {sinEnviar === 1 ? 'envía sola' : 'envían solas'} al tener señal).</p></Card>}
           {pendientes.length > 0 && <Card tone="danger" padding="p-3"><p className="flex items-center gap-1.5 text-xs font-bold text-red-700"><Icons.AlertTriangle /> {pendientes.length} órdenes sin entregar</p></Card>}
 
           {!rutaCerrada ? (
-            <FormBtn primary size="lg" className="w-full !text-lg" onClick={cerrarRuta} disabled={cerrandoRuta || !balanceCierre || Object.keys(difConteo.faltante).length > 0 || Object.keys(difConteo.sobrante).length > 0}>
-              {cerrandoRuta ? 'Cerrando ruta…' : (balanceCierre ? 'Confirmar devolución y cerrar ruta' : 'Registra ventas y mermas para contar')}
+            <FormBtn primary size="lg" className="w-full !text-lg" onClick={cerrarRuta} disabled={cerrandoRuta || !balanceCierre || sinEnviar > 0 || Object.keys(difConteo.faltante).length > 0 || Object.keys(difConteo.sobrante).length > 0}>
+              {cerrandoRuta ? 'Cerrando ruta…' : sinEnviar > 0 ? 'Faltan ventas por enviar al sistema' : (balanceCierre ? 'Confirmar devolución y cerrar ruta' : 'Registra ventas y mermas para contar')}
             </FormBtn>
           ) : (
             <div className="space-y-4 text-center">
@@ -1849,6 +1984,29 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 // Tanda 22: estado de la cola offline. Sin conexión → aviso de que las
 // operaciones se guardan en el teléfono; con pendientes y conexión →
 // contador + botón de sincronización manual; fallidas → alerta roja.
+// T5-D1: ventas rápidas que el servidor no aceptó (la ruta ya estaba cerrada, u otro rechazo
+// definitivo). No se registraron y no se borran: el chofer las muestra a Administración.
+export function AvisoVentasRevision({ ventas }) {
+  if (!Array.isArray(ventas) || ventas.length === 0) return null;
+  return (
+    <div className="mb-3 rounded-card border border-red-300 bg-red-50 p-3 text-left text-xs text-red-900" role="alert" data-testid="ventas-revision">
+      <p className="flex items-center gap-1 font-bold uppercase tracking-wide"><Icons.AlertTriangle /> Requiere revisión administrativa</p>
+      <p className="mt-1">{ventas.length === 1 ? 'Esta venta rápida NO quedó registrada' : `Estas ${ventas.length} ventas rápidas NO quedaron registradas`} en el sistema. Muéstrala{ventas.length === 1 ? '' : 's'} a Administración; no se borra{ventas.length === 1 ? '' : 'n'} de este teléfono.</p>
+      <ul className="mt-2 space-y-2">
+        {ventas.map(v => (
+          <li key={v.operacionId} className="rounded-lg border border-red-200 bg-white p-2">
+            <p className="font-bold">{fmtMoney(v.total)} · {s(v.pago)} · {s(v.cliente)}</p>
+            <p className="mt-0.5">{(v.items || []).map(it => `${it.cant}× ${it.sku}`).join(', ')}</p>
+            <p className="mt-0.5 text-red-700">{v.rutaFolio ? `Ruta ${v.rutaFolio} · ` : ''}{v.capturadaAt ? new Date(v.capturadaAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : 'sin hora de captura'}</p>
+            <p className="mt-0.5 text-red-700">Motivo: {s(v.motivo)}</p>
+            <p className="mt-0.5 break-all font-mono text-[10px] text-slate-500">Identificador: {v.operacionId}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function BannerColaOffline({ online, cola, sincronizando, onSincronizar, onReintentar, onQuitar }) {
   const pendientes = mutacionesPendientes(cola).length;
   const fallidas = mutacionesFallidas(cola);
@@ -1885,7 +2043,7 @@ function BannerColaOffline({ online, cola, sincronizando, onSincronizar, onReint
                 {f.ultimoError && <p className="mt-0.5 text-red-700">Motivo: {f.ultimoError}</p>}
                 <div className="mt-1.5 flex gap-2">
                   <button type="button" disabled={sincronizando || !online} onClick={() => onReintentar?.(f.id)} className="min-h-[36px] rounded-lg bg-red-700 px-3 font-bold text-white disabled:opacity-50">Reintentar</button>
-                  <button type="button" disabled={sincronizando} onClick={() => onQuitar?.(f.id)} className="min-h-[36px] rounded-lg border border-red-300 bg-white px-3 font-bold text-red-700 disabled:opacity-50">Quitar (ya lo resolví)</button>
+                  <button type="button" disabled={sincronizando} onClick={() => onQuitar?.(f.id)} className="min-h-[36px] rounded-lg border border-red-300 bg-white px-3 font-bold text-red-700 disabled:opacity-50">{f.tipo === TIPOS_MUTACION.VENTA_RAPIDA ? 'Pasar a revisión de Administración' : 'Quitar (ya lo resolví)'}</button>
                 </div>
               </li>
             ))}
