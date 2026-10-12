@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect } from 'react';
 import { useState, useMemo, Icons, PageHeader, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, eqId, fmtDate, fmtMoney, useDebounce, useToast, reporteRutas, normalizeStr } from './viewsCommon';
-import { conteoInicial, diferenciasConteo } from '../../data/inventarioRutaLogic';
 import { resolverEntrega, etiquetaClienteSucursal } from '../../data/sucursalLogic';
 import { puedeAgregarPedidos, etapaDeRuta } from '../../data/recuperacionRutaLogic';
-import VentasRapidasRuta from '../VentasRapidasRuta';
+import CierreRutaAdminModal from '../CierreRutaAdminModal';
+import { modoCierreAdmin } from '../../data/conciliacionRutaLogic';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 const ReporteRutaModal = lazy(() => import('../ReporteRutaModal'));
 const RecuperacionRutaModal = lazy(() => import('../RecuperacionRutaModal'));
@@ -65,11 +65,6 @@ export function RutasView({ data, actions }) {
   const [cierreModal, setCierreModal] = useState(null);
   const [detalleModal, setDetalleModal] = useState(null);
   // 087: el cierre Admin usa el balance canónico del servidor y un conteo físico.
-  const [cierreBalance, setCierreBalance] = useState(null);
-  const [cierreBalanceError, setCierreBalanceError] = useState('');
-  const [cierreConteo, setCierreConteo] = useState({});
-  const [cierreFaltante, setCierreFaltante] = useState(null);
-  const [cierreCausa, setCierreCausa] = useState('Faltante al contar');
   const [search, setSearch] = useState("");
   const [filterEst, setFilterEst] = useState("");
   const [nuevoCamion, setNuevoCamion] = useState(false);
@@ -78,7 +73,6 @@ export function RutasView({ data, actions }) {
   const [reporteModal, setReporteModal] = useState(null);
   const [recuperacionModal, setRecuperacionModal] = useState(null); // 138: revisar y corregir el inventario de una ruta
   const [saving, setSaving] = useState(false);
-  const [cerrando, setCerrando] = useState(false);
   const [cancelarModal, setCancelarModal] = useState(null);
   const [cancelarMotivo, setCancelarMotivo] = useState('');
   const [cancelando, setCancelando] = useState(false);
@@ -433,54 +427,9 @@ export function RutasView({ data, actions }) {
     setAsignarModal(null);
   };
 
-  const cargarBalanceCierre = async (rutaId) => {
-    setCierreBalance(null);
-    setCierreBalanceError('');
-    const r = await actions.obtenerBalanceRuta?.(rutaId);
-    if (!r || r.error) { setCierreBalanceError(r?.error || 'No se pudo calcular el balance'); return; }
-    setCierreBalance(r.data);
-    setCierreConteo(conteoInicial(r.data));
-  };
-  const abrirCierre = (ruta) => {
-    setCierreModal(ruta);
-    setCierreFaltante(null);
-    setCierreCausa('Faltante al contar');
-    cargarBalanceCierre(ruta.id);
-  };
-  const confirmarCierre = async () => {
-    if (cerrando) return;
-    if (!cierreModal || !cierreBalance) return;
-    setCerrando(true);
-    try {
-      if (actions.cerrarRuta) {
-        const result = await actions.cerrarRuta(cierreModal.id, cierreConteo);
-        // El store ya disparó el toast; un faltante se resuelve con merma.
-        if (result?.error) { setCierreFaltante(result.faltante || null); return; }
-      }
-      toast?.success("Ruta " + s(cierreModal.nombre) + " cerrada");
-      setCierreModal(null);
-    } finally {
-      setCerrando(false);
-    }
-  };
-  // Faltante del conteo → merma de ruta explícita (causa del Admin); después
-  // se recalcula el balance y se vuelve a confirmar. Nunca automático.
-  const registrarFaltanteComoMerma = async () => {
-    if (cerrando || !cierreModal || !cierreFaltante) return;
-    const causa = s(cierreCausa).trim();
-    if (!causa) { toast?.error('Captura la causa de la merma'); return; }
-    setCerrando(true);
-    try {
-      const items = Object.entries(cierreFaltante).map(([sku, cant]) => ({ sku, cant: n(cant), causa }));
-      const r = await actions.registrarMermasRuta?.(cierreModal.id, items);
-      if (r?.error) { toast?.error(r.error); return; }
-      setCierreFaltante(null);
-      await cargarBalanceCierre(cierreModal.id);
-      toast?.success('Merma registrada; revisa el conteo y confirma');
-    } finally {
-      setCerrando(false);
-    }
-  };
+  // T5-D2 (mig 142): el cierre por Administración vive en CierreRutaAdminModal (conciliación,
+  // órdenes una por una, faltantes declarados, motivo y UNA llamada que cierra todo o nada).
+  const abrirCierre = (ruta) => setCierreModal(ruta);
 
   // Tanda 3 🟡-6: cancelar ruta con devolución de stock al cuarto.
   const abrirCancelar = (ruta) => {
@@ -766,7 +715,7 @@ export function RutasView({ data, actions }) {
                                       <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Cargado vs entregado; corregir una entrega</span>
                                     </button>
                                   )}
-                                  {isEnProgreso && (
+                                  {modoCierreAdmin(r) && (
                                     <button onClick={(e) => { e.currentTarget.closest('details').open = false; abrirCierre(r); }} className="w-full text-left px-3 py-2 text-xs hover:bg-amber-50 text-amber-700 border-t border-slate-100">
                                       <span className="inline-flex items-center gap-1.5"><Icons.Lock /> Cerrar ruta (admin)</span>
                                       <span className="block text-[10px] text-slate-400 font-normal mt-0.5">Solo si el chofer no puede</span>
@@ -1067,74 +1016,8 @@ export function RutasView({ data, actions }) {
 
     {/* Modal cierre */}
     {cierreModal && (
-      <Modal open={true} onClose={()=>setCierreModal(null)} title={"Cerrar " + s(cierreModal.nombre)} wide>
-        <div className="space-y-4">
-          <div className="bg-slate-50 rounded-xl p-4">
-            <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">Resumen de ruta</h4>
-            <div className="grid grid-cols-2 gap-2 text-sm">
-              <div><span className="text-slate-400">Chofer:</span> <span className="font-semibold">{s(cierreModal.chofer)}</span></div>
-              <div><span className="text-slate-400">Carga:</span> <span className="font-semibold">{cargaLabel(cierreModal)}</span></div>
-              <div><span className="text-slate-400">Órdenes:</span> <span className="font-semibold">{n(cierreModal.ordenes)}</span></div>
-              <div><span className="text-slate-400">Entregadas:</span> <span className="font-semibold">{n(cierreModal.entregadas)}</span></div>
-            </div>
-          </div>
-
-          {/* T5-D1: ventas rápidas que el servidor ya registró en esta ruta (con su cobro o su cuenta). */}
-          <VentasRapidasRuta rutaId={cierreModal.id} actions={actions} />
-
-          {/* 087: devolución = conteo físico validado contra el balance canónico */}
-          <div className="border-t pt-4">
-            <h4 className="text-sm font-bold text-slate-700 mb-1">Inventario del camión</h4>
-            <p className="text-xs text-slate-500 mb-3">El sistema calcula lo que debe regresar; captura lo que realmente regresó. Vuelve al cuarto frío de donde salió.</p>
-            {cierreBalanceError && (
-              <div className="space-y-2">
-                <p className="text-xs text-red-600 font-semibold">{cierreBalanceError}</p>
-                {/* 138: si el inventario no cuadra, aquí está el porqué y cómo corregirlo (antes: solo SQL). */}
-                <FormBtn onClick={() => { const r = cierreModal; setCierreModal(null); setRecuperacionModal(r); }}>Revisar inventario de la ruta</FormBtn>
-              </div>
-            )}
-            {!cierreBalance && !cierreBalanceError && <p className="text-xs text-slate-400">Calculando balance…</p>}
-            {cierreBalance && cierreBalance.length === 0 && <p className="text-xs text-slate-500">La ruta no tiene inventario en el camión.</p>}
-            {cierreBalance && cierreBalance.length > 0 && (() => {
-              const dif = diferenciasConteo(cierreBalance, cierreConteo);
-              return (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead><tr className="text-[11px] text-slate-500 uppercase"><th className="text-left py-1">Producto</th><th className="text-center">Cargó</th><th className="text-center">Entregó</th><th className="text-center">Merma</th><th className="text-center">Debe regresar</th><th className="text-center">Contado</th></tr></thead>
-                    <tbody>
-                      {cierreBalance.map(b => {
-                        const p = (data.productos || []).find(x => s(x.sku) === b.sku);
-                        const mal = (dif.faltante[b.sku] || dif.sobrante[b.sku]);
-                        return (
-                          <tr key={b.sku} className="border-t border-slate-100">
-                            <td className="py-1.5 font-semibold text-slate-700">{p ? s(p.nombre) : b.sku}<span className="block text-[10px] text-slate-400 font-normal">{b.sku}</span></td>
-                            <td className="text-center">{b.cargado}</td><td className="text-center">{b.entregado}</td><td className="text-center">{b.merma}</td>
-                            <td className="text-center font-bold">{b.restante}</td>
-                            <td className="text-center"><input type="number" min="0" value={cierreConteo[b.sku] ?? ''} onChange={e => { setCierreConteo(c => ({ ...c, [b.sku]: e.target.value })); setCierreFaltante(null); }} className={`w-20 px-2 py-1.5 border rounded-lg text-sm text-center ${mal ? 'border-red-300 text-red-700' : 'border-slate-200'}`} /></td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  {Object.keys(dif.sobrante).length > 0 && <p className="mt-2 text-xs text-red-600 font-semibold">El conteo supera lo que debe regresar ({Object.entries(dif.sobrante).map(([k, q]) => `${q}×${k}`).join(', ')}).</p>}
-                  {(cierreFaltante || Object.keys(dif.faltante).length > 0) && (
-                    <div className="mt-3 bg-red-50 border border-red-200 rounded-xl p-3 space-y-2">
-                      <p className="text-xs text-red-700 font-bold">Faltante: {Object.entries(cierreFaltante || dif.faltante).map(([k, q]) => `${q}×${k}`).join(', ')}. Vuelve a contar o regístralo como merma de ruta.</p>
-                      {cierreFaltante && (
-                        <div className="flex flex-wrap gap-2 items-center">
-                          <input value={cierreCausa} onChange={e => setCierreCausa(e.target.value)} placeholder="Causa" className="flex-1 min-w-[160px] px-3 py-2 border border-red-200 rounded-lg text-sm" />
-                          <button onClick={registrarFaltanteComoMerma} disabled={cerrando} className="px-3 py-2 text-xs font-bold rounded-lg bg-red-600 text-white disabled:opacity-50">Registrar faltante como merma</button>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-        <div className="flex justify-end gap-2 mt-5"><FormBtn onClick={()=>setCierreModal(null)}>Cancelar</FormBtn><FormBtn primary onClick={confirmarCierre} loading={cerrando} disabled={!cierreBalance}>Cerrar ruta</FormBtn></div>
-      </Modal>
+      <CierreRutaAdminModal ruta={cierreModal} actions={actions} productos={data.productos} onClose={() => setCierreModal(null)}
+        onCerrada={() => { toast?.success("Ruta " + s(cierreModal.nombre) + " cerrada"); setCierreModal(null); }} />
     )}
 
     {/* Modal cancelar ruta con devolución (Tanda 3 🟡-6) */}

@@ -14,14 +14,14 @@ import { validarCobroTransferencia } from '../data/mejorasMenoresLogic';
 import { mensajeTicket, enlaceWhatsApp, urlMapaParada, urlNavegacionParada } from '../data/ticketLogic';
 import { evidenciasPendientes, estadoFotosEntrega } from '../data/evidenciaLogic';
 import { rutaActivaDelChofer, mezclarEntregas } from '../data/choferRutaLogic';
-import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas, descripcionMutacion } from '../data/colaOfflineLogic';
+import { TIPOS_MUTACION, mutacionesFallidas, mutacionesPendientes, ordenesBloqueadas, descripcionMutacion, esFalloDeRed } from '../data/colaOfflineLogic';
 import { resolverOperacion, nuevoOperacionId, claveCarga, claveNoEntrega } from '../data/stockContratosLogic';
 import { useColaOffline } from '../data/useColaOffline';
 import { faltanteEnCamion, mensajeNoCabe, motivoNoFiar } from '../data/recuperacionRutaLogic';
 import { conteoInicial, diferenciasConteo, totalesBalance, mensajeNoEntrega } from '../data/inventarioRutaLogic';
 import {
   nuevaVentaRapida, payloadCola, puedeGuardarseSinSenal, confirmarVentaLocal, quitarVentaLocal, ventasSinConfirmar, adoptarVentasAnteriores,
-  etiquetaEstadoVenta, registroRevision, leerRevision, agregarRevision, guardarRevision, colasConVentasDeOtrasRutas,
+  etiquetaEstadoVenta, registroRevision, leerRevision, agregarRevision, guardarRevision, colasDeOtrasRutas, registroRevisionOperacion, tituloRevision,
 } from '../data/ventaRapidaLogic';
 import Modal, { FormInput, FormBtn } from './ui/Modal';
 import { Card, SectionLabel, RoleHeader, ChoiceButton } from './ui/Components';
@@ -266,21 +266,42 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     descartarDeCola(id);
   }, [colaOffline, descartarDeCola, mandarARevision]);
 
-  // T5-D1: ventas rápidas que quedaron en la cola de OTRA ruta (Administración la cerró o el
-  // teléfono cambió de ruta antes de tener señal). Se envían igual: si el servidor ya las tenía
-  // responde lo mismo; si las rechaza, pasan a revisión. Sin respuesta, se quedan donde están.
+  // T5-D1 / T5-D2 (D2-4): operaciones que quedaron en la cola de OTRA ruta (Administración la
+  // cerró, o el teléfono cambió de ruta antes de tener señal): ventas rápidas, entregas y no
+  // entregas. Se envían igual, con su mismo identificador. Si el servidor ya las tenía, responde
+  // lo mismo; si las RECHAZA, se conservan como "requiere revisión administrativa" y solo entonces
+  // salen de la cola. Sin respuesta del servidor (red), se quedan donde están: no es un rechazo.
   const enviandoOtrasRutas = useRef(false);
   const enviarVentasDeOtrasRutas = useCallback(async () => {
     if (enviandoOtrasRutas.current || typeof localStorage === 'undefined') return;
     if (typeof navigator !== 'undefined' && !navigator.onLine) return;
     enviandoOtrasRutas.current = true;
+    const enLinea = () => (typeof navigator === 'undefined' ? true : navigator.onLine);
     try {
-      for (const q of colasConVentasDeOtrasRutas(localStorage, miRutaActiva?.id ?? null)) {
+      for (const q of colasDeOtrasRutas(localStorage, miRutaActiva?.id ?? null)) {
         let cola = q.cola;
-        for (const m of q.ventas) {
-          const r = await actions.registrarVentaRapidaRuta?.(m.payload);
-          if (!r || r.red) return;
-          if (r.error && !mandarARevision(m.payload, r.error)) return;
+        for (const m of q.operaciones) {
+          const p = m.payload || {};
+          let fallo = null;      // null = el servidor la aceptó (o ya la tenía)
+          let red = false;
+          if (m.tipo === TIPOS_MUTACION.VENTA_RAPIDA) {
+            const r = await actions.registrarVentaRapidaRuta?.(p);
+            if (!r || r.red) red = true; else if (r.error) fallo = r.error;
+          } else if (m.tipo === TIPOS_MUTACION.ENTREGA) {
+            const err = await actions.updateOrdenEstatus?.(p.ordenId, 'Entregada', p.metodoPago, { folioNota: p.folioNota || null, operacionId: p.operacionId });
+            if (err) { if (esFalloDeRed(err, enLinea())) red = true; else fallo = (typeof err.error === 'string' && err.error) || err.message || 'El servidor rechazó la entrega'; }
+          } else {
+            const r = await actions.marcarNoEntregada?.(p.ordenId, p.motivo, p.reagendar, { operacionId: p.operacionId });
+            if (r && r.error) { if (esFalloDeRed(r, enLinea())) red = true; else fallo = (typeof r.error === 'string' && r.error) || 'El servidor rechazó la no entrega'; }
+          }
+          if (red) return;
+          if (fallo) {
+            const storage = localStorage;
+            const lista = agregarRevision(leerRevision(storage), registroRevisionOperacion(m, q.rutaId, fallo));
+            if (!guardarRevision(storage, lista)) return;      // no se pudo conservar: NO se quita de la cola
+            setVentasRevision(lista);
+            if (m.tipo === TIPOS_MUTACION.VENTA_RAPIDA) setEntregas(prev => quitarVentaLocal(prev, p.operacionId));
+          }
           cola = cola.filter(x => x.id !== m.id);
           try { if (cola.length > 0) localStorage.setItem(q.clave, JSON.stringify(cola)); else localStorage.removeItem(q.clave); } catch { return; }
         }
@@ -288,7 +309,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
     } finally {
       enviandoOtrasRutas.current = false;
     }
-  }, [actions, miRutaActiva?.id, mandarARevision]);
+  }, [actions, miRutaActiva?.id]);
   useEffect(() => { if (online) enviarVentasDeOtrasRutas(); }, [online, enviarVentasDeOtrasRutas]);
 
   // Derivar step desde el estado real de la ruta — si ya está "En progreso" saltar directo a ruta
@@ -795,6 +816,9 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           ordenId: entregaModal.id,
           metodoPago: cobroMetodo,
           folioNota: folioNota || null,
+          // T5-D2: datos para mostrarla si llega con la ruta ya cerrada (el servidor no los usa).
+          folio: s(entregaModal.folio), cliente: s(entregaModal.clienteNombre), total: n(entregaModal.totalCalc),
+          rutaId: miRutaActiva?.id ?? null, rutaFolio: s(miRutaActiva?.folio),
         });
         setEntregas(prev => [...prev, { ...entrega, offline: true }]);
         showToast("Sin señal — entrega guardada en el teléfono", 'info');
@@ -1984,24 +2008,30 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
 // Tanda 22: estado de la cola offline. Sin conexión → aviso de que las
 // operaciones se guardan en el teléfono; con pendientes y conexión →
 // contador + botón de sincronización manual; fallidas → alerta roja.
-// T5-D1: ventas rápidas que el servidor no aceptó (la ruta ya estaba cerrada, u otro rechazo
-// definitivo). No se registraron y no se borran: el chofer las muestra a Administración.
+// T5-D1 / T5-D2: operaciones que el servidor NO aceptó porque llegaron tarde (la ruta ya estaba
+// cerrada) u otro rechazo definitivo: ventas rápidas, entregas y no entregas. No se registraron
+// y no se borran: el chofer las muestra a Administración. El sistema no las conoce.
 export function AvisoVentasRevision({ ventas }) {
   if (!Array.isArray(ventas) || ventas.length === 0) return null;
+  const una = ventas.length === 1;
   return (
     <div className="mb-3 rounded-card border border-red-300 bg-red-50 p-3 text-left text-xs text-red-900" role="alert" data-testid="ventas-revision">
       <p className="flex items-center gap-1 font-bold uppercase tracking-wide"><Icons.AlertTriangle /> Requiere revisión administrativa</p>
-      <p className="mt-1">{ventas.length === 1 ? 'Esta venta rápida NO quedó registrada' : `Estas ${ventas.length} ventas rápidas NO quedaron registradas`} en el sistema. Muéstrala{ventas.length === 1 ? '' : 's'} a Administración; no se borra{ventas.length === 1 ? '' : 'n'} de este teléfono.</p>
+      <p className="mt-1">{una ? 'Esta operación NO quedó registrada' : `Estas ${ventas.length} operaciones NO quedaron registradas`} en el sistema. Muéstrala{una ? '' : 's'} a Administración; no se borra{una ? '' : 'n'} de este teléfono.</p>
       <ul className="mt-2 space-y-2">
-        {ventas.map(v => (
-          <li key={v.operacionId} className="rounded-lg border border-red-200 bg-white p-2">
-            <p className="font-bold">{fmtMoney(v.total)} · {s(v.pago)} · {s(v.cliente)}</p>
-            <p className="mt-0.5">{(v.items || []).map(it => `${it.cant}× ${it.sku}`).join(', ')}</p>
-            <p className="mt-0.5 text-red-700">{v.rutaFolio ? `Ruta ${v.rutaFolio} · ` : ''}{v.capturadaAt ? new Date(v.capturadaAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : 'sin hora de captura'}</p>
-            <p className="mt-0.5 text-red-700">Motivo: {s(v.motivo)}</p>
-            <p className="mt-0.5 break-all font-mono text-[10px] text-slate-500">Identificador: {v.operacionId}</p>
-          </li>
-        ))}
+        {ventas.map(v => {
+          const esVenta = !v.tipo || v.tipo === TIPOS_MUTACION.VENTA_RAPIDA;
+          return (
+            <li key={v.operacionId} className="rounded-lg border border-red-200 bg-white p-2" data-tipo={v.tipo || TIPOS_MUTACION.VENTA_RAPIDA}>
+              <p className="font-bold">{tituloRevision(v)}{v.total !== null && v.total !== undefined ? ` · ${fmtMoney(v.total)}` : ''}{v.pago ? ` · ${s(v.pago)}` : ''}{v.cliente ? ` · ${s(v.cliente)}` : ''}</p>
+              {esVenta && <p className="mt-0.5">{(v.items || []).map(it => `${it.cant}× ${it.sku}`).join(', ')}</p>}
+              {v.tipo === TIPOS_MUTACION.NO_ENTREGA && v.motivoNoEntrega && <p className="mt-0.5">Motivo de la no entrega: {s(v.motivoNoEntrega)}</p>}
+              <p className="mt-0.5 text-red-700">{v.rutaFolio ? `Ruta ${v.rutaFolio} · ` : ''}{v.capturadaAt ? new Date(v.capturadaAt).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : 'sin hora de captura'}</p>
+              <p className="mt-0.5 text-red-700">Motivo: {s(v.motivo)}</p>
+              <p className="mt-0.5 break-all font-mono text-[10px] text-slate-500">Identificador: {v.operacionId}</p>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

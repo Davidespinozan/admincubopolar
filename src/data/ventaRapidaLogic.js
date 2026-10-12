@@ -175,6 +175,54 @@ export function colasConVentasDeOtrasRutas(storage, rutaActivaId) {
   return out;
 }
 
+// ── T5-D2 (D2-4): entregas y no entregas capturadas sin señal que llegan tarde ──
+// Mismo almacén de revisión que las ventas rápidas, con su `tipo`: son operaciones distintas y
+// no se mezclan. Solo pasan a revisión cuando el SERVIDOR las rechazó; sin respuesta, se quedan
+// en su cola.
+
+export const TIPOS_REVISABLES = [TIPOS_MUTACION.VENTA_RAPIDA, TIPOS_MUTACION.ENTREGA, TIPOS_MUTACION.NO_ENTREGA];
+
+/** Registro de revisión de una mutación de la cola (entrega, no entrega o venta rápida). */
+export function registroRevisionOperacion(mutacion, rutaId, motivo, ahora = new Date()) {
+  const m = mutacion || {}; const p = m.payload || {};
+  if (m.tipo === TIPOS_MUTACION.VENTA_RAPIDA) return { ...registroRevision(p, motivo, ahora), tipo: TIPOS_MUTACION.VENTA_RAPIDA };
+  return {
+    tipo: m.tipo, operacionId: txt(p.operacionId) || `${txt(m.tipo)}-${txt(p.ordenId)}-${txt(m.id)}`,
+    rutaId: p.rutaId ?? rutaId ?? null, rutaFolio: txt(p.rutaFolio) || null,
+    ordenId: p.ordenId ?? null, folio: txt(p.folio) || null, cliente: txt(p.cliente) || null,
+    total: p.total === undefined || p.total === null ? null : num(p.total), pago: txt(p.metodoPago) || null,
+    motivoNoEntrega: txt(p.motivo) || null, reagendar: p.reagendar === true, folioNota: txt(p.folioNota) || null,
+    capturadaAt: Number.isFinite(Number(m.creadaEn)) && Number(m.creadaEn) > 0 ? new Date(Number(m.creadaEn)).toISOString() : null,
+    motivo: txt(motivo) || 'El servidor rechazó la operación', rechazadaAt: ahora.toISOString(),
+  };
+}
+
+/**
+ * Operaciones (venta rápida, entrega, no entrega) que quedaron en la cola de OTRA ruta: la que
+ * Administración cerró, o una anterior del mismo teléfono.
+ * @returns {{ rutaId: string, clave: string, cola: object[], operaciones: object[] }[]}
+ */
+export function colasDeOtrasRutas(storage, rutaActivaId) {
+  const out = [];
+  if (!storage || typeof storage.length !== 'number') return out;
+  for (let i = 0; i < storage.length; i++) {
+    const clave = storage.key(i);
+    const m = /^cola_offline_ruta_(.+)$/.exec(clave || '');
+    if (!m || (rutaActivaId != null && String(m[1]) === String(rutaActivaId))) continue;
+    const cola = parseCola(storage.getItem(clave));
+    const operaciones = cola.filter(x => TIPOS_REVISABLES.includes(x.tipo));
+    if (operaciones.length > 0) out.push({ rutaId: m[1], clave, cola, operaciones });
+  }
+  return out;
+}
+
+/** Título de una operación en revisión, según su tipo. */
+export function tituloRevision(r) {
+  if (r?.tipo === TIPOS_MUTACION.ENTREGA) return `Entrega de la orden ${txt(r.folio) || `#${txt(r.ordenId)}`}`;
+  if (r?.tipo === TIPOS_MUTACION.NO_ENTREGA) return `No entrega de la orden ${txt(r.folio) || `#${txt(r.ordenId)}`}`;
+  return 'Venta rápida';
+}
+
 /** Fila del listado de Administración (`ventas_rapidas_de_ruta`). */
 export function filaVentaRapidaAdmin(v) {
   const total = num(v?.total); const cobrado = num(v?.cobrado);

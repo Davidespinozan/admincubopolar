@@ -223,9 +223,13 @@ describe('ventas en la cola de otra ruta (cerrada por Administración o teléfon
     const vista = sinComentarios(leer('../components/ChoferView.jsx'));
     const i = vista.indexOf('const enviarVentasDeOtrasRutas');
     const bloque = vista.slice(i, i + 1100);
-    expect(bloque).toMatch(/await actions\.registrarVentaRapidaRuta\?\.\(m\.payload\)/);
-    expect(bloque.indexOf('if (!r || r.red) return;')).toBeGreaterThan(0);
-    expect(bloque.indexOf('if (r.error && !mandarARevision(m.payload, r.error)) return;')).toBeLessThan(bloque.indexOf('cola = cola.filter(x => x.id !== m.id);'));
+    // T5-D2 generalizó este bloque a entregas y no entregas (ver t5d2RecuperacionRutas): mismo contrato para la venta,
+    // sin respuesta no se toca la cola, y la revisión se guarda ANTES de quitar la operación.
+    expect(bloque).toMatch(/await actions\.registrarVentaRapidaRuta\?\.\(p\)/);
+    expect(bloque.indexOf('if (!r || r.red) red = true;')).toBeGreaterThan(0);
+    const todo = vista.slice(i, i + 3200);
+    expect(todo.indexOf('if (red) return;')).toBeLessThan(todo.indexOf('cola = cola.filter(x => x.id !== m.id);'));
+    expect(todo.indexOf('if (!guardarRevision(storage, lista)) return;')).toBeLessThan(todo.indexOf('cola = cola.filter(x => x.id !== m.id);'));
   });
 });
 
@@ -311,6 +315,6 @@ describe('Administración: ventas rápidas registradas', () => {
     expect(store.slice(i, i + 200)).toContain("requireRol(['Admin'])");
     expect(store).toContain("supabase.rpc('ventas_rapidas_de_ruta'");
     expect(store).toContain("supabase.rpc('registrar_venta_rapida_ruta'");
-    expect(leer('../components/views/RutasView.jsx')).toMatch(/<VentasRapidasRuta rutaId=\{cierreModal\.id\} actions=\{actions\} \/>/);
+    expect(leer('../components/CierreRutaAdminModal.jsx')).toMatch(/<VentasRapidasRuta rutaId=\{ruta\.id\} actions=\{actions\} \/>/);
   });
 });

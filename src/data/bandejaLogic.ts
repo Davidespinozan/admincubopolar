@@ -20,6 +20,8 @@ export interface DataBandeja {
   facturacionPendiente?: Fila[];
   leads?: Fila[];
   actividadesAbiertas?: Fila[];
+  /** T5-D2 (142): `ruta_cobros_pendientes()` — entregas de ruta sin cobro ni cuenta (estado del servidor). */
+  cobrosPendientesRuta?: Fila[];
 }
 
 export interface TareaBandeja {
@@ -140,6 +142,36 @@ export function construirBandeja(data: DataBandeja | null | undefined, hoy: stri
       detalle: 'Sin stock no hay reparto mañana. Programa producción.',
       modulo: 'produccion',
       count: stockCritico.length,
+    });
+  }
+
+  // ── T5-D2: entregas de ruta que siguen sin dinero (también de rutas ya cerradas) ──
+  // El aviso lo calcula el servidor con el estado financiero real: desaparece solo cuando llega el
+  // pago o se registra el cobro. Cerrar la ruta NO lo quita.
+  const cobrosRuta = d.cobrosPendientesRuta || [];
+  const sinRegistro = cobrosRuta.filter(c => String(c.tipo || '') !== 'link');
+  const linksPend = cobrosRuta.filter(c => String(c.tipo || '') === 'link');
+  const faltaDe = (xs: Fila[]) => xs.reduce((acc, c) => acc + (Number(c.falta) || 0), 0);
+  if (sinRegistro.length > 0) {
+    tareas.push({
+      id: 'entregas-sin-registro',
+      prioridad: 'alta',
+      icono: 'AlertTriangle',
+      titulo: `${plural(sinRegistro.length, 'entrega de ruta sin cobro ni cuenta', 'entregas de ruta sin cobro ni cuenta')}: ${money(faltaDe(sinRegistro))}`,
+      detalle: 'Están entregadas pero el sistema no tiene cómo se cobraron. Registra su forma de cobro (bloquean el cierre de su ruta).',
+      modulo: 'ordenes',
+      count: sinRegistro.length,
+    });
+  }
+  if (linksPend.length > 0) {
+    tareas.push({
+      id: 'links-pago-pendientes',
+      prioridad: 'media',
+      icono: 'DollarSign',
+      titulo: `${plural(linksPend.length, 'link de pago pendiente', 'links de pago pendientes')} de entregas de ruta: ${money(faltaDe(linksPend))}`,
+      detalle: 'Ya se entregaron y NO están pagadas ni fiadas. Siguen pendientes hasta que llegue el pago o se cobren de otra forma.',
+      modulo: 'ordenes',
+      count: linksPend.length,
     });
   }
 

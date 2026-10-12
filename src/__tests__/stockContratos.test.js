@@ -161,7 +161,10 @@ describe('auditoría estática del cutover (R2 fase 2A)', () => {
       expect(b).not.toMatch(/from\('rutas'\)\.update/);
     }
     expect(fin).toMatch(/rpc\('finalizar_inventario_ruta', built\.args\)/);
-    expect(adm).toMatch(/finalizarInventarioRuta\(rutaId, conteo/);
+    // T5-D2 (142): Administración cierra con UN contrato atómico (que usa finalizar_inventario_ruta por dentro);
+    // ya no hay dos llamadas ni escritura directa de órdenes ("forzar").
+    expect(adm).toMatch(/rpc\('cerrar_ruta_admin', built\.args\)/);
+    expect(adm).not.toMatch(/cerrar_ruta_financiero|from\('ordenes'\)|forzar/);
     for (const dead of ['confirmarCargaRuta', 'meterACuartoFrio', 'confirmarProduccion', '_registrarCostoProduccion']) expect(accion(store, dead)).toBeNull();
   });
 });

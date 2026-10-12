@@ -144,7 +144,8 @@ describe('A5: Chofer — modo enfoque con la identidad del producto; flujo, offl
   });
   it('cola offline, GPS, fotos y firma: código idéntico', () => {
     expect(v).toMatch(/useColaOffline\(\{ rutaId: miRutaActiva\?\.id, ejecutores: ejecutoresOffline, avisar: showToast \}\)/);
-    expect(v).toMatch(/encolarOffline\(TIPOS_MUTACION\.ENTREGA, \{\s*ordenId: entregaModal\.id,\s*metodoPago: cobroMetodo,\s*folioNota: folioNota \|\| null,\s*\}\)/);
+    // T5-D2: la entrega sin señal guarda además folio, cliente, importe y ruta (para mostrarla si llega tarde).
+    expect(v).toMatch(/encolarOffline\(TIPOS_MUTACION\.ENTREGA, \{\s*ordenId: entregaModal\.id,\s*metodoPago: cobroMetodo,\s*folioNota: folioNota \|\| null,/);
     expect(v).toMatch(/supabase\.from\('chofer_ubicaciones'\)\.insert\(\{\s*ruta_id: miRutaActiva\.id,\s*chofer_id: user\.id,/);
     expect(v).toMatch(/const interval = setInterval\(enviarUbicacion, 30000\);/);
     expect((v.match(/<CapturaFoto /g) || []).length).toBe(3);   // cámara o galería (control compartido)

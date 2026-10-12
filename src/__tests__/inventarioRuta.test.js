@@ -121,7 +121,10 @@ describe('auditoría estática de pantallas (087)', () => {
   });
   it('RutasView: el cierre Admin manda conteo al contrato; la ruta cargada no se cancela', () => {
     const r = src('../components/views/RutasView.jsx');
-    expect(r).toMatch(/actions\.cerrarRuta\(cierreModal\.id, cierreConteo\)/);
+    // T5-D2 (142): el cierre de Administración vive en su propio diálogo y es UNA llamada al contrato
+    // (conteo, faltantes declarados y motivo); la pantalla de rutas solo lo abre.
+    expect(r).toMatch(/<CierreRutaAdminModal ruta=\{cierreModal\} actions=\{actions\}/);
+    expect(src('../components/CierreRutaAdminModal.jsx')).toMatch(/await actions\.cerrarRuta\?\.\(ruta\.id, \{ tipo, conteo, faltantes: reconoce \? faltantesParaServidor\(dif\.faltante\) : \[\], motivo \}\)/);
     expect(r).not.toMatch(/devolucionPorProducto/);
     expect(r).toMatch(/disabled=\{cancelando \|\| !cancelarMotivo\.trim\(\) \|\| cargada\}/);
   });

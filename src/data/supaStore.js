@@ -4,6 +4,7 @@ import { backendPost } from '../lib/backend';
 import { CODIGOS_OFRECER_PUBLICO, fiscalesPorOmision } from './receptorFiscalLogic';
 import { buildRegistrarConteoArgs, codigoConteo, mensajeErrorConteo } from './conteoEmpaqueLogic';
 import { buildVentaRapidaArgs, clasificarFalloVenta, entregasParaCierre } from './ventaRapidaLogic';
+import { buildCerrarRutaAdminArgs, buildIniciarRutaAdminArgs, claveCierreAdmin, claveStorageCierreAdmin, claveStorageInicioAdmin, rechazoCierreAdmin } from './conciliacionRutaLogic';
 import { detalleRechazo, esRechazoDeCarga, esCreditoRechazado, mensajeRechazoServidor, avisoSinCubrir, buildRevertirEntregaArgs, buildEntregarOrdenRutaArgs } from './recuperacionRutaLogic';
 import { n, s, centavos } from '../utils/safe';
 import { useToast } from '../components/ui/Toast';
@@ -120,7 +121,7 @@ const EMPTY = {
   rutas: [], produccion: [], inventarioMov: [], cuartosFrios: [],
   alertas: [], facturacionPendiente: [], conciliacion: [],
   auditoria: [], usuarios: [], umbrales: [], pagos: [],
-  comodatos: [], leads: [], empleados: [], nominaPeriodos: [], actividadesAbiertas: [],
+  comodatos: [], leads: [], empleados: [], nominaPeriodos: [], actividadesAbiertas: [], cobrosPendientesRuta: [],
   nominaRecibos: [], nominaConceptos: [], nominaConceptoEmpleados: [], nominaReciboLineas: [], nominaAcumulados: [], movContables: [], mermas: [], cuentasPorCobrar: [],
   cuentasPorPagar: [], pagosProveedores: [],
   costosFijos: [], costosHistorial: [],
@@ -646,18 +647,29 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
     } catch { /* sin calendario: el resumen queda vacío */ }
   }, []);
 
+  // T5-D2 (mig 142): entregas de ruta que siguen sin cobro (links de pago pendientes, o sin registro),
+  // también de rutas ya cerradas. Estado calculado por el servidor; solo Administración. Falla en silencio.
+  const fetchCobrosPendientes = useCallback(async () => {
+    if (userRolRef.current !== 'Admin') return;
+    try {
+      const { data, error } = await supabase.rpc('ruta_cobros_pendientes', { p_ruta_id: null });
+      if (error) return;
+      setData(prev => ({ ...prev, cobrosPendientesRuta: Array.isArray(data) ? data : [] }));
+    } catch { /* sin la lectura: el aviso queda vacío */ }
+  }, []);
+
   const fetchAll = useCallback(async () => {
     // WF-0: el rol Empleado no carga datos de negocio (su pantalla lee mi_asistencia()).
     if (rolSinDatosNegocio(userRolRef.current)) { setLoading(false); return; }
     try {
-      await Promise.all([fetchCore(), ...TABLAS_SLICE_RT.map(t => fetchSlice(t)), fetchActividades()]);
+      await Promise.all([fetchCore(), ...TABLAS_SLICE_RT.map(t => fetchSlice(t)), fetchActividades(), fetchCobrosPendientes()]);
     } catch (err) {
       console.error('[fetchAll] ❌ catch error:', err?.message || err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [fetchCore, fetchSlice, fetchActividades]);
+  }, [fetchCore, fetchSlice, fetchActividades, fetchCobrosPendientes]);
 
   // Re-fetch on mount y cuando cambia el userId (ej. después del login)
   // Wait for Supabase auth session to be ready when there is a userId to avoid
@@ -2582,79 +2594,84 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         }
       },
 
-      // 087: cierre de ruta por Admin = el MISMO contrato canónico que el
-      // chofer. El conteo físico es observación; el servidor valida contra el
-      // balance del camión, devuelve a los cuartos de origen y cierra. Ya no
-      // existe devolución arbitraria (cerrar_ruta_atomic retirada).
-      cerrarRuta: async (rutaId, conteo, opciones = {}) => {
-        const forzar = opciones?.forzar === true;
-        const motivoForzado = String(opciones?.motivo || '').trim();
+      // T5-D2 (mig 142): cierre de ruta por Administración = UNA llamada, todo o nada
+      // (`cerrar_ruta_admin`). Antes eran dos (marca financiera vacía y después el inventario):
+      // si el conteo fallaba, la marca quedaba y el chofer ya no podía cerrar. El servidor exige
+      // órdenes resueltas, entregas con su registro financiero, faltantes declarados y motivo;
+      // reutiliza la marca financiera que exista y `finalizar_inventario_ruta` sin cambios.
+      // No hay "forzar": lo que bloquea se resuelve con su contrato, una orden a la vez.
+      //   params: { tipo: 'cierre_admin' | 'no_salio', conteo, faltantes: [{sku, cantidad}], motivo }
+      cerrarRuta: async (rutaId, params = {}) => {
         const guard = requireRol(['Admin']);
-        if (guard) { t()?.error(guard.error); return guard; }
-
-        // Órdenes sin resolver: bloquean el cierre salvo cierre forzado con
-        // motivo (chofer sin celular, accidente). Forzado → 'No entregada'
-        // sin movimiento de stock: el producto se resuelve en el conteo.
-        const { data: pendientes, error: errPend } = await supabase
-          .from('ordenes')
-          .select('id, folio, estatus')
-          .eq('ruta_id', rutaId)
-          .in('estatus', ['Asignada', 'En ruta']);
-        if (errPend) {
-          console.warn('[cerrarRuta] select pendientes:', errPend.message);
-          t()?.error('No se pudieron leer las órdenes de la ruta');
-          return { error: errPend.message };
-        }
-        if (pendientes && pendientes.length > 0 && !forzar) {
-          const folios = pendientes.slice(0, 3).map(o => o.folio).join(', ');
-          const extra = pendientes.length > 3 ? `, +${pendientes.length - 3} más` : '';
-          const msg = `Hay ${pendientes.length} ${pendientes.length === 1 ? 'orden pendiente' : 'órdenes pendientes'} de entregar (${folios}${extra}). Pídele al chofer que envíe su reporte primero.`;
-          t()?.error(msg);
-          return { error: msg, pendientes: pendientes.length };
-        }
-        if (forzar && pendientes && pendientes.length > 0 && !motivoForzado) {
-          return { error: 'Forzar cierre requiere motivo (chofer sin celular, accidente, etc.)' };
-        }
-        let pendientesProcesadas = 0;
-        if (forzar && pendientes && pendientes.length > 0) {
-          const ids = pendientes.map(o => o.id);
-          const { error: updErr } = await supabase
-            .from('ordenes')
-            .update({
-              estatus: 'No entregada',
-              motivo_no_entrega: `Cierre forzado por admin: ${motivoForzado}`,
-              fecha_no_entrega: new Date().toISOString(),
-            })
-            .in('id', ids);
-          if (updErr) {
-            console.warn('[cerrarRuta forzado] update ordenes No entregada:', updErr.message);
-            t()?.error('No se pudieron marcar las órdenes pendientes');
-            return { error: updErr.message };
-          }
-          pendientesProcesadas = ids.length;
-        }
-
-        // Cierre financiero (086): si el chofer ya lo registró, el servidor lo
-        // reconoce (replay o "ya registrado con otros datos"); si no, Admin lo
-        // registra sin entregas.
+        if (guard) return guard;
         const storage = typeof localStorage !== 'undefined' ? localStorage : null;
-        const opFin = resolverOperacionCierre(leerOperacionCierre(storage, rutaId), claveCierreFinanciero(rutaId, []));
-        guardarOperacionCierre(storage, rutaId, opFin);
-        const builtFin = buildCerrarFinancieroArgs({ operacionId: opFin.id, rutaId, entregas: [], usuarioId: uid(), usuarioNombre: uname() || 'Admin' });
-        if (builtFin.error) { t()?.error(builtFin.error); return { error: builtFin.error }; }
-        const { error: finErr } = await supabase.rpc('cerrar_ruta_financiero', builtFin.args);
-        if (finErr && !/ya tiene cierre financiero registrado/i.test(finErr.message || '')) {
-          const msg = mensajeErrorCierreFinanciero(finErr);
-          t()?.error(msg);
-          return { error: msg };
+        const key = claveStorageCierreAdmin(rutaId);
+        const op = resolverOperacionCierre(leerOperacion(storage, key), claveCierreAdmin({ rutaId, ...params }));
+        guardarOperacion(storage, key, op);
+        const built = buildCerrarRutaAdminArgs({ operacionId: op.id, rutaId, ...params });
+        if (built.error) return { error: built.error };
+        try {
+          const { data, error } = await supabase.rpc('cerrar_ruta_admin', built.args);
+          if (error) {
+            const r = rechazoCierreAdmin(error);
+            return { error: r.mensaje, codigo: r.codigo, cambio: r.cambio, detalle: r.detalle };
+          }
+          borrarOperacion(storage, key);
+          if (!data?.replay) {
+            notify('venta', 'Ruta cerrada', `${data?.actor || uname() || ''} cerró ${data?.folio || 'la ruta'} (Administración)`, '🚛', String(rutaId));
+          }
+          rf();
+          return { data };
+        } catch (e) {
+          const r = rechazoCierreAdmin(e);
+          return { error: r.mensaje, codigo: r.codigo, cambio: false };
         }
-
-        const r = await actionsRef.current.finalizarInventarioRuta(rutaId, conteo, {
-          admin: true,
-          detalle: forzar ? `FORZADO (${motivoForzado}) — ${pendientesProcesadas} órdenes a No entregada` : '',
-        });
-        if (r?.error) { t()?.error(r.error); return r; }
-        return undefined;
+      },
+      // El camión salió pero el chofer no inició la ruta en la aplicación: Cargada → En progreso
+      // con motivo. Queda registrado como intervención de Administración (no como inicio del chofer).
+      iniciarRutaAdmin: async (rutaId, motivo) => {
+        const guard = requireRol(['Admin']);
+        if (guard) return guard;
+        const storage = typeof localStorage !== 'undefined' ? localStorage : null;
+        const key = claveStorageInicioAdmin(rutaId);
+        const op = resolverOperacionCierre(leerOperacion(storage, key), `${rutaId}|${String(motivo || '').trim()}`);
+        guardarOperacion(storage, key, op);
+        const built = buildIniciarRutaAdminArgs({ operacionId: op.id, rutaId, motivo });
+        if (built.error) return { error: built.error };
+        try {
+          const { data, error } = await supabase.rpc('iniciar_ruta_admin', built.args);
+          if (error) {
+            const r = rechazoCierreAdmin(error);
+            return { error: r.mensaje, codigo: r.codigo, cambio: r.cambio };
+          }
+          borrarOperacion(storage, key);
+          rf();
+          return { data };
+        } catch (e) {
+          return { error: rechazoCierreAdmin(e).mensaje };
+        }
+      },
+      // Lo que Administración ve antes de cerrar: inventario, órdenes, cobrado por método, crédito,
+      // cobros pendientes, mermas y faltantes, ventas rápidas y cierre de caja. Solo datos del servidor.
+      conciliacionRuta: async (rutaId) => {
+        const guard = requireRol(['Admin']);
+        if (guard) return guard;
+        if (!rutaId) return { error: 'Ruta requerida' };
+        const { data, error } = await supabase.rpc('conciliacion_ruta', { p_ruta_id: Number(rutaId) });
+        if (error) return { error: mensajeRechazoServidor(error, 'No se pudo leer la conciliación de la ruta') };
+        return { data };
+      },
+      // Entregas de una ruta sin dinero completo y sin cuenta por cobrar: `link` (pago por link
+      // que no ha llegado) o `sin_registro`. Admin (cualquier ruta) o el Chofer de esa ruta.
+      rutaCobrosPendientes: async (rutaId) => {
+        if (!rutaId) return { error: 'Ruta requerida' };
+        try {
+          const { data, error } = await supabase.rpc('ruta_cobros_pendientes', { p_ruta_id: Number(rutaId) });
+          if (error) return { error: mensajeRechazoServidor(error, 'No se pudieron leer los cobros pendientes') };
+          return { data: Array.isArray(data) ? data : [] };
+        } catch (e) {
+          return { error: e?.message || 'Error inesperado' };
+        }
       },
 
       // Cancelar una ruta. 087: una ruta con carga confirmada ya no se
@@ -3845,14 +3862,27 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
           });
           if (built.error) return { error: built.error };
           const { data: finData, error: finErr } = await supabase.rpc('cerrar_ruta_financiero', built.args);
+          let marcaAjena = false;
           if (finErr) {
             // 138: lo vendido/entregado no cabe en lo cargado → no se registró NADA. Se devuelve
             // el detalle para que la pantalla quite lo que no corresponde.
             if (esRechazoDeCarga(finErr)) return { error: mensajeRechazoServidor(finErr), cargaInsuficiente: detalleRechazo(finErr) };
-            return { error: mensajeErrorCierreFinanciero(finErr) };
+            // T5-D2: la ruta YA tiene su marca financiera con otros datos (la registró Administración,
+            // u otro teléfono). Desde T5-B y T5-D1 cada entrega y cada venta rápida registran su dinero
+            // al ocurrir, así que la marca no trae nada pendiente… si es cierto. Se le pregunta al
+            // servidor: sin entregas faltas de registro, se continúa al balance reutilizando la marca;
+            // con alguna, se detiene y se dice cuáles (no se da por buena a ciegas ni se duplica nada).
+            if (!/ya tiene cierre financiero registrado con otros datos/i.test(finErr.message || '')) return { error: mensajeErrorCierreFinanciero(finErr) };
+            const pend = await actionsRef.current.rutaCobrosPendientes(rutaId);
+            if (pend.error) return { error: mensajeErrorCierreFinanciero(finErr) };
+            const sinRegistro = (pend.data || []).filter(x => x?.tipo === 'sin_registro');
+            if (sinRegistro.length > 0) {
+              return { error: `La ruta ya tiene su cierre financiero, pero ${sinRegistro.length === 1 ? 'una entrega no tiene' : `${sinRegistro.length} entregas no tienen`} registrado su cobro (${sinRegistro.map(x => x.folio).join(', ')}). Pide a Administración que registre cómo se ${sinRegistro.length === 1 ? 'cobró' : 'cobraron'}; después podrás continuar.`, sinRegistro };
+            }
+            marcaAjena = true;
           }
-          try { storage?.setItem(claveFin, JSON.stringify(entregasPayload)); } catch { /* sin espacio: el reintento usará lo actual */ }
-          const finRes = interpretarCierreFinanciero(finData);
+          if (!marcaAjena) { try { storage?.setItem(claveFin, JSON.stringify(entregasPayload)); } catch { /* sin espacio: el reintento usará lo actual */ } }
+          const finRes = marcaAjena ? { replay: true, saltadas: [] } : interpretarCierreFinanciero(finData);
           if (finRes.replay) {
             await log('Cierre Ruta', 'Rutas', `Cierre financiero de la ruta ${rutaId} ya registrado (reintento): sin efectos repetidos`);
           }
