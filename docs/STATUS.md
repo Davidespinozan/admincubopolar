@@ -354,10 +354,17 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Tiendas propias (E1–E9, migs 143–150) — 2026-10-13 — CLOSED LOCAL · NO DESPLEGADO · producción sigue en la 142
-**Nada de este programa está en producción.** Estado por columna (ningún estado implica el siguiente):
+## Tiendas propias (E1–E9, migs 143–150) — 2026-10-13 — IMPLEMENTED / VERIFIED LOCAL · NO DESPLEGADO · producción sigue en la 142
+**Nada de este programa está en producción.** Paquete de release (procedimiento y compuertas GO / NO-GO): `docs/RELEASE_TIENDAS_E1_E9.md`.
+- E1–E9: IMPLEMENTED / VERIFIED LOCAL, en git local (rama `tiendas-e9-cierre-integral`, sin push).
+- Producción: migración 142. Migraciones 143–150: PENDIENTES de aplicar.
+- Frontend y Netlify de Tiendas: PENDIENTES de publicar.
+- Tiendas reales: NINGUNA activada; el interruptor global nunca se ha encendido (no existe aún en producción).
+- Validación real de Supabase Auth, Netlify y equipos de caja: PENDIENTE.
 
-| Bloque | Qué es | Migración · SHA-256 | Commit local | CLOSED LOCAL | DEPLOYED PROD | VALIDATED PROD | PENDING FIELD VALIDATION |
+Estado por columna (ningún estado implica el siguiente):
+
+| Bloque | Qué es | Migración · SHA-256 | Commit local | IMPLEMENTED / VERIFIED LOCAL | DEPLOYED PROD | VALIDATED PROD | PENDING FIELD VALIDATION |
 |---|---|---|---|---|---|---|---|
 | E1 | Establecimientos e interruptor global (apagado) | 143 · `afb100ab…46f7a0f` | `2083c93` | sí | no | no | sí |
 | E2 | Las operaciones centrales usan solo inventario del CEDIS | 144 · `d050d977…e8a2b94` | `b2cc8bf` | sí | no | no | sí |
@@ -367,7 +374,7 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
 | E6 | Configuración y activación controlada de una tienda | 147 · `d80d50d5…853a9fcf` | `3a387e2` | sí | no | no | sí |
 | E7 | Tiendas remotas y traspasos con tránsito | 148 · `ac60223c…e56e3537` | `4f2ceaa` | sí | no | no | sí |
 | E8 | Reportes por establecimiento y consolidados | 149 · `a7492b55…44e2704` | `a8ad876` | sí | no | no | sí |
-| E9 | Último cajero por disparador, conciliación de reembolsos, validación integrada | 150 · `4fdf8993…a95ad2af0` | sin commit (árbol de trabajo, rama `tiendas-e9-cierre-integral`) | implementado y verificado; commit pendiente de autorización | no | no | sí |
+| E9 | Último cajero por disparador, conciliación de reembolsos, validación integrada | 150 · `4fdf8993…a95ad2af0` | `ffe6a13` | sí | no | no | sí |
 
 SHA-256 completos: 143 `afb100ab1c515dd10a6cda376405facd35935b26f4b18abce0ef1fd0c46f7a0f` · 144 `d050d9774cac88c2ab61a9c69cb569d234f1222ed46276480031ebf8de8a2b94` ·
 145 `fd1dd9bbedba9d4f0b141f383e3c312d3787e73ae3552295a2106d5981f61f10` · 146 `8e03f75ee0bfa33693ec22c93d6c1c087353b9aa367d907192944c8bc30ac496` ·
