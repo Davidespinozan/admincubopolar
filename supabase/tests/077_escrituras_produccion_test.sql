@@ -102,7 +102,8 @@ GRANT EXECUTE ON FUNCTION t77_intentos(TEXT) TO anon, authenticated;
 
 \echo '── 077: estado físico'
 SELECT t77_assert(NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND ((tablename = 'productos' AND policyname = 'produccion_update') OR (tablename = 'inventario_mov' AND policyname = 'insert_roles') OR (tablename = 'produccion' AND policyname IN ('produccion_update', 'produccion_write')))), '077-01 las 4 policies obsoletas no existen');
-SELECT t77_assert((SELECT bool_and(pol = 'admin_all,read_all') FROM (SELECT string_agg(policyname, ',' ORDER BY policyname) pol FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('productos', 'inventario_mov', 'produccion') GROUP BY tablename) x)
+SELECT t77_assert((SELECT bool_and(pol = 'admin_all,read_all') FROM (SELECT string_agg(policyname, ',' ORDER BY policyname) pol FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('productos', 'inventario_mov', 'produccion') AND policyname <> 'tienda_read' GROUP BY tablename) x)
+  AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND policyname = 'tienda_read' AND cmd <> 'SELECT')
   AND (SELECT count(DISTINCT tablename) = 3 FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('productos', 'inventario_mov', 'produccion')), '077-02 quedan solo admin_all y read_all en las 3 tablas');
 SELECT t77_assert((SELECT bool_and(relrowsecurity) FROM pg_class WHERE oid IN ('public.productos'::regclass, 'public.inventario_mov'::regclass, 'public.produccion'::regclass)), '077-03 RLS físico activo');
 

@@ -88,9 +88,9 @@ SELECT pg_temp.ok(md5(pg_get_functiondef('public.completar_venta_directa(uuid,bi
   AND md5(pg_get_functiondef('public.stock_mov_cuarto(text,text,integer,text,text,text,text,text,bigint,uuid)'::regprocedure)) = '3591d07446854c4a682cd41f88489ec6'
   AND md5(pg_get_functiondef('public.update_orden_atomic(bigint,jsonb,jsonb)'::regprocedure)) = '443fcb9caf68aa44f1c3f595103ad63d'
   AND md5(pg_get_functiondef('public.cuartos_frios_guard()'::regprocedure)) = '2974531ebf77425705492a8efde55c73'
-  AND md5(pg_get_functiondef('public.erp_actor()'::regprocedure)) = '27277fcf645f05134275473c7892b769'
-  AND md5(pg_get_functiondef('public.erp_roles_activos()'::regprocedure)) = '53c2999e3a7e19c781999d73ea052c68'
-  AND md5(pg_get_functiondef('public.erp_lector_negocio()'::regprocedure)) = 'd97f617862eda14b2d86100221e9885b'
+  AND md5(pg_get_functiondef('public.erp_actor()'::regprocedure)) IN ('27277fcf645f05134275473c7892b769', 'e1a9770e1bc5cebd7f565c9cfdc2a880')
+  AND md5(pg_get_functiondef('public.erp_roles_activos()'::regprocedure)) IN ('53c2999e3a7e19c781999d73ea052c68', '5da5963d56554336793351384f018d74')
+  AND md5(pg_get_functiondef('public.erp_lector_negocio()'::regprocedure)) IN ('d97f617862eda14b2d86100221e9885b', '858e98ff65b09e80477dde7298b164d2')
   AND md5(pg_get_functiondef('public.finalizar_inventario_ruta(uuid,bigint,jsonb)'::regprocedure)) = '6df6f7786484a69b7cb78ea6973b5a47'
   AND md5(pg_get_functiondef('public.cerrar_ruta_admin(uuid,bigint,text,jsonb,jsonb,text)'::regprocedure)) = 'd25f37e2123b47e7f31215f8fbf746c7'
   AND md5(pg_get_functiondef('public.registrar_venta_rapida_ruta(uuid,bigint,bigint,text,jsonb,text,boolean,text,timestamptz)'::regprocedure)) = '68c38f4847373536ee80b5ff3a981311'
@@ -100,7 +100,7 @@ SELECT pg_temp.ok((SELECT count(*) = 2 AND bool_and(NOT has_function_privilege('
                      FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND p.proname IN ('traspaso_fabrica_autorizado', 'cuartos_frios_guard_actor'))
   AND (SELECT count(*) = 1 FROM pg_trigger WHERE tgrelid = 'public.cuartos_frios'::regclass AND tgname = 'trg_cuartos_frios_actor' AND NOT tgisinternal AND tgenabled = 'O')
   AND (SELECT is_nullable = 'NO' AND column_default = 'false' FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'usuario_establecimientos' AND column_name = 'traspasa_con_cedis')
-  AND (SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cuartos_frios')
+  AND (SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cuartos_frios' AND policyname <> 'tienda_read')
   AND NOT has_table_privilege('authenticated', 'public.usuario_establecimientos', 'SELECT'),
   '144-05 la autorización y la guarda no son ejecutables por API; el disparador está activo; la marca de autorización nace apagada; policies de cuartos sin cambio');
 -- La marca que reconoce la guarda solo la fija traspaso_cuartos, y ninguna función pública deja fijar una variable por nombre.
@@ -272,7 +272,7 @@ SELECT pg_temp.ok((SELECT bool_and(x.final = x.inicial + x.neto) FROM (
                        FROM inventario_mov i WHERE i.producto = 'P144-A' AND i.cuarto_id = c.id), 0) AS neto
       FROM cuartos_frios c WHERE c.id LIKE 'CF-144-%') x),
   '144-40 en cada cuarto, existencia final = inicial + kardex (nada se movió sin registro)');
-SELECT pg_temp.ok((SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cuartos_frios') AND (SELECT count(*) = 5 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ordenes')
+SELECT pg_temp.ok((SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cuartos_frios' AND policyname <> 'tienda_read') AND (SELECT count(*) = 5 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ordenes' AND policyname <> 'tienda_read')
   AND has_table_privilege('authenticated', 'public.cuartos_frios', 'UPDATE') AND has_table_privilege('authenticated', 'public.ordenes', 'UPDATE') AND NOT has_table_privilege('authenticated', 'public.ordenes', 'INSERT'),
   '144-41 policies y permisos de cuartos y órdenes: sin cambio');
 

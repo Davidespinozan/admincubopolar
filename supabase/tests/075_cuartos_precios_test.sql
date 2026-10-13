@@ -51,7 +51,7 @@ INSERT INTO t75_ids VALUES ('h0', t75_cuarto());
 
 \echo '── 075: estado físico'
 SELECT t75_assert(NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cuartos_frios' AND policyname IN ('update_roles', 'write_roles')), '075-01 cuartos_frios: sin policies legacy de escritura para Chofer/Producción');
-SELECT t75_assert((SELECT string_agg(policyname, ',' ORDER BY policyname) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cuartos_frios') = 'admin_all,read_all', '075-02 cuartos_frios: quedan admin_all y read_all');
+SELECT t75_assert((SELECT string_agg(policyname, ',' ORDER BY policyname) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cuartos_frios' AND policyname <> 'tienda_read') = 'admin_all,read_all', '075-02 cuartos_frios: quedan admin_all y read_all (más la lectura acotada de tienda de 145, que es solo SELECT)');
 SELECT t75_assert((SELECT string_agg(policyname, ',' ORDER BY policyname) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'precios_esp') = 'admin_all,read_all', '075-03 precios_esp: quedan admin_all y read_all');
 SELECT t75_assert((SELECT bool_and(relrowsecurity) FROM pg_class WHERE oid IN ('public.cuartos_frios'::regclass, 'public.precios_esp'::regclass)), '075-04 RLS físico sigue activo');
 

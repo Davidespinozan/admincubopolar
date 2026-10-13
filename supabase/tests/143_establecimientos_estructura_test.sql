@@ -74,19 +74,19 @@ SELECT pg_temp.ok(md5(pg_get_functiondef('public.confirmar_carga_ruta(uuid,bigin
   AND md5(pg_get_functiondef('public.ajustar_existencia(uuid,text,integer,text)'::regprocedure)) IN ('def11d269c049c7301dfa568a96c529f', '0a5f9c2c95b89c0deb8a38bca5dd7f8a')
   AND md5(pg_get_functiondef('public.update_orden_atomic(bigint,jsonb,jsonb)'::regprocedure)) = '443fcb9caf68aa44f1c3f595103ad63d'
   AND md5(pg_get_functiondef('public.cuartos_frios_guard()'::regprocedure)) = '2974531ebf77425705492a8efde55c73'
-  AND md5(pg_get_functiondef('public.erp_actor()'::regprocedure)) = '27277fcf645f05134275473c7892b769'
-  AND md5(pg_get_functiondef('public.erp_roles_activos()'::regprocedure)) = '53c2999e3a7e19c781999d73ea052c68'
-  AND md5(pg_get_functiondef('public.erp_lector_negocio()'::regprocedure)) = 'd97f617862eda14b2d86100221e9885b'
+  AND md5(pg_get_functiondef('public.erp_actor()'::regprocedure)) IN ('27277fcf645f05134275473c7892b769', 'e1a9770e1bc5cebd7f565c9cfdc2a880')
+  AND md5(pg_get_functiondef('public.erp_roles_activos()'::regprocedure)) IN ('53c2999e3a7e19c781999d73ea052c68', '5da5963d56554336793351384f018d74')
+  AND md5(pg_get_functiondef('public.erp_lector_negocio()'::regprocedure)) IN ('d97f617862eda14b2d86100221e9885b', '858e98ff65b09e80477dde7298b164d2')
   AND md5(pg_get_functiondef('public.cerrar_ruta_admin(uuid,bigint,text,jsonb,jsonb,text)'::regprocedure)) = 'd25f37e2123b47e7f31215f8fbf746c7'
   AND md5(pg_get_functiondef('public.registrar_venta_rapida_ruta(uuid,bigint,bigint,text,jsonb,text,boolean,text,timestamptz)'::regprocedure)) = '68c38f4847373536ee80b5ff3a981311',
   '143-04 NO cambian carga de ruta, pedidos, venta de mostrador, traspaso, kardex, ajuste, identidad, lectura general ni T5-D1/D2: md5 = producción (o, tras 144, la definición de E2 de los cuatro contratos que esa fase sí cambia)');
-SELECT pg_temp.ok((SELECT count(*) = 5 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ordenes')
-  AND (SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cuartos_frios')
+SELECT pg_temp.ok((SELECT count(*) = 5 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ordenes' AND policyname <> 'tienda_read')
+  AND (SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cuartos_frios' AND policyname <> 'tienda_read')
   AND (SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'usuarios')
   AND has_table_privilege('authenticated', 'public.cuartos_frios', 'SELECT') AND has_table_privilege('authenticated', 'public.cuartos_frios', 'INSERT')
   AND has_table_privilege('authenticated', 'public.cuartos_frios', 'UPDATE') AND has_table_privilege('authenticated', 'public.ordenes', 'UPDATE')
   AND NOT has_table_privilege('authenticated', 'public.ordenes', 'INSERT') AND NOT has_table_privilege('anon', 'public.cuartos_frios', 'SELECT'),
-  '143-05 policies y permisos de órdenes, cuartos fríos y usuarios: los mismos de antes');
+  '143-05 policies y permisos de órdenes, cuartos fríos y usuarios: los mismos de antes (tras 145, más la lectura acotada de tienda)');
 
 \echo '── 143: solo existe el CEDIS; el interruptor está apagado'
 SELECT pg_temp.ok(pg_temp.est() = '1|1|0|f|0'
@@ -209,9 +209,14 @@ SET LOCAL ROLE authenticated; SELECT pg_temp.como(2);
 INSERT INTO t143 VALUES ('r', jsonb_build_object('roles', to_jsonb(erp_roles_activos()), 'lector', erp_lector_negocio(), 'ordenes', (SELECT count(*) FROM ordenes WHERE id = 14391),
                                                    'clientes', (SELECT count(*) FROM clientes WHERE id = 14301), 'cuartos', (SELECT count(*) FROM cuartos_frios WHERE id IN ('CF-143', 'CF-143V'))));
 RESET ROLE;
-SELECT pg_temp.ok(pg_temp.j('r') -> 'roles' = '["Ventas"]'::jsonb AND (pg_temp.j('r') ->> 'lector')::boolean AND (pg_temp.j('r') ->> 'ordenes')::int = 1
-  AND (pg_temp.j('r') ->> 'clientes')::int = 1 AND (pg_temp.j('r') ->> 'cuartos')::int = 2,
-  '143-40 un usuario asignado a una tienda conserva EXACTAMENTE sus permisos de hoy (E1 no cambia permisos efectivos)');
+-- Consciente de la fase: E1 y E2 no cambian permisos efectivos; desde 145 (E3) esa misma asignación SÍ decide el perfil
+-- (rol guardado Ventas + tienda = «Ventas Tienda»: sin lectura amplia; solo el congelador de su tienda).
+SELECT pg_temp.ok(CASE WHEN to_regprocedure('public.erp_usuario_de_tienda(bigint)') IS NULL
+    THEN pg_temp.j('r') -> 'roles' = '["Ventas"]'::jsonb AND (pg_temp.j('r') ->> 'lector')::boolean AND (pg_temp.j('r') ->> 'ordenes')::int = 1
+         AND (pg_temp.j('r') ->> 'clientes')::int = 1 AND (pg_temp.j('r') ->> 'cuartos')::int = 2
+    ELSE pg_temp.j('r') -> 'roles' = '["Ventas Tienda"]'::jsonb AND NOT (pg_temp.j('r') ->> 'lector')::boolean AND (pg_temp.j('r') ->> 'ordenes')::int = 0
+         AND (pg_temp.j('r') ->> 'clientes')::int = 0 AND (pg_temp.j('r') ->> 'cuartos')::int = 1 END,
+  '143-40 un usuario asignado a una tienda: antes de 145 conserva EXACTAMENTE sus permisos (E1 no los cambia); desde 145 es «Ventas Tienda» y solo ve el congelador de su tienda');
 UPDATE tiendas_activacion SET habilitada = false, habilitada_at = NULL, habilitada_por = NULL;
 SELECT pg_temp.falla(format($q$UPDATE establecimientos SET nombre = 'Otro nombre' WHERE id = %s$q$, pg_temp.tf()), '143-41 al apagar el interruptor, una tienda existente ya no se modifica', '22023', '%todavía no están activadas%', 'TIENDAS_NO_ACTIVADAS');
 

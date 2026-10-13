@@ -145,7 +145,7 @@ SELECT t79_assert((SELECT count(*) = 47 - (SELECT count(*) FROM (VALUES ('movimi
             AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'usuarios' AND policyname = 'admin_all') THEN 1 ELSE 0 END
   FROM pg_policies WHERE schemaname = 'public' AND (coalesce(qual, '') || coalesce(with_check, '')) ~ 'get_my_rol\(\)')
   AND (SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND (coalesce(qual, '') || coalesce(with_check, '')) ~ 'get_my_user_id\(\)'), '079-04 dependencias intactas: 47 policies con get_my_rol, 2 con get_my_user_id (ninguna reescrita)');
-SELECT t79_assert((SELECT md5(pg_get_functiondef(oid)) IN ('51a6dd4f6ee6486a34f81e3eec54eb8a', '27277fcf645f05134275473c7892b769') FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
+SELECT t79_assert((SELECT md5(pg_get_functiondef(oid)) IN ('51a6dd4f6ee6486a34f81e3eec54eb8a', '27277fcf645f05134275473c7892b769', 'e1a9770e1bc5cebd7f565c9cfdc2a880') FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '769d64e0c31d5f74cdd765c44b80f259' FROM pg_proc WHERE oid = 'public.erp_rol_activo()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '02c3f3c9f97eebb1cc4ed11d61051943' FROM pg_proc WHERE oid = 'public.erp_usuario_id()'::regprocedure), '079-05 helpers canónicos 071 sin cambios (md5 de producción)');
 

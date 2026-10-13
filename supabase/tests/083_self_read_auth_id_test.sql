@@ -58,7 +58,7 @@ SELECT t83_assert((SELECT string_agg(policyname, ',' ORDER BY policyname) IN ('a
 SELECT t83_assert((SELECT count(*) = 0 FROM pg_policies WHERE (coalesce(qual, '') || coalesce(with_check, '')) ~* 'email')
   AND (SELECT count(*) = 0 FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND pg_get_functiondef(p.oid) ~ 'auth\.jwt\(\)'), '083-03 ninguna policy ni función de public usa email o auth.jwt() para autorizar');
 SELECT t83_assert((SELECT pg_get_constraintdef(oid) = 'UNIQUE (auth_id)' FROM pg_constraint WHERE conrelid = 'public.usuarios'::regclass AND conname = 'usuarios_auth_id_key'), '083-04 constraint 082 intacta');
-SELECT t83_assert((SELECT md5(pg_get_functiondef(oid)) IN ('51a6dd4f6ee6486a34f81e3eec54eb8a', '27277fcf645f05134275473c7892b769') FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
+SELECT t83_assert((SELECT md5(pg_get_functiondef(oid)) IN ('51a6dd4f6ee6486a34f81e3eec54eb8a', '27277fcf645f05134275473c7892b769', 'e1a9770e1bc5cebd7f565c9cfdc2a880') FROM pg_proc WHERE oid = 'public.erp_actor()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '0b78d79f3cf63b4d383997120a0faece' FROM pg_proc WHERE oid = 'public.get_my_rol()'::regprocedure)
   AND (SELECT md5(pg_get_functiondef(oid)) = '8d31947c0e10b975b4c86ad99345cb2b' FROM pg_proc WHERE oid = 'public.get_my_user_id()'::regprocedure), '083-05 helpers 071/079 intactos (md5 de producción)');
 

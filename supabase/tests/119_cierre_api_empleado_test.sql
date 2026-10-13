@@ -88,12 +88,16 @@ CREATE OR REPLACE FUNCTION t119_permitidas() RETURNS TEXT[] LANGUAGE sql AS $$ S
   'asistencia_clasificar_entrada(timestamp with time zone,integer,timestamp with time zone)', 'b4_escritura_api()',
   'b4_asiento_de_contrato(text,text,bigint,text)',
   -- 120 (GER-1): identidad propia (roles, accesos, dueño) y cambio de su propia contraseña
-  'erp_roles_activos()', 'erp_tiene_rol(text)', 'erp_es_dueno()', 'confirmar_cambio_password()']::text[] $$;
+  'erp_roles_activos()', 'erp_tiene_rol(text)', 'erp_es_dueno()', 'confirmar_cambio_password()',
+  -- 145 (Tiendas E3): alcance propio del usuario de tienda (sí/no; lo evalúan las 5 policies tienda_read). Para el Empleado siempre es false.
+  'erp_tienda_asignada(bigint,boolean)', 'erp_tienda_ve_cuarto(text)', 'erp_tienda_ve_orden(bigint)']::text[] $$;
 GRANT EXECUTE ON FUNCTION t119_permitidas() TO PUBLIC;
 
 \echo '── 119: superficie'
-SELECT t119_assert(pg_get_functiondef('public.erp_es_activo()'::regprocedure) LIKE '%erp_rol_activo() IS NOT NULL AND erp_rol_activo() <> ''Empleado''%',
-  '119-00a erp_es_activo(): activo y no Empleado');
+-- Consciente de la fase: desde 145 (Tiendas E3) excluye además al perfil efectivo «Ventas Tienda»; para el Empleado y los perfiles centrales es lo mismo.
+SELECT t119_assert(pg_get_functiondef('public.erp_es_activo()'::regprocedure) LIKE '%erp_rol_activo() IS NOT NULL AND erp_rol_activo() <> ''Empleado''%'
+                OR pg_get_functiondef('public.erp_es_activo()'::regprocedure) LIKE '%erp_rol_activo() IS NOT NULL AND erp_rol_activo() NOT IN (''Empleado'', ''Ventas Tienda'')%',
+  '119-00a erp_es_activo(): activo y no Empleado (desde 145, tampoco Ventas Tienda)');
 SELECT t119_assert(NOT has_function_privilege('authenticated', 'public.erp_exigir_no_empleado(text)', 'EXECUTE')
                AND NOT has_function_privilege('anon', 'public.erp_exigir_no_empleado(text)', 'EXECUTE'),
   '119-00b la guarda no se expone por API');
