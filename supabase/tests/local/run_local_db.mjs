@@ -106,7 +106,7 @@ if (r.aborted) process.exit(1);
 
 console.log('── migraciones (secuencia de producción: 001_completo → 001_schema → 002_safe → 003…068)');
 const skip = new Set(['000_reset.sql', '000_template_migration.sql', '002_seed.sql', '004_demo_data.sql', '005_cleanup_demo_products.sql']);
-const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_') && !f.startsWith('123_') && !f.startsWith('124_') && !f.startsWith('125_') && !f.startsWith('127_') && !f.startsWith('128_') && !f.startsWith('129_') && !f.startsWith('130_') && !f.startsWith('131_') && !f.startsWith('132_') && !f.startsWith('133_') && !f.startsWith('134_') && !f.startsWith('135_') && !f.startsWith('136_') && !f.startsWith('137_') && !f.startsWith('138_') && !f.startsWith('139_') && !f.startsWith('140_') && !f.startsWith('141_') && !f.startsWith('142_') && !f.startsWith('143_')).sort((a, b) => {
+const files = fs.readdirSync(path.join(ROOT, 'supabase')).filter(f => f.endsWith('.sql') && !skip.has(f) && !f.startsWith('069_') && !f.startsWith('070_') && !f.startsWith('071_') && !f.startsWith('072_') && !f.startsWith('073_') && !f.startsWith('074_') && !f.startsWith('075_') && !f.startsWith('076_') && !f.startsWith('077_') && !f.startsWith('078_') && !f.startsWith('079_') && !f.startsWith('080_') && !f.startsWith('081_') && !f.startsWith('082_') && !f.startsWith('083_') && !f.startsWith('084_') && !f.startsWith('085_') && !f.startsWith('086_') && !f.startsWith('087_') && !f.startsWith('088_') && !f.startsWith('089_') && !f.startsWith('090_') && !f.startsWith('091_') && !f.startsWith('092_') && !f.startsWith('093_') && !f.startsWith('094_') && !f.startsWith('095_') && !f.startsWith('096_') && !f.startsWith('097_') && !f.startsWith('098_') && !f.startsWith('099_') && !f.startsWith('100_') && !f.startsWith('101_') && !f.startsWith('102_') && !f.startsWith('103_') && !f.startsWith('104_') && !f.startsWith('105_') && !f.startsWith('106_') && !f.startsWith('107_') && !f.startsWith('108_') && !f.startsWith('109_') && !f.startsWith('110_') && !f.startsWith('111_') && !f.startsWith('112_') && !f.startsWith('113_') && !f.startsWith('114_') && !f.startsWith('115_') && !f.startsWith('116_') && !f.startsWith('117_') && !f.startsWith('118_') && !f.startsWith('119_') && !f.startsWith('120_') && !f.startsWith('121_') && !f.startsWith('122_') && !f.startsWith('123_') && !f.startsWith('124_') && !f.startsWith('125_') && !f.startsWith('127_') && !f.startsWith('128_') && !f.startsWith('129_') && !f.startsWith('130_') && !f.startsWith('131_') && !f.startsWith('132_') && !f.startsWith('133_') && !f.startsWith('134_') && !f.startsWith('135_') && !f.startsWith('136_') && !f.startsWith('137_') && !f.startsWith('138_') && !f.startsWith('139_') && !f.startsWith('140_') && !f.startsWith('141_') && !f.startsWith('142_') && !f.startsWith('143_') && !f.startsWith('144_')).sort((a, b) => {
   const order = f => (f === '001_schema_completo.sql' ? '001_0' : f === '001_schema.sql' ? '001_1' : f);
   return order(a).localeCompare(order(b));
 });
@@ -5009,6 +5009,10 @@ for (const [mig, suite, reruns] of [
   // 143 (Tiendas E1): solo estructura (establecimientos, interruptor apagado, columnas en cuartos y órdenes). Ningún
   // contrato cambia: se re-corren inventario, rutas, ventas, privilegios, identidad, sucursales de clientes y T5.
   ['143_establecimientos_estructura.sql', '143_establecimientos_estructura_test.sql', ['084_contratos_stock_test.sql', '085_contencion_stock_test.sql', '087_inventario_ruta_test.sql', '088_b3_integridad_test.sql', '090_b4_privilegios_test.sql', '102_cuartos_inventario_test.sql', '109_venta_directa_test.sql', '110_contencion_entrega_directa_test.sql', '115_preparacion_barra_test.sql', '117_aislamiento_lectura_empleado_test.sql', '119_cierre_api_empleado_test.sql', '120_ger1_dueno_accesos_test.sql', '121_ger1_contencion_usuarios_test.sql', '123_multisucursal_test.sql', '129_media_barra_test.sql', '137_pedido_sin_existencia_test.sql', '138_recuperacion_cierre_ruta_test.sql', '139_entrega_ruta_atomica_test.sql', '140_conteo_empaques_test.sql', '141_venta_rapida_ruta_test.sql', '142_recuperacion_admin_ruta_test.sql']],
+  // 144 (Tiendas E2): carga de ruta, pedido y ajuste central solo del CEDIS; traspaso acotado por establecimiento; guarda
+  // de inventario de tienda para Producción y Chofer. Cambia 4 contratos cerrados (con autorización): se re-corre TODO lo
+  // de inventario, rutas, pedidos, traspasos, empaque, barra, privilegios, identidad y T5.
+  ['144_proteccion_inventario_cedis.sql', '144_proteccion_inventario_cedis_test.sql', ['084_contratos_stock_test.sql', '085_contencion_stock_test.sql', '086_cierre_financiero_test.sql', '087_inventario_ruta_test.sql', '088_b3_integridad_test.sql', '090_b4_privilegios_test.sql', '102_cuartos_inventario_test.sql', '104_devoluciones_test.sql', '106_costo_empaque_test.sql', '107_base_costo_empaque_test.sql', '109_venta_directa_test.sql', '110_contencion_entrega_directa_test.sql', '115_preparacion_barra_test.sql', '117_aislamiento_lectura_empleado_test.sql', '119_cierre_api_empleado_test.sql', '120_ger1_dueno_accesos_test.sql', '121_ger1_contencion_usuarios_test.sql', '123_multisucursal_test.sql', '129_media_barra_test.sql', '133_venta_barra_desde_entera_test.sql', '137_pedido_sin_existencia_test.sql', '138_recuperacion_cierre_ruta_test.sql', '139_entrega_ruta_atomica_test.sql', '140_conteo_empaques_test.sql', '141_venta_rapida_ruta_test.sql', '142_recuperacion_admin_ruta_test.sql', '143_establecimientos_estructura_test.sql']],
 ]) {
   const n = mig.slice(0, 3);
   for (const k of [1, 2]) {
@@ -5067,6 +5071,14 @@ for (const [mig, suite, reruns] of [
   let todo142 = true;
   await c142({ connect, c, ok: (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) todo142 = false; } });
   if (!todo142) { console.log('RESULTADO: FALLÓ (142 concurrencia)'); process.exit(1); }
+}
+
+// ═══ 144 (Tiendas E2) — concurrencia de inventario con dos conexiones ═══
+{
+  const { c144 } = await import('./c144_concurrencia.mjs');
+  let todo144 = true;
+  await c144({ connect, c, ok: (cond, msg) => { console.log(`  ${cond ? 'OK' : 'FAIL'}: ${msg}`); if (!cond) todo144 = false; } });
+  if (!todo144) { console.log('RESULTADO: FALLÓ (144 concurrencia)'); process.exit(1); }
 }
 
 // ═══ OP-03 — ensayo operativo de punta a punta (Día 0; producción, barra, mostrador, ruta, mermas, reverso) ═══
@@ -5168,7 +5180,9 @@ const F069 = ['fin_mi_rol_activo','fin_actor_permitido','increment_saldo','crear
   // 142 (T5-D2)
   'ruta_cobros_pendientes_interno', 'ruta_cobros_pendientes', 'conciliacion_ruta', 'iniciar_ruta_admin', 'cerrar_ruta_admin',
   // 143 (Tiendas E1)
-  'tiendas_habilitadas'];
+  'tiendas_habilitadas',
+  // 144 (Tiendas E2)
+  'traspaso_fabrica_autorizado'];
 const sp = (await c.query(`SELECT p.proname, p.prosecdef, array_to_string(p.proconfig, ';') AS cfg,
     has_function_privilege('public', p.oid, 'EXECUTE') AS pub,
     has_function_privilege('anon', p.oid, 'EXECUTE') AS anon,

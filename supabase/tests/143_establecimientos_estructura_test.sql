@@ -66,12 +66,12 @@ SELECT pg_temp.ok((SELECT bool_and(NOT has_function_privilege('authenticated', p
                       AND p.proname IN ('tiendas_habilitadas', 'tiendas_activacion_guard', 'establecimientos_guard', 'cuartos_frios_guard_establecimiento', 'ordenes_guard_establecimiento'))
   AND (SELECT prosecdef AND array_to_string(proconfig, ';') = 'search_path=public, pg_temp' FROM pg_proc WHERE oid = 'public.tiendas_habilitadas()'::regprocedure),
   '143-03 las cinco funciones nuevas no son ejecutables por API; la única SECURITY DEFINER lleva search_path fijo');
-SELECT pg_temp.ok(md5(pg_get_functiondef('public.confirmar_carga_ruta(uuid,bigint,text,boolean,text)'::regprocedure)) = 'b1be0d0eda13210f828d23572e8d0fb3'
-  AND md5(pg_get_functiondef('public.crear_orden(jsonb,jsonb)'::regprocedure)) = 'ef8e49a380d52f870aaccc1bf2ef323c'
+SELECT pg_temp.ok(md5(pg_get_functiondef('public.confirmar_carga_ruta(uuid,bigint,text,boolean,text)'::regprocedure)) IN ('b1be0d0eda13210f828d23572e8d0fb3', '50ce141b71b2692a015a1cd77e780fec')
+  AND md5(pg_get_functiondef('public.crear_orden(jsonb,jsonb)'::regprocedure)) IN ('ef8e49a380d52f870aaccc1bf2ef323c', 'ccdd240c58f69d89699c99c89199e911')
   AND md5(pg_get_functiondef('public.completar_venta_directa(uuid,bigint,text,text,jsonb,text,text)'::regprocedure)) = '2107586c1f5b8b59d7a4ff039a1fd0d6'
-  AND md5(pg_get_functiondef('public.traspaso_cuartos(uuid,text,text,text,integer)'::regprocedure)) = '8a03866b79eb80cd45cc3862d43a9b03'
+  AND md5(pg_get_functiondef('public.traspaso_cuartos(uuid,text,text,text,integer)'::regprocedure)) IN ('8a03866b79eb80cd45cc3862d43a9b03', 'f73c7272614080b951bfc3d813f8dff4')
   AND md5(pg_get_functiondef('public.stock_mov_cuarto(text,text,integer,text,text,text,text,text,bigint,uuid)'::regprocedure)) = '3591d07446854c4a682cd41f88489ec6'
-  AND md5(pg_get_functiondef('public.ajustar_existencia(uuid,text,integer,text)'::regprocedure)) = 'def11d269c049c7301dfa568a96c529f'
+  AND md5(pg_get_functiondef('public.ajustar_existencia(uuid,text,integer,text)'::regprocedure)) IN ('def11d269c049c7301dfa568a96c529f', '0a5f9c2c95b89c0deb8a38bca5dd7f8a')
   AND md5(pg_get_functiondef('public.update_orden_atomic(bigint,jsonb,jsonb)'::regprocedure)) = '443fcb9caf68aa44f1c3f595103ad63d'
   AND md5(pg_get_functiondef('public.cuartos_frios_guard()'::regprocedure)) = '2974531ebf77425705492a8efde55c73'
   AND md5(pg_get_functiondef('public.erp_actor()'::regprocedure)) = '27277fcf645f05134275473c7892b769'
@@ -79,7 +79,7 @@ SELECT pg_temp.ok(md5(pg_get_functiondef('public.confirmar_carga_ruta(uuid,bigin
   AND md5(pg_get_functiondef('public.erp_lector_negocio()'::regprocedure)) = 'd97f617862eda14b2d86100221e9885b'
   AND md5(pg_get_functiondef('public.cerrar_ruta_admin(uuid,bigint,text,jsonb,jsonb,text)'::regprocedure)) = 'd25f37e2123b47e7f31215f8fbf746c7'
   AND md5(pg_get_functiondef('public.registrar_venta_rapida_ruta(uuid,bigint,bigint,text,jsonb,text,boolean,text,timestamptz)'::regprocedure)) = '68c38f4847373536ee80b5ff3a981311',
-  '143-04 NO cambian carga de ruta, pedidos, venta de mostrador, traspaso, kardex, ajuste, identidad, lectura general ni T5-D1/D2: md5 = producción');
+  '143-04 NO cambian carga de ruta, pedidos, venta de mostrador, traspaso, kardex, ajuste, identidad, lectura general ni T5-D1/D2: md5 = producción (o, tras 144, la definición de E2 de los cuatro contratos que esa fase sí cambia)');
 SELECT pg_temp.ok((SELECT count(*) = 5 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'ordenes')
   AND (SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cuartos_frios')
   AND (SELECT count(*) = 2 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'usuarios')

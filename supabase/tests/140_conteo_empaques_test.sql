@@ -62,7 +62,7 @@ SELECT pg_temp.ok((SELECT bool_and(prosecdef AND array_to_string(proconfig, ';')
                      FROM pg_proc WHERE oid IN ('public.empaques_para_conteo()'::regprocedure, 'public.historial_empaque(text,integer)'::regprocedure,
                                                 'public.registrar_conteo_empaque(uuid,text,integer,bigint,numeric,text)'::regprocedure)),
   '140-01 tres contratos: SECURITY DEFINER, search_path fijo, sin anon');
-SELECT pg_temp.ok(md5(pg_get_functiondef('public.ajustar_existencia(uuid,text,integer,text)'::regprocedure)) = 'def11d269c049c7301dfa568a96c529f',
+SELECT pg_temp.ok(md5(pg_get_functiondef('public.ajustar_existencia(uuid,text,integer,text)'::regprocedure)) IN ('def11d269c049c7301dfa568a96c529f', '0a5f9c2c95b89c0deb8a38bca5dd7f8a'),   -- la de 108, o la de 144 (solo acota el producto terminado al CEDIS; la rama de empaque es idéntica)
   '140-02 ajustar_existencia NO cambia (md5 = producción): sigue siendo quien mueve el inventario');
 
 \echo '── 140: existencias por recepción de compra'
