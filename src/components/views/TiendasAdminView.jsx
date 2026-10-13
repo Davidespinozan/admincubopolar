@@ -12,9 +12,10 @@ import { Card, SectionLabel, SegmentedTabs, Guia } from '../ui/Components';
 import Modal, { FormInput, FormSelect, FormTextarea, FormBtn } from '../ui/Modal';
 import { AvisoPos } from '../PosTiendaView';
 import { TiendaConfigPanel } from './TiendaConfigPanel';
+import { TraspasosPanel } from './TraspasosPanel';
 import { nuevaOperacionId, leerMonto, pesos, mediosParaVenta, construirCorreccion, textoReembolso } from '../../data/posLogic';
 
-const TABS = [{ k: 'config', l: 'Configuración' }, { k: 'cajas', l: 'Cajas' }, { k: 'turnos', l: 'Turnos' }, { k: 'ventas', l: 'Ventas' }, { k: 'reembolsos', l: 'Reembolsos' }];
+const TABS = [{ k: 'config', l: 'Configuración' }, { k: 'abasto', l: 'Abastecimiento' }, { k: 'cajas', l: 'Cajas' }, { k: 'turnos', l: 'Turnos' }, { k: 'ventas', l: 'Ventas' }, { k: 'reembolsos', l: 'Reembolsos' }];
 const hora = (iso) => { try { return iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '—'; } catch { return '—'; } };
 
 export function TiendasAdminView({ data, actions }) {
@@ -95,7 +96,8 @@ export function TiendasAdminView({ data, actions }) {
       {aviso && !modal && <AvisoPos tono={aviso.tono}>{aviso.texto}</AvisoPos>}
 
       {tab === 'config' && <TiendaConfigPanel data={data} actions={actions} tiendas={todas} tiendasHabilitadas={!!d.tiendasHabilitadas} onCambio={cargar} />}
-      {tab !== 'config' && tiendas.length === 0 && (
+      {tab === 'abasto' && <TraspasosPanel data={data} actions={actions} tiendas={todas} cuartos={d.cuartos} />}
+      {tab !== 'config' && tab !== 'abasto' && tiendas.length === 0 && (
         <Guia titulo="Todavía no hay tiendas activas" testid="tiendas-sin-activas">Configura y activa una tienda en la pestaña Configuración; después aquí verás sus cajas, turnos, ventas y reembolsos.</Guia>
       )}
 

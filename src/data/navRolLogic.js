@@ -44,6 +44,8 @@ const VISTA_MI_ASISTENCIA = {
 // "Tiendas" es el módulo de Administración: cajas, turnos, ventas de tienda y correcciones.
 export const MODULO_POS = { id: "pos", label: "Punto de venta", labelMovil: "Vender", icon: "ShoppingCart" };
 export const MODULO_POS_TURNO = { id: "pos-turno", label: "Mi turno", icon: "Wallet" };
+// Tiendas E7 (mig 148): recepción de los traspasos que llegan a la tienda. Módulo aparte: no se mezcla con la venta.
+export const MODULO_POS_RECEPCION = { id: "pos-recepcion", label: "Recibir producto", labelMovil: "Recibir", icon: "Truck" };
 export const MODULO_TIENDAS = { id: "tiendas", label: "Tiendas", icon: "Warehouse" };
 const SOLO_ADMIN = new Set([MODULO_ASISTENCIA.id, MODULO_CALENDARIO.id, "usuarios", MODULO_TIENDAS.id]);
 
@@ -173,7 +175,7 @@ export const NAV_ROLES = {
   // (leen datos centrales), sin rutas, producción, CxC ni finanzas, sin búsqueda global ni "Ver como".
   "Ventas Tienda": {
     modo: "completo", inicio: MODULO_POS.id, chrome: CHROME_CAMPO, persistirAreas: false,
-    areas: [{ id: "tienda", label: "Tienda", icon: "ShoppingCart", color: "emerald", items: [MODULO_POS, MODULO_POS_TURNO] }],
+    areas: [{ id: "tienda", label: "Tienda", icon: "ShoppingCart", color: "emerald", items: [MODULO_POS, MODULO_POS_TURNO, MODULO_POS_RECEPCION] }],
     vistas: VISTA_MI_ASISTENCIA,
   },
   // WF-0: rol mínimo. Solo "Mi asistencia" y "Mis actividades": sin back office, sin datos de negocio, sin "Ver como".

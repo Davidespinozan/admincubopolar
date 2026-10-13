@@ -445,7 +445,9 @@ DECLARE
     -- C. 145: su alcance (sí/no sobre lo suyo) y en qué tiendas trabaja
     'erp_tienda_asignada(bigint,boolean)', 'erp_tienda_ve_cuarto(text)', 'erp_tienda_ve_orden(bigint)', 'mis_establecimientos()',
     -- D. 146 (E4): su turno abierto y las cajas de su tienda (lectura). Los 7 contratos de escritura del POS sí se sondean: sin caja ni turno propios responden 42501.
-    'mi_turno_caja()'];
+    'mi_turno_caja()',
+    -- E. 148 (E7): los traspasos de SUS tiendas (lectura). Recibir, con argumentos vacíos, responde 42501 y sí se sondea.
+    'traspasos_consulta(bigint,text,integer)'];
 BEGIN
   FOR f IN SELECT p.oid::regprocedure::text AS sig, p.proname, oidvectortypes(p.proargtypes) AS args
              FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND has_function_privilege('authenticated', p.oid, 'EXECUTE')

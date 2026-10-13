@@ -71,11 +71,11 @@ describe('E5: perfil efectivo (lo decide el servidor)', () => {
 
 describe('E5: navegación del perfil de tienda', () => {
   const nav = navParaRol(ROL_VENTAS_TIENDA);
-  it('solo Punto de venta y Mi turno; entra directo al punto de venta', () => {
-    expect([...idsModulos(nav)]).toEqual([MODULO_POS.id, MODULO_POS_TURNO.id]);
+  it('solo Punto de venta, Mi turno y (E7) Recibir producto; entra directo al punto de venta', () => {
+    expect([...idsModulos(nav)]).toEqual([MODULO_POS.id, MODULO_POS_TURNO.id, 'pos-recepcion']);
     expect(nav.inicio).toBe('pos');
     expect(nav.modo).toBe('completo');
-    expect(bottomNavParaRol(nav).items.map(i => i.id)).toEqual(['pos', 'pos-turno']);
+    expect(bottomNavParaRol(nav).items.map(i => i.id)).toEqual(['pos', 'pos-turno', 'pos-recepcion']);
   });
   it('sin Resumen, Bandeja, rutas, producción, CxC, finanzas, clientes ni ventas centrales: esos hashes no abren nada', () => {
     const ids = idsVistas(nav);
@@ -90,7 +90,7 @@ describe('E5: navegación del perfil de tienda', () => {
     for (const v of ['mi-asistencia', 'mis-actividades', 'mi-cuenta']) expect(normalizarVista(nav, v)).toBe(v);
   });
   it('el menú es el del perfil efectivo aunque el usuario traiga accesos adicionales', () => {
-    expect([...idsModulos(navParaUsuario({ rol: ROL_VENTAS_TIENDA, accesos_extra: [] }))]).toEqual(['pos', 'pos-turno']);
+    expect([...idsModulos(navParaUsuario({ rol: ROL_VENTAS_TIENDA, accesos_extra: [] }))]).toEqual(['pos', 'pos-turno', 'pos-recepcion']);
   });
   it('no carga datos de negocio (igual que el Empleado); los roles centrales sí', () => {
     expect(rolSinDatosNegocio(ROL_VENTAS_TIENDA)).toBe(true);

@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Card, SectionLabel, Guia } from '../ui/Components';
 import { FormInput, FormSelect, FormTextarea, FormBtn } from '../ui/Modal';
 import { AvisoPos } from '../PosTiendaView';
-import { nuevaOperacionId, permisosPorRol, usuariosAsignables, construirAsignacion, resumenVerificacion, normalizarClave } from '../../data/posLogic';
+import { nuevaOperacionId, permisosEnTienda, usuariosAsignables, construirAsignacion, resumenVerificacion, normalizarClave, TIPOS_TIENDA } from '../../data/posLogic';
 
 const hora = (iso) => { try { return iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : ''; } catch { return ''; } };
 const TIPO_EVENTO = { alta: 'Alta', activacion: 'Activación', desactivacion: 'Desactivación' };
@@ -19,7 +19,8 @@ export function TiendaConfigPanel({ data, actions, tiendas, tiendasHabilitadas, 
   const [estado, setEstado] = useState(null);
   const [aviso, setAviso] = useState(null);
   const [ocupado, setOcupado] = useState(false);
-  const [nueva, setNueva] = useState({ clave: '', nombre: '' });
+  const [nueva, setNueva] = useState({ clave: '', nombre: '', tipo: 'tienda_fabrica' });
+  const [receptores, setReceptores] = useState({});
   const [f, setF] = useState({ cuartoId: '', cuartoNombre: '', caja: '', usuarioId: '', vende: false, traspasa: false, cliente: '', motivo: '' });
   const [confirmarRetiro, setConfirmarRetiro] = useState(null);
   // Un operacion_id por intento de activar o desactivar: sin respuesta, el reintento usa el mismo.
@@ -30,6 +31,9 @@ export function TiendaConfigPanel({ data, actions, tiendas, tiendasHabilitadas, 
     const r = await actions.tiendaEstado(id);
     if (r?.error) { setAviso({ tono: 'error', texto: r.error }); return; }
     setEstado(r.data);
+    // E7: quién puede recibir traspasos en esta tienda (permiso aparte de los dos del CEDIS).
+    const t = await actions.traspasosConsulta({ establecimientoId: id, estado: 'pendiente' });
+    setReceptores(Object.fromEntries((t?.data?.receptores || []).map(x => [String(x.usuario_id), !!x.recibe_traspasos])));
   }, [actions]);
   useEffect(() => { cargar(sel); }, [sel, cargar]);
 
@@ -37,7 +41,7 @@ export function TiendaConfigPanel({ data, actions, tiendas, tiendasHabilitadas, 
   const ver = useMemo(() => resumenVerificacion(estado?.verificacion), [estado]);
   const asignables = useMemo(() => usuariosAsignables(data?.usuarios, estado?.personal), [data?.usuarios, estado?.personal]);
   const usuarioSel = asignables.find(u => String(u.id) === String(f.usuarioId)) || null;
-  const permisos = permisosPorRol(usuarioSel?.rol);
+  const permisos = permisosEnTienda(usuarioSel?.rol, tienda?.tipo);
   const elegibles = useMemo(() => new Set((estado?.clientes || []).map(c => String(c.id))), [estado]);
   const candidatos = useMemo(() => {
     const t = f.cliente.trim().toLowerCase();
@@ -59,8 +63,9 @@ export function TiendaConfigPanel({ data, actions, tiendas, tiendasHabilitadas, 
     return r;
   };
 
-  const crear = () => hacer(() => actions.guardarEstablecimiento({ clave: normalizarClave(nueva.clave), nombre: nueva.nombre }),
-    (r) => { setNueva({ clave: '', nombre: '' }); setSel(r.data?.id ?? null); });
+  const crear = () => hacer(() => actions.guardarEstablecimiento({ clave: normalizarClave(nueva.clave), nombre: nueva.nombre, tipo: nueva.tipo }),
+    (r) => { setNueva({ clave: '', nombre: '', tipo: 'tienda_fabrica' }); setSel(r.data?.id ?? null); });
+  const cambiarRecepcion = (p, valor) => hacer(() => actions.definirRecepcionTienda({ establecimientoId: sel, usuarioId: p.usuario_id, recibe: valor }));
   const asignarCuarto = () => hacer(() => actions.asignarCuartoTienda({ establecimientoId: sel, cuartoId: f.cuartoId.trim(), nombre: f.cuartoNombre.trim() || null }),
     () => setF(x => ({ ...x, cuartoId: '', cuartoNombre: '' })));
   const agregarCaja = () => hacer(() => (tienda?.activo ? actions.guardarCaja({ establecimientoId: sel, nombre: f.caja }) : actions.agregarCajaTienda({ establecimientoId: sel, nombre: f.caja })),
@@ -109,8 +114,10 @@ export function TiendaConfigPanel({ data, actions, tiendas, tiendasHabilitadas, 
           </div>
         </Card>
         <Card>
-          <SectionLabel>Nueva tienda de fábrica</SectionLabel>
+          <SectionLabel>Nueva tienda</SectionLabel>
           <div className="mt-2 space-y-2">
+            <FormSelect label="Tipo" value={nueva.tipo} onChange={e => setNueva(n => ({ ...n, tipo: e.target.value }))} options={TIPOS_TIENDA.map(t => ({ value: t.id, label: t.label }))} />
+            <p className="text-xs text-slate-500">{TIPOS_TIENDA.find(t => t.id === nueva.tipo)?.nota} El tipo no se cambia después.</p>
             <FormInput label="Clave" placeholder="TF-DGO" value={nueva.clave} onChange={e => setNueva(n => ({ ...n, clave: normalizarClave(e.target.value) }))} maxLength={20} hint="No se cambia después." />
             <FormInput label="Nombre" placeholder="Tienda de fábrica" value={nueva.nombre} onChange={e => setNueva(n => ({ ...n, nombre: e.target.value }))} maxLength={80} />
             <FormBtn primary className="w-full" onClick={crear} disabled={ocupado}>Crear (nace inactiva)</FormBtn>
@@ -124,7 +131,7 @@ export function TiendaConfigPanel({ data, actions, tiendas, tiendasHabilitadas, 
           <>
             <Card tone={tienda.activo ? 'success' : ver.lista ? undefined : 'warning'}>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div><SectionLabel>{tienda.clave} · tienda de fábrica</SectionLabel><p className="font-display text-lg font-bold text-slate-900">{tienda.nombre}</p></div>
+                <div><SectionLabel>{tienda.clave} · {TIPOS_TIENDA.find(t => t.id === tienda.tipo)?.label || tienda.tipo}</SectionLabel><p className="font-display text-lg font-bold text-slate-900">{tienda.nombre}</p></div>
                 <span className={`rounded-full px-3 py-1 text-xs font-semibold ${tienda.activo ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700'}`} data-testid="tienda-estado">{tienda.activo ? 'ACTIVA' : 'INACTIVA'}</span>
               </div>
               <div className="mt-3 space-y-1" data-testid="tienda-verificacion">
@@ -172,16 +179,19 @@ export function TiendaConfigPanel({ data, actions, tiendas, tiendasHabilitadas, 
 
             <Card>
               <SectionLabel>Personal y permisos de inventario</SectionLabel>
-              <p className="mt-1 text-xs text-slate-500">Son dos permisos distintos y ninguno se da solo: vender desde el CEDIS es del cajero; traspasar con el CEDIS, de Producción o Administración.</p>
+              <p className="mt-1 text-xs text-slate-500">{tienda.tipo === 'tienda_fabrica'
+                ? 'Cada permiso es aparte y ninguno se da solo: vender desde el CEDIS es del cajero; traspasar directo con el CEDIS, de Producción o Administración; recibir traspasos, del personal de la tienda.'
+                : 'Una tienda remota vende solo su inventario: aquí nadie vende ni traspasa directo con el CEDIS. El único permiso es recibir los traspasos que le llegan, y tampoco se da solo.'}</p>
               <div className="mt-2 divide-y divide-slate-100" data-testid="tienda-personal">
                 {(estado.personal || []).map(p => {
-                  const pr = permisosPorRol(p.rol);
+                  const pr = permisosEnTienda(p.rol, tienda.tipo);
                   return (
                     <div key={p.usuario_id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
                       <div><p className="font-semibold text-slate-900">{p.nombre}</p><p className="text-xs text-slate-500">{p.rol === 'Ventas' ? 'Cajero (Ventas de tienda)' : p.rol}{p.turno_abierto ? ' · turno abierto' : ''}{p.estatus !== 'Activo' ? ' · dado de baja' : ''}</p></div>
                       <div className="flex flex-wrap items-center gap-3">
                         {pr.vende && <label className="flex items-center gap-1 text-xs text-slate-700"><input type="checkbox" checked={!!p.vende_desde_cedis} disabled={ocupado} onChange={e => cambiarPermiso(p, 'vende', e.target.checked)} /> Vende desde el CEDIS</label>}
                         {pr.traspasa && <label className="flex items-center gap-1 text-xs text-slate-700"><input type="checkbox" checked={!!p.traspasa_con_cedis} disabled={ocupado} onChange={e => cambiarPermiso(p, 'traspasa', e.target.checked)} /> Traspasa con el CEDIS</label>}
+                        {pr.recibe && <label className="flex items-center gap-1 text-xs text-slate-700"><input type="checkbox" checked={!!receptores[String(p.usuario_id)]} disabled={ocupado} onChange={e => cambiarRecepcion(p, e.target.checked)} /> Recibe traspasos</label>}
                         <FormBtn onClick={() => retirar(p)} disabled={ocupado}>Retirar</FormBtn>
                       </div>
                     </div>

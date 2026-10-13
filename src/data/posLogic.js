@@ -306,6 +306,20 @@ const MENSAJES = {
   MODO_INVALIDO: 'Elige si la tienda usa su lista de clientes o todos los clientes.',
   CLIENTE_NO_VALIDO: 'Uno de los clientes no existe, está inactivo o fue fusionado.',
   TRASPASO_NO_AUTORIZADO: 'No tienes permiso para traspasar entre el CEDIS y esa tienda.',
+  // Tiendas E7: tiendas remotas y traspasos con tránsito.
+  TIPO_INVALIDO: 'El tipo de la tienda no es válido o no se puede cambiar.',
+  ULTIMO_CAJERO: 'Es el último cajero de una tienda activa. Asigna antes a otro cajero o desactiva la tienda.',
+  RESPONSABLE_REQUERIDO: 'Escribe quién transporta el producto.',
+  CANTIDAD_INVALIDA: 'Revisa las cantidades: enteros, sin productos repetidos.',
+  TRASPASO_NO_VALIDO: 'Un traspaso va del CEDIS a una tienda o de una tienda al CEDIS.',
+  TRASPASO_YA_DESPACHADO: 'Ese traspaso ya no está pendiente.',
+  TRASPASO_NO_EN_TRANSITO: 'Ese traspaso ya no está en tránsito (alguien ya lo recibió o regresó).',
+  TRASPASO_EN_TRANSITO: 'El traspaso ya se despachó: el producto va en camino. Recíbelo en la tienda o registra su retorno al origen.',
+  TRASPASO_CERRADO: 'Ese traspaso ya está cerrado.',
+  RECEPCION_INCOMPLETA: 'Captura lo que llegó de cada producto del traspaso.',
+  RECEPCION_EXCEDE: 'No puede llegar más producto del que se despachó.',
+  NOTA_INCIDENCIA_REQUERIDA: 'Llegó producto dañado o faltó producto: escribe qué pasó.',
+  SIN_INCIDENCIA: 'Ese traspaso no tiene una incidencia abierta.',
 };
 // Lo que le falta a una tienda para activarse (claves de la lista de verificación del servidor).
 const FALTANTES = {
@@ -472,4 +486,104 @@ export function resumenVerificacion(verificacion) {
 /** Clave sugerida para una tienda a partir de lo tecleado (mayúsculas, sin espacios ni signos). */
 export function normalizarClave(texto) {
   return String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20);
+}
+
+// ── Tiendas E7: tiendas remotas y traspasos con tránsito ─────────────────────
+
+export const TIPOS_TIENDA = Object.freeze([
+  { id: 'tienda_fabrica', label: 'Tienda de fábrica', nota: 'Junto al CEDIS. Puede recibir traspasos directos y, con permiso, vender producto del CEDIS.' },
+  { id: 'tienda', label: 'Tienda (remota)', nota: 'Vende solo su inventario. Se surte por traspaso: despacho desde el CEDIS y recepción en la tienda.' },
+]);
+
+/** Permisos de inventario según el rol Y el tipo de tienda: los del CEDIS son solo de la tienda de fábrica. */
+export function permisosEnTienda(rol, tipoTienda) {
+  const p = permisosPorRol(rol);
+  const fabrica = tipoTienda === 'tienda_fabrica';
+  return { asignable: p.asignable, vende: p.vende && fabrica, traspasa: p.traspasa && fabrica, recibe: rol === 'Ventas' };
+}
+
+export const ESTADOS_TRASPASO = Object.freeze([
+  { id: 'pendiente', label: 'Pendientes' }, { id: 'en_transito', label: 'En tránsito' }, { id: 'recibido', label: 'Recibidos' },
+  { id: 'incidencias', label: 'Incidencias' }, { id: 'retornado', label: 'Retornados' }, { id: 'cancelado', label: 'Cancelados' },
+]);
+
+/** Cómo se dice el estado de un traspaso. */
+export function textoTraspaso(t) {
+  const inc = t?.incidencia ? (t.incidencia_cerrada ? ' · incidencia cerrada' : ' · con incidencia') : '';
+  switch (t?.estado) {
+    case 'pendiente': return { tono: 'neutro', texto: 'Pendiente de despachar' };
+    case 'en_transito': return { tono: 'aviso', texto: 'En tránsito' };
+    case 'recibido': return { tono: t.incidencia && !t.incidencia_cerrada ? 'error' : 'ok', texto: `Recibido${inc}` };
+    case 'retornado': return { tono: t.incidencia && !t.incidencia_cerrada ? 'error' : 'neutro', texto: `Regresó al origen${inc}` };
+    case 'cancelado': return { tono: 'neutro', texto: 'Cancelado' };
+    default: return { tono: 'neutro', texto: '—' };
+  }
+}
+
+/** Qué se puede hacer con un traspaso según su estado (el servidor lo vuelve a decidir). */
+export function accionesTraspaso(t, { admin = false, puedeRecibir = false } = {}) {
+  const e = t?.estado;
+  return {
+    despachar: admin && e === 'pendiente',
+    cancelar: admin && e === 'pendiente',
+    recibir: e === 'en_transito' && (admin || puedeRecibir),
+    retornar: admin && e === 'en_transito',
+    cerrarIncidencia: admin && !!t?.incidencia && !t?.incidencia_cerrada,
+  };
+}
+
+/**
+ * Argumentos de crear_traspaso. `direccion`: 'abasto' (CEDIS → tienda) o 'devolucion' (tienda → CEDIS).
+ * Nunca tienda ↔ tienda. Las cantidades son enteros mayores a 0, sin producto repetido.
+ */
+export function construirTraspaso({ operacionId, direccion, tiendaId, cuartoCedis, cuartoTienda, lineas, responsable, notas }) {
+  if (!['abasto', 'devolucion'].includes(direccion)) return { error: 'Indica si el producto va a la tienda o regresa al CEDIS.' };
+  if (!tiendaId) return { error: 'Elige la tienda.' };
+  if (!cuartoCedis) return { error: 'Elige el cuarto del CEDIS.' };
+  if (!cuartoTienda) return { error: 'Elige el congelador de la tienda.' };
+  const items = (Array.isArray(lineas) ? lineas : []).filter(l => l?.sku && String(l.cantidad ?? '').trim() !== '');
+  if (items.length === 0) return { error: 'Agrega al menos un producto.' };
+  if (items.some(l => !/^\d{1,6}$/.test(String(l.cantidad).trim()) || Number(l.cantidad) <= 0)) return { error: MENSAJES.CANTIDAD_INVALIDA };
+  if (new Set(items.map(l => l.sku)).size !== items.length) return { error: 'Hay un producto repetido.' };
+  const resp = String(responsable || '').replace(/\s+/g, ' ').trim();
+  if (resp.length < 3) return { error: MENSAJES.RESPONSABLE_REQUERIDO };
+  const abasto = direccion === 'abasto';
+  return {
+    args: {
+      p_operacion_id: operacionId || nuevaOperacionId(),
+      p_origen_establecimiento_id: abasto ? CEDIS_ID : tiendaId,
+      p_destino_establecimiento_id: abasto ? tiendaId : CEDIS_ID,
+      p_cuarto_origen: abasto ? cuartoCedis : cuartoTienda,
+      p_cuarto_destino: abasto ? cuartoTienda : cuartoCedis,
+      p_items: items.map(l => ({ sku: l.sku, cantidad: Number(l.cantidad) })),
+      p_responsable: resp,
+      p_notas: String(notas || '').trim() || null,
+    },
+  };
+}
+
+/**
+ * Partidas de una recepción (o de un retorno): por cada producto, cuánto llegó bien y cuánto dañado.
+ * Lo que falta lo calcula el servidor; aquí se calcula igual solo para mostrarlo y para exigir la nota.
+ * `capturas` = { [sku]: { recibida, danada } }. Lo no capturado NO se da por recibido.
+ */
+export function construirRecepcion(traspaso, capturas, notas) {
+  const lineas = Array.isArray(traspaso?.lineas) ? traspaso.lineas : [];
+  if (lineas.length === 0) return { error: 'El traspaso no tiene productos.' };
+  const items = []; let incidencia = false; const resumen = [];
+  for (const l of lineas) {
+    const c = capturas?.[l.sku] || {};
+    const txtR = String(c.recibida ?? '').trim(); const txtD = String(c.danada ?? '').trim() || '0';
+    if (txtR === '') return { error: `Captura cuánto llegó de ${l.nombre || l.sku}.` };
+    if (!/^\d{1,6}$/.test(txtR) || !/^\d{1,6}$/.test(txtD)) return { error: MENSAJES.CANTIDAD_INVALIDA };
+    const recibida = Number(txtR); const danada = Number(txtD); const despachada = entero(l.despachada ?? l.cantidad);
+    if (recibida + danada > despachada) return { error: `De ${l.nombre || l.sku} se despacharon ${despachada}: no pueden llegar ${recibida + danada}.` };
+    const faltante = despachada - recibida - danada;
+    if (danada > 0 || faltante > 0) incidencia = true;
+    items.push({ sku: l.sku, recibida, danada });
+    resumen.push({ sku: l.sku, recibida, danada, faltante });
+  }
+  const nota = String(notas || '').trim();
+  if (incidencia && nota.length < 5) return { error: MENSAJES.NOTA_INCIDENCIA_REQUERIDA, incidencia, resumen };
+  return { items, notas: nota || null, incidencia, resumen };
 }

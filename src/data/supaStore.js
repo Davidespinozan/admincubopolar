@@ -1812,13 +1812,26 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
       confirmarReembolsoTienda: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('confirmar_reembolso_tienda', args); },
       // Tiendas E6 (mig 147): configuración y activación de una tienda. Solo contratos; nada por REST.
       tiendaEstado: async (establecimientoId) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('estado_tienda', { p_establecimiento_id: establecimientoId ?? null }); },
-      guardarEstablecimiento: async ({ id = null, clave = null, nombre }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('guardar_establecimiento', { p_id: id, p_clave: clave, p_nombre: nombre }); },
+      guardarEstablecimiento: async ({ id = null, clave = null, nombre, tipo = null }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('guardar_establecimiento', { p_id: id, p_clave: clave, p_nombre: nombre, p_tipo: tipo }); },
       asignarCuartoTienda: async ({ establecimientoId, cuartoId, nombre = null }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('asignar_cuarto_tienda', { p_establecimiento_id: establecimientoId, p_cuarto_id: cuartoId, p_nombre: nombre }); },
       agregarCajaTienda: async ({ establecimientoId, nombre }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('agregar_caja_tienda', { p_establecimiento_id: establecimientoId, p_nombre: nombre }); },
       asignarUsuarioTienda: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('asignar_usuario_tienda', args); },
       retirarUsuarioTienda: async ({ establecimientoId, usuarioId, confirmarVentasCentral = false }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('retirar_usuario_tienda', { p_establecimiento_id: establecimientoId, p_usuario_id: usuarioId, p_confirmar_ventas_central: confirmarVentasCentral }); },
       configurarClientesTienda: async ({ establecimientoId, modo = null, agregar = null, quitar = null }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('configurar_clientes_tienda', { p_establecimiento_id: establecimientoId, p_modo: modo, p_agregar: agregar, p_quitar: quitar }); },
       activarTienda: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('activar_tienda', args); },
+      // Tiendas E7 (mig 148): traspasos con tránsito. Solo contratos; las tablas no tienen acceso por REST.
+      traspasosConsulta: async ({ establecimientoId = null, estado = null } = {}) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('traspasos_consulta', { p_establecimiento_id: establecimientoId, p_estado: estado, p_limite: 200 }); },
+      crearTraspaso: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('crear_traspaso', args); },
+      despacharTraspaso: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('despachar_traspaso', args); },
+      cancelarTraspaso: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('cancelar_traspaso', args); },
+      retornarTraspaso: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('retornar_traspaso', args); },
+      cerrarIncidenciaTraspaso: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('cerrar_incidencia_traspaso', args); },
+      definirRecepcionTienda: async ({ establecimientoId, usuarioId, recibe }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('definir_recepcion_tienda', { p_establecimiento_id: establecimientoId, p_usuario_id: usuarioId, p_recibe: recibe }); },
+      // Recibir lo puede hacer Administración o el personal de la tienda con permiso: lo decide el servidor.
+      recibirTraspaso: async (args) => posRpc('recibir_traspaso', args),
+      // Lado de la tienda: los traspasos de SU tienda (el servidor no devuelve otros).
+      posTraspasos: async (establecimientoId) => posRpc('traspasos_consulta', { p_establecimiento_id: establecimientoId ?? null, p_estado: null, p_limite: 100 }),
+      posRecibirTraspaso: async (args) => posRpc('recibir_traspaso', args),
 
       // ── WF-0 + PD-01 (mig 116): asistencia. Persona, hora, turno y geocerca
       // los decide el servidor; el cliente solo manda una lectura de ubicación.

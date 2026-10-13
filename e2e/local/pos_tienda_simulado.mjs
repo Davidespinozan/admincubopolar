@@ -33,7 +33,10 @@ const TIENDA = { id: 7, clave: 'TF1', nombre: 'Tienda de fábrica (simulada)', t
 const PRECIOS = [{ sku: 'HPC-5K', nombre: 'Hielo en cubos 5 kg', precio: 31 }, { sku: 'HPC-25K', nombre: 'Hielo en cubos 25 kg', precio: 92 }];
 
 function crearServidor() {
-  const s = { turno: null, ventas: new Map(), stock: { 'HPC-5K': 10, 'HPC-25K': 4 }, llamadas: [], cortarProximaVenta: false, seq: 100 };
+  const s = { turno: null, ventas: new Map(), stock: { 'HPC-5K': 10, 'HPC-25K': 4 }, llamadas: [], cortarProximaVenta: false, seq: 100, recepciones: new Map(),
+    traspaso: { traspaso_id: 7, folio: 'TR-0007', estado: 'en_transito', incidencia: false, incidencia_cerrada: false, responsable: 'Luis Pérez', created_at: new Date().toISOString(), despachado_at: new Date().toISOString(),
+      origen: { id: 1, nombre: 'CEDIS', tipo: 'cedis', cuarto_id: 'CF-1' }, destino: { id: 7, nombre: TIENDA.nombre, tipo: 'tienda_fabrica', cuarto_id: 'CF-TF1' },
+      lineas: [{ sku: 'HPC-5K', nombre: 'Hielo en cubos 5 kg', cantidad: 10, despachada: 10, recibida: null, danada: null, faltante: null }] } };
   const rechazo = (codigo, mensaje, code = '22023') => ({ status: 400, body: { code, message: mensaje, details: JSON.stringify({ codigo }), hint: null } });
   const rpc = {
     erp_actor: () => [{ id: 6, rol: 'Ventas Tienda', nombre: USUARIO.nombre }],
@@ -68,6 +71,22 @@ function crearServidor() {
       return { turno_id: 55, estado: 'cerrado', efectivo_esperado: esperado, efectivo_contado: Number(a.p_efectivo_contado), diferencia: dif, motivo_diferencia: dif !== 0 ? a.p_motivo_diferencia : null, totales: {}, replay: false };
     },
     mi_asistencia: () => ({ estado: 'sin_empleado' }),
+    // E7: traspasos de la tienda y su recepción (idempotente, una sola vez).
+    traspasos_consulta: () => ({ puede_recibir: true, resumen: {}, en_camino: s.traspaso.estado === 'en_transito' ? { 'HPC-5K': 10 } : {}, traspasos: [s.traspaso], receptores: null, movimientos: null }),
+    recibir_traspaso: (a) => {
+      const ya = s.recepciones.get(a.p_operacion_id);
+      if (ya) return { ...ya, replay: true };
+      if (s.traspaso.estado !== 'en_transito') return rechazo('TRASPASO_NO_EN_TRANSITO', 'interno');
+      const i = a.p_items[0]; const faltante = 10 - i.recibida - i.danada;
+      if (faltante < 0) return rechazo('RECEPCION_EXCEDE', 'interno');
+      const inc = i.danada > 0 || faltante > 0;
+      if (inc && !(a.p_notas && a.p_notas.length >= 5)) return rechazo('NOTA_INCIDENCIA_REQUERIDA', 'interno');
+      s.stock['HPC-5K'] += i.recibida;
+      s.traspaso = { ...s.traspaso, estado: 'recibido', incidencia: inc, recibido_at: new Date().toISOString(), recibido_por: 'Cajera de prueba', notas_recepcion: a.p_notas,
+        lineas: [{ ...s.traspaso.lineas[0], recibida: i.recibida, danada: i.danada, faltante }] };
+      s.recepciones.set(a.p_operacion_id, s.traspaso);
+      return { ...s.traspaso, replay: false };
+    },
   };
   const rest = {
     usuarios: () => [USUARIO],
@@ -152,7 +171,7 @@ try {
   ok(page.url().endsWith('#/pos'), `1. el cajero (rol guardado "Ventas") entra directo al punto de venta por su perfil efectivo: ${page.url().split('#')[1]}`);
   ok(srv.s.llamadas.some(l => l.fn === 'erp_actor'), '1. el perfil se le preguntó al servidor (erp_actor)');
   const menu = await page.locator('body').innerText();
-  ok(/Punto de venta/.test(menu) && /Mi turno/.test(menu) && !/Rutas|Producción|Por cobrar|Clientes|Congeladores|Facturación|Cortes/.test(menu),
+  ok(/Punto de venta/.test(menu) && /Mi turno/.test(menu) && /Recibir producto/.test(menu) && !/Rutas|Producción|Por cobrar|Clientes|Congeladores|Facturación|Cortes/.test(menu),
     '2. menú propio: Punto de venta y Mi turno; sin rutas, producción, CxC, clientes ni finanzas');
   // Antes de iniciar sesión la aplicación hace su carga anónima de siempre (el servidor real no le devuelve nada).
   // Lo que importa: DESPUÉS de saber que es un cajero de tienda no pide ninguna tabla central.
@@ -242,6 +261,31 @@ try {
   ok(/No tienes un turno abierto/.test(await t('pos-turno').innerText()), '11. cerrado el turno, ya no hay turno abierto');
   await captura('06-turno-cerrado');
 
+  // E7. Recibir producto: módulo aparte del punto de venta.
+  await page.goto(`${APP}/#/pos-recepcion`);
+  await t('pos-recepcion-en-camino').waitFor({ timeout: 10000 });
+  const fila = t('traspaso-TR-0007');
+  ok(/En tránsito/.test(await fila.innerText()) && /CEDIS/.test(await fila.innerText()) && /Luis Pérez/.test(await fila.innerText()),
+    'E7. Recibir producto muestra el traspaso que viene en camino a la tienda (origen, transportista y estado)');
+  ok(await fila.getByRole('button', { name: 'Cancelar' }).count() === 0 && await fila.getByRole('button', { name: 'Despachar' }).count() === 0,
+    'E7. el personal de la tienda no tiene botones de despachar ni cancelar: solo recibir');
+  await fila.getByRole('button', { name: 'Recibir' }).click();
+  await t('recibida-HPC-5K').fill('7'); await t('danada-HPC-5K').fill('2');
+  ok(/Faltan 1/.test(await t('traspaso-recepcion').innerText()), 'E7. al capturar 7 buenas y 2 dañadas de 10, la pantalla dice que falta 1');
+  await page.getByRole('button', { name: 'Registrar recepción' }).click();
+  await t('pos-recepcion-aviso').waitFor({ timeout: 10000 });
+  ok(/qué pasó/i.test(await t('pos-recepcion-aviso').innerText()) && srv.s.llamadas.filter(l => l.fn === 'recibir_traspaso').length === 0,
+    'E7. con dañados o faltantes exige la nota ANTES de mandar nada al servidor');
+  await page.locator('[data-testid="traspaso-recepcion"] textarea').fill('Dos bolsas rotas y falta una');
+  await page.getByRole('button', { name: 'Registrar recepción' }).click();
+  await t('pos-recepcion-historial').waitFor({ timeout: 10000 });
+  const rec = srv.s.llamadas.filter(l => l.fn === 'recibir_traspaso');
+  ok(rec.length === 1 && JSON.stringify(rec[0].args.p_items) === '[{"sku":"HPC-5K","recibida":7,"danada":2}]' && rec[0].args.p_notas === 'Dos bolsas rotas y falta una' && srv.s.stock['HPC-5K'] === 14,
+    `E7. la recepción viajó con lo capturado (7 buenas, 2 dañadas) y solo las 7 buenas entraron al congelador (existencia ${srv.s.stock['HPC-5K']})`);
+  ok(/con incidencia/i.test(await t('pos-recepcion-historial').innerText()) && /No hay producto en camino/.test(await t('pos-recepcion').innerText()),
+    'E7. el traspaso pasa al historial como recibido con incidencia y ya no hay nada en camino');
+  await captura('07-recepcion');
+
   // 14. Aislamiento (lado del navegador).
   for (const modulo of ['rutas', 'tiendas', 'cobros', 'clientes', 'dashboard']) {
     await page.goto(`${APP}/#/${modulo}`); await sleep(500);
@@ -252,7 +296,7 @@ try {
   const escrituras = srv.s.llamadas.filter(l => l.tabla && l.metodo !== 'GET');
   ok(escrituras.length === 0, '14. en todo el recorrido el navegador no intentó NINGUNA escritura por REST');
   const rpcs = [...new Set(srv.s.llamadas.filter(l => l.fn).map(l => l.fn))].sort();
-  ok(rpcs.every(f => ['erp_actor', 'mis_establecimientos', 'mi_turno_caja', 'precios_pos', 'buscar_clientes_pos', 'abrir_turno_caja', 'vender_en_tienda', 'cerrar_turno_caja', 'mi_asistencia', 'calendario'].includes(f)),
+  ok(rpcs.every(f => ['erp_actor', 'mis_establecimientos', 'mi_turno_caja', 'precios_pos', 'buscar_clientes_pos', 'abrir_turno_caja', 'vender_en_tienda', 'cerrar_turno_caja', 'mi_asistencia', 'calendario', 'traspasos_consulta', 'recibir_traspaso'].includes(f)),
     `14. solo llamó contratos de tienda (${rpcs.join(', ')})`);
   ok(fuera.length === 0 || fuera.every(o => /fonts|gstatic/.test(o)), `seguridad de la prueba: ninguna petición salió hacia servicios externos de datos (${[...new Set(fuera)].join(', ') || 'ninguna'})`);
   ok(errores.length === 0, `sin errores de JavaScript en la página (${errores.slice(0, 2).join(' | ') || 'ninguno'})`);
