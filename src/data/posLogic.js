@@ -289,6 +289,29 @@ const MENSAJES = {
   REEMBOLSO_NO_PENDIENTE: 'Ese reembolso ya no está pendiente.',
   REFERENCIA_REQUERIDA: 'Escribe la referencia de la devolución que dio la terminal o el banco.',
   BUSQUEDA_CORTA: 'Escribe al menos 3 letras del nombre.',
+  // Tiendas E6: configuración y activación.
+  TIENDA_INCOMPLETA: 'A la tienda le falta configuración para activarse.',
+  TURNOS_ABIERTOS: 'La tienda tiene turnos de caja abiertos. Ciérralos antes de desactivarla.',
+  QUEDARIA_VENTAS_CENTRAL: 'Al quitarle su única tienda, esa persona volvería a ser Ventas central. Confírmalo o dala de baja.',
+  PERMISOS_EXPLICITOS: 'Indica sí o no en cada permiso.',
+  ROL_NO_ASIGNABLE: 'A una tienda se asignan cajeros (rol Ventas) y, para traspasos, Producción o Administración.',
+  PERMISO_NO_CORRESPONDE: 'Ese permiso no corresponde al rol de la persona.',
+  USUARIO_NO_VALIDO: 'Ese usuario no existe o está dado de baja.',
+  CLAVE_INVALIDA: 'La clave lleva de 2 a 20 letras, números o guiones, y no se cambia después.',
+  CLAVE_REPETIDA: 'Ya existe un establecimiento con esa clave.',
+  NOMBRE_INVALIDO: 'Escribe el nombre.',
+  CUARTO_INVALIDO: 'La clave del congelador lleva de 2 a 20 letras, números o guiones.',
+  CUARTO_CON_EXISTENCIA: 'Ese cuarto tiene producto. Solo se asigna un cuarto vacío; el producto llega después por traspaso.',
+  CUARTO_DE_OTRA_TIENDA: 'Ese congelador es de otra tienda.',
+  MODO_INVALIDO: 'Elige si la tienda usa su lista de clientes o todos los clientes.',
+  CLIENTE_NO_VALIDO: 'Uno de los clientes no existe, está inactivo o fue fusionado.',
+  TRASPASO_NO_AUTORIZADO: 'No tienes permiso para traspasar entre el CEDIS y esa tienda.',
+};
+// Lo que le falta a una tienda para activarse (claves de la lista de verificación del servidor).
+const FALTANTES = {
+  interruptor: 'el dueño todavía no habilita las tiendas propias', tipo: 'no es una tienda de fábrica', cuarto: 'un congelador propio', caja: 'una caja activa',
+  personal: 'un cajero asignado', permisos: 'corregir personas o permisos que no corresponden', ventas_centrales: 'que sus cajeros terminen sus ventas centrales pendientes',
+  seguridad: 'la instalación de seguridad de tiendas',
 };
 const GENERICO = 'No se pudo completar la operación. Intenta de nuevo.';
 // Rechazos definitivos de la base de datos (la operación NO se hizo).
@@ -317,6 +340,7 @@ export function clasificarErrorPos(error, enLinea = true) {
   if (codigo && MENSAJES[codigo]) {
     let mensaje = MENSAJES[codigo];
     if (codigo === 'SIN_EXISTENCIA' && datos?.sku) mensaje = `No hay suficiente ${datos.sku}: hay ${entero(datos.disponible)} y se piden ${entero(datos.pedido)}.`;
+    if (codigo === 'TIENDA_INCOMPLETA' && Array.isArray(datos?.faltan) && datos.faltan.length) mensaje = `Para activar la tienda falta: ${datos.faltan.map(f => FALTANTES[f] || f).join('; ')}.`;
     return { incierto: false, codigo, mensaje };
   }
   if (sqlstate === '42501') return { incierto: false, codigo: 'NO_AUTORIZADO', mensaje: 'No tienes permiso para esta acción.' };
@@ -405,4 +429,47 @@ export function textoReembolso(c) {
 /** Pesos para mostrar. */
 export function pesos(v) {
   return dinero(v).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+}
+
+// ── Administración: configuración y activación de una tienda (Tiendas E6) ─────
+
+/** Qué permiso de inventario puede tener cada rol. Son dos permisos distintos y nunca van juntos. */
+export function permisosPorRol(rol) {
+  return { asignable: ['Ventas', 'Producción', 'Admin'].includes(rol), vende: rol === 'Ventas', traspasa: rol === 'Producción' || rol === 'Admin' };
+}
+
+/** Personas que se pueden asignar a una tienda: activas, de un rol asignable y que aún no están en ella. */
+export function usuariosAsignables(usuarios, personal) {
+  const ya = new Set((Array.isArray(personal) ? personal : []).map(p => String(p.usuario_id)));
+  return (Array.isArray(usuarios) ? usuarios : [])
+    .filter(u => u && (u.estatus ?? 'Activo') === 'Activo' && permisosPorRol(u.rol).asignable && !ya.has(String(u.id)))
+    .sort((a, b) => String(a.nombre).localeCompare(String(b.nombre)));
+}
+
+/**
+ * Argumentos de asignar_usuario_tienda. Los dos permisos van SIEMPRE como sí o no (el servidor
+ * rechaza un permiso sin decir): aquí nunca se rellena uno "por omisión" a favor de la persona.
+ */
+export function construirAsignacion({ establecimientoId, usuario, vendeDesdeCedis, traspasaConCedis }) {
+  if (!establecimientoId) return { error: 'Elige la tienda.' };
+  if (!usuario?.id) return { error: 'Elige a la persona.' };
+  const p = permisosPorRol(usuario.rol);
+  if (!p.asignable) return { error: MENSAJES.ROL_NO_ASIGNABLE };
+  if (typeof vendeDesdeCedis !== 'boolean' || typeof traspasaConCedis !== 'boolean') return { error: MENSAJES.PERMISOS_EXPLICITOS };
+  if (vendeDesdeCedis && !p.vende) return { error: 'Vender desde el CEDIS es solo para un cajero (rol Ventas).' };
+  if (traspasaConCedis && !p.traspasa) return { error: 'Traspasar con el CEDIS es solo para Producción o Administración.' };
+  return { args: { p_establecimiento_id: establecimientoId, p_usuario_id: usuario.id, p_vende_desde_cedis: vendeDesdeCedis, p_traspasa_con_cedis: traspasaConCedis } };
+}
+
+/** De la lista de verificación del servidor: qué falta (obligatorio) y qué es solo aviso. */
+export function resumenVerificacion(verificacion) {
+  const lista = Array.isArray(verificacion) ? verificacion : [];
+  const faltan = lista.filter(v => v.obligatorio && !v.ok);
+  const avisos = lista.filter(v => !v.obligatorio && !v.ok);
+  return { faltan, avisos, lista: lista.length > 0 && faltan.length === 0 };
+}
+
+/** Clave sugerida para una tienda a partir de lo tecleado (mayúsculas, sin espacios ni signos). */
+export function normalizarClave(texto) {
+  return String(texto || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 20);
 }

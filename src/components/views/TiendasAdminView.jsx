@@ -11,13 +11,14 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Card, SectionLabel, SegmentedTabs, Guia } from '../ui/Components';
 import Modal, { FormInput, FormSelect, FormTextarea, FormBtn } from '../ui/Modal';
 import { AvisoPos } from '../PosTiendaView';
+import { TiendaConfigPanel } from './TiendaConfigPanel';
 import { nuevaOperacionId, leerMonto, pesos, mediosParaVenta, construirCorreccion, textoReembolso } from '../../data/posLogic';
 
-const TABS = [{ k: 'cajas', l: 'Cajas' }, { k: 'turnos', l: 'Turnos' }, { k: 'ventas', l: 'Ventas' }, { k: 'reembolsos', l: 'Reembolsos' }];
+const TABS = [{ k: 'config', l: 'Configuración' }, { k: 'cajas', l: 'Cajas' }, { k: 'turnos', l: 'Turnos' }, { k: 'ventas', l: 'Ventas' }, { k: 'reembolsos', l: 'Reembolsos' }];
 const hora = (iso) => { try { return iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '—'; } catch { return '—'; } };
 
-export function TiendasAdminView({ actions }) {
-  const [tab, setTab] = useState('cajas');
+export function TiendasAdminView({ data, actions }) {
+  const [tab, setTab] = useState('config');
   const [d, setD] = useState(null);
   const [errorCarga, setErrorCarga] = useState(null);
   const [aviso, setAviso] = useState(null);
@@ -35,7 +36,9 @@ export function TiendasAdminView({ actions }) {
   }, [actions]);
   useEffect(() => { cargar(); }, [cargar]);
 
-  const tiendas = useMemo(() => (d?.establecimientos || []).filter(e => e.tipo !== 'cedis'), [d]);
+  const todas = useMemo(() => (d?.establecimientos || []).filter(e => e.tipo !== 'cedis'), [d]);
+  // Las pestañas de operación (cajas, turnos, ventas, reembolsos) son de las tiendas ACTIVAS.
+  const tiendas = useMemo(() => todas.filter(e => e.activo !== false), [todas]);
   const nombreTienda = useCallback((id) => (d?.establecimientos || []).find(e => String(e.id) === String(id))?.nombre || `Tienda ${id}`, [d]);
   const nombreCaja = useCallback((id) => (d?.cajas || []).find(c => String(c.id) === String(id))?.nombre || `Caja ${id}`, [d]);
   const ordenDe = useCallback((id) => (d?.ordenes || []).find(o => String(o.id) === String(id)) || null, [d]);
@@ -80,27 +83,21 @@ export function TiendasAdminView({ actions }) {
     return <div className="space-y-3" data-testid="tiendas-admin"><AvisoPos tono="error">{errorCarga} <button type="button" onClick={cargar} className="ml-2 font-semibold underline">Reintentar</button></AvisoPos></div>;
   }
   if (!d) return <div data-testid="tiendas-admin"><Card><p className="text-sm text-slate-500">Cargando tiendas…</p></Card></div>;
-  if (!d.tiendasHabilitadas || tiendas.length === 0) {
-    return (
-      <div className="space-y-3" data-testid="tiendas-admin">
-        <Guia titulo={d.tiendasHabilitadas ? 'Todavía no hay tiendas dadas de alta' : 'Las tiendas propias todavía no están activadas'} testid="tiendas-no-activadas">
-          Activar las tiendas, dar de alta cada tienda, sus congeladores y las personas que trabajan en ella lo hace el dueño (por ahora con SQL).
-          En cuanto exista una tienda, aquí podrás crear sus cajas, revisar turnos y corregir ventas.
-        </Guia>
-      </div>
-    );
-  }
-
   const pendientes = (d.correcciones || []).filter(c => c.reembolso_estado === 'registrado');
 
   return (
     <div className="space-y-3" data-testid="tiendas-admin">
       <div>
         <p className="font-display text-xl font-bold tracking-[-0.03em] text-slate-900">Tiendas</p>
-        <p className="text-sm text-slate-500">Cajas, turnos, ventas de tienda y reembolsos.</p>
+        <p className="text-sm text-slate-500">Configuración y activación, cajas, turnos, ventas de tienda y reembolsos.</p>
       </div>
       <SegmentedTabs items={TABS.map(t => (t.k === 'reembolsos' && pendientes.length ? { ...t, l: `Reembolsos (${pendientes.length})` } : t))} value={tab} onChange={setTab} />
       {aviso && !modal && <AvisoPos tono={aviso.tono}>{aviso.texto}</AvisoPos>}
+
+      {tab === 'config' && <TiendaConfigPanel data={data} actions={actions} tiendas={todas} tiendasHabilitadas={!!d.tiendasHabilitadas} onCambio={cargar} />}
+      {tab !== 'config' && tiendas.length === 0 && (
+        <Guia titulo="Todavía no hay tiendas activas" testid="tiendas-sin-activas">Configura y activa una tienda en la pestaña Configuración; después aquí verás sus cajas, turnos, ventas y reembolsos.</Guia>
+      )}
 
       {tab === 'cajas' && (
         <div className="grid gap-3 md:grid-cols-2" data-testid="tiendas-cajas">

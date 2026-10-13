@@ -1779,7 +1779,8 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         if (guard) return guard;
         try {
           const [est, cajas, turnos, ventas, corr, cuartos] = await Promise.all([
-            supabase.rpc('mis_establecimientos'),
+            // E6: TODAS las tiendas (también las inactivas, todavía en configuración).
+            supabase.rpc('estado_tienda', { p_establecimiento_id: null }),
             supabase.from('cajas').select('*').order('establecimiento_id').order('nombre'),
             supabase.from('turnos_caja').select('*').order('id', { ascending: false }).limit(200),
             supabase.from('ventas_tienda').select('operacion_id, orden_id, turno_id, caja_id, establecimiento_id, cajero_id, metodo, total, asignacion, desde_cedis, created_at').order('created_at', { ascending: false }).limit(200),
@@ -1796,7 +1797,7 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
             ordenes = o.data || [];
           }
           return { data: {
-            tiendasHabilitadas: !!est.data?.tiendas_habilitadas, establecimientos: est.data?.establecimientos || [],
+            tiendasHabilitadas: !!est.data?.tiendas_habilitadas, establecimientos: est.data?.tiendas || [],
             cajas: cajas.data || [], turnos: turnos.data || [], ventas: ventas.data || [], correcciones: corr.data || [], cuartos: cuartos.data || [], ordenes,
           } };
         } catch (e) { const c = clasificarErrorPos(e, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
@@ -1809,6 +1810,15 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
       reabrirTurnoCaja: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('reabrir_turno_caja', args); },
       corregirVentaTienda: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('corregir_venta_tienda', args); },
       confirmarReembolsoTienda: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('confirmar_reembolso_tienda', args); },
+      // Tiendas E6 (mig 147): configuración y activación de una tienda. Solo contratos; nada por REST.
+      tiendaEstado: async (establecimientoId) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('estado_tienda', { p_establecimiento_id: establecimientoId ?? null }); },
+      guardarEstablecimiento: async ({ id = null, clave = null, nombre }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('guardar_establecimiento', { p_id: id, p_clave: clave, p_nombre: nombre }); },
+      asignarCuartoTienda: async ({ establecimientoId, cuartoId, nombre = null }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('asignar_cuarto_tienda', { p_establecimiento_id: establecimientoId, p_cuarto_id: cuartoId, p_nombre: nombre }); },
+      agregarCajaTienda: async ({ establecimientoId, nombre }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('agregar_caja_tienda', { p_establecimiento_id: establecimientoId, p_nombre: nombre }); },
+      asignarUsuarioTienda: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('asignar_usuario_tienda', args); },
+      retirarUsuarioTienda: async ({ establecimientoId, usuarioId, confirmarVentasCentral = false }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('retirar_usuario_tienda', { p_establecimiento_id: establecimientoId, p_usuario_id: usuarioId, p_confirmar_ventas_central: confirmarVentasCentral }); },
+      configurarClientesTienda: async ({ establecimientoId, modo = null, agregar = null, quitar = null }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('configurar_clientes_tienda', { p_establecimiento_id: establecimientoId, p_modo: modo, p_agregar: agregar, p_quitar: quitar }); },
+      activarTienda: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('activar_tienda', args); },
 
       // ── WF-0 + PD-01 (mig 116): asistencia. Persona, hora, turno y geocerca
       // los decide el servidor; el cliente solo manda una lectura de ubicación.
