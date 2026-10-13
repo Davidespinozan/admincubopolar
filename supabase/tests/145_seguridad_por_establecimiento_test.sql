@@ -247,10 +247,10 @@ SELECT pg_temp.ok(md5(pg_get_functiondef('public.fin_actor_permitido(text[])'::r
   '145-04 NO cambian: fin_actor_permitido, erp_tiene_rol, completar_venta_directa, stock_mov_cuarto ni la guarda de cuartos de 103');
 SELECT pg_temp.ok((SELECT count(*) = 5 AND bool_and(cmd = 'SELECT' AND roles = '{authenticated}' AND permissive = 'PERMISSIVE' AND qual LIKE '%''Ventas Tienda''%')
                          AND string_agg(tablename, ',' ORDER BY tablename) = 'cuartos_frios,inventario_mov,orden_lineas,ordenes,pagos'
-                     FROM pg_policies WHERE schemaname = 'public' AND policyname = 'tienda_read'),
+                     FROM pg_policies WHERE schemaname = 'public' AND policyname = 'tienda_read' AND tablename NOT IN ('cajas', 'turnos_caja', 'turnos_caja_eventos', 'ventas_tienda', 'correcciones_venta_tienda')),   -- las de cajas y turnos son de 146 (E4)
   '145-05 cinco policies nuevas, todas de LECTURA y solo para el perfil de tienda: cuartos, kardex, órdenes, líneas y pagos');
 SELECT pg_temp.ok((SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND qual LIKE '%erp_lector_negocio()%') = 26
-  AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND policyname <> 'tienda_read') = 96,
+  AND (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND policyname <> 'tienda_read' AND tablename NOT IN ('cajas', 'turnos_caja', 'turnos_caja_eventos', 'ventas_tienda', 'correcciones_venta_tienda')) = 96,
   '145-06 las 96 policies anteriores siguen ahí (26 de lectura amplia con erp_lector_negocio)');
 SELECT pg_temp.ok((SELECT relrowsecurity FROM pg_class WHERE oid = 'public.establecimiento_clientes'::regclass)
   AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename IN ('establecimiento_clientes', 'establecimientos', 'usuario_establecimientos', 'tiendas_activacion'))
@@ -443,7 +443,9 @@ DECLARE
     'asistencia_clasificar_entrada(timestamp with time zone,integer,timestamp with time zone)', 'b4_escritura_api()',
     'b4_asiento_de_contrato(text,text,bigint,text)', 'erp_roles_activos()', 'erp_tiene_rol(text)', 'erp_es_dueno()', 'confirmar_cambio_password()',
     -- C. 145: su alcance (sí/no sobre lo suyo) y en qué tiendas trabaja
-    'erp_tienda_asignada(bigint,boolean)', 'erp_tienda_ve_cuarto(text)', 'erp_tienda_ve_orden(bigint)', 'mis_establecimientos()'];
+    'erp_tienda_asignada(bigint,boolean)', 'erp_tienda_ve_cuarto(text)', 'erp_tienda_ve_orden(bigint)', 'mis_establecimientos()',
+    -- D. 146 (E4): su turno abierto y las cajas de su tienda (lectura). Los 7 contratos de escritura del POS sí se sondean: sin caja ni turno propios responden 42501.
+    'mi_turno_caja()'];
 BEGIN
   FOR f IN SELECT p.oid::regprocedure::text AS sig, p.proname, oidvectortypes(p.proargtypes) AS args
              FROM pg_proc p WHERE p.pronamespace = 'public'::regnamespace AND has_function_privilege('authenticated', p.oid, 'EXECUTE')
