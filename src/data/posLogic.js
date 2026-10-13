@@ -320,6 +320,8 @@ const MENSAJES = {
   RECEPCION_EXCEDE: 'No puede llegar más producto del que se despachó.',
   NOTA_INCIDENCIA_REQUERIDA: 'Llegó producto dañado o faltó producto: escribe qué pasó.',
   SIN_INCIDENCIA: 'Ese traspaso no tiene una incidencia abierta.',
+  // Tiendas E8: reportes.
+  RANGO_INVALIDO: 'Revisa el periodo: fecha inicial y final, en orden, y de 400 días como máximo.',
 };
 // Lo que le falta a una tienda para activarse (claves de la lista de verificación del servidor).
 const FALTANTES = {
@@ -586,4 +588,62 @@ export function construirRecepcion(traspaso, capturas, notas) {
   const nota = String(notas || '').trim();
   if (incidencia && nota.length < 5) return { error: MENSAJES.NOTA_INCIDENCIA_REQUERIDA, incidencia, resumen };
   return { items, notas: nota || null, incidencia, resumen };
+}
+
+// ── Tiendas E8: reportes por establecimiento ────────────────────────────────
+
+const ISO = /^\d{4}-\d{2}-\d{2}$/;
+const diasEntre = (a, b) => Math.round((Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10)) - Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10))) / 86400000);
+/** Suma días a una fecha 'AAAA-MM-DD' sin pasar por la zona horaria del navegador. */
+export function sumarDias(iso, dias) {
+  const d = new Date(Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10) + dias));
+  return d.toISOString().slice(0, 10);
+}
+
+/** Periodo por omisión de los reportes: los últimos 7 días de negocio, terminando hoy. */
+export function rangoReportePorOmision(hoyNegocio) {
+  return { desde: sumarDias(hoyNegocio, -6), hasta: hoyNegocio };
+}
+
+/** Mismo criterio que el servidor: las dos fechas, en orden, y máximo 400 días. */
+export function validarRangoReporte(desde, hasta) {
+  if (!ISO.test(String(desde || '')) || !ISO.test(String(hasta || ''))) return { error: 'Elige la fecha inicial y la final.' };
+  if (desde > hasta) return { error: 'La fecha inicial no puede ser posterior a la final.' };
+  if (diasEntre(desde, hasta) > 400) return { error: 'El periodo máximo es de 400 días.' };
+  return { desde, hasta };
+}
+
+export const TIPO_ESTABLECIMIENTO = Object.freeze({ cedis: 'CEDIS (ventas centrales)', tienda_fabrica: 'Tienda de fábrica', tienda: 'Tienda remota' });
+
+/** Opciones del selector: consolidado, y cada establecimiento (CEDIS primero). `valor ''` = todos. */
+export function opcionesEstablecimiento(establecimientos) {
+  const lista = (Array.isArray(establecimientos) ? establecimientos : []).slice().sort((a, b) => Number(a.id) - Number(b.id));
+  return [{ value: '', label: 'Consolidado (todos)' }, ...lista.map(e => ({ value: String(e.id), label: `${e.nombre}${e.tipo === 'cedis' ? ' · ventas centrales' : e.activo === false ? ' · inactiva' : ''}` }))];
+}
+
+/**
+ * Comprueba en pantalla lo que el servidor garantiza: el consolidado es la suma exacta de los
+ * establecimientos. Si alguna vez no cuadrara, la pantalla lo dice en vez de mostrar un total dudoso.
+ */
+export function consolidadoCuadra(reporteVentas) {
+  const filas = Array.isArray(reporteVentas?.por_establecimiento) ? reporteVentas.por_establecimiento : [];
+  const c = reporteVentas?.consolidado;
+  if (!c) return false;
+  const suma = (k) => dinero(filas.reduce((t, f) => t + Number(f[k] || 0), 0));
+  return ['ventas', 'unidades', 'bruto', 'devoluciones', 'neto', 'cobrado'].every(k => suma(k) === dinero(c[k]));
+}
+
+/** En abastecimiento: despachadas = recibidas + retornadas + dañadas + faltantes + en tránsito. */
+export function unidadesCuadran(u) {
+  if (!u) return false;
+  const n = (k) => entero(u[k]);
+  return n('despachadas') === n('recibidas_correctamente') + n('retornadas') + n('danadas') + n('faltantes') + n('en_transito');
+}
+
+/** Texto de la diferencia de un turno: cerrado con faltante, sobrante o cuadrado; abierto no tiene. */
+export function textoDiferencia(turno) {
+  if (turno?.estado !== 'cerrado') return { tono: 'neutro', texto: 'Turno abierto' };
+  const d = dinero(turno.diferencia);
+  if (d === 0) return { tono: 'ok', texto: 'Cuadró' };
+  return d < 0 ? { tono: 'error', texto: `Faltaron ${pesos(-d)}` } : { tono: 'aviso', texto: `Sobraron ${pesos(d)}` };
 }

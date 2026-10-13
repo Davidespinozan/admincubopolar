@@ -1827,6 +1827,21 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
       retornarTraspaso: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('retornar_traspaso', args); },
       cerrarIncidenciaTraspaso: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('cerrar_incidencia_traspaso', args); },
       definirRecepcionTienda: async ({ establecimientoId, usuarioId, recibe }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('definir_recepcion_tienda', { p_establecimiento_id: establecimientoId, p_usuario_id: usuarioId, p_recibe: recibe }); },
+      // Tiendas E8 (mig 149): reportes por establecimiento (solo Administración; solo lectura).
+      reportesTiendas: async ({ desde, hasta, establecimientoId = null }) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        const est = establecimientoId ?? null;
+        const [ventas, cajas, inventario, abasto] = await Promise.all([
+          posRpc('reporte_ventas_establecimientos', { p_desde: desde, p_hasta: hasta, p_establecimiento_id: est }),
+          posRpc('reporte_cajas_tiendas', { p_desde: desde, p_hasta: hasta, p_establecimiento_id: est }),
+          posRpc('reporte_inventario_establecimientos', { p_establecimiento_id: est }),
+          posRpc('reporte_abastecimiento_tiendas', { p_desde: desde, p_hasta: hasta, p_establecimiento_id: est }),
+        ]);
+        const malo = [ventas, cajas, inventario, abasto].find(r => r?.error);
+        if (malo) return malo;
+        return { data: { ventas: ventas.data, cajas: cajas.data, inventario: inventario.data, abastecimiento: abasto.data } };
+      },
       // Recibir lo puede hacer Administración o el personal de la tienda con permiso: lo decide el servidor.
       recibirTraspaso: async (args) => posRpc('recibir_traspaso', args),
       // Lado de la tienda: los traspasos de SU tienda (el servidor no devuelve otros).
