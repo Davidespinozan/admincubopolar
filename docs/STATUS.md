@@ -1,6 +1,6 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-13 (Tiendas propias E1–E9, migs 143–150: SOLO LOCAL, sin desplegar; producción sigue en la 142 — ver su sección). Antes: 2026-10-09 (ZONA-1: zona del negocio = Durango, mig 122 aplicada y frontend `28a2024` desplegado; GER-1 activo; Santiago es Dueño). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-13 (Tiendas propias E1–E9: migraciones 143–150 APLICADAS Y VERIFICADAS en producción el 2026-10-13; frontend y Netlify de Tiendas SIN publicar; interruptor apagado; ninguna tienda activada — ver su sección). Antes: 2026-10-09 (ZONA-1: zona del negocio = Durango, mig 122 aplicada y frontend `28a2024` desplegado; GER-1 activo; Santiago es Dueño). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
@@ -354,27 +354,34 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
 
-## Tiendas propias (E1–E9, migs 143–150) — 2026-10-13 — IMPLEMENTED / VERIFIED LOCAL · NO DESPLEGADO · producción sigue en la 142
-**Nada de este programa está en producción.** Paquete de release (procedimiento y compuertas GO / NO-GO): `docs/RELEASE_TIENDAS_E1_E9.md`.
-- E1–E9: IMPLEMENTED / VERIFIED LOCAL, en git local (rama `tiendas-e9-cierre-integral`, sin push).
-- Producción: migración 142. Migraciones 143–150: PENDIENTES de aplicar.
-- Frontend y Netlify de Tiendas: PENDIENTES de publicar.
-- Tiendas reales: NINGUNA activada; el interruptor global nunca se ha encendido (no existe aún en producción).
-- Validación real de Supabase Auth, Netlify y equipos de caja: PENDIENTE.
+## Tiendas propias (E1–E9, migs 143–150) — 2026-10-13 — DEPLOYED DB / VERIFIED PROD · FRONTEND Y NETLIFY NOT DEPLOYED · TIENDAS INACTIVAS
+**Base de datos en producción; aplicación sin publicar; nada operando.** Paquete de release (procedimiento, registro de ejecución y compuertas
+GO / NO-GO): `docs/RELEASE_TIENDAS_E1_E9.md`.
+- E1–E9: IMPLEMENTED / VERIFIED LOCAL, en git local (rama `tiendas-e9-cierre-integral`, sin push; `origin/main` sigue en `a1e3d34`).
+- Migraciones 143–150: **DEPLOYED DB / VERIFIED PROD** (2026-10-13, 19:56Z–20:12Z; aplicadas por David desde su terminal con
+  `supabase db query --linked -f`, una vez cada una, en orden; cada una verificada en solo lectura antes de la siguiente). Producción queda en la **150**:
+  291 funciones · 75 tablas · 109 policies · 63 secuencias; 14 de 14 huellas posteriores correctas; cada objeto nuevo o redefinido idéntico a la
+  base local (definición y permisos); datos de negocio idénticos antes y después (`estado_negocio.sql`); `error_log` máx 4 sin filas nuevas.
+- Frontend y Netlify de Tiendas: **NOT DEPLOYED**. El sitio sigue en `a1e3d34` (Netlify `6acd4fa26b5cc1863ad1d46d`); ese frontend no usa nada de Tiendas.
+- Tiendas: **INACTIVAS**. Interruptor global apagado (nunca encendido); solo existe el CEDIS; 0 usuarios asignados; 0 cajas, turnos, ventas de tienda y traspasos.
+- Validación operativa real (Supabase Auth, Netlify con perfil de tienda, equipos de caja, primera tienda): **PENDIENTE**.
+- **Desviación conocida de P2:** las migraciones se aplicaron SIN confirmación de un respaldo restaurable (el procedimiento lo exigía). Recuperación
+  disponible: la reversión documentada en el encabezado de cada migración. Observado después, en solo lectura: el archivado continuo de WAL está activo
+  y sin fallos; que el plan del proyecto permita restaurar (respaldo diario o PITR) sigue SIN confirmar.
 
 Estado por columna (ningún estado implica el siguiente):
 
-| Bloque | Qué es | Migración · SHA-256 | Commit local | IMPLEMENTED / VERIFIED LOCAL | DEPLOYED PROD | VALIDATED PROD | PENDING FIELD VALIDATION |
-|---|---|---|---|---|---|---|---|
-| E1 | Establecimientos e interruptor global (apagado) | 143 · `afb100ab…46f7a0f` | `2083c93` | sí | no | no | sí |
-| E2 | Las operaciones centrales usan solo inventario del CEDIS | 144 · `d050d977…e8a2b94` | `b2cc8bf` | sí | no | no | sí |
-| E3 | Seguridad por establecimiento; perfil efectivo "Ventas Tienda" | 145 · `fd1dd9bb…81f61f10` | `fd7fef3` | sí | no | no | sí |
-| E4 | POS: cajas, turnos, venta atómica, corrección y reembolso | 146 · `8e03f75e…c30ac496` | `dd8d5f2` | sí | no | no | sí |
-| E5 | Interfaz del punto de venta; perfil de tienda en Netlify (`_lib/auth.js`) | sin migración | `15e3224` | sí | no | no | sí |
-| E6 | Configuración y activación controlada de una tienda | 147 · `d80d50d5…853a9fcf` | `3a387e2` | sí | no | no | sí |
-| E7 | Tiendas remotas y traspasos con tránsito | 148 · `ac60223c…e56e3537` | `4f2ceaa` | sí | no | no | sí |
-| E8 | Reportes por establecimiento y consolidados | 149 · `a7492b55…44e2704` | `a8ad876` | sí | no | no | sí |
-| E9 | Último cajero por disparador, conciliación de reembolsos, validación integrada | 150 · `4fdf8993…a95ad2af0` | `ffe6a13` | sí | no | no | sí |
+| Bloque | Qué es | Migración · SHA-256 | Commit local | IMPLEMENTED / VERIFIED LOCAL | DEPLOYED DB (migración) | VERIFIED PROD (solo lectura) | Frontend / Netlify publicados | PENDING FIELD VALIDATION |
+|---|---|---|---|---|---|---|---|---|
+| E1 | Establecimientos e interruptor global (apagado) | 143 · `afb100ab…46f7a0f` | `2083c93` | sí | sí | sí | no | sí |
+| E2 | Las operaciones centrales usan solo inventario del CEDIS | 144 · `d050d977…e8a2b94` | `b2cc8bf` | sí | sí | sí | no | sí |
+| E3 | Seguridad por establecimiento; perfil efectivo "Ventas Tienda" | 145 · `fd1dd9bb…81f61f10` | `fd7fef3` | sí | sí | sí | no | sí |
+| E4 | POS: cajas, turnos, venta atómica, corrección y reembolso | 146 · `8e03f75e…c30ac496` | `dd8d5f2` | sí | sí | sí | no | sí |
+| E5 | Interfaz del punto de venta; perfil de tienda en Netlify (`_lib/auth.js`) | sin migración | `15e3224` | sí | no aplica (sin migración) | no aplica | no | sí |
+| E6 | Configuración y activación controlada de una tienda | 147 · `d80d50d5…853a9fcf` | `3a387e2` | sí | sí | sí | no | sí |
+| E7 | Tiendas remotas y traspasos con tránsito | 148 · `ac60223c…e56e3537` | `4f2ceaa` | sí | sí | sí | no | sí |
+| E8 | Reportes por establecimiento y consolidados | 149 · `a7492b55…44e2704` | `a8ad876` | sí | sí | sí | no | sí |
+| E9 | Último cajero por disparador, conciliación de reembolsos, validación integrada | 150 · `4fdf8993…a95ad2af0` | `ffe6a13` | sí | sí | sí | no | sí |
 
 SHA-256 completos: 143 `afb100ab1c515dd10a6cda376405facd35935b26f4b18abce0ef1fd0c46f7a0f` · 144 `d050d9774cac88c2ab61a9c69cb569d234f1222ed46276480031ebf8de8a2b94` ·
 145 `fd1dd9bbedba9d4f0b141f383e3c312d3787e73ae3552295a2106d5981f61f10` · 146 `8e03f75ee0bfa33693ec22c93d6c1c087353b9aa367d907192944c8bc30ac496` ·

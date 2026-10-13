@@ -1,8 +1,9 @@
 # CUBOPOLAR · Tiendas propias E1–E9 — paquete de release
 
-Preparado el 2026-10-13; actualizado el mismo día tras el preflight P0 (solo lectura: producción en la 142,
-16 de 16 huellas históricas correctas, sin objetos de Tiendas). **Nada de esto está en producción.** Producción está en la migración 142
-y sin frontend de Tiendas. Este documento no autoriza nada: cada paso marcado **[AUTORIZACIÓN]**
+Preparado el 2026-10-13. **Estado al cierre de P2 (2026-10-13, 20:12Z): las migraciones 143–150 están
+aplicadas y verificadas en producción (sección N). Frontend y Netlify de Tiendas NO están publicados;
+el interruptor está apagado y no hay ninguna tienda.** Las secciones C y D quedan como registro del
+procedimiento que se siguió. Este documento no autoriza nada: cada paso marcado **[AUTORIZACIÓN]**
 necesita la palabra del dueño para ESE paso; los marcados **[SOLO LECTURA]** no cambian nada.
 
 Reglas de todo el procedimiento:
@@ -106,17 +107,20 @@ usuarios); no se publica frontend ni Netlify.
 ### D0. Fotografía previa **[SOLO LECTURA]** — el mismo día, justo antes de aplicar
 
 El CLI de Supabase escribe en `supabase/.temp/` del directorio donde corre. Para no tocar el
-repositorio, se trabaja sobre una copia fuera de él:
+repositorio, se trabaja sobre una copia fuera de él. Con `--workdir`, el CLI resuelve `-f` contra esa
+copia: los archivos SQL van con ruta absoluta (la primera versión de este bloque usaba rutas
+relativas y dejaba las fotografías vacías sin avisar; corregido el 2026-10-13):
 
 ```
+REPO="$(pwd)"                     # raíz del repositorio (ruta ABSOLUTA: con --workdir las relativas no sirven)
 SNAP=<carpeta fuera del repositorio>/tiendas-$(date +%Y%m%d-%H%M)
-mkdir -p "$SNAP/wd/supabase" && cp -R supabase/.temp "$SNAP/wd/supabase/.temp"
-q() { supabase db query --linked --workdir "$SNAP/wd" -f "$1" --output json > "$2"; }
+mkdir -p "$SNAP/wd/supabase" && cp -R "$REPO/supabase/.temp" "$SNAP/wd/supabase/.temp"
+q() { supabase db query --linked --workdir "$SNAP/wd" -f "$1" --output json > "$2" && test -s "$2" || echo "FALLÓ: $2 quedó vacío"; }
 
-q supabase/tests/prod/catalogo_huella.sql  "$SNAP/00_catalogo.json"     # catálogo completo
-q supabase/tests/prod/estado_negocio.sql   "$SNAP/00_estado.json"       # datos de negocio
-q supabase/tests/prod/conteos.sql          "$SNAP/00_conteos.json"      # conteos y centinelas
-shasum -a 256 supabase/14[3-9]_*.sql supabase/150_*.sql > "$SNAP/00_sha256.txt"   # debe ser la sección A
+q "$REPO/supabase/tests/prod/catalogo_huella.sql"  "$SNAP/00_catalogo.json"     # catálogo completo
+q "$REPO/supabase/tests/prod/estado_negocio.sql"   "$SNAP/00_estado.json"       # datos de negocio
+q "$REPO/supabase/tests/prod/conteos.sql"          "$SNAP/00_conteos.json"      # conteos y centinelas
+shasum -a 256 "$REPO"/supabase/14[3-9]_*.sql "$REPO"/supabase/150_*.sql > "$SNAP/00_sha256.txt"   # debe ser la sección A
 ```
 
 Y estas dos consultas (pegadas en el SQL Editor o con `q` desde un archivo en `$SNAP`):
@@ -148,8 +152,8 @@ Detenerse (NO-GO) si: alguna huella no coincide; `tiendas` ≠ 0; los conteos no
 ### D1. Secuencia 143 → 150
 
 Reglas para cada paso:
-- **Acción autorizable:** pegar el archivo COMPLETO, tal cual, en el SQL Editor de Supabase, una sola
-  vez (hasta hoy lo hace el dueño). Antes de pegar: `shasum -a 256` del archivo = el de la tabla.
+- **Acción autorizable:** ejecutar el archivo COMPLETO, tal cual, una sola vez: pegado en el SQL Editor
+  de Supabase o con `supabase db query --linked -f <ruta ABSOLUTA del archivo>` (así se hizo en P2). Antes de pegar: `shasum -a 256` del archivo = el de la tabla.
 - Cada migración es transaccional en sus precondiciones: si no las encuentra aborta con un mensaje
   que empieza por su número y "No se aplicó nada".
 - **Verificación posterior [SOLO LECTURA]:** la consulta de conteos de D0 debe dar los números de
@@ -231,7 +235,7 @@ SELECT (SELECT habilitada FROM tiendas_activacion) AS interruptor,              
        (SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_usuarios_guard_ultimo_cajero', 'trg_usuario_establecimientos_guard_ultimo_cajero') AND NOT tgisinternal) AS guardas;  -- 2
 ```
 
-3. `q supabase/tests/prod/estado_negocio.sql "$SNAP/99_estado.json"` → idéntico a `00_estado.json`
+3. `q "$REPO/supabase/tests/prod/estado_negocio.sql" "$SNAP/99_estado.json"` → idéntico a `00_estado.json`
    (esa consulta lee columnas concretas de órdenes, pagos, CxC, kardex y existencias: las columnas
    nuevas no la alteran). `99_catalogo.json` contra `00_catalogo.json`: la diferencia son solo los
    objetos de 143–150. `error_log_max` igual que en D0.
@@ -441,6 +445,42 @@ bloquean:
 
 Lo que la base local NO reproduce y por eso se verifica en producción: privilegios por omisión,
 Supabase Auth, Netlify con el rol de servicio y realtime.
+
+## N. Registro de ejecución P2 — migraciones 143–150 (2026-10-13)
+
+**DEPLOYED DB / VERIFIED PROD.** Proyecto Supabase `Cubopolar` (`ibjftrjmzkulcoqbuwof`, Central EU).
+Las aplicó David desde su terminal con `supabase db query --linked -f`, una vez cada una y en orden;
+cada una se verificó en solo lectura antes de la siguiente.
+
+| # | Verificada (UTC) | Conteos (funciones · tablas · policies · secuencias) | Resultado |
+|---|---|---|---|
+| preflight | 19:54 | 226 · 62 · 96 · 54 — 16 de 16 huellas previas; 0 objetos de Tiendas; sin rutas ni pedidos abiertos | GO técnico |
+| 143 | 19:56 | 231 · 65 · 96 · 55 | correcta |
+| 144 | 19:58 | 233 · 65 · 96 · 55 | correcta (4 huellas nuevas) |
+| 145 | 20:01 | 242 · 66 · 101 · 55 | correcta (5 huellas de identidad; 0 usuarios de tienda) |
+| 146 | 20:02 | 257 · 71 · 108 · 59 | correcta |
+| 147 | 20:03 | 269 · 72 · 109 · 60 | correcta |
+| 148 | 20:06 | 282 · 75 · 109 · 63 | correcta (3 huellas nuevas) |
+| 149 | 20:09 | 287 · 75 · 109 · 63 | correcta |
+| 150 | 20:12 | 291 · 75 · 109 · 63 | correcta |
+
+Verificación final (D2): 14 de 14 huellas posteriores; catálogo antes contra después = 65 funciones
+nuevas, 9 redefinidas, 13 tablas, 13 policies, 17 disparadores, nada retirado ni permisos cambiados en
+lo anterior; cada objeto nuevo o redefinido idéntico a la base local validada (definición y
+permisos); `service_role` con EXECUTE sobre `erp_usuario_de_tienda`, `authenticated` y `anon` sin
+él; interruptor apagado; solo el CEDIS; 0 asignaciones, cajas, turnos, ventas de tienda y traspasos;
+estado de negocio idéntico a la fotografía previa; `error_log` máx 4. Fotografías y verificaciones:
+`~/.cache/cubopolar-release/tiendas-20261013-1253/` (fuera del repositorio).
+
+**Desviaciones conocidas:**
+1. **Sin respaldo restaurable confirmado.** El preflight se detuvo en esa condición (el CLI no pudo
+   listar los respaldos del proyecto) y las migraciones se aplicaron sin resolverla. La recuperación
+   con la que se procedió es la reversión documentada en el encabezado de cada migración. Después,
+   en solo lectura, se observó que el archivado continuo de WAL está activo y sin fallos; eso no
+   prueba que el plan permita restaurar. Queda PENDIENTE confirmarlo en el panel de Supabase
+   (Database → Backups) antes de operar tiendas con datos reales.
+2. La fotografía previa se tomó con rutas absolutas porque el bloque original de D0 fallaba (corregido arriba).
+3. El perfil de cada persona con su sesión real no se verificó (no es posible desde SQL): pertenece a la sección G.
 
 ---
 
