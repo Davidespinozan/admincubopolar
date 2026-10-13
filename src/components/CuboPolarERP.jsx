@@ -15,7 +15,7 @@ import RecordatorioAsistencia from './RecordatorioAsistencia';
 import { construirBandejaUsuario, contarUrgentes } from '../data/bandejaLogic';
 import { viewDesdeHash, hashDesdeView, moduloParaNotificacion } from '../data/navegacionShellLogic';
 import { navParaRol, navParaUsuario, MODULO_MI_CUENTA, MODULO_USUARIOS, idsModulos, itemsModulos, areaDeModulo, tabDesdeModulo, moduloDesdeTab, areasExpandidasInicial, bottomNavParaRol, MODULO_BOLSAS, MODULO_CHOFER,
-  MODULO_ASISTENCIA, MODULO_MI_ASISTENCIA, MODULO_CALENDARIO, MODULO_MIS_ACTIVIDADES, idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas } from '../data/navRolLogic';
+  MODULO_ASISTENCIA, MODULO_MI_ASISTENCIA, MODULO_CALENDARIO, MODULO_POS, MODULO_POS_TURNO, MODULO_TIENDAS, MODULO_MIS_ACTIVIDADES, idsVistas, normalizarVista, moduloDeVista, filtroVentasDesdeVista, vistaDesdeFiltroVentas } from '../data/navRolLogic';
 import { BottomNav, PageHeader, Card, ListRow, IconButton, StatusBadge, Chips } from './ui/Components';
 import { ViewSkeleton, EmptyState } from './ui/Skeleton';
 
@@ -55,6 +55,10 @@ const ChoferView                = lazy(() => import('./ChoferView'));
 const BolsasView                = lazy(() => import('./BolsasView'));
 const ProduccionStandaloneView  = lazy(() => import('./ProduccionStandaloneView'));
 const VentasStandaloneView      = lazy(() => import('./VentasStandaloneView'));
+// Tiendas E5: punto de venta y turno del perfil "Ventas Tienda"; administración de tiendas (Admin).
+const PosTiendaView             = lazy(() => import('./PosTiendaView'));
+const PosTurnoView              = lazy(() => import('./PosTurnoView'));
+const TiendasAdminView          = lazy(() => import('./views/TiendasAdminView.jsx').then(m => ({ default: m.TiendasAdminView })));
 
 // Auto-reload when a lazy chunk can't load (stale deployment)
 if (typeof window !== 'undefined') {
@@ -348,6 +352,10 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       case MODULO_CALENDARIO.id: return <CalendarioView {...vp} />;
       case MODULO_MIS_ACTIVIDADES.id: return <CalendarioView {...vp} personal />;
       case MODULO_MI_CUENTA.id: return <MiCuentaView user={user} actions={actions} />;
+      // Tiendas E5. El perfil lo decide el servidor; estas vistas solo llaman contratos del POS.
+      case MODULO_POS.id: return <PosTiendaView user={usuarioRol || user} actions={actions} onNavigate={go} />;
+      case MODULO_POS_TURNO.id: return <PosTurnoView user={usuarioRol || user} actions={actions} onNavigate={go} />;
+      case MODULO_TIENDAS.id: return <TiendasAdminView actions={actions} />;
       // Fase B: vistas por rol como contenido del shell (misma lógica, misma autorización).
       // B3.6: un solo módulo Ventas; el filtro interno sale del hash (ventas / ventas-hoy / ventas-todas).
       case 'ventas': case 'ventas-hoy': case 'ventas-todas':

@@ -19,13 +19,14 @@ const src = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 
 const ADMIN_28 = [
   'dashboard', 'bandeja',
   'produccion', 'inventario', 'bolsas', 'mermas', 'rutas', 'kardex',
-  'ordenes', 'clientes', 'precios', 'productos', 'leads', 'comodatos',
+  'ordenes', 'clientes', 'precios', 'productos', 'leads', 'comodatos', 'tiendas',
   'cobros', 'proveedores', 'contabilidad', 'costos', 'conciliacion', 'devoluciones', 'facturacion',
   'empleados', 'asistencia', 'nomina', 'calendario',
   'usuarios', 'auditoria', 'configuracion',
 ];
-// Facturación y Sin asignar: lo mismo sin Asistencia, Calendario ni Usuarios (solo de Admin).
-const SOLO_ADMIN = ['asistencia', 'calendario', 'usuarios'];
+// Facturación y Sin asignar: lo mismo sin Asistencia, Calendario, Usuarios ni Tiendas (solo de Admin).
+// Tiendas E5: 'tiendas' (cajas, turnos y correcciones de tiendas propias) se suma al menú de Admin; el back office no cambia.
+const SOLO_ADMIN = ['asistencia', 'calendario', 'usuarios', 'tiendas'];
 const ADMIN_25 = ADMIN_28.filter(id => !SOLO_ADMIN.includes(id));
 const INICIO = ['dashboard', 'bandeja'];
 const modulosAdmin = (rol) => (rol === 'Admin' ? ADMIN_28 : ADMIN_25);

@@ -22,9 +22,10 @@ export const DIAS_SEMANA = [
   { n: 5, corto: 'Vie' }, { n: 6, corto: 'Sáb' }, { n: 7, corto: 'Dom' },
 ];
 
-/** El rol Empleado no carga datos de negocio: su única pantalla lee mi_asistencia(). */
+/** El rol Empleado no carga datos de negocio: su única pantalla lee mi_asistencia().
+ *  Tampoco el perfil efectivo "Ventas Tienda" (Tiendas E5): su pantalla lee solo los contratos del POS. */
 export function rolSinDatosNegocio(rol) {
-  return rol === ROL_EMPLEADO;
+  return rol === ROL_EMPLEADO || rol === 'Ventas Tienda';
 }
 
 const num = (v) => (v === null || v === undefined || v === '' ? NaN : Number(v));

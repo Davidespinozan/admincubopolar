@@ -39,7 +39,13 @@ const VISTA_MI_ASISTENCIA = {
   [MODULO_MIS_ACTIVIDADES.id]: MODULO_MIS_ACTIVIDADES.id,
   [MODULO_MI_CUENTA.id]: MODULO_MI_CUENTA.id,
 };
-const SOLO_ADMIN = new Set([MODULO_ASISTENCIA.id, MODULO_CALENDARIO.id, "usuarios"]);
+// Tiendas E5 (migs 143–146): "Punto de venta" y "Mi turno" son los módulos del perfil efectivo
+// "Ventas Tienda" (lo decide el servidor: rol guardado Ventas + asignación a una tienda).
+// "Tiendas" es el módulo de Administración: cajas, turnos, ventas de tienda y correcciones.
+export const MODULO_POS = { id: "pos", label: "Punto de venta", labelMovil: "Vender", icon: "ShoppingCart" };
+export const MODULO_POS_TURNO = { id: "pos-turno", label: "Mi turno", icon: "Wallet" };
+export const MODULO_TIENDAS = { id: "tiendas", label: "Tiendas", icon: "Warehouse" };
+const SOLO_ADMIN = new Set([MODULO_ASISTENCIA.id, MODULO_CALENDARIO.id, "usuarios", MODULO_TIENDAS.id]);
 
 // MENÚ 2026-10-09 (reorganización pedida por el dueño): "Inicio" (Resumen + Mi
 // bandeja) es de TODOS los roles; cada módulo vive en el área de su tema
@@ -70,6 +76,7 @@ export const AREAS_ADMIN = [
       { id: "productos", label: "Catálogo", icon: "Package" },
       { id: "leads", label: "Leads", icon: "UserCheck" },
       { id: "comodatos", label: "Comodatos", icon: "Truck" },
+      MODULO_TIENDAS,
     ]
   },
   { id: "finanzas", label: "Finanzas", icon: "Wallet", color: "amber",
@@ -162,6 +169,13 @@ export const NAV_ROLES = {
     vistas: VISTA_MI_ASISTENCIA,
   },
   Chofer: { modo: "enfoque", inicio: MODULO_CHOFER.id, chrome: CHROME_CAMPO, persistirAreas: false, areas: [{ id: "ruta", label: "Ruta", icon: "Truck", color: "blue", items: [MODULO_CHOFER] }], vistas: VISTA_MI_ASISTENCIA },
+  // Tiendas E5: perfil efectivo de tienda. Solo su punto de venta y su turno: sin Resumen ni Bandeja
+  // (leen datos centrales), sin rutas, producción, CxC ni finanzas, sin búsqueda global ni "Ver como".
+  "Ventas Tienda": {
+    modo: "completo", inicio: MODULO_POS.id, chrome: CHROME_CAMPO, persistirAreas: false,
+    areas: [{ id: "tienda", label: "Tienda", icon: "ShoppingCart", color: "emerald", items: [MODULO_POS, MODULO_POS_TURNO] }],
+    vistas: VISTA_MI_ASISTENCIA,
+  },
   // WF-0: rol mínimo. Solo "Mi asistencia" y "Mis actividades": sin back office, sin datos de negocio, sin "Ver como".
   Empleado: {
     modo: "completo", inicio: MODULO_RESUMEN.id, chrome: CHROME_EMPLEADO, persistirAreas: false,

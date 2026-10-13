@@ -14,6 +14,7 @@ import { mensajeErrorMerma } from './mermasLogic';
 import { buildUpdateFieldsProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
 import { buildActividadDatos, buildCompletarArgs, buildEditarOcurrenciaArgs, sumarDiasISO } from './calendarioLogic';
+import { clasificarErrorPos } from './posLogic';
 import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs, buildAsistenciaManualArgs, esErrorDeRed, mensajeErrorLlamada, rolSinDatosNegocio } from './asistenciaLogic';
 import { buildGuardarAvisosArgs } from './avisosAsistenciaLogic';
 import { dataUrlABlob, rutaEvidencia, yaExisteEnAlmacen } from './evidenciaLogic';
@@ -755,6 +756,18 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
     const enLinea = () => (typeof navigator === 'undefined' ? true : navigator.onLine !== false);
     const log   = (accion, modulo, detalle) =>
       supabase.from('auditoria').insert({ usuario: uname(), accion, modulo, detalle }).then(() => {});
+
+    // Tiendas E5: una llamada a un contrato del POS. `incierto` = no se sabe si el servidor la hizo.
+    const posRpc = async (fn, args) => {
+      try {
+        const { data, error } = await supabase.rpc(fn, args);
+        if (error) { const c = clasificarErrorPos(error, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+        return { data };
+      } catch (e) {
+        const c = clasificarErrorPos(e, enLinea());
+        return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto };
+      }
+    };
 
     // Defensa en profundidad: además de RLS, valida rol en cliente para
     // acciones destructivas. Devuelve el shape estándar { error } si rechaza.
@@ -1719,6 +1732,83 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
           return { error: mensajeErrorPreparacion(e), parcial: hechos.length > 0 };
         }
       },
+
+      // ── Tiendas E5 (migs 143–146): punto de venta de tiendas propias. Todo es contrato del
+      // servidor: la pantalla no calcula precios ni permisos. Respuesta estándar { data } o
+      // { error, codigo, incierto }; `incierto: true` = no se sabe si el servidor la hizo
+      // (sin conexión): la operación se vuelve a mandar con el MISMO operacion_id.
+      posEstado: async () => {
+        try {
+          const [est, turno] = await Promise.all([supabase.rpc('mis_establecimientos'), supabase.rpc('mi_turno_caja')]);
+          const error = est.error || turno.error;
+          if (error) { const c = clasificarErrorPos(error, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+          return { data: {
+            tiendasHabilitadas: !!est.data?.tiendas_habilitadas, perfil: est.data?.perfil || null,
+            establecimientos: est.data?.establecimientos || [], turno: turno.data?.turno || null, cajas: turno.data?.cajas || [],
+          } };
+        } catch (e) { const c = clasificarErrorPos(e, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+      },
+      // Precios del servidor (con o sin cliente) y existencia de los congeladores que el servidor deja ver.
+      posCatalogo: async (establecimientoId, clienteId = null) => {
+        try {
+          const [pre, cua] = await Promise.all([
+            supabase.rpc('precios_pos', { p_establecimiento_id: establecimientoId, p_cliente_id: clienteId, p_skus: null }),
+            supabase.from('cuartos_frios').select('id, nombre, stock, establecimiento_id').order('id'),
+          ]);
+          const error = pre.error || cua.error;
+          if (error) { const c = clasificarErrorPos(error, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+          return { data: { precios: pre.data?.precios || [], cuartos: cua.data || [] } };
+        } catch (e) { const c = clasificarErrorPos(e, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+      },
+      posBuscarClientes: async (establecimientoId, texto) => posRpc('buscar_clientes_pos', { p_establecimiento_id: establecimientoId, p_texto: texto }),
+      posAbrirTurno: async (args) => posRpc('abrir_turno_caja', args),
+      posVender: async (args) => posRpc('vender_en_tienda', args),
+      posCerrarTurno: async (args) => posRpc('cerrar_turno_caja', args),
+      posVentasTurno: async (turnoId) => {
+        try {
+          const { data, error } = await supabase.from('ordenes')
+            .select('id, folio, total, metodo_pago, cliente_nombre, productos, estatus, tiene_devolucion, requiere_factura, turno_id, created_at')
+            .eq('turno_id', turnoId).order('id', { ascending: false }).limit(500);
+          if (error) { const c = clasificarErrorPos(error, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+          return { data: data || [] };
+        } catch (e) { const c = clasificarErrorPos(e, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+      },
+      // Administración de tiendas (solo Admin; el servidor lo vuelve a exigir en cada contrato).
+      tiendasAdminDatos: async () => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        try {
+          const [est, cajas, turnos, ventas, corr, cuartos] = await Promise.all([
+            supabase.rpc('mis_establecimientos'),
+            supabase.from('cajas').select('*').order('establecimiento_id').order('nombre'),
+            supabase.from('turnos_caja').select('*').order('id', { ascending: false }).limit(200),
+            supabase.from('ventas_tienda').select('operacion_id, orden_id, turno_id, caja_id, establecimiento_id, cajero_id, metodo, total, asignacion, desde_cedis, created_at').order('created_at', { ascending: false }).limit(200),
+            supabase.from('correcciones_venta_tienda').select('*').order('id', { ascending: false }).limit(200),
+            supabase.from('cuartos_frios').select('id, nombre, establecimiento_id').order('id'),
+          ]);
+          const error = est.error || cajas.error || turnos.error || ventas.error || corr.error || cuartos.error;
+          if (error) { const c = clasificarErrorPos(error, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+          const ids = (ventas.data || []).map(v => v.orden_id);
+          let ordenes = [];
+          if (ids.length) {
+            const o = await supabase.from('ordenes').select('id, folio, cliente_nombre, productos, estatus, tiene_devolucion, created_at').in('id', ids);
+            if (o.error) { const c = clasificarErrorPos(o.error, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+            ordenes = o.data || [];
+          }
+          return { data: {
+            tiendasHabilitadas: !!est.data?.tiendas_habilitadas, establecimientos: est.data?.establecimientos || [],
+            cajas: cajas.data || [], turnos: turnos.data || [], ventas: ventas.data || [], correcciones: corr.data || [], cuartos: cuartos.data || [], ordenes,
+          } };
+        } catch (e) { const c = clasificarErrorPos(e, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+      },
+      guardarCaja: async ({ id = null, establecimientoId = null, nombre, activa = true }) => {
+        const guard = requireAdmin();
+        if (guard) return guard;
+        return posRpc('guardar_caja', { p_id: id, p_establecimiento_id: establecimientoId, p_nombre: nombre, p_activa: activa });
+      },
+      reabrirTurnoCaja: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('reabrir_turno_caja', args); },
+      corregirVentaTienda: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('corregir_venta_tienda', args); },
+      confirmarReembolsoTienda: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('confirmar_reembolso_tienda', args); },
 
       // ── WF-0 + PD-01 (mig 116): asistencia. Persona, hora, turno y geocerca
       // los decide el servidor; el cliente solo manda una lectura de ubicación.

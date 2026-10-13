@@ -7,6 +7,7 @@ import { useSupaStore } from './data/supaStore'
 import { supabase } from './lib/supabase'
 import { setUserContext, Sentry } from './lib/sentry'
 import { buildUserFromSessionAndProfile, perfilInactivo } from './lib/sessionUser'
+import { resolverPerfilEfectivo } from './lib/perfilEfectivo'
 import { soltarPushAlSalir, religarPush } from './lib/push'
 import { pagosVisiblesVendedor } from './data/alcancePagosLogic'
 import { debeCambiarPassword, tieneRol } from './data/usuariosLogic'
@@ -96,7 +97,9 @@ function App() {
         const restored = buildUserFromSessionAndProfile(session, profile)
         // Sesión guardada de un usuario dado de baja: se cierra en vez de dejarla viva.
         if (perfilInactivo(profile)) { try { await supabase.auth.signOut() } catch { /* best-effort */ } }
-        if (restored && active) setUser(restored)
+        // Tiendas E5: el menú es el del perfil con que el servidor trata al usuario (Ventas Tienda).
+        const efectivo = restored ? await resolverPerfilEfectivo(supabase, restored) : restored
+        if (efectivo && active) setUser(efectivo)
         if (active) setRestoring(false)
       } catch (e) {
         if (active) setRestoring(false)

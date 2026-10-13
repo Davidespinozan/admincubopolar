@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { perfilInactivo } from '../lib/sessionUser';
+import { resolverPerfilEfectivo } from '../lib/perfilEfectivo';
 import { Icons } from './ui/Icons';
 import { BtnSpinner } from './ui/Skeleton';
 
@@ -41,11 +42,12 @@ export default function LoginScreen({ onLogin }) {
         return;
       }
       if (perfiles && perfiles.length > 0) {
-        onLogin({
+        // Tiendas E5: el menú es el del perfil con que el servidor trata al usuario (Ventas Tienda).
+        onLogin(await resolverPerfilEfectivo(supabase, {
           ...perfiles[0],
           auth_id: perfiles[0]?.auth_id || authData.user.id,
           authUserId: authData.user.id,
-        });
+        }));
       } else {
         // Sin perfil → cuenta no autorizada. Cerramos la sesión Supabase
         // para que el JWT no quede activo en localStorage.

@@ -15,6 +15,7 @@ export function makeFakeSupabase(seed = {}, opts = {}) {
   };
   const writes = [];
   const rpcs = [];
+  const lecturasPerfil = [];
   let nextId = 1000;
   const failInsert = opts.failInsert || null; // { table, error }
 
@@ -104,6 +105,13 @@ export function makeFakeSupabase(seed = {}, opts = {}) {
   };
 
   const rpc = async (name, args) => {
+    // Tiendas E5: perfil efectivo (lectura). opts.usuariosDeTienda = ids asignados a una tienda;
+    // opts.errorPerfilEfectivo = error que devuelve la consulta (p. ej. { code: 'PGRST202' }).
+    if (name === 'erp_usuario_de_tienda') {
+      lecturasPerfil.push(args);
+      if (opts.errorPerfilEfectivo) return { data: null, error: opts.errorPerfilEfectivo };
+      return { data: (opts.usuariosDeTienda || []).some(id => String(id) === String(args?.p_usuario_id)), error: null };
+    }
     rpcs.push({ name, args });
     writes.push({ table: `rpc:${name}`, op: 'rpc', payload: args });
     // opts.rpcImpl = { nombre: (args, db) => ({ data, error }) } — dobles de contratos (p. ej. CFDI, OL-03B).
@@ -145,5 +153,5 @@ export function makeFakeSupabase(seed = {}, opts = {}) {
 
   const writesFinancieras = () => writes.filter(w => TABLAS_FINANCIERAS.has(w.table) || w.op === 'rpc');
 
-  return { from, rpc, auth, db, writes, rpcs, authCalls, writesFinancieras };
+  return { from, rpc, auth, db, writes, rpcs, lecturasPerfil, authCalls, writesFinancieras };
 }
