@@ -1,6 +1,7 @@
 # CUBOPOLAR · Tiendas propias E1–E9 — paquete de release
 
-Preparado el 2026-10-13. **Nada de esto está en producción.** Producción está en la migración 142
+Preparado el 2026-10-13; actualizado el mismo día tras el preflight P0 (solo lectura: producción en la 142,
+16 de 16 huellas históricas correctas, sin objetos de Tiendas). **Nada de esto está en producción.** Producción está en la migración 142
 y sin frontend de Tiendas. Este documento no autoriza nada: cada paso marcado **[AUTORIZACIÓN]**
 necesita la palabra del dueño para ESE paso; los marcados **[SOLO LECTURA]** no cambian nada.
 
@@ -96,18 +97,106 @@ que `usuario_establecimientos` tiene 0 filas).
 
 ## D. Aplicación de migraciones **[AUTORIZACIÓN: una sola, explícita, para 143–150]**
 
-Orden estricto 143 → 144 → 145 → 146 → 147 → 148 → 149 → 150, una vez cada una, por quien el dueño
-designe (hasta hoy las pega el dueño en el SQL Editor). Son compatibles con el frontend
-desplegado, que no usa nada de Tiendas.
+Nada de esta sección se ha ejecutado. Durante la migración: el interruptor global nace y se queda
+**apagado**; no se crea ninguna tienda (solo la fila del CEDIS, id 1); no se asigna ningún usuario
+a una tienda (`usuario_establecimientos` queda en 0 filas, así que nadie cambia de perfil); no se
+modifica ningún dato comercial histórico (órdenes, pagos, CxC, kardex, existencias, clientes,
+usuarios); no se publica frontend ni Netlify.
 
-Después de CADA una **[SOLO LECTURA]**: la migración terminó sin error; `catalogo_huella.sql`
-cambió solo en sus objetos; `estado_negocio.sql` idéntico; `error_log` sin filas nuevas. Si una
-falla, no se aplica la siguiente.
+### D0. Fotografía previa **[SOLO LECTURA]** — el mismo día, justo antes de aplicar
 
-Al terminar las ocho **[SOLO LECTURA]**:
+El CLI de Supabase escribe en `supabase/.temp/` del directorio donde corre. Para no tocar el
+repositorio, se trabaja sobre una copia fuera de él:
+
+```
+SNAP=<carpeta fuera del repositorio>/tiendas-$(date +%Y%m%d-%H%M)
+mkdir -p "$SNAP/wd/supabase" && cp -R supabase/.temp "$SNAP/wd/supabase/.temp"
+q() { supabase db query --linked --workdir "$SNAP/wd" -f "$1" --output json > "$2"; }
+
+q supabase/tests/prod/catalogo_huella.sql  "$SNAP/00_catalogo.json"     # catálogo completo
+q supabase/tests/prod/estado_negocio.sql   "$SNAP/00_estado.json"       # datos de negocio
+q supabase/tests/prod/conteos.sql          "$SNAP/00_conteos.json"      # conteos y centinelas
+shasum -a 256 supabase/14[3-9]_*.sql supabase/150_*.sql > "$SNAP/00_sha256.txt"   # debe ser la sección A
+```
+
+Y estas dos consultas (pegadas en el SQL Editor o con `q` desde un archivo en `$SNAP`):
+
+1. La consulta de las 16 huellas de la sección C2 → todas `ok = true`.
+2. Versión y conteos (no existe tabla de historial de migraciones: la "cabeza" se reconoce por sus objetos):
 
 ```sql
--- SOLO LECTURA. Huellas de lo redefinido = base local validada.
+-- SOLO LECTURA. Esperado antes de 143: cabeza_142 = 5, tiendas = 0, 226 · 62 · 96 · 54.
+SELECT now() AS cuando,
+  (SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace AND proname IN
+     ('cerrar_ruta_admin','iniciar_ruta_admin','conciliacion_ruta','ruta_cobros_pendientes','ruta_cobros_pendientes_interno')) AS cabeza_142,
+  (SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' AND relname IN
+     ('establecimientos','tiendas_activacion','usuario_establecimientos','establecimiento_clientes','cajas','turnos_caja','turnos_caja_eventos',
+      'ventas_tienda','correcciones_venta_tienda','establecimiento_eventos','traspasos','traspaso_lineas','traspaso_eventos')) AS tiendas,
+  (SELECT count(*) FROM pg_proc WHERE pronamespace = 'public'::regnamespace) AS funciones,
+  (SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r') AS tablas,
+  (SELECT count(*) FROM pg_policies WHERE schemaname = 'public') AS policies,
+  (SELECT count(*) FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'S') AS secuencias,
+  (SELECT max(id) FROM error_log) AS error_log_max,
+  (SELECT count(*) FROM rutas WHERE estatus NOT IN ('Cerrada','Cancelada')) AS rutas_abiertas,
+  (SELECT count(*) FROM ordenes WHERE estatus IN ('Creada','Asignada','En ruta')) AS pedidos_abiertos;
+```
+
+Detenerse (NO-GO) si: alguna huella no coincide; `tiendas` ≠ 0; los conteos no son los esperados
+(algo cambió desde P0: repetir el preflight); hay una ruta abierta o cargándose en ese momento
+(144 redefine la carga de ruta y la creación de órdenes: aplicar con la operación en pausa).
+
+### D1. Secuencia 143 → 150
+
+Reglas para cada paso:
+- **Acción autorizable:** pegar el archivo COMPLETO, tal cual, en el SQL Editor de Supabase, una sola
+  vez (hasta hoy lo hace el dueño). Antes de pegar: `shasum -a 256` del archivo = el de la tabla.
+- Cada migración es transaccional en sus precondiciones: si no las encuentra aborta con un mensaje
+  que empieza por su número y "No se aplicó nada".
+- **Verificación posterior [SOLO LECTURA]:** la consulta de conteos de D0 debe dar los números de
+  la tabla; además la comprobación propia de la fila. `00_estado.json` debe seguir idéntico (se
+  repite al final; ante cualquier duda, también en medio).
+- **Detenerse** ante: error al aplicar; conteos distintos de la fila; `error_log_max` mayor que en
+  D0; interruptor encendido; cualquier fila en `usuario_establecimientos`. No se aplica la
+  siguiente, no se "repara" nada, y se reporta. Las ocho son re-aplicables (idempotentes), pero
+  volver a pegar una que falló solo se hace tras entender el error.
+
+Conteos esperados después de cada una (funciones · tablas · policies · secuencias), partiendo de
+226 · 62 · 96 · 54:
+
+| # | SHA-256 (inicio…fin) | Precondición que comprueba el propio archivo | Conteos después | Comprobación propia [SOLO LECTURA] |
+|---|---|---|---|---|
+| 143 | `afb100ab…46f7a0f` | El CEDIS debe quedar como establecimiento 1; ningún cuarto fuera del CEDIS | 231 · 65 · 96 · 55 | `SELECT habilitada FROM tiendas_activacion` = false · `establecimientos` = 1 fila (id 1, `cedis`) · los 3 cuartos con `establecimiento_id = 1` · `ordenes.establecimiento_id` todo NULL |
+| 144 | `d050d977…e8a2b94` | 143 aplicada; CEDIS = 1; huellas 1–4 de C2 | 233 · 65 · 96 · 55 | md5: `confirmar_carga_ruta` `50ce141b…`, `crear_orden` `ccdd240c…`, `ajustar_existencia` `0a5f9c2c…`, `traspaso_cuartos` `f73c7272…` · disparador `trg_cuartos_frios_actor` |
+| 145 | `fd1dd9bb…81f61f10` | 143 y 144 aplicadas; huellas 5–9 de C2 | 242 · 66 · 101 · 55 | md5: `erp_actor` `e1a9770e…`, `erp_roles_activos` `5da5963d…`, `erp_lector_negocio` `858e98ff…`, `erp_es_activo` `9b87432b…`, `erp_exigir_no_empleado` `d87bc09b…` · 5 policies `tienda_read` · consulta de identidad de abajo |
+| 146 | `8e03f75e…c30ac496` | 145 aplicada; huellas 10–15 de C2 | 257 · 71 · 108 · 59 | `cajas`, `turnos_caja`, `ventas_tienda`, `correcciones_venta_tienda` con 0 filas · `ordenes.turno_id` todo NULL · `completar_venta_directa` sigue `2107586c…` |
+| 147 | `d80d50d5…853a9fcf` | 145 y 146 aplicadas | 269 · 72 · 109 · 60 | `establecimiento_eventos` 0 filas · existen `activar_tienda`, `estado_tienda`, `tienda_checklist` |
+| 148 | `ac60223c…e56e3537` | 147 aplicada; `tienda_checklist`, `retirar_usuario_tienda` y `guardar_establecimiento` de 147 | 282 · 75 · 109 · 63 | md5: `tienda_checklist` `e82e731d…`, `retirar_usuario_tienda` `dd831c01…`, `guardar_establecimiento(bigint,text,text,text)` `1ea7cfab…` (la de 3 argumentos ya no existe) · `traspasos` 0 filas |
+| 149 | `a7492b55…44e2704` | 146 a 148 aplicadas | 287 · 75 · 109 · 63 | existen los 4 `reporte_*` de tienda · `reporte_financiero` sigue `32f90860…` |
+| 150 | `4fdf8993…a95ad2af0` | 143–149 aplicadas; huella 16 de C2 (`guardar_usuario`) | 291 · 75 · 109 · 63 | disparadores `trg_usuarios_guard_ultimo_cajero` y `trg_usuario_establecimientos_guard_ultimo_cajero` · `guardar_usuario` sigue `2b328684…` · sección E |
+
+Los conteos salen de comparar el catálogo de producción (P0) con la base local que tiene las ocho
+aplicadas: 65 funciones nuevas (148 sustituye una firma de 147: suma 13), 13 tablas, 13 policies y
+9 secuencias. Si un número no coincide, se detiene y se revisa con `catalogo_huella.sql` contra
+`00_catalogo.json`; no se sigue "porque la diferencia parece menor".
+
+Identidad, tras 145 **[SOLO LECTURA]** — nadie cambia de perfil:
+
+```sql
+SELECT (SELECT count(*) FROM usuario_establecimientos) AS asignaciones,                                       -- 0
+       (SELECT count(*) FROM usuarios u WHERE erp_usuario_de_tienda(u.id)) AS usuarios_de_tienda,             -- 0
+       (SELECT jsonb_object_agg(rol, n) FROM (SELECT rol, count(*) n FROM usuarios WHERE estatus = 'Activo' GROUP BY 1) z) AS activos_por_rol;  -- igual que en D0
+```
+
+`erp_actor()` no se puede probar desde el SQL Editor (no hay sesión de usuario): el perfil real de
+cada rol se confirma en la sección G, con personas reales, después de publicar. Por eso 145 se
+verifica aquí por huella y por "cero usuarios de tienda", y la publicación tiene su propia compuerta.
+
+### D2. Verificación final **[SOLO LECTURA]**
+
+1. Las huellas posteriores (son **14**, distintas de las 16 previas de C2: 9 funciones redefinidas
+   por 144 y 145 con su valor NUEVO, 3 de tienda que ajusta 148 y 2 que deben seguir intactas):
+
+```sql
 SELECT f.firma, md5(pg_get_functiondef(f.firma::regprocedure)) = f.esperado AS ok
 FROM (VALUES
   ('public.confirmar_carga_ruta(uuid,bigint,text,boolean,text)', '50ce141b71b2692a015a1cd77e780fec'),
@@ -125,14 +214,31 @@ FROM (VALUES
   ('public.completar_venta_directa(uuid,bigint,text,text,jsonb,text,text)', '2107586c1f5b8b59d7a4ff039a1fd0d6'),
   ('public.guardar_usuario(bigint,text,text,text,text[])',       '2b32868497e95e5deaf91af26619ec97')
 ) AS f(firma, esperado);
+```
 
--- Estado inicial de Tiendas: apagado y vacío.
+   Estas 14 se validaron contra la base LOCAL (14 de 14). En producción se leen aquí por primera
+   vez: producción corre PostgreSQL 17.6 y la base local 18; las 16 previas coincidieron entre
+   ambas, así que no se espera diferencia de formato, pero si alguna diera `false` con la migración
+   aplicada sin error, es **NO-GO para publicar** y se compara la definición completa antes de seguir.
+
+2. Estado inicial de Tiendas, apagado y vacío:
+
+```sql
 SELECT (SELECT habilitada FROM tiendas_activacion) AS interruptor,              -- false
        (SELECT count(*) FROM establecimientos) AS establecimientos,             -- 1 (el CEDIS)
        (SELECT count(*) FROM usuario_establecimientos) AS asignaciones,         -- 0
        (SELECT count(*) FROM cajas) AS cajas, (SELECT count(*) FROM turnos_caja) AS turnos, (SELECT count(*) FROM traspasos) AS traspasos,   -- 0, 0, 0
        (SELECT count(*) FROM pg_trigger WHERE tgname IN ('trg_usuarios_guard_ultimo_cajero', 'trg_usuario_establecimientos_guard_ultimo_cajero') AND NOT tgisinternal) AS guardas;  -- 2
 ```
+
+3. `q supabase/tests/prod/estado_negocio.sql "$SNAP/99_estado.json"` → idéntico a `00_estado.json`
+   (esa consulta lee columnas concretas de órdenes, pagos, CxC, kardex y existencias: las columnas
+   nuevas no la alteran). `99_catalogo.json` contra `00_catalogo.json`: la diferencia son solo los
+   objetos de 143–150. `error_log_max` igual que en D0.
+4. Sección E (rol de servicio).
+
+Con D2 y E en verde, las migraciones quedan MIGRATION APPLIED / VALIDATED. Eso **no** autoriza
+publicar: la compuerta 2 es aparte.
 
 ## E. `erp_usuario_de_tienda` y el rol de servicio **[SOLO LECTURA]**
 
@@ -251,12 +357,20 @@ Niveles, del menor al mayor **[cada uno es una AUTORIZACIÓN del dueño]**:
    con turnos abiertos. La tienda conserva inventario e historia; sus cajeros no venden.
 2. **Todas las tiendas.** Apagar el interruptor (SQL del dueño: `habilitada = false`). Nadie vende,
    abre turno ni despacha. Lo central no cambia.
-   Antes de apagarlo, si la urgencia lo permite: cerrar turnos y recibir o retornar los traspasos
-   en tránsito. Cerrar un turno y confirmar un reembolso siguen disponibles con el interruptor
-   apagado (revisado en el código de 146). **No está verificado** que recibir o retornar un
-   traspaso funcione con el interruptor apagado: si queda alguno en tránsito, puede hacer falta
-   encenderlo de nuevo un momento para resolverlo. El producto en tránsito no está en ningún
-   cuarto mientras tanto.
+   Con el interruptor apagado (revisado en el código de 145–148 durante P0; no probado en pantalla):
+   - **Traspasos en tránsito: quedan BLOQUEADOS.** Recibir, retornar, cancelar, despachar y cerrar
+     una incidencia exigen el interruptor encendido. El producto sigue registrado "en tránsito"
+     (no está en ningún cuarto, no se pierde), pero no se puede resolver hasta volver a encenderlo.
+   - Cerrar un turno, corregir una venta y confirmar un reembolso NO dependen del interruptor.
+   - Abrir turno, vender y reabrir un turno quedan bloqueados (es lo que se busca).
+   - El reintento de un cobro sin confirmar se responde desde el registro de la operación antes de
+     mirar el interruptor o el turno: sigue funcionando.
+
+   Por eso, **antes de apagarlo y siempre que sea posible:** recibir o retornar todos los traspasos
+   en tránsito y cerrar los turnos. **Si la emergencia exige detener las ventas de inmediato,**
+   apagarlo puede ser necesario aunque haya traspasos en camino: quedarán pendientes hasta una
+   recuperación controlada (encender de nuevo, con autorización del dueño, solo para recibirlos o
+   retornarlos, y volver a apagar si la causa sigue). Mientras tanto no se ajusta inventario a mano.
 3. **Frontend.** Volver Netlify al deploy anterior. Las migraciones se quedan (son compatibles con
    el frontend anterior). Si ya hay cajeros asignados a una tienda, siguen siendo "Ventas Tienda"
    para la base aunque el frontend anterior no lo sepa: retirarlos de la tienda por contrato antes
@@ -266,6 +380,10 @@ Casos puntuales:
 - **Cobro sin confirmar en un aparato** (se perdió la respuesta): en ese mismo aparato, "Revisar
   ese cobro". Reenvía la MISMA operación: si ya estaba registrada muestra su comprobante; si no, la
   registra una sola vez. No capturar la venta otra vez desde otro aparato sin revisar primero.
+- **No retirar de la tienda ni dar de baja a un cajero que tenga un cobro sin confirmar** sin
+  conciliarlo antes: el reintento exige que siga siendo cajero de esa tienda; si ya no lo es, el
+  aparato recibe "no autorizado" y deja de saber si la venta existe. Primero "Revisar ese cobro"
+  (o confirmar en Reportes → Ventas que la venta está o no está), y después el retiro o la baja.
 - **Aparato perdido o reiniciado con un cobro sin confirmar:** la venta, si llegó, está en la base
   (Reportes → Ventas del día y de esa caja). Si no aparece, no se cobró en el sistema.
 - **Reembolso registrado y no entregado:** queda como pendiente en Reportes → Cajas hasta que
@@ -299,7 +417,30 @@ Riesgos residuales conocidos:
 - Retiro y baja simultáneos de la misma persona pueden terminar en un aborto limpio (se reintenta).
 - Con un solo cajero, cualquier baja exige desactivar la tienda: por eso el mínimo de dos.
 - El ensayo de reversión de 069 no retira las policies `tienda_read` de 145 en `ordenes` y `pagos`.
-- Recepción o retorno de traspasos con el interruptor apagado: sin verificar (ver K).
+- Con el interruptor apagado los traspasos en tránsito no se pueden recibir ni retornar (ver K).
+- Cerrar turnos y confirmar reembolsos con el interruptor apagado: revisado en código, no probado en pantalla.
+- Brechas de paridad entre la base local de pruebas y producción: sección M.
+
+## M. Paridad entre la base local de pruebas y producción (preflight P0, 2026-10-13)
+
+Todo lo de este documento se validó en una base local reconstruida con las migraciones del
+repositorio. P0 comparó su catálogo con el de producción. Diferencias encontradas y por qué no
+bloquean:
+
+| Diferencia | Efecto sobre 143–150 |
+|---|---|
+| **Privilegios por omisión.** En producción, lo que crea `postgres` (SQL Editor) nace abierto solo a `postgres` y `service_role`; en local nace abierto también a `anon` y `authenticated`. | Ninguno: las 35 funciones de tienda que usa la aplicación y las 6 tablas que lee llevan `GRANT` explícito a `authenticated`, y lo que debe quedar cerrado lleva `REVOKE`. `service_role` recibe EXECUTE por omisión y además 150 lo otorga explícito para `erp_usuario_de_tienda`. Por esto mismo la sección E se verifica en producción y no se da por buena con la prueba local. |
+| `cuartos_frios.stock_minimo` (jsonb NOT NULL, con valor por omisión) existe solo en producción. | Ninguno: el alta de congelador de tienda inserta con lista de columnas. |
+| `rutas`: `carga_confirmada_por` es bigint en producción y text en local; `carga_confirmada_at` y `fecha_fin` difieren de tipo; cuatro columnas jsonb son NOT NULL solo en producción. Producción tiene además la llave `rutas_carga_confirmada_por_fkey`. | Bajo: 144 redefine `confirmar_carga_ruta`, que escribe dos de esas columnas, pero esas líneas son las de la definición vigente en producción y 144 no las cambia (solo agrega la restricción al CEDIS). La prueba local de esa función corrió sobre tipos distintos: la primera carga de ruta real tras 144 debe observarse. |
+| Valores por omisión en `orden_lineas` y `pagos` (producción los tiene, local no); `productos.empaque_sku` text / varchar. | Ninguno: las inserciones de tienda dan todos esos valores. |
+| En local existen, y en producción no: `pagos_monto_check`, llaves de `pagos` y `orden_lineas`, disparadores `updated_at` de 4 tablas, tabla `cuarto_frio_stock`. | Ninguno para Tiendas; es el backlog P3 ya registrado en STATUS. Significa que producción es MENOS estricta que local en esos puntos. |
+| `increment_saldo` tiene otro cuerpo en local. | Ninguno: ninguna migración de Tiendas la usa ni la toca. |
+| Producción tiene el disparador de evento `ensure_rls` (activa RLS sola en tablas nuevas) y `rls_auto_enable()`. | Ninguno: las migraciones activan RLS en cada tabla de todos modos. |
+| PostgreSQL 17.6 en producción, 18 en local. | Las 16 huellas previas coinciden entre ambas; las 14 posteriores se leen en producción por primera vez en D2. |
+| En producción hay UN solo usuario Ventas activo. | No afecta la migración. Antes de activar una tienda hay que dar de alta cajeros (mínimo dos por tienda). |
+
+Lo que la base local NO reproduce y por eso se verifica en producción: privilegios por omisión,
+Supabase Auth, Netlify con el rol de servicio y realtime.
 
 ---
 
@@ -310,7 +451,9 @@ Cada compuerta se decide con evidencia de producción de ese momento. Un solo "n
 ### 1. Antes de aplicar migraciones
 - [ ] Autorización expresa del dueño para aplicar 143–150.
 - [ ] Producción en la 142, sin objetos de Tiendas.
-- [ ] Las 16 huellas de C2 con `ok = true`. **Cualquier huella distinta = NO-GO.**
+- [ ] Las 16 huellas de C2 con `ok = true`, leídas el mismo día. **Cualquier huella distinta = NO-GO.**
+- [ ] Conteos de D0 = 226 · 62 · 96 · 54 y 0 objetos de Tiendas (si cambiaron desde P0, repetir el preflight).
+- [ ] Ninguna ruta abierta ni cargándose en el momento de aplicar 144.
 - [ ] SHA-256 de los ocho archivos igual a la sección A.
 - [ ] Fotografía previa guardada (catálogo, estado de negocio, conteos).
 - [ ] Momento sin operación crítica en curso (144 y 145 redefinen contratos centrales).
@@ -319,7 +462,7 @@ Cada compuerta se decide con evidencia de producción de ese momento. Un solo "n
 - [ ] Autorización expresa del dueño para publicar (distinta de la anterior).
 - [ ] Las ocho migraciones aplicadas una vez, sin error, con el catálogo cambiado solo en lo suyo y
       los datos de negocio idénticos.
-- [ ] Huellas posteriores de D con `ok = true`. **Falla de identidad = NO-GO.**
+- [ ] Conteos tras 150 = 291 · 75 · 109 · 63 y las 14 huellas posteriores de D2 con `ok = true`. **Falla de identidad = NO-GO.**
 - [ ] `service_role` con EXECUTE sobre `erp_usuario_de_tienda`; `authenticated` y `anon` sin él.
       **Sin ese permiso = NO-GO.**
 - [ ] 0 usuarios Ventas con perfil de tienda; interruptor apagado; solo el CEDIS.
