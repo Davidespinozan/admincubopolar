@@ -517,7 +517,11 @@ SELECT pg_temp.ok((pg_temp.j('z1b') ->> 'efectivo_esperado')::numeric = 590 AND 
 -- El cajero que deja la tienda: su turno cerrado no se reabre.
 RESET ROLE;
 SAVEPOINT s_cajero_fuera;
+-- Montaje de la prueba (no es operación): desde 150 una tienda activa no pierde a su último cajero ni por SQL directo,
+-- así que la asignación se quita con los disparadores apagados. Funciona igual antes y después de 150.
+SET LOCAL session_replication_role = replica;
 DELETE FROM usuario_establecimientos WHERE usuario_id = 14608;
+SET LOCAL session_replication_role = origin;
 SET LOCAL ROLE authenticated; SELECT pg_temp.como(1);
 SELECT pg_temp.falla(format($q$SELECT reabrir_turno_caja(pg_temp.op(401), %s, 'Revisar el faltante')$q$, pg_temp.n('t3', 'turno_id')),
   '146-179 no se reabre el turno de un cajero que ya no trabaja en esa tienda', '22023', '%ya no trabaja%', 'CAJERO_NO_DISPONIBLE');

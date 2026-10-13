@@ -1,6 +1,6 @@
 # CUBOPOLAR — STATUS (única fuente del estado actual)
 
-Actualizado: 2026-10-09 (ZONA-1: zona del negocio = Durango, mig 122 aplicada y frontend `28a2024` desplegado; GER-1 activo; Santiago es Dueño). Lo actualizan los skills `activar-produccion`
+Actualizado: 2026-10-13 (Tiendas propias E1–E9, migs 143–150: SOLO LOCAL, sin desplegar; producción sigue en la 142 — ver su sección). Antes: 2026-10-09 (ZONA-1: zona del negocio = Durango, mig 122 aplicada y frontend `28a2024` desplegado; GER-1 activo; Santiago es Dueño). Lo actualizan los skills `activar-produccion`
 (al cerrar una fase) y `fase-auditoria` (al entregar una auditoría, si el dueño autorizó documentarla).
 Regla: si el repositorio tiene código o migraciones más nuevos que la base de abajo, esa
 diferencia tiene estado de producción DESCONOCIDO hasta verificarla (ver `CLAUDE.md`).
@@ -353,6 +353,75 @@ de solo lectura del mismo día (217 clientes, una sucursal = un cliente; LEVIN 1
   `sucursal_con_domicilio`) añadidos tras el gate local; en producción esas funciones ya estaban sin EXECUTE para `anon` y
   `authenticated` (privilegios por defecto de `postgres`; verificado en solo lectura), así que el archivo y producción coinciden.
 - Reversión: encabezado de 123 (sin órdenes con sucursal ni fusiones). Con historia: no borrar.
+
+## Tiendas propias (E1–E9, migs 143–150) — 2026-10-13 — CLOSED LOCAL · NO DESPLEGADO · producción sigue en la 142
+**Nada de este programa está en producción.** Estado por columna (ningún estado implica el siguiente):
+
+| Bloque | Qué es | Migración · SHA-256 | Commit local | CLOSED LOCAL | DEPLOYED PROD | VALIDATED PROD | PENDING FIELD VALIDATION |
+|---|---|---|---|---|---|---|---|
+| E1 | Establecimientos e interruptor global (apagado) | 143 · `afb100ab…46f7a0f` | `2083c93` | sí | no | no | sí |
+| E2 | Las operaciones centrales usan solo inventario del CEDIS | 144 · `d050d977…e8a2b94` | `b2cc8bf` | sí | no | no | sí |
+| E3 | Seguridad por establecimiento; perfil efectivo "Ventas Tienda" | 145 · `fd1dd9bb…81f61f10` | `fd7fef3` | sí | no | no | sí |
+| E4 | POS: cajas, turnos, venta atómica, corrección y reembolso | 146 · `8e03f75e…c30ac496` | `dd8d5f2` | sí | no | no | sí |
+| E5 | Interfaz del punto de venta; perfil de tienda en Netlify (`_lib/auth.js`) | sin migración | `15e3224` | sí | no | no | sí |
+| E6 | Configuración y activación controlada de una tienda | 147 · `d80d50d5…853a9fcf` | `3a387e2` | sí | no | no | sí |
+| E7 | Tiendas remotas y traspasos con tránsito | 148 · `ac60223c…e56e3537` | `4f2ceaa` | sí | no | no | sí |
+| E8 | Reportes por establecimiento y consolidados | 149 · `a7492b55…44e2704` | `a8ad876` | sí | no | no | sí |
+| E9 | Último cajero por disparador, conciliación de reembolsos, validación integrada | 150 · `4fdf8993…a95ad2af0` | sin commit (árbol de trabajo, rama `tiendas-e9-cierre-integral`) | implementado y verificado; commit pendiente de autorización | no | no | sí |
+
+SHA-256 completos: 143 `afb100ab1c515dd10a6cda376405facd35935b26f4b18abce0ef1fd0c46f7a0f` · 144 `d050d9774cac88c2ab61a9c69cb569d234f1222ed46276480031ebf8de8a2b94` ·
+145 `fd1dd9bbedba9d4f0b141f383e3c312d3787e73ae3552295a2106d5981f61f10` · 146 `8e03f75ee0bfa33693ec22c93d6c1c087353b9aa367d907192944c8bc30ac496` ·
+147 `d80d50d5ff0b3d92ec92e42f150bd0d032297d3cb4cbc6b1090c3fb8853a9fcf` · 148 `ac60223c4507554af37f04eacea13dcbb0f373e98f6ae0e435407c4de56e3537` ·
+149 `a7492b55f347d08c3e5b91aeb3a4582f08266bf6e6bc70a797b7fc6a844e2704` · 150 `4fdf8993459c3d0f1f50af693af92b4a2fb7056d184cb399d53efb5a95ad2af0`.
+
+- **Decisiones cerradas (D-S1 a D-S10):** establecimientos como entidad; rutas solo desde el CEDIS; rol guardado Ventas + perfil efectivo "Ventas
+  Tienda" por asignación; la tienda de fábrica vende del CEDIS solo con permiso explícito; sin descuentos; aislamiento por establecimiento;
+  traspasos aparte de las rutas de clientes; cobro inmediato, sin CxC; varias cajas por tienda; el POS elige clientes elegibles con datos mínimos.
+- **E9 (150, aditiva; `guardar_usuario` de 120 NO cambia, md5 `2b328684…`):** (1) dos disparadores sin exención de rol ni de sesión
+  (`usuarios`: UPDATE de rol/estatus y DELETE; `usuario_establecimientos`: DELETE y cambio de llaves) impiden dejar una tienda ACTIVA sin cajero
+  habilitado (22023, `ULTIMO_CAJERO`); la salida es asignar otro cajero o desactivar la tienda. (2) `reporte_reembolsos_tiendas` (solo lectura,
+  Admin): egreso contable (día de la devolución) aparte del dinero entregado (día de la entrega), pendientes al corte e inconsistencias.
+  (3) `GRANT EXECUTE` explícito de `erp_usuario_de_tienda` a `service_role` (Netlify). Frontend: conciliación de reembolsos en Tiendas →
+  Reportes → Cajas; el aviso "cobro sin confirmar" ya no aparece mientras el cobro va en camino por primera vez.
+- **Evidencia local:** gate local completo RESULTADO OK (2026-10-13): 150 ×2, suite `150_cierre_integral_tiendas_test.sql` (69), 65 suites re-corridas tras 150, concurrencia C150 (8: dos bajas simultáneas, baja contra retiro, baja contra activación, candados cruzados) y C144/C146/C147/C148, SEARCH_PATH 208/208, UNQUALIFIED_RESOLUTION PASS. La suite 146 se hizo consciente de 150 (un montaje quitaba por SQL directo al último cajero de una tienda activa). El ensayo de reversión de 069 se corrió aparte, al final (aplica; no conoce las dos policies `tienda_read` de 145 en `ordenes` y `pagos`, igual que en E8). Vitest 1,984 en UTC / Mazatlán / CDMX / Madrid; lint, typecheck, build y `diff --check` limpios. Navegador: `e2e/local/tiendas_bd_real.mjs` (28) y `e2e/local/pos_tienda_simulado.mjs` en verde.
+- **Validación integrada — qué SÍ se probó:** los 15 pasos (alta de tienda de fábrica y remota, cajeros, permisos de inventario, cajas,
+  activación, abastecimiento y recepción, turno, venta, cobro y reintento, cierre, devolución, reembolso, reportes, desactivación) en la suite
+  150 con los contratos reales; y en un navegador (Chromium) contra la base LOCAL real a través de PostgREST (`e2e/local/tiendas_bd_real.mjs`):
+  cajera (recepción, turno, venta, respuesta perdida y reintento, cierre a ciegas) y Administración (Reportes), con RLS y errores reales.
+- **Qué NO se probó (PENDING FIELD VALIDATION):** inicio de sesión real (Supabase Auth; en local se simula el token); Netlify Functions
+  desplegadas con el perfil de tienda (solo pruebas con base en memoria); realtime; pantallas de configuración de tienda, corrección de venta y
+  confirmación de reembolso en navegador contra base real (probadas por API real y por render); aparatos reales (teléfono / tableta de caja,
+  impresión); nada contra producción.
+- **Plan de despliegue (cada paso con autorización INDEPENDIENTE del dueño; ninguno ejecutado):**
+  1. Precondiciones de solo lectura en producción: md5 de los contratos que 144–150 comprueban o redefinen (`erp_actor`, `erp_roles_activos`,
+     `erp_lector_negocio`, `erp_es_activo`, `erp_exigir_no_empleado`, `completar_venta_directa`, `guardar_usuario`, `registrar_devolucion`) iguales a
+     la base local; fotografía de `catalogo_huella.sql` y `estado_negocio.sql`.
+  2. Migraciones 143 → 150, en orden, una vez cada una, con el SHA-256 de arriba; tras cada una, verificación de solo lectura (catálogo cambió
+     exactamente en sus objetos; datos de negocio idénticos). Todas son compatibles con el frontend desplegado, que no las usa.
+  3. Tras 145 y 150: funciones de identidad (md5 = base local) y que un usuario Ventas, Admin, Chofer, Producción y Empleado real conserven su
+     perfil (`erp_actor`); `has_function_privilege('service_role', 'erp_usuario_de_tienda(bigint)', 'EXECUTE')` = true; anon sin nada.
+  4. Interruptor global: `tiendas_activacion.habilitada` = false verificado ANTES de publicar el frontend (con él apagado el menú Tiendas no
+     opera y ningún contrato de tienda acepta nada).
+  5. Autorización aparte → push del frontend y Netlify; bundle vivo (`vender_en_tienda`, `reporte_reembolsos_tiendas`, `pos-tienda`); Netlify
+     Functions responden; un usuario Ventas central sigue facturando y generando links (perfil efectivo sin tienda = Ventas).
+  6. Autorización aparte → el dueño enciende el interruptor con SQL (no hay contrato que lo haga).
+  7. Configuración de la PRIMERA tienda por Administración (Tiendas → Configuración): congelador, caja, cajero(s), permisos explícitos, clientes.
+  8. Activación explícita de esa tienda (lista de verificación del servidor en verde).
+  9. Prueba operativa supervisada con el dueño: un traspaso, un turno, una venta por cada forma de pago, una devolución, un cierre, y revisar
+     Reportes. Es operación real, no datos de prueba.
+  10. Contención / reversión: apagar el interruptor (SQL del dueño) detiene todos los contratos de tienda sin tocar lo central; desactivar la
+      tienda con su motivo; Netlify al commit anterior. Las migraciones NO se retiran si ya hay ventas, turnos o traspasos de tienda (historia).
+- **Condiciones obligatorias antes de activar una tienda real:** (a) 143–150 aplicadas y verificadas por huella; (b) frontend y Netlify
+  publicados y verificados; (c) rol de servicio con EXECUTE sobre `erp_usuario_de_tienda`; (d) al menos DOS cajeros por tienda (con uno solo,
+  su baja exige desactivar la tienda); (e) conteo físico del congelador de la tienda en cero o por traspaso recibido (nunca ajuste directo);
+  (f) contador de acuerdo con que la devolución registra el egreso el día de la devolución aunque el dinero salga después; (g) prueba
+  operativa supervisada aceptada por el dueño.
+- **Residuales:** los reportes centrales históricos (`reporte_financiero`, caja) mezclan las ventas de tienda con las centrales y cuentan el
+  egreso de una devolución el día en que se registra (no se tocaron: la separación y la conciliación están en los reportes nuevos); reintentar
+  un cobro de resultado incierto lo reenvía (idempotente por operación); el despacho de traspasos es solo de Administración; un cajero con
+  turno abierto se puede dar de baja (decisión: una baja urgente no espera un conteo) y su turno lo cierra Administración; retiro y baja
+  simultáneos de la MISMA persona pueden terminar en un aborto limpio (40P01) que se reintenta; antes de iniciar sesión la aplicación hace
+  su carga anónima de siempre (la base la rechaza).
 
 ## T5-D2 · Recuperación administrativa y cierre seguro de rutas (mig 142) — 2026-10-12 — CLOSED IN PRODUCTION (cierre técnico; validación operativa pendiente)
 **Cierre técnico registrado conforme al documento del dueño "T5-D2 — FRONTEND PRODUCTION DEPLOY" (deploy y verificaciones en PASS).

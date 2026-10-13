@@ -1832,15 +1832,16 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         const guard = requireAdmin();
         if (guard) return guard;
         const est = establecimientoId ?? null;
-        const [ventas, cajas, inventario, abasto] = await Promise.all([
+        const [ventas, cajas, inventario, abasto, reembolsos] = await Promise.all([
           posRpc('reporte_ventas_establecimientos', { p_desde: desde, p_hasta: hasta, p_establecimiento_id: est }),
           posRpc('reporte_cajas_tiendas', { p_desde: desde, p_hasta: hasta, p_establecimiento_id: est }),
           posRpc('reporte_inventario_establecimientos', { p_establecimiento_id: est }),
           posRpc('reporte_abastecimiento_tiendas', { p_desde: desde, p_hasta: hasta, p_establecimiento_id: est }),
+          posRpc('reporte_reembolsos_tiendas', { p_desde: desde, p_hasta: hasta, p_establecimiento_id: est }),
         ]);
-        const malo = [ventas, cajas, inventario, abasto].find(r => r?.error);
+        const malo = [ventas, cajas, inventario, abasto, reembolsos].find(r => r?.error);
         if (malo) return malo;
-        return { data: { ventas: ventas.data, cajas: cajas.data, inventario: inventario.data, abastecimiento: abasto.data } };
+        return { data: { ventas: ventas.data, cajas: cajas.data, inventario: inventario.data, abastecimiento: abasto.data, reembolsos: reembolsos.data } };
       },
       // Recibir lo puede hacer Administración o el personal de la tienda con permiso: lo decide el servidor.
       recibirTraspaso: async (args) => posRpc('recibir_traspaso', args),

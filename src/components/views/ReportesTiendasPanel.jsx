@@ -12,7 +12,7 @@ import { Card, SectionLabel, Chips, KpiTile } from '../ui/Components';
 import { FormInput, FormSelect, FormBtn } from '../ui/Modal';
 import { AvisoPos } from '../PosTiendaView';
 import { diaNegocio } from '../../utils/fechas';
-import { rangoReportePorOmision, validarRangoReporte, opcionesEstablecimiento, TIPO_ESTABLECIMIENTO, consolidadoCuadra, unidadesCuadran, textoDiferencia, pesos } from '../../data/posLogic';
+import { rangoReportePorOmision, validarRangoReporte, opcionesEstablecimiento, TIPO_ESTABLECIMIENTO, consolidadoCuadra, unidadesCuadran, textoDiferencia, textoConciliacionReembolso, MEDIO_REEMBOLSO, pesos } from '../../data/posLogic';
 
 const SECCIONES = [{ k: 'ventas', l: 'Ventas' }, { k: 'cajas', l: 'Cajas' }, { k: 'inventario', l: 'Inventario' }, { k: 'abasto', l: 'Abastecimiento e incidencias' }];
 const TONO = { ok: 'text-emerald-700', aviso: 'text-amber-700', error: 'font-semibold text-red-700', neutro: 'text-slate-500' };
@@ -56,7 +56,7 @@ export function ReportesTiendasPanel({ actions, establecimientos, inicial = null
 
   const opciones = useMemo(() => opcionesEstablecimiento(lista), [lista]);
   const nombreEst = useCallback((id) => lista.find(e => String(e.id) === String(id))?.nombre || `Establecimiento ${id}`, [lista]);
-  const v = r?.ventas; const c = r?.cajas; const inv = r?.inventario; const ab = r?.abastecimiento;
+  const v = r?.ventas; const c = r?.cajas; const inv = r?.inventario; const ab = r?.abastecimiento; const re = r?.reembolsos;
   const cuadra = v ? consolidadoCuadra(v) : true;
 
   return (
@@ -142,6 +142,26 @@ export function ReportesTiendasPanel({ actions, establecimientos, inicial = null
           </Card>
           <Card padding="p-0"><div className="p-4 pb-1"><SectionLabel>Por caja</SectionLabel></div>
             <Tabla cabeceras={['Caja', 'Turnos', 'Ventas', 'Vendido', 'Diferencia acumulada']} filas={(c.por_caja || []).map(x => [`${x.tienda} · ${x.caja}`, n(x.turnos), n(x.ventas), pesos(x.vendido), pesos(x.diferencia)])} /></Card>
+          {re && (
+            <>
+              {(re.inconsistencias || []).length > 0 && <AvisoPos tono="error" testid="reportes-reembolsos-inconsistencias">Hay {re.inconsistencias.length} devolución(es) cuyo egreso contable no coincide con su reembolso ({re.inconsistencias.map(i => i.folio).join(', ')}). Avisa a sistemas antes de conciliar.</AvisoPos>}
+              <div className="grid grid-cols-2 gap-2 md:grid-cols-4" data-testid="reportes-reembolsos-resumen">
+                <KpiTile label="Egreso contable del periodo" value={pesos(re.resumen?.egreso_contable_en_periodo)} hint="Devoluciones registradas en estas fechas" />
+                <KpiTile label="Dinero entregado en el periodo" value={pesos(re.resumen?.dinero_entregado_en_periodo)} hint={`Caja ${pesos(re.resumen?.entregado_desde_caja)} · Administración ${pesos(re.resumen?.entregado_por_administracion)} · Electrónico ${pesos(re.resumen?.entregado_electronico)}`} />
+                <KpiTile label="Pendiente al corte" value={pesos(re.resumen?.pendiente_al_corte)} hint={`${n(re.resumen?.pendientes_al_corte)} reembolso(s) sin entregar`} />
+                <KpiTile label="Electrónico pendiente" value={pesos(re.resumen?.pendiente_electronico_al_corte)} hint="Falta hacerlo en la terminal o el banco" />
+              </div>
+              <Card padding="p-0">
+                <div className="p-4 pb-1"><SectionLabel>Devoluciones y reembolsos</SectionLabel></div>
+                <Tabla testid="reportes-reembolsos" cabeceras={['Venta', 'Devuelto', 'Egreso contable', 'Reembolso', 'Cómo', 'Dinero']}
+                  filas={(re.reembolsos || []).map(x => { const t = textoConciliacionReembolso(x); return [
+                    <span key="v">{x.folio} · {x.tienda}<span className="block text-xs text-slate-500">Venta {x.dia_venta} · devolución {x.dia_devolucion}</span></span>,
+                    pesos(x.total_devuelto), x.egreso_contable ? <span key="e">{pesos(x.egreso_contable.monto)}<span className="block text-xs text-slate-500">{x.egreso_contable.fecha}</span></span> : '—',
+                    pesos(x.monto), MEDIO_REEMBOLSO[x.medio] || '—', <span key="d" className={TONO[t.tono]}>{t.texto}</span>]; })} />
+              </Card>
+              <p className="px-1 text-xs text-slate-500">El egreso contable se registra el día de la devolución; el dinero puede entregarse después. Son dos fechas distintas y aquí se ven por separado.</p>
+            </>
+          )}
           <p className="px-1 text-xs text-slate-500">Reembolso registrado = se le debe al cliente; entregado = el dinero ya salió; pendiente = registrado y todavía no entregado. El efectivo esperado de un turno abierto solo se muestra aquí, a Administración.</p>
         </>
       )}

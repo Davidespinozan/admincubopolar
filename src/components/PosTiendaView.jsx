@@ -48,6 +48,7 @@ export default function PosTiendaView({ user, actions, onNavigate }) {
   const [aviso, setAviso] = useState(null);                // { tono, texto }
   const [ocupado, setOcupado] = useState(false);
   const [pendiente, setPendiente] = useState(() => leerPendiente(almacen(), 'cobro', uid));
+  const [primerEnvio, setPrimerEnvio] = useState(false);   // el cobro va en camino por primera vez: todavía no es un "cobro sin confirmar"
   const [comprobante, setComprobante] = useState(null);
   const [confirmar, setConfirmar] = useState(false);
   // Apertura de turno
@@ -100,12 +101,14 @@ export default function PosTiendaView({ user, actions, onNavigate }) {
   const quitarCliente = () => { setCliente(null); setFactura(false); };
 
   // ── Cobro ──
-  const enviarCobro = useCallback(async (p) => {
+  const enviarCobro = useCallback(async (p, { revision = false } = {}) => {
     setOcupado(true);
+    setPrimerEnvio(!revision);
     setPendiente(p);
     // Se guarda ANTES de mandarlo: si la app se cierra o se cae la red, el cobro no se pierde ni se repite.
     const r = await ejecutarOperacionPos({ tipo: 'cobro', storage: almacen(), usuarioId: uid, pendiente: p, llamar: actions.posVender });
     setOcupado(false);
+    setPrimerEnvio(false);
     if (r.estado === 'pendiente') {
       // No se sabe si el servidor la registró: el cobro queda guardado y la pantalla bloqueada.
       setAviso({ tono: 'error', texto: 'No hubo respuesta del servidor. Este cobro quedó sin confirmar: revísalo antes de hacer otra venta.' });
@@ -251,11 +254,11 @@ export default function PosTiendaView({ user, actions, onNavigate }) {
         {onNavigate && <FormBtn onClick={() => onNavigate('pos-turno')}>Mi turno y cierre</FormBtn>}
       </div>
 
-      {pendiente && (
+      {pendiente && !primerEnvio && (
         <AvisoPos tono="aviso" testid="pos-cobro-pendiente">
           <p className="font-semibold">Hay un cobro sin confirmar ({pesos(pendiente.resumen?.total)}, {pendiente.resumen?.metodo}).</p>
           <p className="mt-1">Se perdió la conexión antes de saber si se registró. Tócalo para preguntarle al servidor: si ya estaba registrado te mostramos su comprobante, y si no, se registra ahora una sola vez. No se puede hacer otra venta hasta resolverlo.</p>
-          <FormBtn warning className="mt-2" onClick={() => enviarCobro(pendiente)} disabled={ocupado}>{ocupado ? 'Revisando…' : 'Revisar ese cobro'}</FormBtn>
+          <FormBtn warning className="mt-2" onClick={() => enviarCobro(pendiente, { revision: true })} disabled={ocupado}>{ocupado ? 'Revisando…' : 'Revisar ese cobro'}</FormBtn>
         </AvisoPos>
       )}
       {aviso && <AvisoPos tono={aviso.tono} testid="pos-aviso">{aviso.texto}</AvisoPos>}

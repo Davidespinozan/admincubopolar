@@ -647,3 +647,17 @@ export function textoDiferencia(turno) {
   if (d === 0) return { tono: 'ok', texto: 'Cuadró' };
   return d < 0 ? { tono: 'error', texto: `Faltaron ${pesos(-d)}` } : { tono: 'aviso', texto: `Sobraron ${pesos(d)}` };
 }
+
+/** Cómo se entrega el dinero de una devolución de tienda. */
+export const MEDIO_REEMBOLSO = Object.freeze({ efectivo_caja: 'Efectivo de la caja', efectivo_administracion: 'Efectivo de Administración', electronico: 'Tarjeta o transferencia' });
+
+/**
+ * Estado legible de un reembolso (renglón de `reporte_reembolsos_tiendas`): el egreso contable ya
+ * existe desde la devolución; aquí se dice si el dinero YA salió, y cuándo.
+ */
+export function textoConciliacionReembolso(r) {
+  if (!r || !(Number(r.monto) > 0)) return { tono: 'neutro', texto: 'Sin reembolso' };
+  if (r.estado === 'ejecutado') return { tono: 'ok', texto: `Entregado el ${r.dia_ejecucion || '—'}` };
+  const dias = Number(r.dias_pendiente || 0);
+  return { tono: dias >= 3 ? 'error' : 'aviso', texto: dias > 0 ? `Pendiente desde hace ${dias} día${dias === 1 ? '' : 's'}` : 'Pendiente (registrado hoy)' };
+}
