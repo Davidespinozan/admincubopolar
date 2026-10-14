@@ -215,3 +215,38 @@ export function mensajeErrorStock(error) {
   if (/Failed to fetch|NetworkError|network/i.test(msg)) return 'Sin conexión con el servidor. Reintenta: la operación no se duplicará.';
   return msg || 'No se pudo registrar la operación. No se aplicó ningún cambio.';
 }
+
+// ── P4-H2C: el congelador de una tienda no se ofrece para eliminar ─────────────
+// Contrato de datos (migración 143, con guarda en el servidor): el CEDIS es SIEMPRE el
+// establecimiento 1 (un solo CEDIS, que no cambia de tipo). Cada cuarto trae su
+// `establecimiento_id`; la API central no expone el tipo del establecimiento, así que la
+// pertenencia se lee de esa llave: 1 = CEDIS; cualquier otro valor = tienda; sin dato =
+// desconocido, y lo desconocido NUNCA se trata como CEDIS. La autoridad es el servidor
+// (migración 151, CUARTO_DE_TIENDA); esto solo evita ofrecer una acción que se rechazaría.
+export const ESTABLECIMIENTO_CEDIS = 1;
+
+/** 'cedis' | 'tienda' | 'desconocido', según la llave del establecimiento del cuarto. */
+export function pertenenciaCuarto(cuarto) {
+  const v = cuarto?.establecimiento_id;
+  if (v === null || v === undefined || v === '') return 'desconocido';
+  const id = Number(v);
+  if (!Number.isInteger(id) || id <= 0) return 'desconocido';
+  return id === ESTABLECIMIENTO_CEDIS ? 'cedis' : 'tienda';
+}
+
+/** Solo un cuarto del CEDIS puede ofrecerse para eliminar (las reglas de existencia e historia siguen aplicando). */
+export function puedeOfrecerEliminarCuarto(cuarto) {
+  return pertenenciaCuarto(cuarto) === 'cedis';
+}
+
+export const MENSAJE_CUARTO_DE_TIENDA = 'Este congelador pertenece a una tienda y no puede eliminarse.';
+export const MENSAJE_CUARTO_SIN_PERTENENCIA = 'No se pudo confirmar a qué establecimiento pertenece este cuarto; no se elimina.';
+
+/** ¿El error del servidor es el rechazo de la migración 151? (42501 con DETAIL {"codigo":"CUARTO_DE_TIENDA"}). */
+export function esErrorCuartoDeTienda(error) {
+  if (!error || typeof error !== 'object') return false;
+  const det = typeof error.details === 'string' ? error.details : '';
+  let codigo = null;
+  try { codigo = JSON.parse(det)?.codigo; } catch { codigo = /CUARTO_DE_TIENDA/.test(det) ? 'CUARTO_DE_TIENDA' : null; }
+  return codigo === 'CUARTO_DE_TIENDA';
+}

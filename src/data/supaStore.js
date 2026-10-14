@@ -19,7 +19,7 @@ import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs
 import { buildGuardarAvisosArgs } from './avisosAsistenciaLogic';
 import { dataUrlABlob, rutaEvidencia, yaExisteEnAlmacen } from './evidenciaLogic';
 import { base64ABlob, mensajeErrorDocumento } from './cfdiDocumentoLogic';
-import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, buildAjusteCuartoArgs, buildMermaCuartoArgs, interpretarResultadoStock, mensajeErrorStock } from './stockContratosLogic';
+import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, buildAjusteCuartoArgs, buildMermaCuartoArgs, interpretarResultadoStock, mensajeErrorStock, puedeOfrecerEliminarCuarto, pertenenciaCuarto, esErrorCuartoDeTienda, MENSAJE_CUARTO_DE_TIENDA, MENSAJE_CUARTO_SIN_PERTENENCIA } from './stockContratosLogic';
 import {
   normalizarEntregasCierre, claveCierreFinanciero, buildCerrarFinancieroArgs, interpretarCierreFinanciero,
   mensajeErrorCierreFinanciero, leerOperacionCierre, guardarOperacionCierre, borrarOperacionCierre,
@@ -2256,11 +2256,18 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
 
           const { data: cf, error: errSel } = await supabase
             .from('cuartos_frios')
-            .select('id, nombre, stock')
+            .select('id, nombre, stock, establecimiento_id')
             .eq('id', id)
             .single();
           if (errSel || !cf) {
             const msg = errSel?.message || 'Cuarto frío no encontrado';
+            t()?.error(msg);
+            return { error: msg };
+          }
+          // P4-H2C: el congelador de una tienda no se elimina (y lo desconocido no se trata como CEDIS).
+          // Defensa de interfaz: la autoridad es el servidor (migración 151).
+          if (!puedeOfrecerEliminarCuarto(cf)) {
+            const msg = pertenenciaCuarto(cf) === 'tienda' ? MENSAJE_CUARTO_DE_TIENDA : MENSAJE_CUARTO_SIN_PERTENENCIA;
             t()?.error(msg);
             return { error: msg };
           }
@@ -2279,9 +2286,11 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
 
           const { error } = await supabase.from('cuartos_frios').delete().eq('id', id);
           if (error) {
-            const msg = error.code === '23503'
-              ? 'No se puede eliminar — el cuarto tiene movimientos o relaciones asociadas.'
-              : (error.message || 'Error al eliminar cuarto frío');
+            const msg = esErrorCuartoDeTienda(error)
+              ? MENSAJE_CUARTO_DE_TIENDA
+              : error.code === '23503'
+                ? 'No se puede eliminar — el cuarto tiene movimientos o relaciones asociadas.'
+                : (error.message || 'Error al eliminar cuarto frío');
             t()?.error(msg);
             return { error: msg };
           }
