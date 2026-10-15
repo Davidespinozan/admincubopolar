@@ -19,7 +19,7 @@ import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs
 import { buildGuardarAvisosArgs } from './avisosAsistenciaLogic';
 import { dataUrlABlob, rutaEvidencia, yaExisteEnAlmacen } from './evidenciaLogic';
 import { base64ABlob, mensajeErrorDocumento } from './cfdiDocumentoLogic';
-import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, buildAjusteCuartoArgs, buildMermaCuartoArgs, interpretarResultadoStock, mensajeErrorStock, puedeOfrecerEliminarCuarto, pertenenciaCuarto, esErrorCuartoDeTienda, MENSAJE_CUARTO_DE_TIENDA, MENSAJE_CUARTO_SIN_PERTENENCIA } from './stockContratosLogic';
+import { nuevoOperacionId, buildConfirmarCargaArgs, buildNoEntregaArgs, buildSalidaManualArgs, buildTraspasoArgs, buildAjusteCuartoArgs, buildMermaCuartoArgs, interpretarResultadoStock, mensajeErrorStock, puedeOfrecerEliminarCuarto, pertenenciaCuarto, esErrorCuartoDeTienda, MENSAJE_CUARTO_DE_TIENDA, MENSAJE_CUARTO_SIN_PERTENENCIA, puedeOfrecerAjusteCentral, esErrorInventarioDeTienda, MENSAJE_AJUSTE_CUARTO_DE_TIENDA, MENSAJE_AJUSTE_SIN_PERTENENCIA } from './stockContratosLogic';
 import {
   normalizarEntregasCierre, claveCierreFinanciero, buildCerrarFinancieroArgs, interpretarCierreFinanciero,
   mensajeErrorCierreFinanciero, leerOperacionCierre, guardarOperacionCierre, borrarOperacionCierre,
@@ -2384,10 +2384,18 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         if (guard) { t()?.error(guard.error); return guard; }
         const built = buildAjusteCuartoArgs({ operacionId: operacionId || nuevoOperacionId(), cuartoId, sku, existencia, motivo });
         if (built.error) { t()?.error(built.error); return { error: built.error, message: built.error }; }
+        // P4-H3D: el ajuste central es solo del CEDIS. Se relee la pertenencia del cuarto en el servidor y se corta ANTES
+        // del RPC si es de una tienda o no se puede confirmar (defensa de interfaz; la autoridad es la guarda de 152).
+        const { data: cf, error: errCf } = await supabase.from('cuartos_frios').select('id, establecimiento_id').eq('id', cuartoId).single();
+        if (errCf || !cf || !puedeOfrecerAjusteCentral(cf)) {
+          const msg = cf && !errCf && pertenenciaCuarto(cf) === 'tienda' ? MENSAJE_AJUSTE_CUARTO_DE_TIENDA : MENSAJE_AJUSTE_SIN_PERTENENCIA;
+          t()?.error(msg);
+          return { error: msg, message: msg };
+        }
         const { data, error } = await supabase.rpc('ajustar_existencia_cuarto', built.args);
         if (error) {
           console.warn('[ajustarExistenciaCuarto] rpc:', error.message);
-          const msg = mensajeErrorStock(error);
+          const msg = esErrorInventarioDeTienda(error) ? MENSAJE_AJUSTE_CUARTO_DE_TIENDA : mensajeErrorStock(error);
           t()?.error(msg);
           return { error: msg, message: msg };
         }

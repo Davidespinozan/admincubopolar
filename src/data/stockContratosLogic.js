@@ -242,6 +242,40 @@ export function puedeOfrecerEliminarCuarto(cuarto) {
 export const MENSAJE_CUARTO_DE_TIENDA = 'Este congelador pertenece a una tienda y no puede eliminarse.';
 export const MENSAJE_CUARTO_SIN_PERTENENCIA = 'No se pudo confirmar a qué establecimiento pertenece este cuarto; no se elimina.';
 
+// P4-H3D: el ajuste central de existencias ("Ajustar stock" de Inventario → ajustar_existencia_cuarto) es SOLO del
+// CEDIS. Un congelador de tienda se corrige con el proceso de correcciones autorizadas (153); lo desconocido no se
+// ajusta. La autoridad es el servidor (152 rechaza con INVENTARIO_DE_TIENDA); esto solo evita ofrecer y enviar la acción.
+export const MENSAJE_AJUSTE_CUARTO_DE_TIENDA = 'Los ajustes de inventario de tiendas deben realizarse mediante el proceso de correcciones autorizadas.';
+export const MENSAJE_AJUSTE_SIN_PERTENENCIA = 'No se pudo confirmar a qué establecimiento pertenece este cuarto; no se ajusta.';
+export const MENSAJE_AJUSTE_CUARTO_CAMBIO = 'El cuarto cambió mientras el ajuste estaba abierto; vuelve a abrirlo.';
+
+/** Solo un cuarto del CEDIS confirmado ofrece el ajuste central de existencias. */
+export function puedeOfrecerAjusteCentral(cuarto) {
+  return pertenenciaCuarto(cuarto) === 'cedis';
+}
+
+/**
+ * Revalida un ajuste central antes de enviarlo: `abierto` es el cuarto con que se abrió el ajuste y `vigente` el mismo
+ * cuarto según los datos actuales. Devuelve null si se puede enviar, o el mensaje del bloqueo.
+ */
+export function validarAjusteCentral(abierto, vigente) {
+  if (!abierto || !vigente) return MENSAJE_AJUSTE_SIN_PERTENENCIA;
+  if (String(abierto.id) !== String(vigente.id)) return MENSAJE_AJUSTE_CUARTO_CAMBIO;
+  const pa = pertenenciaCuarto(abierto), pv = pertenenciaCuarto(vigente);
+  if (pa === 'tienda' || pv === 'tienda') return MENSAJE_AJUSTE_CUARTO_DE_TIENDA;
+  if (pa !== 'cedis' || pv !== 'cedis') return MENSAJE_AJUSTE_SIN_PERTENENCIA;
+  return null;
+}
+
+/** ¿El error del servidor es el rechazo de la guarda de 152? (42501 con DETAIL {"codigo":"INVENTARIO_DE_TIENDA"}). */
+export function esErrorInventarioDeTienda(error) {
+  if (!error || typeof error !== 'object') return false;
+  const det = typeof error.details === 'string' ? error.details : '';
+  let codigo = null;
+  try { codigo = JSON.parse(det)?.codigo; } catch { codigo = /INVENTARIO_DE_TIENDA/.test(det) ? 'INVENTARIO_DE_TIENDA' : null; }
+  return codigo === 'INVENTARIO_DE_TIENDA';
+}
+
 /** ¿El error del servidor es el rechazo de la migración 151? (42501 con DETAIL {"codigo":"CUARTO_DE_TIENDA"}). */
 export function esErrorCuartoDeTienda(error) {
   if (!error || typeof error !== 'object') return false;

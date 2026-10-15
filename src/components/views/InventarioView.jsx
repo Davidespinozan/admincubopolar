@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { resolverOperacion, claveTraspaso, claveAjusteCuarto, puedeOfrecerEliminarCuarto } from '../../data/stockContratosLogic';
+import { resolverOperacion, claveTraspaso, claveAjusteCuarto, puedeOfrecerEliminarCuarto, puedeOfrecerAjusteCentral, validarAjusteCentral } from '../../data/stockContratosLogic';
 import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtPct, useToast, PAGE_SIZE, Paginator, PageHeader } from './viewsCommon';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { esEmpaque, validarAjusteExistencia, REGLA_ENTRADA_EMPAQUE } from '../../data/empaqueLogic';
@@ -27,6 +27,10 @@ export function InventarioView({ data, actions }) {
   const [stockForm, setStockForm] = useState({ cantidades: {}, motivo: '' });
   const [stockErrors, setStockErrors] = useState({});
   const [savingStock, setSavingStock] = useState(false);
+  // P4-H3D: cuartos vigentes, para revalidar el ajuste central contra el dato actual (no contra el que había al abrirlo).
+  const cuartosVigentesRef = useRef(data.cuartosFrios);
+  cuartosVigentesRef.current = data.cuartosFrios;
+  const cuartoVigente = (id) => (cuartosVigentesRef.current || []).find(c => String(c.id) === String(id)) || null;
 
   const prodTerminados = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado"), [data.productos]);
 
@@ -102,6 +106,9 @@ export function InventarioView({ data, actions }) {
   };
 
   const abrirAjusteStock = (cf) => {
+    // P4-H3D: el ajuste central es solo del CEDIS confirmado (una tienda usa las correcciones autorizadas).
+    const bloqueo = validarAjusteCentral(cf, cuartoVigente(cf?.id));
+    if (bloqueo) { toast?.error(bloqueo); return; }
     const cantidades = {};
     for (const p of prodTerminados) {
       const sku = s(p.sku);
@@ -140,6 +147,10 @@ export function InventarioView({ data, actions }) {
 
     if (s(stockForm.motivo).trim().length < 5) { setStockErrors({ motivo: 'Mínimo 5 caracteres' }); return; }
 
+    // P4-H3D: el cuarto del diálogo debe seguir siendo del CEDIS según los datos actuales.
+    const bloqueoInicial = validarAjusteCentral(stockModal, cuartoVigente(stockModal.id));
+    if (bloqueoInicial) { toast?.error(bloqueoInicial); setStockModal(null); return; }
+
     // 102: un ajuste por conteo por SKU (ajustar_existencia_cuarto). Cada
     // intento conserva su UUID: reintentar el mismo conteo no duplica.
     setSavingStock(true);
@@ -147,6 +158,13 @@ export function InventarioView({ data, actions }) {
       const motivo = s(stockForm.motivo).trim();
       let hechos = 0;
       for (const a of ajustes) {
+        // P4-H3D: se revalida antes de CADA envío (los datos pueden cambiar entre un SKU y otro).
+        const bloqueo = validarAjusteCentral(stockModal, cuartoVigente(stockModal.id));
+        if (bloqueo) {
+          toast?.error(`${bloqueo}${hechos ? ` (${hechos} de ${ajustes.length} ya ajustados)` : ''}`);
+          setStockModal(null);
+          return;
+        }
         const datos = { cuartoId: stockModal.id, sku: a.sku, existencia: a.nuevaCantidad, motivo };
         const clave = claveAjusteCuarto(datos);
         const op = resolverOperacion(opsAjusteRef.current[clave], clave);
@@ -216,9 +234,9 @@ export function InventarioView({ data, actions }) {
             <span className="text-xs font-mono font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">{n(cf.temp, -50, 10)}°C</span>
           </div>
           <div className="flex items-center gap-1">
-            <button aria-label="Ajustar stock del cuarto frío" onClick={e=>{e.stopPropagation();abrirAjusteStock(cf);}} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:bg-slate-50 rounded-lg transition-colors">
+            {puedeOfrecerAjusteCentral(cf) && <button aria-label="Ajustar stock del cuarto frío" onClick={e=>{e.stopPropagation();abrirAjusteStock(cf);}} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-500 hover:text-emerald-600 hover:bg-slate-50 rounded-lg transition-colors">
               <Icons.Package />
-            </button>
+            </button>}
             <button aria-label="Editar cuarto frío" onClick={e=>{e.stopPropagation();setCfForm({nombre:s(cf.nombre),temp:String(n(cf.temp, -50, 10)),capacidad_tarimas:String(n(cf.capacidad_tarimas) || '')});setCfModal(cf);}} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-500 hover:text-blue-600 hover:bg-slate-50 rounded-lg transition-colors">
               <Icons.Edit />
             </button>
