@@ -329,7 +329,7 @@ export default function CuboPolarERP({ user, usuarioRol, rolVista, data, actions
       case 'bolsas': return <AlmacenBolsasView {...vp} />;
       case 'precios': return <PreciosView {...vp} />;
       case 'produccion': return <ProduccionView {...vp} />;
-      case 'inventario': return <InventarioView {...vp} />;
+      case 'inventario': return <InventarioView {...vp} user={usuarioRol || user} />; // P4-H3E: usuarios.id resuelto (Dueño / solicitante)
       case 'mermas': return <MermasView {...vp} />;
       case 'ordenes': return <OrdenesView {...vp} />;
       case 'rutas': return <RutasView {...vp} />;

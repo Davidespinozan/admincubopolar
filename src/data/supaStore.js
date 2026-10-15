@@ -15,6 +15,7 @@ import { buildUpdateFieldsProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
 import { buildActividadDatos, buildCompletarArgs, buildEditarOcurrenciaArgs, sumarDiasISO } from './calendarioLogic';
 import { clasificarErrorPos } from './posLogic';
+import { clasificarErrorCorreccion, buildSolicitarArgs, buildDecisionArgs, buildEjecutarArgs, buildCancelarArgs, buildConsultaArgs } from './correccionesTiendaLogic';
 import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs, buildAsistenciaManualArgs, esErrorDeRed, mensajeErrorLlamada, rolSinDatosNegocio } from './asistenciaLogic';
 import { buildGuardarAvisosArgs } from './avisosAsistenciaLogic';
 import { dataUrlABlob, rutaEvidencia, yaExisteEnAlmacen } from './evidenciaLogic';
@@ -758,6 +759,18 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
       supabase.from('auditoria').insert({ usuario: uname(), accion, modulo, detalle }).then(() => {});
 
     // Tiendas E5: una llamada a un contrato del POS. `incierto` = no se sabe si el servidor la hizo.
+    // P4-H3E: igual que posRpc, con los códigos de la migración 153.
+    const corrRpc = async (fn, args) => {
+      try {
+        const { data, error } = await supabase.rpc(fn, args);
+        if (error) { console.warn(`[${fn}] rpc:`, error.message); const c = clasificarErrorCorreccion(error, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+        return { data };
+      } catch (e) {
+        const c = clasificarErrorCorreccion(e, enLinea());
+        return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto };
+      }
+    };
+
     const posRpc = async (fn, args) => {
       try {
         const { data, error } = await supabase.rpc(fn, args);
@@ -1827,6 +1840,42 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
       retornarTraspaso: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('retornar_traspaso', args); },
       cerrarIncidenciaTraspaso: async (args) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('cerrar_incidencia_traspaso', args); },
       definirRecepcionTienda: async ({ establecimientoId, usuarioId, recibe }) => { const guard = requireAdmin(); if (guard) return guard; return posRpc('definir_recepcion_tienda', { p_establecimiento_id: establecimientoId, p_usuario_id: usuarioId, p_recibe: recibe }); },
+      // P4-H3E (mig 153): correcciones autorizadas del inventario de un congelador de tienda. Solo los cinco contratos
+      // de 153 (la tabla no tiene acceso por API). Respuesta { data } o { error, codigo, incierto }; `incierto: true` =
+      // no se sabe si el servidor la hizo: se reintenta con el MISMO operacion_id (153 responde `replay`, sin duplicar).
+      correccionesTiendaConsulta: async ({ establecimientoId = null, limite = 200 } = {}) => {
+        const guard = requireAdmin(); if (guard) return guard;
+        return corrRpc('correcciones_tienda_consulta', buildConsultaArgs({ establecimientoId, limite }));
+      },
+      solicitarCorreccionTienda: async (d) => {
+        const guard = requireAdmin(); if (guard) return guard;
+        return corrRpc('solicitar_correccion_tienda', buildSolicitarArgs(d));
+      },
+      decidirCorreccionTienda: async (d) => {
+        const guard = requireAdmin(); if (guard) return guard;
+        const built = buildDecisionArgs(d);
+        if (built.error) return { error: built.error };
+        return corrRpc('autorizar_correccion_tienda', built.args);
+      },
+      ejecutarCorreccionTienda: async (d) => {
+        const guard = requireAdmin(); if (guard) return guard;
+        const r = await corrRpc('ejecutar_correccion_tienda', buildEjecutarArgs(d));
+        if (r.data) rf(); // la existencia del congelador y el kardex cambiaron
+        return r;
+      },
+      cancelarCorreccionTienda: async (d) => {
+        const guard = requireAdmin(); if (guard) return guard;
+        return corrRpc('cancelar_correccion_tienda', buildCancelarArgs(d));
+      },
+      // Lectura fresca del congelador (pertenencia y existencia) justo antes de solicitar; no escribe nada.
+      leerCongeladorCorreccion: async (cuartoId) => {
+        const guard = requireAdmin(); if (guard) return guard;
+        try {
+          const { data, error } = await supabase.from('cuartos_frios').select('id, nombre, stock, establecimiento_id').eq('id', cuartoId).single();
+          if (error) { const c = clasificarErrorCorreccion(error, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+          return { data };
+        } catch (e) { const c = clasificarErrorCorreccion(e, enLinea()); return { error: c.mensaje, codigo: c.codigo, incierto: c.incierto }; }
+      },
       // Tiendas E8 (mig 149): reportes por establecimiento (solo Administración; solo lectura).
       reportesTiendas: async ({ desde, hasta, establecimientoId = null }) => {
         const guard = requireAdmin();

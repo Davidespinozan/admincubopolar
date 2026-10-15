@@ -1,10 +1,17 @@
-import { useRef } from 'react';
+import { useRef, lazy, Suspense } from 'react';
 import { resolverOperacion, claveTraspaso, claveAjusteCuarto, puedeOfrecerEliminarCuarto, puedeOfrecerAjusteCentral, validarAjusteCentral } from '../../data/stockContratosLogic';
 import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtPct, useToast, PAGE_SIZE, Paginator, PageHeader } from './viewsCommon';
+import { perfilCorrecciones } from '../../data/correccionesTiendaLogic';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
 import { esEmpaque, validarAjusteExistencia, REGLA_ENTRADA_EMPAQUE } from '../../data/empaqueLogic';
 
-export function InventarioView({ data, actions }) {
+// P4-H3E: pantalla de correcciones autorizadas de tiendas (mig 153), cargada solo al abrir su pestaña.
+const CorreccionesTienda = lazy(() => import('../CorreccionesTienda.jsx'));
+
+export function InventarioView({ data, actions, user }) {
+  // P4-H3E: "Congeladores" (lo de siempre) | "Correcciones de tiendas" (solo Administración; el servidor decide).
+  const perfilCorr = perfilCorrecciones(user);
+  const [seccion, setSeccion] = useState('congeladores');
   const toast = useToast();
   const [askConfirm, ConfirmEl] = useConfirm();
   const [pageExist, setPageExist] = useState(0);
@@ -215,6 +222,25 @@ export function InventarioView({ data, actions }) {
     }
   };
 
+  const pestanas = perfilCorr.visible ? (
+    <div role="tablist" aria-label="Secciones de inventario" className="mb-4 inline-flex rounded-field border border-line bg-white p-1">
+      {[['congeladores', 'Congeladores'], ['correcciones', 'Correcciones de tiendas']].map(([id, label]) => (
+        <button key={id} role="tab" aria-selected={seccion === id} onClick={() => setSeccion(id)}
+          className={`min-h-[40px] rounded-lg px-4 text-sm font-semibold ${seccion === id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50'}`}>{label}</button>
+      ))}
+    </div>
+  ) : null;
+
+  if (perfilCorr.visible && seccion === 'correcciones') {
+    return (<div>
+      <PageHeader title="Correcciones de tiendas" subtitle="Inventario de congeladores de tienda: solicitar, autorizar y ejecutar" />
+      {pestanas}
+      <Suspense fallback={<p className="text-sm text-slate-500">Cargando…</p>}>
+        <CorreccionesTienda data={data} actions={actions} usuario={user} />
+      </Suspense>
+    </div>);
+  }
+
   return (<div>
     {ConfirmEl}
     <PageHeader title="Congeladores" subtitle="Cuartos fríos, existencias y movimientos"
@@ -225,6 +251,7 @@ export function InventarioView({ data, actions }) {
           setTraspasoForm({origen: cfs[0] || "", destino: cfs[1] || cfs[0] || "", sku: s(firstSku), cantidad:""});
           setTraspasoModal(true); setTraspasoErrors({});
         }} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-field border border-line bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"><Icons.Swap /> Traspaso</button>} />
+    {pestanas}
     <div className="grid gap-3 mb-4 sm:grid-cols-3 sm:gap-4 sm:mb-6">
       {totalStockByCF.length === 0 ? <EmptyState message="Sin cuartos fríos" /> :
       totalStockByCF.map((cf,idx)=><div key={cf.id} className="min-w-[220px] sm:min-w-0 flex-shrink-0 sm:flex-shrink bg-white border border-slate-100 rounded-2xl p-4 sm:p-5 snap-start">
