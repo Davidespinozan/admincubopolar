@@ -15,6 +15,7 @@ import { buildUpdateFieldsProduccion } from './produccionLogic';
 import { buildRegistrarProduccionArgs, buildRegistrarTransformacionArgs, interpretarResultadoProduccion, interpretarResultadoTransformacion, mensajeErrorProduccion } from './produccionAtomicaLogic';
 import { buildActividadDatos, buildCompletarArgs, buildEditarOcurrenciaArgs, sumarDiasISO } from './calendarioLogic';
 import { clasificarErrorPos } from './posLogic';
+import { buildGuardarCamionArgs, mensajeErrorCamion } from './camionesLogic';
 import { clasificarErrorCorreccion, buildSolicitarArgs, buildDecisionArgs, buildEjecutarArgs, buildCancelarArgs, buildConsultaArgs } from './correccionesTiendaLogic';
 import { buildRegistroArgs, buildCentroArgs, buildTurnoArgs, buildCorreccionArgs, buildAsistenciaManualArgs, esErrorDeRed, mensajeErrorLlamada, rolSinDatosNegocio } from './asistenciaLogic';
 import { buildGuardarAvisosArgs } from './avisosAsistenciaLogic';
@@ -759,6 +760,20 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
       supabase.from('auditoria').insert({ usuario: uname(), accion, modulo, detalle }).then(() => {});
 
     // Tiendas E5: una llamada a un contrato del POS. `incierto` = no se sabe si el servidor la hizo.
+    // CAM-1 (mig 154): única vía de escritura de camiones desde el cliente.
+    const guardarCamionContrato = async ({ id = null, datos } = {}) => {
+      const guard = requireAdmin(); if (guard) { t()?.error(guard.error); return guard; }
+      try {
+        const { data, error } = await supabase.rpc('guardar_camion', buildGuardarCamionArgs({ id, datos }));
+        if (error) { console.warn('[guardarCamion] rpc:', error.message); const msg = mensajeErrorCamion(error); t()?.error(msg); return { error: msg }; }
+        rf();
+        return { data };
+      } catch (e) {
+        console.error('[guardarCamion] excepción:', e);
+        const msg = mensajeErrorCamion(e); t()?.error(msg); return { error: msg };
+      }
+    };
+
     // P4-H3E: igual que posRpc, con los códigos de la migración 153.
     const corrRpc = async (fn, args) => {
       try {
@@ -2944,20 +2959,10 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
       },
 
       // ── CAMIONES ──
-      addCamion: async (c) => {
-        const { error } = await supabase.from('camiones').insert({
-          nombre: c.nombre, placas: c.placas || '', modelo: c.modelo || '', estatus: 'Activo',
-        });
-        if (error) { t()?.error('Error al crear camión'); return error; }
-        log('Crear', 'Camiones', c.nombre);
-        rf();
-      },
-      updateCamion: async (id, c) => {
-        const { error } = await supabase.from('camiones').update(c).eq('id', id);
-        if (error) { t()?.error('Error al actualizar camión'); return error; }
-        log('Editar', 'Camiones', `#${id}`);
-        rf();
-      },
+      // CAM-1 (mig 154): alta y edición SOLO por el contrato guardar_camion (valida y deja auditoría en el servidor).
+      guardarCamion: (args) => guardarCamionContrato(args),
+      addCamion: async (c) => guardarCamionContrato({ datos: { nombre: c.nombre, placas: c.placas || '', modelo: c.modelo || '', estatus: 'Activo' } }),
+      updateCamion: async (id, c) => guardarCamionContrato({ id, datos: c }),
 
       // ── FACTURACIÓN ──
       crearCheckoutPago: async (ordenId, provider = 'stripe') => {

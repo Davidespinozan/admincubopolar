@@ -4,9 +4,11 @@ import { resolverEntrega, etiquetaClienteSucursal } from '../../data/sucursalLog
 import { puedeAgregarPedidos, etapaDeRuta } from '../../data/recuperacionRutaLogic';
 import CierreRutaAdminModal from '../CierreRutaAdminModal';
 import { modoCierreAdmin } from '../../data/conciliacionRutaLogic';
+import { etiquetaCamion } from '../../data/camionesLogic';
 const MapaPedidos = lazy(() => import('../ui/MapaPedidos'));
 const ReporteRutaModal = lazy(() => import('../ReporteRutaModal'));
 const RecuperacionRutaModal = lazy(() => import('../RecuperacionRutaModal'));
+const CamionesPanel = lazy(() => import('../CamionesPanel'));
 
 function AsignarOrdenesModal({ ruta, ordenes, onClose, onConfirm }) {
   const [selected, setSelected] = useState([]);
@@ -68,6 +70,7 @@ export function RutasView({ data, actions }) {
   const [search, setSearch] = useState("");
   const [filterEst, setFilterEst] = useState("");
   const [nuevoCamion, setNuevoCamion] = useState(false);
+  const [camionesOpen, setCamionesOpen] = useState(false); // CAM-1: ficha de la flotilla
   const [camionForm, setCamionForm] = useState({nombre:"",placas:"",modelo:""});
   const [mapaVisible, setMapaVisible] = useState(false);
   const [reporteModal, setReporteModal] = useState(null);
@@ -199,7 +202,7 @@ export function RutasView({ data, actions }) {
 
   const camiones = useMemo(() => (data.camiones || [])
     .filter(c => s(c.estatus) === 'Activo')
-    .map(c => ({ value: String(c.id), label: s(c.nombre) + (c.placas ? ` (${c.placas})` : '') })), [data.camiones]);
+    .map(c => ({ value: String(c.id), label: etiquetaCamion(c) || s(c.nombre) })), [data.camiones]);
 
   // Capacidad del camión seleccionado en el form. 0 = sin camión asignado o
   // sin capacidad capturada (no se puede validar contra capacidad).
@@ -524,6 +527,7 @@ export function RutasView({ data, actions }) {
   const ordenGrupos = ['En progreso', 'Programada', 'Completada', 'Cerrada'];
 
   const exportBtns = <>
+    <button onClick={() => setCamionesOpen(true)} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"><Icons.Truck /> Camiones</button>
     <button onClick={() => reporteRutas(data.rutas, 'excel', data.ordenes)} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-emerald-200 bg-white px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-50"><Icons.Sheet /> Excel</button>
     <button onClick={() => reporteRutas(data.rutas, 'pdf', data.ordenes)} className="inline-flex min-h-[44px] items-center gap-1.5 rounded-[14px] border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50"><Icons.FilePdf /> PDF</button>
   </>;
@@ -815,7 +819,8 @@ export function RutasView({ data, actions }) {
                   <div className="flex gap-2">
                     <button type="button" onClick={async()=>{
                       if(!camionForm.nombre.trim()){toast?.error('Nombre requerido');return;}
-                      await actions.addCamion(camionForm);
+                      const r = await actions.addCamion(camionForm);
+                      if (r?.error) return; // el store ya mostró el motivo
                       toast?.success('Camión registrado');
                       setCamionForm({nombre:"",placas:"",modelo:""});
                       setNuevoCamion(false);
@@ -1142,5 +1147,12 @@ export function RutasView({ data, actions }) {
         <RecuperacionRutaModal ruta={recuperacionModal} actions={actions} productos={data.productos} onClose={() => setRecuperacionModal(null)} />
       </Suspense>
     )}
+    <Modal open={camionesOpen} onClose={() => setCamionesOpen(false)} title="Camiones" wide>
+      {camionesOpen && (
+        <Suspense fallback={<p className="text-sm text-slate-500">Cargando…</p>}>
+          <CamionesPanel data={data} actions={actions} />
+        </Suspense>
+      )}
+    </Modal>
   </div>);
 }
