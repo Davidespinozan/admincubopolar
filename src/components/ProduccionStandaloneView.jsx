@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import CapturaFoto from './ui/CapturaFoto';
 import { diaNegocio } from '../utils/fechas';
 import { resolverOperacion, claveProduccion } from '../data/produccionAtomicaLogic';
-import { MAQUINAS_PRODUCCION, SALIDAS_BARRA, DESTINOS_MITAD, seProduceSinEmpaque, skusProducibles, esPreparacion, esFilaDerivada, barrasUsadasFila, textoFilaDerivada, vistaPreviaPreparacion, vistaPreviaDesglose, clavePreparacion, claveDesglose } from '../data/preparacionBarraLogic';
-import { claveSalida, claveTraspaso, claveMermaCuarto, MOTIVOS_SALIDA_MANUAL, motivoSalidaManual } from '../data/stockContratosLogic';
+import { MAQUINAS_PRODUCCION, SALIDAS_BARRA, DESTINOS_MITAD, seProduceSinEmpaque, skusProducibles, esPreparacion, esFilaDerivada, cuentaComoProducido, barrasUsadasFila, textoFilaDerivada, vistaPreviaPreparacion, vistaPreviaDesglose, clavePreparacion, claveDesglose } from '../data/preparacionBarraLogic';
+import { claveSalida, claveTraspaso, claveMermaCuarto, MOTIVOS_SALIDA_MANUAL, motivoSalidaManual, cuartosDelCedis } from '../data/stockContratosLogic';
 import { mermasActivas } from '../data/mermasLogic';
 import { resumenCongeladores, resumenMermas } from '../data/produccionResumenLogic';
 import { supabase } from '../lib/supabase';
@@ -34,6 +34,8 @@ const RESUMEN = "grid grid-cols-1 gap-3 sm:grid-cols-3";
 const LABEL = "mb-1.5 block text-sm font-medium text-slate-700";
 
 export default function ProduccionStandaloneView({ user, data, actions, onLogout, embedded = false, tab: tabProp, onTab }) {
+  // E2E: Producción solo ve y mueve los cuartos del CEDIS (el servidor rechaza los congeladores de tienda desde 152).
+  const cuartosCedis = useMemo(() => cuartosDelCedis(data.cuartosFrios), [data.cuartosFrios]);
   const [tabLocal, setTabLocal] = useState("producir");
   const tab = tabProp ?? tabLocal;
   const setTab = (k) => { if (onTab) onTab(k); else setTabLocal(k); };
@@ -200,7 +202,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
 
   const prodHoy = useMemo(() => {
     const hoy = diaNegocio();
-    return data.produccion.filter(p => p.fecha && p.fecha.slice(0, 10) === hoy && !esFilaDerivada(p));
+    return data.produccion.filter(p => p.fecha && p.fecha.slice(0, 10) === hoy && cuentaComoProducido(p));
   }, [data.produccion]);
 
   const totalHoy = useMemo(() => prodHoy.reduce((s, p) => s + n(p.cantidad), 0), [prodHoy]);
@@ -254,14 +256,14 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   const stockCuartosPorSku = useMemo(() => {
     const acc = {};
     for (const p of productosHielo) acc[s(p.sku)] = 0;
-    for (const cf of (data.cuartosFrios || [])) {
+    for (const cf of cuartosCedis) {
       const st = (cf?.stock && typeof cf.stock === 'object') ? cf.stock : {};
       for (const [sku, qty] of Object.entries(st)) {
         acc[s(sku)] = (acc[s(sku)] || 0) + n(qty);
       }
     }
     return acc;
-  }, [data.cuartosFrios, productosHielo]);
+  }, [cuartosCedis, productosHielo]);
 
   const reservadoEnRutasPorSku = useMemo(() => {
     const acc = {};
@@ -286,7 +288,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     for (const p of productosHielo) acc[s(p.sku)] = 0;
     const hoy = diaNegocio();
     for (const pr of (data.produccion || [])) {
-      if (!s(pr.fecha).startsWith(hoy) || esFilaDerivada(pr)) continue;
+      if (!s(pr.fecha).startsWith(hoy) || !cuentaComoProducido(pr)) continue;
       const sku = s(pr.sku);
       acc[sku] = (acc[sku] || 0) + n(pr.cantidad);
     }
@@ -322,12 +324,12 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     bolsas: preparacionesHoy.filter(esPreparacion).reduce((t, p) => t + n(p.cantidad), 0),
   }), [preparacionesHoy]);
   const vistaPrep = useMemo(() => vistaPreviaPreparacion({
-    productos: data.productos, cuartos: data.cuartosFrios, cuartoId: prepForm.cuarto, salidaSku: prepForm.salida, barras: prepForm.barras,
-  }), [data.productos, data.cuartosFrios, prepForm]);
+    productos: data.productos, cuartos: cuartosCedis, cuartoId: prepForm.cuarto, salidaSku: prepForm.salida, barras: prepForm.barras,
+  }), [data.productos, cuartosCedis, prepForm]);
 
   const vistaDes = useMemo(() => vistaPreviaDesglose({
-    productos: data.productos, cuartos: data.cuartosFrios, cuartoId: prepForm.cuarto, barras: desForm.barras, mitadA: desForm.mitadA, mitadB: desForm.mitadB,
-  }), [data.productos, data.cuartosFrios, prepForm.cuarto, desForm]);
+    productos: data.productos, cuartos: cuartosCedis, cuartoId: prepForm.cuarto, barras: desForm.barras, mitadA: desForm.mitadA, mitadB: desForm.mitadB,
+  }), [data.productos, cuartosCedis, prepForm.cuarto, desForm]);
 
   const desglosarBarra = async () => {
     if (guardandoDes || enVueloDes.current) return;
@@ -381,7 +383,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
       setGuardandoPrep(false);
     }
   };
-  const cuartos = data.cuartosFrios || [];
+  const cuartos = cuartosCedis || [];
 
   const totalEnCuartos = useMemo(() => {
     let t = 0;
@@ -418,7 +420,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
     const cfNombre = cuartos.find(cf => s(cf.id) === form.destino)?.nombre || form.destino;
 
     // Validar capacidad de tarimas del cuarto destino (Fase 19)
-    const cuartoDestino = (data.cuartosFrios || []).find(c => String(c.id) === String(form.destino));
+    const cuartoDestino = cuartosCedis.find(c => String(c.id) === String(form.destino));
     if (cuartoDestino && n(cuartoDestino.capacidad_tarimas) > 0) {
       const { puede, ocupadoActual, ocupadoFuturo, capacidad } = puedeAgregarAlCuarto(
         cuartoDestino,
@@ -589,7 +591,7 @@ export default function ProduccionStandaloneView({ user, data, actions, onLogout
   // B3.2: cada módulo abre con SU resumen (derivado de datos ya cargados; sin
   // consultas nuevas). Producción conserva el resumen general (kpis); los
   // otros tres dejan de repetirlo. Orden por módulo: resumen → acción → contenido.
-  const resumenCuartos = useMemo(() => resumenCongeladores(data.cuartosFrios, data.productos), [data.cuartosFrios, data.productos]);
+  const resumenCuartos = useMemo(() => resumenCongeladores(cuartosCedis, data.productos), [cuartosCedis, data.productos]);
   const resumenMer = useMemo(() => resumenMermas(data.mermas, diaNegocio()), [data.mermas]);
 
   return (

@@ -5,7 +5,7 @@ import { diaNegocio } from '../../utils/fechas';
 import {
   periodoNominaDe, etiquetaPeriodoNomina, camposDeRecibo,
   clasesDeTipo, etiquetaClase, asignacionDe, montoConcepto, describirMonto, describirAlcance,
-  lineasEditables, lineaManualNueva, lineaDeConcepto, conceptosParaAgregar, previewDesglose,
+  lineasEditables, lineaManualNueva, lineaDeConcepto, conceptosParaAgregar, previewDesglose, pagaMasDiasQueLaSemana,
   formDeConcepto, personasDelForm, personaIncluida, avanceTope, recibosConFaltantes, AYUDA_CONCEPTOS,
   BASES_COMISION, formasDeTipo, campoDeCalculo, esComision, esAutomatico, recibosConAutomaticos,
 } from '../../data/nominaLogic';
@@ -106,6 +106,12 @@ function ReciboEditor({ recibo, editable, data, onGuardar }) {
   const firma = (c, ls) => JSON.stringify([c, ls.map(l => [l.conceptoId, l.nombre, l.tipo, l.categoria, String(Number(l.monto) || 0)])]);
   const sucio = firma(campos, lineas) !== firma(inicial, lineasServidor);
   const prev = previewDesglose(recibo.salarioDiario, campos, lineas);
+  // Días + séptimo > 7: se permite (día de descanso trabajado) pero se confirma. La confirmación vale para estos días.
+  const masDias = pagaMasDiasQueLaSemana(campos);
+  const [confirmaDescanso, setConfirmaDescanso] = useState(false);
+  const claveDias = `${campos.diasPagados}|${campos.conSeptimo}`;
+  const [claveConfirmada, setClaveConfirmada] = useState(null);
+  const descansoConfirmado = confirmaDescanso && claveConfirmada === claveDias;
   const conceptos = data.nominaConceptos || [];
   const asignaciones = data.nominaConceptoEmpleados || [];
 
@@ -180,12 +186,19 @@ function ReciboEditor({ recibo, editable, data, onGuardar }) {
           <span className={`font-display text-xl font-bold tnum ${prev.excede ? 'text-red-700' : 'text-emerald-700'}`}>{$(prev.netoAPagar)}</span>
         </div>
         {prev.excede && <p className="mt-1 text-[13px] font-medium text-red-700">Los descuentos son mayores que lo que gana esta semana.</p>}
+        {masDias && editable && (
+          <label className="mt-2 flex items-start gap-2 rounded-lg bg-amber-50 p-2 text-[13px] text-amber-900" data-testid="aviso-dias-semana">
+            <input type="checkbox" className="mt-0.5 h-4 w-4" checked={descansoConfirmado}
+              onChange={e => { setConfirmaDescanso(e.target.checked); setClaveConfirmada(claveDias); }} />
+            <span>Se pagarán {n(campos.diasPagados) + (campos.conSeptimo ? 1 : 0)} días en una semana de 7. Confirmo que trabajó su día de descanso y se le paga aparte.</span>
+          </label>
+        )}
         {sucio && !prev.excede && <p className="mt-1 text-[12px] text-slate-500">Vista previa: falta guardar.</p>}
       </div>
 
       {editable && (
         <div className="mt-3 flex gap-2">
-          <FormBtn primary className="flex-1" onClick={guardar} disabled={!sucio || prev.excede} loading={guardando}>Guardar recibo</FormBtn>
+          <FormBtn primary className="flex-1" onClick={guardar} disabled={!sucio || prev.excede || (masDias && !descansoConfirmado)} loading={guardando}>Guardar recibo</FormBtn>
           {sucio && <FormBtn ghost onClick={() => { setCampos(inicial); setLineas(lineasServidor); }}>Descartar</FormBtn>}
         </div>
       )}

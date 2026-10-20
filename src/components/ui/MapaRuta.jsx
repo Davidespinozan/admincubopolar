@@ -80,8 +80,12 @@ export default function MapaRuta({ paradas = [], onEditarCliente }) {
 
     let watchId = null;
 
+    // E2E: el import es asíncrono; si el componente se desmontó (o se volvió a montar) mientras cargaba, no se crea un
+    // segundo mapa sobre el mismo contenedor ("Map container is already initialized").
+    let cancelado = false;
     const init = async () => {
       const L = (await import('leaflet')).default;
+      if (cancelado || !mapRef.current || mapInst.current || mapRef.current._leaflet_id) return;
       leafletRef.current = L;
 
       // Fix Leaflet default icons broken en Vite
@@ -169,6 +173,7 @@ export default function MapaRuta({ paradas = [], onEditarCliente }) {
     init();
 
     return () => {
+      cancelado = true;
       if (watchId !== null) navigator.geolocation.clearWatch(watchId);
       if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; }
       driverMark.current  = null;

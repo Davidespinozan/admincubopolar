@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { cuartosDelCedis } from '../data/stockContratosLogic';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { s, n, fmtMoney } from '../utils/safe';
 import { useToast } from './ui/Toast';
@@ -23,7 +24,7 @@ export default function DevolucionModal({ open, orden, actions, data, onClose, o
   const [errors, setErrors] = useState({});
   const [loadingLineas, setLoadingLineas] = useState(false);
 
-  const cuartos = useMemo(() => (data?.cuartosFrios || []).filter(c => s(c.estatus || 'Activo') === 'Activo'), [data?.cuartosFrios]);
+  const cuartos = useMemo(() => cuartosDelCedis(data?.cuartosFrios).filter(c => s(c.estatus || 'Activo') === 'Activo'), [data?.cuartosFrios]); // E2E: reintegro solo al CEDIS
   const productos = data?.productos || [];
 
   useEffect(() => {

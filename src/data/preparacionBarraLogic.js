@@ -114,6 +114,11 @@ export function esFilaDerivada(r) {
   return esPreparacion(r) || esPartido(r);
 }
 
+/** E2E: ¿cuenta como "producido"? Solo producción de máquina vigente: ni preparaciones/partidos ni filas revertidas. */
+export function cuentaComoProducido(r) {
+  return !esFilaDerivada(r) && s(r?.estatus) !== 'Revertida';
+}
+
 const inputSkuDe = (r) => s(r?.input_sku ?? r?.inputSku);
 /** Barras enteras que consumió una fila (preparación de barra entera o partido). */
 export function barrasUsadasFila(r) {

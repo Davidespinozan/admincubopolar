@@ -151,7 +151,7 @@ describe('OL-02C: acción del store completarVentaDirecta', () => {
   });
   it('el camino del chofer conserva su acción (updateOrdenEstatus sigue existiendo)', () => {
     expect(store).toMatch(/ {6}updateOrdenEstatus: async \(id, nuevoEst, metodoPago = null, extra = \{\}\) => \{/);
-    expect(src('../components/ChoferView.jsx')).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null \}\)/);
+    expect(src('../components/ChoferView.jsx')).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null, referencia: s\(cobroRef\)\.trim\(\) \|\| null \}\)/);
   });
 });
 

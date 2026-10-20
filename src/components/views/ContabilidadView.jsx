@@ -1,8 +1,8 @@
 import { useState, Icons, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, useToast, fmtMoney, fmtDate, reporteFinanciero, PAGE_SIZE, PageHeader } from './viewsCommon';
 import { diaNegocio } from '../../utils/fechas';
 import { traducirError } from '../../utils/errorMessages';
-import { esAsientoDeContrato } from '../../data/asientosContablesLogic';
-import { useEffect } from 'react';
+import { esAsientoProtegido, idsAsientosLigados } from '../../data/asientosContablesLogic';
+import { useEffect, useMemo } from 'react';
 import { rangoDeMes, lineasEstadoResultados, lineasFlujoEfectivo } from '../../data/finanzasLogic';
 
 export function ContabilidadView({ data, actions }) {
@@ -42,7 +42,10 @@ export function ContabilidadView({ data, actions }) {
   const CATS_INGRESO = ["Ventas", "Cobranza", "Otro ingreso"];
   const CATS_EGRESO = ["Proveedores", "Combustible", "Servicios", "Mantenimiento", "Nómina", "Impuestos", "Renta", "Otro gasto"];
 
-  const openNew = (tipo) => { setForm({ ...empty, tipo }); setErrors({}); setModal("new"); };
+  // E2E: la categoría inicial es una de las del selector de ese tipo (antes un Ingreso guardaba "Proveedores"); un ingreso manual
+  // arranca en "Otro ingreso" para no inflar Ventas en los reportes por descuido.
+  const ligados = useMemo(() => idsAsientosLigados(data), [data]); // 156: pagos a proveedor, nómina, devoluciones, costos
+  const openNew = (tipo) => { setForm({ ...empty, tipo, categoria: tipo === "Ingreso" ? "Otro ingreso" : "Proveedores" }); setErrors({}); setModal("new"); };
 
   const openEdit = (m) => {
     const tipo = s(m._tipo) || s(m.tipo) || 'Egreso';
@@ -151,7 +154,7 @@ export function ContabilidadView({ data, actions }) {
               <span className="text-sm font-semibold text-slate-700 min-w-0 truncate">{s(m.concepto)}</span>
               <div className="flex items-center gap-2 flex-shrink-0">
                 <span className={`text-sm font-bold ${m._tipo === "Ingreso" ? "text-emerald-700" : "text-red-600"}`}>{(m._tipo === "Ingreso" ? "+" : "-") + fmtMoney(m.monto)}</span>
-                {esAsientoDeContrato(m) ? (
+                {esAsientoProtegido(m, ligados) ? (
                   <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400 px-1" title="Asiento generado por el sistema; no se edita ni se borra">Sistema</span>
                 ) : (
                   <>

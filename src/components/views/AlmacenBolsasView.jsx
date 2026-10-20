@@ -3,6 +3,7 @@ import { diaNegocio } from '../../utils/fechas';
 import { useMemo, useState, PageHeader, EmptyState, s, n } from './viewsCommon';
 import { clasificarMovEmpaque, efectoEnTotal, normalizarConciliacion } from '../../data/empaqueLogic';
 import ConteoEmpaques from '../ConteoEmpaques';
+import { cuentaComoProducido } from '../../data/preparacionBarraLogic';
 
 export function AlmacenBolsasView({ data, actions, user }) {
   // T5-C: el conteo físico (existencia, costo e historial) es solo de Administración.
@@ -14,7 +15,7 @@ export function AlmacenBolsasView({ data, actions, user }) {
     return map;
   }, [data.productos]);
   const movs = useMemo(() => (data.inventarioMov || []).filter(m => bolsas.some(b => s(b.sku) === s(m.producto))).slice(0, 30), [data.inventarioMov, bolsas]);
-  const prodHoy = useMemo(() => (data.produccion || []).filter(p => s(p.fecha) === diaNegocio()), [data.produccion]);
+  const prodHoy = useMemo(() => (data.produccion || []).filter(p => s(p.fecha).slice(0, 10) === diaNegocio() && cuentaComoProducido(p)), [data.produccion]);
 
   // 092: control "Salió a Producción vs Usó Producción" calculado en el
   // servidor desde fuentes independientes (eventos de entrega canónicos vs

@@ -164,7 +164,7 @@ export function ProduccionView({ data, actions }) {
   const { totalProd, enProceso, confirmadas } = useMemo(() => {
     let total = 0, proc = 0, conf = 0;
     for (const p of prodNormal) {
-      total += n(p.cantidad);
+      if (s(p.estatus) !== 'Revertida') total += n(p.cantidad); // E2E: lo revertido no cuenta como producido
       if (p.estatus === "En proceso") proc++;
       else if (p.estatus === "Confirmada") conf++;
     }

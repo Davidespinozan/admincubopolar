@@ -66,7 +66,7 @@ describe('contrato de entrega', () => {
   });
   it('la cola sin señal conserva la operación y el fiado no se encola (sin señal no se fía)', () => {
     const chofer = leer('../components/ChoferView.jsx');
-    expect(chofer).toMatch(/updateOrdenEstatus\?\.\(p\.ordenId, 'Entregada', p\.metodoPago, \{ folioNota: p\.folioNota \|\| null, operacionId: p\.operacionId \}\)/);
+    expect(chofer).toMatch(/updateOrdenEstatus\?\.\(p\.ordenId, 'Entregada', p\.metodoPago, \{ folioNota: p\.folioNota \|\| null, referencia: p\.referencia \|\| null, operacionId: p\.operacionId \}\)/);
     // El aviso de crédito va ANTES de encolar: con `enLinea: online` un fiado sin señal nunca llega a la cola.
     expect(chofer.indexOf('enLinea: online });\n      if (sinCredito) { showToast(sinCredito')).toBeLessThan(chofer.indexOf('encolarOffline(TIPOS_MUTACION.ENTREGA'));
     expect(chofer).toMatch(/err\.creditoRechazado \?/);

@@ -14,3 +14,22 @@ export function esAsientoDeContrato(m) {
   const tipo = m.tipo ?? m._tipo;
   return ordenId != null && tipo === 'Ingreso' && CATEGORIAS_ORDEN.has(m.categoria);
 }
+
+/**
+ * 156: ids de los asientos LIGADOS a otro registro (pago a proveedor, nómina pagada, devolución, costo aplicado). El servidor
+ * ya no deja editarlos ni borrarlos por la API (movimiento_ligado); la UI los muestra como "Sistema".
+ */
+export function idsAsientosLigados(data = {}) {
+  const ids = new Set();
+  const add = (v) => { if (v != null && v !== '') ids.add(String(v)); };
+  for (const p of data.pagosProveedores || []) add(p.movimientoId ?? p.movimiento_id);
+  for (const p of data.nominaPeriodos || []) add(p.movimientoId ?? p.movimiento_id);
+  for (const d of data.devoluciones || []) add(d.egresoId ?? d.egreso_id);
+  for (const c of data.costosHistorial || []) add(c.movimientoId ?? c.movimiento_id);
+  return ids;
+}
+
+/** ¿El asiento lo generó o lo usa otro registro? (contrato por referencia, o ligado por llave). */
+export function esAsientoProtegido(m, ligados) {
+  return esAsientoDeContrato(m) || (!!m && !!ligados && ligados.has(String(m.id)));
+}

@@ -6,6 +6,9 @@ import { useState, useMemo, PageHeader, EmptyState, Modal, FormInput, FormSelect
 const CATEGORIAS_COSTO = ['Nómina', 'Renta', 'Servicios', 'Gasolina', 'Mantenimiento', 'Empaque', 'Materia Prima', 'Administrativo', 'Otro'];
 const FRECUENCIAS = ['Mensual', 'Quincenal', 'Semanal', 'Único'];
 
+// E2E: las acciones del store regresan undefined si salió bien, o un error ({ message } / error de PostgREST).
+const fallo = (r) => !!r && (r instanceof Error || !!r.error || !!r.message || !!r.code);
+
 export function CostosView({ data, actions }) {
   const toast = useToast();
   const [askConfirm, ConfirmEl] = useConfirm();
@@ -81,11 +84,12 @@ export function CostosView({ data, actions }) {
 
     setSaving(true);
     try {
+      // E2E: solo se confirma si el store no regresó error (antes siempre decía éxito).
       if (modal === 'new') {
-        await actions.addCostoFijo(payload);
+        if (fallo(await actions.addCostoFijo(payload))) return;
         toast?.success('Costo fijo creado');
       } else {
-        await actions.updateCostoFijo(modal.id, payload);
+        if (fallo(await actions.updateCostoFijo(modal.id, payload))) return;
         toast?.success('Costo actualizado');
       }
       setModal(null);
@@ -104,7 +108,7 @@ export function CostosView({ data, actions }) {
     if (!aplicarModal) return;
     setAplicando(true);
     try {
-      await actions.aplicarCostoFijo(aplicarModal.id, aplicarForm.fecha, aplicarForm.referencia);
+      if (fallo(await actions.aplicarCostoFijo(aplicarModal.id, aplicarForm.fecha, aplicarForm.referencia))) return;
       toast?.success('Costo aplicado y registrado como egreso');
       setAplicarModal(null);
     } finally {
@@ -123,13 +127,14 @@ export function CostosView({ data, actions }) {
 
     setSavingGasto(true);
     try {
-      await actions.registrarCostoVariable(
+      const errGasto = await actions.registrarCostoVariable(
         gastoForm.categoria,
         gastoForm.concepto.trim(),
         Number(gastoForm.monto),
         gastoForm.referencia.trim() || null,
         gastoForm.fecha
       );
+      if (fallo(errGasto)) return;
       toast?.success('Gasto registrado y egreso generado');
       setGastoModal(false);
     } finally {
@@ -275,7 +280,7 @@ export function CostosView({ data, actions }) {
       <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-slate-200">
         {modal !== 'new' && (
           <button onClick={() => askConfirm('Eliminar costo', '¿Eliminar este costo fijo?', async () => {
-            await actions.deleteCostoFijo(modal.id);
+            if (fallo(await actions.deleteCostoFijo(modal.id))) return;
             toast?.success('Costo eliminado');
             setModal(null);
           })} className="px-4 py-2 text-sm text-red-600 hover:bg-red-50 rounded-lg mr-auto">Eliminar</button>

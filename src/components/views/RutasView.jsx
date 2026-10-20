@@ -316,7 +316,7 @@ export function RutasView({ data, actions }) {
     try {
       let err;
       if (editingRuta) {
-        err = await actions.updateRuta(editingRuta.id, {
+        const resEd = await actions.updateRuta(editingRuta.id, {
           nombre: form.nombre,
           choferId: Number(form.choferId),
           ayudanteId: form.ayudanteId ? Number(form.ayudanteId) : null,
@@ -326,6 +326,7 @@ export function RutasView({ data, actions }) {
           extraAutorizado,
           clientesAsignados,
         });
+        err = resEd && (resEd instanceof Error || resEd.error || resEd.code || resEd.message) ? resEd : null;
         if (!err && form.ordenesIds.length > 0) {
           const asignErr = await actions.asignarOrdenesARuta(editingRuta.id, form.ordenesIds, 0);
           if (asignErr?.error) return; // store ya disparó toast específico
@@ -342,11 +343,18 @@ export function RutasView({ data, actions }) {
           extraAutorizado,
           clientesAsignados,
         });
-        err = result instanceof Error ? result : null;
+        // E2E: addRuta devuelve la ruta (con id) o un error que NO es instancia de Error ({ error } del camión ocupado, o el
+        // error de PostgREST). Antes solo se reconocía `instanceof Error` y la pantalla decía "Ruta creada" sin haberla creado.
+        err = result?.id ? null : (result || new Error('No se pudo crear la ruta'));
         // Link selected orders to the new route
         if (!err && form.ordenesIds.length > 0 && result?.id) {
           const asignErr = await actions.asignarOrdenesARuta(result.id, form.ordenesIds, 0);
-          if (asignErr?.error) return; // store ya disparó toast específico
+          if (asignErr?.error) {
+            // La ruta YA existe: se cierra el asistente para que un segundo "Autorizar carga" no cree otra ruta igual.
+            toast?.error(`Ruta ${result.folio || ''} creada, pero no se asignaron las órdenes. Asígnalas con "+ Órdenes".`);
+            setModal(false); setEditingRuta(null);
+            return;
+          }
         }
       }
       if (err) {

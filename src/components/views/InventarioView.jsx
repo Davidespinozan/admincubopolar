@@ -1,5 +1,5 @@
 import { useRef, lazy, Suspense } from 'react';
-import { resolverOperacion, claveTraspaso, claveAjusteCuarto, puedeOfrecerEliminarCuarto, puedeOfrecerAjusteCentral, validarAjusteCentral } from '../../data/stockContratosLogic';
+import { resolverOperacion, claveTraspaso, claveAjusteCuarto, puedeOfrecerEliminarCuarto, puedeOfrecerAjusteCentral, validarAjusteCentral, cuartosDelCedis } from '../../data/stockContratosLogic';
 import { useState, useMemo, Icons, StatusBadge, DataTable, Modal, FormInput, FormSelect, FormBtn, useConfirm, EmptyState, s, n, fmtPct, useToast, PAGE_SIZE, Paginator, PageHeader } from './viewsCommon';
 import { perfilCorrecciones } from '../../data/correccionesTiendaLogic';
 import { tarimasOcupadasEnCuarto, colorTarimasUso } from '../../utils/tarimas';
@@ -46,7 +46,7 @@ export function InventarioView({ data, actions, user }) {
       return prodTerminados.map(p => {
         let totalStock = 0;
         const ubicaciones = [];
-        for (const cf of data.cuartosFrios) {
+        for (const cf of cuartosDelCedis(data.cuartosFrios)) { // E2E: la existencia central es la del CEDIS
           const qty = cf.stock ? cf.stock[s(p.sku)] : 0;
           if (qty && qty > 0) {
             totalStock += qty;
@@ -63,7 +63,7 @@ export function InventarioView({ data, actions, user }) {
 
     const paginatedProd = useMemo(() => prodConStock.slice(pageExist * PAGE_SIZE, (pageExist + 1) * PAGE_SIZE), [prodConStock, pageExist]);
 
-  const cfOptions = useMemo(() => data.cuartosFrios.map(cf => ({value: s(cf.id), label: s(cf.nombre)})), [data.cuartosFrios]);
+  const cfOptions = useMemo(() => cuartosDelCedis(data.cuartosFrios).map(cf => ({value: s(cf.id), label: s(cf.nombre)})), [data.cuartosFrios]); // E2E: traspaso central solo entre cuartos del CEDIS
   const skuProd = useMemo(() => data.productos.filter(p => s(p.tipo) === "Producto Terminado").map(p => s(p.sku)), [data.productos]);
 
   const hacerTraspaso = async () => {
@@ -222,6 +222,13 @@ export function InventarioView({ data, actions, user }) {
     }
   };
 
+  // E2E: el mínimo se confirma solo si se guardó (antes no se esperaba la respuesta y siempre decía éxito).
+  const guardarMinimo = async (id) => {
+    const r = await actions.updateStockMinimo?.(id, Math.max(0, Number(editMinVal) || 0));
+    setEditMinId(null);
+    if (r && (r instanceof Error || r.error || r.message || r.code)) return; // el store ya mostró el motivo
+    toast?.success('Mínimo actualizado');
+  };
   const pestanas = perfilCorr.visible ? (
     <div role="tablist" aria-label="Secciones de inventario" className="mb-4 inline-flex rounded-field border border-line bg-white p-1">
       {[['congeladores', 'Congeladores'], ['correcciones', 'Correcciones de tiendas']].map(([id, label]) => (
@@ -246,7 +253,7 @@ export function InventarioView({ data, actions, user }) {
     <PageHeader title="Congeladores" subtitle="Cuartos fríos, existencias y movimientos"
       action={()=>{setCfForm({nombre:"",temp:"-10",capacidad:"0"});setCfModal("new")}} actionLabel="Nuevo cuarto"
       extraButtons={<button onClick={()=>{
-          const cfs = (data.cuartosFrios || []).map(c => s(c.id));
+          const cfs = cuartosDelCedis(data.cuartosFrios).map(c => s(c.id));
           const firstSku = (data.productos || []).filter(p => s(p.tipo) === "Producto Terminado")[0]?.sku || "";
           setTraspasoForm({origen: cfs[0] || "", destino: cfs[1] || cfs[0] || "", sku: s(firstSku), cantidad:""});
           setTraspasoModal(true); setTraspasoErrors({});
@@ -342,7 +349,7 @@ export function InventarioView({ data, actions, user }) {
           return <span className={`font-bold ${bajo ? 'text-red-600' : s(r.tipo)==="Empaque"&&n(v)<200?"text-red-600":"text-slate-800"}`}>{n(v).toLocaleString()}{bajo && <span className="text-[10px] text-red-400 ml-1">▼</span>}</span>;
         }},
         {key:"stock_minimo",label:"Mín.",render:(_,r)=>{
-          if (editMinId === r.id) return <div className="flex items-center gap-1"><input type="number" min="0" className="w-16 px-1.5 py-0.5 text-xs border border-slate-200 rounded-md" value={editMinVal} onChange={e=>setEditMinVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){actions.updateStockMinimo?.(r.id,Math.max(0,Number(editMinVal)||0));setEditMinId(null);toast?.success('Mínimo actualizado');}if(e.key==='Escape')setEditMinId(null);}} autoFocus /><button onClick={()=>{actions.updateStockMinimo?.(r.id,Math.max(0,Number(editMinVal)||0));setEditMinId(null);toast?.success('Mínimo actualizado');}} className="text-emerald-600 hover:text-emerald-800"><Icons.Check /></button><button onClick={()=>setEditMinId(null)} className="text-slate-400 hover:text-slate-600"><Icons.X /></button></div>;
+          if (editMinId === r.id) return <div className="flex items-center gap-1"><input type="number" min="0" className="w-16 px-1.5 py-0.5 text-xs border border-slate-200 rounded-md" value={editMinVal} onChange={e=>setEditMinVal(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){guardarMinimo(r.id);}if(e.key==='Escape')setEditMinId(null);}} autoFocus /><button onClick={()=>{guardarMinimo(r.id);}} className="text-emerald-600 hover:text-emerald-800"><Icons.Check /></button><button onClick={()=>setEditMinId(null)} className="text-slate-400 hover:text-slate-600"><Icons.X /></button></div>;
           return <button onClick={(e)=>{e.stopPropagation();setEditMinId(r.id);setEditMinVal(String(n(r.stock_minimo)));}} className="text-xs text-slate-500 hover:text-blue-600 font-mono">{n(r.stock_minimo) > 0 ? n(r.stock_minimo).toLocaleString() : <span className="text-slate-300">—</span>}</button>;
         }},
         {key:"ubicacion",label:"Ubicación"},
@@ -378,8 +385,10 @@ export function InventarioView({ data, actions, user }) {
             const payload = { nombre: cfForm.nombre, temp: Number(cfForm.temp), capacidad_tarimas: Number(cfForm.capacidad_tarimas) || 0 };
             setSavingCf(true);
             try {
-              if (cfModal === "new") { await actions.addCuartoFrio(payload); toast?.success('Cuarto frío creado'); }
-              else { await actions.updateCuartoFrio(cfModal.id, payload); toast?.success('Cuarto frío actualizado'); }
+              // E2E: antes decía éxito y cerraba aunque el store regresara error.
+              const r = cfModal === "new" ? await actions.addCuartoFrio(payload) : await actions.updateCuartoFrio(cfModal.id, payload);
+              if (r && (r instanceof Error || r.error || r.message || r.code)) return;
+              toast?.success(cfModal === "new" ? 'Cuarto frío creado' : 'Cuarto frío actualizado');
               setCfModal(null);
             } catch(ex) {
               toast?.error('Error: ' + (ex?.message || 'No se pudo guardar'));

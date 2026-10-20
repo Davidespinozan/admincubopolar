@@ -2528,8 +2528,10 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
 
       // ── RUTAS ──
       addRuta: async (r) => {
-        const { data: seq } = await supabase.rpc('nextval', { seq_name: 'folio_r_seq' });
-        const folio = `R-${String(seq || 13).padStart(3, '0')}`;
+        const { data: seq, error: errSeq } = await supabase.rpc('nextval', { seq_name: 'folio_r_seq' });
+        // E2E: antes, si fallaba el folio se usaba R-013 fijo (folios repetidos). Ahora no se crea la ruta.
+        if (errSeq || !seq) { const msg = 'No se pudo generar el folio de la ruta. Intenta de nuevo.'; t()?.error(msg); return { error: msg }; }
+        const folio = `R-${String(seq).padStart(3, '0')}`;
         const hoy = new Date().toISOString();
         const cargaObj = r.carga || {};
 
@@ -3282,8 +3284,9 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         }).select('id, fecha').single();
         if (e1) { t()?.error('Error al registrar egreso'); return e1; }
 
-        // Registrar en historial
-        await supabase.from('costos_historial').insert({
+        // Registrar en historial. E2E: antes el error se ignoraba (egreso sin historial y la pantalla decía éxito). Si falla,
+        // se retira el egreso recién creado (aún no está ligado, así que 156 lo permite) y se informa.
+        const { error: e2 } = await supabase.from('costos_historial').insert({
           costo_fijo_id: costoFijoId,
           tipo: 'Fijo',
           categoria: costo.categoria,
@@ -3293,8 +3296,12 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
           referencia: referencia || '',
           movimiento_id: movimiento?.id,
         });
+        if (e2) {
+          if (movimiento?.id) await supabase.from('movimientos_contables').delete().eq('id', movimiento.id);
+          t()?.error('No se pudo registrar el costo; no se aplicó.');
+          return e2;
+        }
 
-        t()?.success(`Gasto aplicado: ${costo.nombre}`);
         log('Aplicar', 'Costos', `${costo.nombre} — $${costo.monto}`);
         rf();
       },
@@ -3315,8 +3322,8 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         }).select('id, fecha').single();
         if (e1) { t()?.error('Error al registrar gasto'); return e1; }
 
-        // Registrar en historial
-        await supabase.from('costos_historial').insert({
+        // Registrar en historial (E2E: mismo manejo de error que aplicarCostoFijo)
+        const { error: e2 } = await supabase.from('costos_historial').insert({
           tipo: 'Variable',
           categoria,
           concepto,
@@ -3325,6 +3332,11 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
           referencia: referencia || '',
           movimiento_id: movimiento?.id,
         });
+        if (e2) {
+          if (movimiento?.id) await supabase.from('movimientos_contables').delete().eq('id', movimiento.id);
+          t()?.error('No se pudo registrar el gasto; no se aplicó.');
+          return e2;
+        }
 
         log('Registrar', 'Costos', `Variable: ${concepto} — $${monto}`);
         rf();
@@ -3373,7 +3385,11 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
 
       deleteCuentaPorPagar: async (id) => {
         const { error } = await supabase.from('cuentas_por_pagar').delete().eq('id', id);
-        if (error) { t()?.error('Error al eliminar cuenta'); return error; }
+        if (error) {
+          const conPagos = /foreign key|23503|pagos_proveedores/i.test(`${error.code} ${error.message} ${error.details}`);
+          t()?.error(conPagos ? 'No se puede eliminar: la cuenta ya tiene pagos registrados.' : 'Error al eliminar cuenta');
+          return error;
+        }
         log('Eliminar', 'Cuentas por Pagar', `ID ${id}`);
         rf();
       },
@@ -3853,7 +3869,7 @@ export function useSupaStore(userId, userName, userRol, userAccesos) {
         if (data?.replay) t()?.info('Este periodo ya estaba pagado');
         else {
           t()?.success(`Nómina pagada: $${total.toLocaleString()}`);
-          log('Pagar', 'Nómina', `Período ${periodoId} — $${total}`);
+          // E2E: pagar_nomina ya deja su renglón de auditoría en el servidor; el log del cliente lo duplicaba.
         }
         rf();
       },

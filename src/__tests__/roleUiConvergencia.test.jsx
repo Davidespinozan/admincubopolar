@@ -156,7 +156,7 @@ describe('A5: Chofer — modo enfoque con la identidad del producto; flujo, offl
   });
   it('llamadas al store, argumentos y precondiciones de cierre idénticos', () => {
     expect(new Set(v.match(/actions\.\w+/g))).toEqual(new Set(['actions.subirEvidenciaOrden', 'actions.updateOrdenEstatus', 'actions.marcarNoEntregada', 'actions.solicitarFirmaCarga', 'actions.firmarCarga', 'actions.crearCheckoutPago', 'actions.updateRutaEstatus', 'actions.prepararCierreRuta', 'actions.registrarVentaRapidaRuta', 'actions.obtenerBalanceRuta', 'actions.finalizarInventarioRuta', 'actions.crearClienteChofer']));
-    expect(v).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null \}\)/);
+    expect(v).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null, referencia: s\(cobroRef\)\.trim\(\) \|\| null \}\)/);
     expect(v).toMatch(/await actions\.solicitarFirmaCarga\?\.\(miRutaActiva\.id, cargaRealNum\);/);
     expect(v).toMatch(/await actions\.updateRutaEstatus\(miRutaActiva\.id, 'En progreso'\);/);
     expect(v).toMatch(/if \(!online\) \{\s*showToast\('Sin señal — busca conexión para cerrar la ruta', 'info'\);\s*return;\s*\}/);
@@ -164,7 +164,7 @@ describe('A5: Chofer — modo enfoque con la identidad del producto; flujo, offl
     expect(v).toMatch(/const PAGOS = \["Efectivo", "Transferencia", "Tarjeta", "QR \/ Link de pago", "Crédito"\];/);
     expect(v).toMatch(/const MERMA_CAUSAS = \["Bolsa rota", "Hielo derretido", "Daño transporte", "Rechazo cliente"\];/);
     // T5-D1: el cierre también espera a que no queden ventas rápidas sin enviar.
-    expect(v).toMatch(/disabled=\{cerrandoRuta \|\| !balanceCierre \|\| sinEnviar > 0 \|\| Object\.keys\(difConteo\.faltante\)\.length > 0 \|\| Object\.keys\(difConteo\.sobrante\)\.length > 0\}/);
+    expect(v).toMatch(/disabled=\{cerrandoRuta \|\| !balanceCierre \|\| sinEnviar > 0 \|\| mermasSinRegistrar > 0 \|\| Object\.keys\(difConteo\.faltante\)\.length > 0 \|\| Object\.keys\(difConteo\.sobrante\)\.length > 0\}/); // E2E: + mermas sin registrar
     expect(v).toMatch(/disabled=\{creandoVenta\|\|!vForm\.cant\|\|n\(vForm\.cant\)<=0\|\|n\(vForm\.cant\)>\(restante\[vForm\.sku\]\|\|0\)\|\|\(vForm\.factura&&!!errorFacturaExpress\)\}/);
     expect(v).toMatch(/disabled=\{registrandoMerma\|\|!mForm\.cant\|\|n\(mForm\.cant\)<=0\|\|!fotoMerma\}/);
     expect(v).toMatch(/const disabled = generandoLink \|\| confirmandoEntrega \|\| faltaFotoTransf;/);
@@ -302,7 +302,7 @@ describe('B3.2: cada módulo de Producción abre con SU resumen (solo presentaci
     expect(new Set(v.match(/actions\.\w+/g))).toEqual(new Set(ACCIONES));
     expect((v.match(/supabase\./g) || []).length).toBe(3);        // solo el storage de fotos de merma (A4)
     expect(v).not.toMatch(/supabase\.rpc|supabase\.from\(|fetch\(|backendPost|backendGet/);
-    expect(v).toMatch(/resumenCongeladores\(data\.cuartosFrios, data\.productos\)/);
+    expect(v).toMatch(/resumenCongeladores\(cuartosCedis, data\.productos\)/); // E2E: solo los cuartos del CEDIS
     expect(v).toMatch(/resumenMermas\(data\.mermas, diaNegocio\(\)\)/);
     expect(v).toMatch(/vistaPreviaPreparacion\(\{/);
     const logic = src('../data/produccionResumenLogic.js');
@@ -414,7 +414,7 @@ describe('OL-01A: honestidad del cobro del vendedor (contención; ciclo de vida 
     // 139 (T5-B): misma acción del store; ahora pasa la referencia y no duplica el aviso cuando el servidor ya dijo por qué.
     expect(admin).toMatch(/const err = await actions\.updateOrdenEstatus\(pagoModal\.id, "Entregada", pagoForm\.metodo, \{ referencia: [^}]+\}\);\s*if \(err\) \{[\s\S]{0,220}toast\?\.error\("No se pudo registrar el cobro"\);\s*return;/);
     const chofer = src('../components/ChoferView.jsx');
-    expect(chofer).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null \}\)/);
+    expect(chofer).toMatch(/await actions\.updateOrdenEstatus\(entregaModal\.id, "Entregada", cobroMetodo, \{ folioNota: folioNota \|\| null, referencia: s\(cobroRef\)\.trim\(\) \|\| null \}\)/);
     expect(chofer).toMatch(/if \(err\) \{[\s\S]{0,420}showToast\(err\.cargaInsuficiente \? [\s\S]{0,320}: "No se pudo registrar la entrega", 'error'\);/);
     const logic = src('../data/ventasCobroLogic.js');
     expect(logic).not.toMatch(/supabase|rpc|fetch\(|backend|import /);

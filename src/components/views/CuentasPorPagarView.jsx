@@ -252,7 +252,9 @@ export function CuentasPorPagarView({ data, actions }) {
       <div className="flex justify-end gap-2 mt-5 pt-4 border-t border-slate-200">
         {modal !== 'new' && (
           <button onClick={() => askConfirm('Eliminar cuenta', '¿Eliminar esta cuenta por pagar?', async () => {
-            await actions.deleteCuentaPorPagar(modal.id);
+            // E2E: antes decía "Cuenta eliminada" aunque la base la rechazara (p. ej. una cuenta con pagos registrados).
+            const err = await actions.deleteCuentaPorPagar(modal.id);
+            if (err) return; // el store ya mostró el motivo
             toast?.success('Cuenta eliminada');
             setModal(null);
           })} className="px-4 py-2 text-red-600 text-sm font-semibold hover:bg-red-50 rounded-lg mr-auto">Eliminar</button>

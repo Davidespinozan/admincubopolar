@@ -9,6 +9,7 @@
 // riesgo la creación normal. Este modal es plano y enfocado en edit.
 
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
+import { cuartosDelCedis } from '../data/stockContratosLogic';
 import { unirLineasPorSku } from '../data/ordenLogic';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { Icons } from './ui/Icons';
@@ -60,7 +61,7 @@ export default function EditarVentaModal({
 
   // Stock real desde cuartos_frios.stock JSONB (productos.stock es legacy).
   const cfStockMap = useMemo(
-    () => stockDisponiblePorSku(data?.cuartosFrios || []),
+    () => stockDisponiblePorSku(cuartosDelCedis(data?.cuartosFrios)),
     [data?.cuartosFrios]
   );
 
@@ -315,7 +316,7 @@ export default function EditarVentaModal({
                   </li>
                 ))}
               </ul>
-              <p>Al guardar se aplicará el precio actual. Si quieres mantener el original, ajústalo manualmente.</p>
+              <p>Al guardar se aplicará el precio vigente (lista o precio especial del cliente). Para cambiarlo, ajusta el precio especial en Precios.</p>
             </div>
           )}
 
@@ -342,15 +343,8 @@ export default function EditarVentaModal({
                       onBlur={e => updateLine(i, 'qty', cantidadNormalizada(e.target.value))}
                       className="w-16 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-center min-h-[44px] bg-white"
                     />
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={l.precio}
-                      onChange={e => updateLine(i, 'precio', Math.max(0, parseFloat(e.target.value) || 0))}
-                      className="w-20 border border-slate-200 rounded-xl px-2 py-2.5 text-sm text-right min-h-[44px] bg-white"
-                      title="Precio unitario"
-                    />
+                    {/* E2E: el precio lo pone el servidor (lista / precio especial); antes se podía escribir aquí y se descartaba al guardar. */}
+                    <span className="w-20 px-2 py-2.5 text-sm text-right text-slate-600" title="Precio unitario (lo pone el sistema)">{fmtMoney(n(l.precio), { decimals: 2 })}</span>
                     <span className="text-sm font-semibold text-slate-700 w-20 text-right">{fmtMoney(n(l.qty) * n(l.precio))}</span>
                     {lines.length > 1 && (
                       <button type="button" onClick={() => removeLine(i)} className="text-red-400 hover:text-red-600 text-lg min-w-[28px]">×</button>

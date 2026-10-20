@@ -8,12 +8,14 @@
 //     existencia física (cuartos_frios.stock) y la cantidad que sale de cada
 //     uno. Preselecciona solo si exactamente un cuarto cubre la línea.
 import { useMemo, useRef, useState } from 'react';
+import { cuartosDelCedis } from '../data/stockContratosLogic';
 import {
   planVentaDirecta, repartosIniciales, validarVentaDirecta, validarLinea, construirAsignacion, claveVentaDirecta,
 } from '../data/ventaDirectaLogic';
 import { resolverOperacion } from '../data/produccionAtomicaLogic';
 
-export function useVentaDirecta({ actions, cuartosFrios }) {
+export function useVentaDirecta({ actions, cuartosFrios: todos }) {
+  const cuartosFrios = useMemo(() => cuartosDelCedis(todos), [todos]); // E2E: solo el CEDIS (el servidor rechaza tiendas)
   const [orden, setOrden] = useState(null);
   const [repartos, setRepartos] = useState({});
   const [enviando, setEnviando] = useState(false);

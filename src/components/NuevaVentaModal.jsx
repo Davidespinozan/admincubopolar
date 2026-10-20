@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, lazy, Suspense } from 'react';
+import { cuartosDelCedis } from '../data/stockContratosLogic';
 import { unirLineasPorSku } from '../data/ordenLogic';
 import Modal, { FormInput, FormSelect, FormBtn } from './ui/Modal';
 import { Icons } from './ui/Icons';
@@ -126,7 +127,7 @@ export default function NuevaVentaModal({
   // Fuente única de verdad para stock disponible: cuartos_frios.stock JSONB.
   // productos.stock es legacy (queda en 0 con producción standalone).
   const cfStockMap = useMemo(
-    () => stockDisponiblePorSku(data?.cuartosFrios || []),
+    () => stockDisponiblePorSku(cuartosDelCedis(data?.cuartosFrios)),
     [data?.cuartosFrios]
   );
 

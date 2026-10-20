@@ -2,6 +2,7 @@
 // Puras: reciben el `data` del store ya recortado al alcance del rol.
 import { resumenVentasHoy, resumenPendientes } from './ventasResumenLogic';
 import { resumenCongeladores, resumenMermas, esDelDia } from './produccionResumenLogic';
+import { cuentaComoProducido } from './preparacionBarraLogic';
 
 const num = (v) => { const x = Number(v); return Number.isFinite(x) ? x : 0; };
 const lista = (v) => (Array.isArray(v) ? v : []);
@@ -28,7 +29,7 @@ export function cifrasResumen(roles, data, hoy) {
       tone: p.count > 0 ? 'warning' : undefined, modulo: 'ventas' });
   }
   if (roles.includes('Producción')) {
-    const producido = lista(d.produccion).filter(x => esDelDia(x.fecha, hoy) && String(x.estatus || '') !== 'Revertida').reduce((t, x) => t + num(x.cantidad), 0);
+    const producido = lista(d.produccion).filter(x => esDelDia(x.fecha, hoy) && cuentaComoProducido(x)).reduce((t, x) => t + num(x.cantidad), 0);
     const cf = resumenCongeladores(d.cuartosFrios, d.productos);
     const mer = resumenMermas(d.mermas, hoy);
     out.push({ label: 'Producido hoy', value: producido.toLocaleString('es-MX'), hint: 'bolsas', modulo: 'prod-producir' });

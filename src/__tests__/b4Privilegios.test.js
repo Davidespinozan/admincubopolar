@@ -73,7 +73,7 @@ describe('090: asientos de contrato (espejo de b4_asiento_de_contrato)', () => {
   });
   it('la vista oculta editar y borrar en asientos de contrato', () => {
     const v = src('../components/views/ContabilidadView.jsx');
-    expect(v).toMatch(/esAsientoDeContrato\(m\) \?/);
+    expect(v).toMatch(/esAsientoProtegido\(m, ligados\) \?/); // 156: también los ligados (pago a proveedor, nómina…)
   });
 });
 

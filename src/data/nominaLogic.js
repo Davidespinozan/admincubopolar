@@ -260,6 +260,15 @@ export function conceptosParaAgregar(conceptos, lineas, tipo) {
  * Vista previa del recibo con su desglose (solo para mostrar; el servidor
  * recalcula al guardar). `excede`: los descuentos pasan de las percepciones.
  */
+/**
+ * E2E (decisión 2026-10-20): días pagados + séptimo > 7 paga más días que los de la semana. Es legítimo si la persona trabajó
+ * su día de descanso (se paga aparte), así que no se bloquea: la pantalla pide confirmarlo antes de guardar.
+ */
+export function pagaMasDiasQueLaSemana(campos = {}) {
+  const dias = Number(campos.diasPagados) || 0;
+  return dias + (campos.conSeptimo ? 1 : 0) > 7;
+}
+
 export function previewDesglose(salarioDiario, campos = {}, lineas = []) {
   const sal = num(salarioDiario);
   const sueldo = centavos(sal * (num(campos.diasPagados) || 0));

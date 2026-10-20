@@ -70,8 +70,12 @@ export default function MapaPedidos({ ordenes = [], choferUbicaciones = [] }) {
   useEffect(() => {
     if (!mapRef.current || mapInst.current) return;
 
+    // E2E: el import es asíncrono; si el componente se desmontó (o se volvió a montar) mientras cargaba, no se crea un
+    // segundo mapa sobre el mismo contenedor ("Map container is already initialized").
+    let cancelado = false;
     const init = async () => {
       const L = (await import('leaflet')).default;
+      if (cancelado || !mapRef.current || mapInst.current || mapRef.current._leaflet_id) return;
 
       delete L.Icon.Default.prototype._getIconUrl;
       L.Icon.Default.mergeOptions({
@@ -145,6 +149,7 @@ export default function MapaPedidos({ ordenes = [], choferUbicaciones = [] }) {
     init();
 
     return () => {
+      cancelado = true;
       if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; }
     };
   }, []);

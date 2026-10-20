@@ -250,6 +250,12 @@ export const MENSAJE_AJUSTE_SIN_PERTENENCIA = 'No se pudo confirmar a qué estab
 export const MENSAJE_AJUSTE_CUARTO_CAMBIO = 'El cuarto cambió mientras el ajuste estaba abierto; vuelve a abrirlo.';
 
 /** Solo un cuarto del CEDIS confirmado ofrece el ajuste central de existencias. */
+/** E2E: cuartos del CEDIS confirmado (por establecimiento_id; lo desconocido fuera). Las pantallas centrales (venta, devolución,
+ *  Producción, traspaso) solo ofrecen y suman estos: el servidor rechaza los congeladores de tienda (144/152). */
+export function cuartosDelCedis(cuartos) {
+  return (Array.isArray(cuartos) ? cuartos : []).filter(c => pertenenciaCuarto(c) === 'cedis');
+}
+
 export function puedeOfrecerAjusteCentral(cuarto) {
   return pertenenciaCuarto(cuarto) === 'cedis';
 }

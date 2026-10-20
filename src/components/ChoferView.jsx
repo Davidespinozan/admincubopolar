@@ -224,7 +224,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       return r;
     },
     [TIPOS_MUTACION.ENTREGA]: async (p) => {
-      const err = await actions.updateOrdenEstatus?.(p.ordenId, 'Entregada', p.metodoPago, { folioNota: p.folioNota || null, operacionId: p.operacionId });
+      const err = await actions.updateOrdenEstatus?.(p.ordenId, 'Entregada', p.metodoPago, { folioNota: p.folioNota || null, referencia: p.referencia || null, operacionId: p.operacionId });
       return err || null;
     },
     [TIPOS_MUTACION.NO_ENTREGA]: async (p) => {
@@ -288,7 +288,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
             const r = await actions.registrarVentaRapidaRuta?.(p);
             if (!r || r.red) red = true; else if (r.error) fallo = r.error;
           } else if (m.tipo === TIPOS_MUTACION.ENTREGA) {
-            const err = await actions.updateOrdenEstatus?.(p.ordenId, 'Entregada', p.metodoPago, { folioNota: p.folioNota || null, operacionId: p.operacionId });
+            const err = await actions.updateOrdenEstatus?.(p.ordenId, 'Entregada', p.metodoPago, { folioNota: p.folioNota || null, referencia: p.referencia || null, operacionId: p.operacionId });
             if (err) { if (esFalloDeRed(err, enLinea())) red = true; else fallo = (typeof err.error === 'string' && err.error) || err.message || 'El servidor rechazó la entrega'; }
           } else {
             const r = await actions.marcarNoEntregada?.(p.ordenId, p.motivo, p.reagendar, { operacionId: p.operacionId });
@@ -816,6 +816,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           ordenId: entregaModal.id,
           metodoPago: cobroMetodo,
           folioNota: folioNota || null,
+          referencia: s(cobroRef).trim() || null, // E2E: la referencia de la transferencia llega al pago (antes se perdía)
           // T5-D2: datos para mostrarla si llega con la ruta ya cerrada (el servidor no los usa).
           folio: s(entregaModal.folio), cliente: s(entregaModal.clienteNombre), total: n(entregaModal.totalCalc),
           rutaId: miRutaActiva?.id ?? null, rutaFolio: s(miRutaActiva?.folio),
@@ -828,7 +829,7 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
       }
       // Update order status in store
       const err = actions.updateOrdenEstatus
-        ? await actions.updateOrdenEstatus(entregaModal.id, "Entregada", cobroMetodo, { folioNota: folioNota || null })
+        ? await actions.updateOrdenEstatus(entregaModal.id, "Entregada", cobroMetodo, { folioNota: folioNota || null, referencia: s(cobroRef).trim() || null })
         : null;
       if (err) {
         // 138: si no cabe en lo cargado, el servidor dice por qué (y la orden NO quedó entregada).
@@ -1079,7 +1080,9 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
         const nuevaMerma = { ...mForm, id: Date.now(), cant: n(mForm.cant), foto: fotoMerma, registrada: false, hora: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }) };
         const updated = [...prev, nuevaMerma];
         if (miRutaActiva?.id) {
-          localStorage.setItem('mermas_ruta_' + miRutaActiva.id, JSON.stringify(updated));
+          // E2E: con fotos en base64 el almacenamiento puede llenarse; un error aquí ya no rompe la pantalla.
+          try { localStorage.setItem('mermas_ruta_' + miRutaActiva.id, JSON.stringify(updated)); }
+          catch { /* sin espacio: la merma sigue en memoria y se registra al cerrar */ }
         }
         return updated;
       });
@@ -1424,7 +1427,12 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           <FormBtn primary size="lg" className="w-full !text-lg"
             onClick={async () => {
               if (actions.updateRutaEstatus) {
-                await actions.updateRutaEstatus(miRutaActiva.id, 'En progreso');
+                // E2E: si el servidor no la pasó a "En progreso", la pantalla no dice "En ruta" (antes ignoraba el error).
+                const err = await actions.updateRutaEstatus(miRutaActiva.id, 'En progreso');
+                if (err && (err instanceof Error || err.error || err.message || err.code)) {
+                  showToast(s(err.error || err.message) || 'No se pudo iniciar la ruta. Revisa tu señal e intenta de nuevo.', 'error');
+                  return;
+                }
               }
               setStep('ruta');
             }}>
@@ -1984,8 +1992,9 @@ export default function ChoferView({ user, data, actions, onLogout, onMiAsistenc
           {pendientes.length > 0 && <Card tone="danger" padding="p-3"><p className="flex items-center gap-1.5 text-xs font-bold text-red-700"><Icons.AlertTriangle /> {pendientes.length} órdenes sin entregar</p></Card>}
 
           {!rutaCerrada ? (
-            <FormBtn primary size="lg" className="w-full !text-lg" onClick={cerrarRuta} disabled={cerrandoRuta || !balanceCierre || sinEnviar > 0 || Object.keys(difConteo.faltante).length > 0 || Object.keys(difConteo.sobrante).length > 0}>
-              {cerrandoRuta ? 'Cerrando ruta…' : sinEnviar > 0 ? 'Faltan ventas por enviar al sistema' : (balanceCierre ? 'Confirmar devolución y cerrar ruta' : 'Registra ventas y mermas para contar')}
+            <FormBtn primary size="lg" className="w-full !text-lg" onClick={cerrarRuta} disabled={cerrandoRuta || !balanceCierre || sinEnviar > 0 || mermasSinRegistrar > 0 || Object.keys(difConteo.faltante).length > 0 || Object.keys(difConteo.sobrante).length > 0}>
+              {/* E2E: con mermas capturadas sin registrar, cerrar las borraba del teléfono sin dejar rastro */}
+              {cerrandoRuta ? 'Cerrando ruta…' : sinEnviar > 0 ? 'Faltan ventas por enviar al sistema' : mermasSinRegistrar > 0 ? 'Registra las mermas pendientes antes de cerrar' : (balanceCierre ? 'Confirmar devolución y cerrar ruta' : 'Registra ventas y mermas para contar')}
             </FormBtn>
           ) : (
             <div className="space-y-4 text-center">
